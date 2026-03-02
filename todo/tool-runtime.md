@@ -14,19 +14,19 @@
 
 ## 任务（Tasks）
 
-- [ ] P0 定义并实现 Tool Execute API（Agent API -> Tool Runtime）（Req: `requirements.md#req-5-1`）
-- [ ] P0 定义并实现 Tool Manifest API（Tool Runtime -> Agent API）（Req: `requirements.md#req-5-2`）
-- [ ] P0 落地工具命名规范与保留名前缀/命名空间约束（Req: `requirements.md#req-5-6`）
-- [ ] P1 落地 Tool Definition 统一约定（对齐 `/v1/responses` tools[]）（Req: `requirements.md#req-5-7`）
-- [ ] P1 实现 `/internal/tools/execute` 字段级契约校验（Req: `requirements.md#req-5-8`，`requirements.md#req-5-8-1`，`requirements.md#req-5-8-2`）
-- [ ] P1 定义并实现标准化 `context` 结构（平台无关 + 平台扩展）（Req: `requirements.md#req-5-9`）
-- [ ] P1 实现工具权限与策略（policy）判定（Req: `requirements.md#req-5-10`）
-- [ ] P1 实现幂等去重（idempotency/dedupe）语义（Req: `requirements.md#req-5-11`）
-- [ ] P1 实现取消（abort）传播与执行终止语义（Req: `requirements.md#req-5-12`）
-- [ ] P2 实现可观测性与审计事件（Req: `requirements.md#req-5-13`）
+- [x] P0 定义并实现 Tool Execute API（Agent API -> Tool Runtime）（Req: `requirements.md#req-5-1`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/app.py:101`；Module: `tool-runtime`）
+- [x] P0 定义并实现 Tool Manifest API（Tool Runtime -> Agent API）（Req: `requirements.md#req-5-2`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/app.py:45`；Module: `tool-runtime`）
+- [x] P0 安全：`requested_tool_names=[]` 必须返回空 tools（避免空列表退化为全量工具可见）（Req: `requirements.md#req-5-2`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/manifest.py:40`；Module: `tool-runtime`）
+- [x] P0 落地工具命名规范与保留名前缀/命名空间约束（Req: `requirements.md#req-5-6`；Impl: `packages/anyagent/src/anyagent/tool_runtime/registry.py:33`；Module: `tool-runtime`）
+- [x] P1 落地 Tool Definition 统一约定（对齐 `/v1/responses` tools[]）（Req: `requirements.md#req-5-7`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/manifest.py:11`；Module: `tool-runtime`）
+- [x] P1 实现 `/internal/tools/execute` 字段级契约校验（Req: `requirements.md#req-5-8`，`requirements.md#req-5-8-1`，`requirements.md#req-5-8-2`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/api_models.py:38`, `apps/tool-runtime/src/anyagent_tool_runtime/app.py:118`, `apps/tool-runtime/src/anyagent_tool_runtime/executors.py:46`；Module: `tool-runtime`）
+- [x] P1 定义并实现标准化 `context` 结构（平台无关 + 平台扩展）（Req: `requirements.md#req-5-9`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/api_models.py:38`；Module: `tool-runtime`）
+- [x] P1 实现工具权限与策略（policy）判定（Req: `requirements.md#req-5-10`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/policy.py:13`, `apps/tool-runtime/src/anyagent_tool_runtime/executors.py:69`, `apps/tool-runtime/src/anyagent_tool_runtime/manifest.py:22`；Module: `tool-runtime`）
+- [x] P1 实现幂等去重（idempotency/dedupe）语义（Req: `requirements.md#req-5-11`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/idempotency.py:16`, `apps/tool-runtime/src/anyagent_tool_runtime/app.py:144`；Module: `tool-runtime`）
+- [x] P1 实现取消（abort）传播与执行终止语义（Req: `requirements.md#req-5-12`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/app.py:187`, `apps/tool-runtime/src/anyagent_tool_runtime/idempotency.py:39`；Module: `tool-runtime`）
+- [x] P2 实现可观测性与审计事件（Req: `requirements.md#req-5-13`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/app.py:146`；Module: `tool-runtime`）
 
 ## 决策 & 争议点
 
 - [ ] Tool Registry 是否需要热更新控制面（v0 是否先不做）（Req: `requirements.md#req-5-2-1`）
 - [ ] “联邦式 Tool Runtime” 的拆分边界与路由规则是否在 v0 固化（Req: `requirements.md#req-5-3`）
-

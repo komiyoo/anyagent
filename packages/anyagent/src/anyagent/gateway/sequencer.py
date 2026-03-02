@@ -11,7 +11,7 @@ T = TypeVar("T")
 class KeyedSequencer:
     """
     单进程 keyed serialization：同一 key 的任务严格串行执行。
-    适用于 v0 单实例/开发环境；多实例需要分布式锁/租约。
+    适用于 v0 单实例/开发环境；多实例需要分布式锁/租约（见 requirements.md#req-7）。
     """
 
     def __init__(self) -> None:

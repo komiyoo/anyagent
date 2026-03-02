@@ -59,7 +59,7 @@
 
 ### 3.2 关键组件
 
-- `API Gateway`：鉴权、限流、接收命令、推送 SSE/WebSocket。
+- `Ingress`（HTTP 入口层）：鉴权、限流、接收命令、推送 SSE/WebSocket。**注意**：本文的 `Ingress` 是 Agent API 的 HTTP 接入层，不是 AnyAgent 的 `Platform Gateway`（平台连接器服务）。Platform Gateway 是 Ingress 的上游调用方之一。
 - `Command Queue`：存放用户命令（prompt/steer/follow_up/abort），建议支持按 `session_partition_key` 分区/路由。
 - `Worker Pool`：多个 Worker 并行消费不同会话任务（跨会话并行）。
 - `Session Store`：持久化会话状态（消息、快照、游标等）。
@@ -67,18 +67,52 @@
 - `Lock Service`：按 `session_partition_key` 加租约锁（TTL + 续租）。
 - `Event Bus`：把 Worker 产生的增量事件广播给网关（也可与事件存储合并为“事件日志 + 订阅”）。
 
+存储落地（选型、schema、TTL/保留策略、一致性边界）见：`docs/storage-minimal-design.md`。
+
 ### 3.3 执行语义
 
-1. 客户端发送 `prompt`（含 `agent_id`、`session_key`、`idempotency_key`）到网关。
-   - 网关先构造 `session_partition_key = "{agent_id}::{session_key}"` 作为并发分片键
-2. 网关先做 `dedupe`：若命中，直接返回已接受/已完成的结果快照或 run 引用。
-3. 未命中：网关写入 `Command Queue`，并立刻 ACK（返回 `run_id`，状态 `started/accepted`）。
+本架构支持两种请求处理路径（对外行为统一，由 Ingress 根据请求类型选择）：
+
+#### 路径 A：同步 SSE 模式（OpenAI SDK 兼容，v0 必须）
+
+当外部客户端发起 `POST /v1/responses` 且 `stream=true` 时，Ingress **不返回 202**，而是在同一 HTTP 连接上直接推送 SSE 事件流：
+
+1. 客户端发送请求（含 `agent_id`、`session_key`、`idempotency_key`）到 Ingress。
+   - Ingress 构造 `session_partition_key = "{agent_id}::{session_key}"`
+2. Ingress 做 `dedupe`：若命中已完成 run，直接返回 `200` + 完整 response。
+3. 未命中：Ingress 将命令写入 Command Queue，同时在**同一连接上阻塞等待**，订阅 Event Bus 上该 `run_id` 的事件。
+   - 排队期间 Ingress 发送 SSE 心跳（`:` 注释行）保持连接
+   - 超时未被 Worker 认领则返回 `503 Service Unavailable`
+4. Worker 认领命令，获取 lease lock，开始执行 agent loop。
+5. Worker 产生的每个 Event 写入 Event Store + 发布到 Event Bus。
+6. Ingress 从 Event Bus 实时收到事件，直接写入 SSE 响应流推送给客户端。
+7. Run 结束后 Worker 写入终态，Ingress 发送 `[DONE]` 并关闭连接。
+
+> 这条路径是 OpenAI SDK `.responses.create({ stream: true })` 的强预期：请求发出后立即开始收到 SSE 事件。
+
+#### 路径 B：异步模式（内部调用 / Platform Gateway）
+
+当 Platform Gateway 或内部服务不需要在同一 HTTP 连接上收到 SSE（例如通过独立 Event Bus 订阅获取更新）时，走经典异步路径：
+
+1. 客户端发送请求到 Ingress。
+   - Ingress 构造 `session_partition_key`
+2. Ingress 做 `dedupe`：若命中，直接返回已接受/已完成的结果快照或 run 引用。
+3. 未命中：Ingress 写入 `Command Queue`，并立刻 ACK（返回 `202 { run_id, status: "accepted" }`）。
 4. Worker 取到命令后按 `session_partition_key` 获取租约锁（会话内串行的根保证）。
 5. Worker 加载 `Session Store` 的快照，进入执行：
    - 先过 `session lane`（确保同 session 串行）
    - 再过 `global lane`（确保系统整体不超并发）
-6. 执行过程中产出 `Event`：写入 `Event Store` 并发布到 `Event Bus`；网关再把事件推给在线客户端。
+6. 执行过程中产出 `Event`：写入 `Event Store` 并发布到 `Event Bus`；调用方通过 Event Bus 或轮询 `/v1/responses/{response_id}` 获取结果。
 7. 结束后写入 `Run Store` 终态（ok/error/aborted/timeout），更新会话快照并释放锁。
+
+#### 路径选择规则
+
+| 调用方 | `stream` 参数 | 路径 | 响应 |
+|--------|--------------|------|------|
+| OpenAI SDK 直连 | `true` | 路径 A（同步 SSE） | SSE 事件流 |
+| OpenAI SDK 直连 | `false` | 路径 A 或 B 均可 | `200` + 完整 response JSON |
+| Platform Gateway | `true` | 路径 A 或 B（推荐 B + Event Bus 订阅） | 按选择返回 |
+| Platform Gateway | `false` | 路径 B | `202` + `run_id` |
 
 ## 4. 并发控制模型（两级车道）
 
@@ -108,7 +142,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  C1[Client A] -->|HTTP: command| GW[API Gateway]
+  C1[Client A] -->|HTTP: command| GW[Ingress]
   C2[Client B] -->|HTTP: command| GW
   GW <-->|SSE/WS: events| C1
   GW <-->|SSE/WS: events| C2
@@ -174,7 +208,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant C as Client
-  participant GW as Gateway
+  participant GW as Ingress
   participant DQ as Dedupe Cache
   participant CQ as Command Queue
   participant W as Worker
@@ -211,7 +245,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant C as Client
-  participant GW as Gateway
+  participant GW as Ingress
   participant CQ as Command Queue
   participant RS as Run Store
   participant EB as Event Bus
@@ -232,7 +266,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant C as Client
-  participant GW as Gateway
+  participant GW as Ingress
   participant ES as Event Store
   participant EB as Event Bus
 
@@ -301,7 +335,7 @@ sequenceDiagram
 
 你可以把本文的无状态拆分想象成把 OpenClaw Gateway 拆成两层（逻辑层面，不一定要物理拆）：
 
-- `API Gateway`：对应 OpenClaw 的 WS/HTTP 控制面，负责连接、鉴权、订阅事件、下发命令。
+- `Ingress`：对应 OpenClaw 的 WS/HTTP 控制面，负责连接、鉴权、订阅事件、下发命令。
 - `Worker Pool`：对应“实际执行 Agent Loop + 工具调用”的执行面（可在同进程线程池/事件循环里，也可以独立进程/独立服务）。
 
 这也解释了你前面担心的点：

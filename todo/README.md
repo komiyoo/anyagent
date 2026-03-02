@@ -55,6 +55,7 @@
 - `todo/backlog.md`：未分配/待分流的事项收集箱（先收集，再迁移到具体模块）
 - `todo/agent-api.md`：对外 Responses API 兼容（对应 `requirements.md#req-4`）
 - `todo/tool-runtime.md`：内部 Tool Runtime 协议与执行（对应 `requirements.md#req-5`）
+- `todo/storage.md`：存储层最小方案与落地（对应 `requirements.md#req-3-1`）
 - `todo/gateway.md`：平台接入与消息交互（对应 `requirements.md#req-6`）
 - `todo/concurrency-reliability.md`：并发与可靠性（对应 `requirements.md#req-7`）
 - `todo/security-compliance.md`：安全与合规（对应 `requirements.md#req-8`）

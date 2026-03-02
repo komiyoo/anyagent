@@ -1,0 +1,10 @@
+{
+  "base_url": "https://open.feishu.cn",
+  "timeout_ms": 15000,
+  "tenants": {
+    "default": {
+      "tenant_access_token_env": "FEISHU_TENANT_ACCESS_TOKEN"
+    }
+  }
+}
+
