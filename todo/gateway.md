@@ -17,7 +17,7 @@
 - [x] P0 定义 connector 插件化生命周期与加载方式（Req: `requirements.md#req-6-1`）Impl: packages/anyagent/src/anyagent/plugins/loader.py:124；Module: gateway
   - refs: packages/anyagent/src/anyagent/gateway/plugins.py:52
 - [x] P0 落地平台能力注入示例（先选定 1 个平台做 reference）（Req: `requirements.md#req-6-2`）Impl: plugins/feishu/plugin.py:170；Module: gateway
-  - refs: apps/tool-runtime/src/anyagent_tool_runtime/app.py:30
+  - refs: apps/tool-runtime/src/anyagent_tool_runtime/http/app.py:46
 - [x] P1 定义并实现会话/线程绑定策略（Req: `requirements.md#req-6-3`）Impl: packages/anyagent/src/anyagent/gateway/session.py:33；Module: gateway
   - refs: packages/anyagent/src/anyagent/gateway/sequencer.py:11
 - [x] P1 实现多 agent 路由映射（agent_id mapping）（Req: `requirements.md#req-6-4`）Impl: packages/anyagent/src/anyagent/gateway/agent_routing.py:122；Module: gateway

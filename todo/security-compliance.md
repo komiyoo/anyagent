@@ -14,8 +14,7 @@
 
 ## 任务（Tasks）
 
-- [ ] P0 明确威胁模型与外部输入校验边界（Req: `requirements.md#req-8`）
-- [ ] P0 落地 sandbox 工具最小安全要求与默认策略（Req: `requirements.md#req-5-5`，`requirements.md#req-8`）
-- [ ] P1 落地工具权限与策略（policy）体系（Req: `requirements.md#req-5-10`，`requirements.md#req-8`）
-- [ ] P2 落地审计事件与敏感操作留痕（Req: `requirements.md#req-5-13`，`requirements.md#req-8`）
-
+- [x] P0 明确威胁模型与外部输入校验边界（Req: `requirements.md#req-8`；Impl: `docs/security/security-threat-model.md:1`；Module: `docs`）
+- [x] P0 落地 sandbox 工具最小安全要求与默认策略（Req: `requirements.md#req-5-5`，`requirements.md#req-8`；Impl: `docs/security/sandbox-security.md:1`, `apps/tool-runtime/src/anyagent_tool_runtime/http/app.py:36`；Module: `tool-runtime/docs`）
+- [x] P1 落地工具权限与策略（policy）体系（Req: `requirements.md#req-5-10`，`requirements.md#req-8`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/runtime/policy.py:13`, `docs/security/tool-policy.md:1`；Module: `tool-runtime/docs`）
+- [x] P2 落地审计事件与敏感操作留痕（Req: `requirements.md#req-5-13`，`requirements.md#req-8`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/runtime/executors.py:55`, `docs/security/audit-logging.md:1`；Module: `tool-runtime/docs`）

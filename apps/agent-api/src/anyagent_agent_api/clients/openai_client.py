@@ -6,7 +6,7 @@ import httpx
 from fastapi import Request
 
 from .openai_proxy import _pick_upstream_headers  # noqa: PLC2701
-from .settings import Settings
+from ..settings import Settings
 
 
 async def create_responses_json(

@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from anyagent.protocol.openai_responses import FunctionToolParam
 
 class TraceContext(BaseModel):
     trace_id: str | None = None
@@ -68,7 +69,7 @@ class ManifestDecision(BaseModel):
 
 
 class ManifestResponse(BaseModel):
-    tools: list[dict[str, Any]]
+    tools: list[FunctionToolParam]
     toolset_version: int
     decisions: list[ManifestDecision] | None = None
 

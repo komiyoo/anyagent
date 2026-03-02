@@ -14,7 +14,6 @@
 
 ## 任务（Tasks）
 
-- [ ] P0 列出 Responses API 兼容性验收清单与用例（Req: `requirements.md#req-9-1`）
-- [ ] P0 列出 Gateway 端到端验收清单与用例（Req: `requirements.md#req-9-2`）
-- [ ] P1 把验收用例沉淀为自动化测试（逐步覆盖）（Req: `requirements.md#req-9`）
-
+- [x] P0 列出 Responses API 兼容性验收清单与用例（Req: `requirements.md#req-9-1`；Impl: `docs/acceptance/acceptance-responses-api.md:1`；Module: `docs`）
+- [x] P0 列出 Gateway 端到端验收清单与用例（Req: `requirements.md#req-9-2`；Impl: `docs/acceptance/acceptance-gateway-e2e.md:1`；Module: `docs`）
+- [x] P1 把验收用例沉淀为自动化测试（逐步覆盖）（Req: `requirements.md#req-9`；Impl: `scripts/acceptance_responses_smoke.py:1`；Module: `scripts`）

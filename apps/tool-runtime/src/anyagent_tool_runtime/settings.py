@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     tool_runtime_internal_key: str = Field(alias="TOOL_RUNTIME_INTERNAL_KEY")
 
     allow_sandbox: bool = Field(default=False, alias="ALLOW_SANDBOX")
+    sandbox_isolation_mode: str = Field(default="disabled", alias="SANDBOX_ISOLATION_MODE")
 
     output_max_bytes: int = Field(default=64 * 1024, alias="TOOL_OUTPUT_MAX_BYTES")
 

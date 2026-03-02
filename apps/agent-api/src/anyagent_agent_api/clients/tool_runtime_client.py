@@ -4,7 +4,9 @@ from typing import Any
 
 import httpx
 
-from .settings import Settings
+from anyagent.protocol.tool_runtime import ManifestResponse
+
+from ..settings import Settings
 
 
 class ToolsetVersionMismatch(Exception):
@@ -38,11 +40,9 @@ async def fetch_manifest(
     r = await client.post(url, headers=_internal_auth_headers(settings), json=payload, timeout=10.0)
     r.raise_for_status()
     data = r.json()
-    tools = data.get("tools") if isinstance(data, dict) else None
-    toolset_version = data.get("toolset_version") if isinstance(data, dict) else None
-    if not isinstance(tools, list) or not isinstance(toolset_version, int):
-        raise ValueError("invalid manifest response")
-    return tools, toolset_version
+    resp = ManifestResponse.model_validate(data)
+    tools = [t.model_dump(exclude_none=True) for t in resp.tools]
+    return tools, resp.toolset_version
 
 
 async def execute_tool(

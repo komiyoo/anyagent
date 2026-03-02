@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 from typing import Any
+from uuid import uuid4
 
 import httpx
 import jsonschema
@@ -51,6 +52,7 @@ class Router:
         context: dict[str, Any],
         deadline_ms: int | None = None,
     ) -> ToolResult:
+        audit_ref = f"aud_{uuid4().hex}"
         rt = self._registry.get_tool(tool_name)
         if rt is None:
             return ToolResult(
@@ -62,7 +64,7 @@ class Router:
                     "message": f"Unknown tool: {tool_name}",
                     "retryable": False,
                 },
-                meta={"duration_ms": 0, "output_truncated": False, "audit_ref": None},
+                meta={"duration_ms": 0, "output_truncated": False, "audit_ref": audit_ref},
             )
 
         td: ToolDefinition = rt.definition
@@ -82,7 +84,7 @@ class Router:
                     "message": "tool is not allowed by policy",
                     "retryable": False,
                 },
-                meta={"duration_ms": 0, "output_truncated": False, "audit_ref": None},
+                meta={"duration_ms": 0, "output_truncated": False, "audit_ref": audit_ref},
             )
 
         started = time.time()
@@ -102,7 +104,7 @@ class Router:
                 meta={
                     "duration_ms": int((time.time() - started) * 1000),
                     "output_truncated": truncated,
-                    "audit_ref": None,
+                    "audit_ref": audit_ref,
                 },
             )
         except TimeoutError:
@@ -115,7 +117,11 @@ class Router:
                     "message": "tool execution exceeded deadline_ms",
                     "retryable": True,
                 },
-                meta={"duration_ms": int((time.time() - started) * 1000), "audit_ref": None, "output_truncated": False},
+                meta={
+                    "duration_ms": int((time.time() - started) * 1000),
+                    "audit_ref": audit_ref,
+                    "output_truncated": False,
+                },
             )
         except (json.JSONDecodeError, ValueError) as e:
             return ToolResult(
@@ -127,7 +133,11 @@ class Router:
                     "message": str(e),
                     "retryable": False,
                 },
-                meta={"duration_ms": int((time.time() - started) * 1000), "audit_ref": None, "output_truncated": False},
+                meta={
+                    "duration_ms": int((time.time() - started) * 1000),
+                    "audit_ref": audit_ref,
+                    "output_truncated": False,
+                },
             )
         except jsonschema.ValidationError as e:
             return ToolResult(
@@ -139,7 +149,11 @@ class Router:
                     "message": str(e.message),
                     "retryable": False,
                 },
-                meta={"duration_ms": int((time.time() - started) * 1000), "audit_ref": None, "output_truncated": False},
+                meta={
+                    "duration_ms": int((time.time() - started) * 1000),
+                    "audit_ref": audit_ref,
+                    "output_truncated": False,
+                },
             )
         except Exception as e:  # noqa: BLE001
             return ToolResult(
@@ -151,7 +165,11 @@ class Router:
                     "message": str(e),
                     "retryable": False,
                 },
-                meta={"duration_ms": int((time.time() - started) * 1000), "audit_ref": None, "output_truncated": False},
+                meta={
+                    "duration_ms": int((time.time() - started) * 1000),
+                    "audit_ref": audit_ref,
+                    "output_truncated": False,
+                },
             )
 
 

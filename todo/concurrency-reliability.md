@@ -15,5 +15,5 @@
 ## 任务（Tasks）
 
 - [x] P0 定义并实现 keyed serialization 的并发分片策略（Req: `requirements.md#req-7`；Impl: `packages/anyagent/src/anyagent/gateway/session.py:70`, `apps/agent-api/src/anyagent_agent_api/app.py:295`；Module: `gateway/agent-api`）
-- [ ] P1 定义 backpressure/慢消费者治理策略（SSE/WS）并实现（Req: `requirements.md#req-7`）
-- [ ] P2 制定压测场景与容量指标口径（Req: `requirements.md#req-7`）
+- [x] P1 定义 backpressure/慢消费者治理策略（SSE/WS）并实现（Req: `requirements.md#req-7`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:604`；Module: `agent-api`）
+- [x] P2 制定压测场景与容量指标口径（Req: `requirements.md#req-7`；Impl: `docs/performance/load-testing-baseline.md:1`；Module: `docs`）

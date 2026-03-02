@@ -9,6 +9,7 @@ dependencies = [
   "jsonschema>=4.23",
   "httpx>=0.28",
   "pyyaml>=6.0",
+  "openai>=2.24.0",
 ]
 
 [build-system]

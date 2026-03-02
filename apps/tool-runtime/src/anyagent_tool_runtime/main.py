@@ -4,7 +4,7 @@ import logging
 
 import uvicorn
 
-from .app import create_app
+from .http.app import create_app
 from .settings import Settings
 
 
@@ -13,4 +13,3 @@ def main() -> None:
     settings = Settings()
     app = create_app(settings)
     uvicorn.run(app, host=settings.host, port=settings.port)
-

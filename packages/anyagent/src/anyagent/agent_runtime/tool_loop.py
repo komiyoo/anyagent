@@ -4,6 +4,7 @@ import json
 from typing import Any, Iterable
 
 from anyagent.protocol.tool_runtime import ExecuteRequest, ManifestRequest, ToolContext
+from anyagent.protocol.openai_responses import FunctionToolParam, ToolChoiceFunctionParam
 from anyagent.tool_runtime.client import ToolRuntimeClient
 
 from .skills_injection import inject_skills_into_responses_body
@@ -30,17 +31,12 @@ def _extract_tool_names_from_request(tools: Any) -> list[str] | None:
     if not isinstance(tools, list):
         return None
     out: list[str] = []
-    for t in tools:
-        if not isinstance(t, dict):
-            continue
-        if t.get("type") != "function":
-            continue
-        fn = t.get("function")
-        if not isinstance(fn, dict):
-            continue
-        name = fn.get("name")
-        if isinstance(name, str) and name.strip():
-            out.append(name.strip())
+    for i, t in enumerate(tools):
+        try:
+            tool = FunctionToolParam.model_validate(t)
+        except Exception as e:  # noqa: BLE001
+            raise ValueError(f"invalid tools[{i}]: {e}") from e
+        out.append(tool.name)
     return out
 
 
@@ -50,12 +46,13 @@ def _validate_tool_choice(tool_choice: Any, allowed_tool_names: set[str]) -> str
     if isinstance(tool_choice, str) and tool_choice in {"auto", "none", "required"}:
         return None
     if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
-        fn = tool_choice.get("function")
-        if isinstance(fn, dict) and isinstance(fn.get("name"), str):
-            name = fn["name"].strip()
-            if name in allowed_tool_names:
-                return None
-            return f"tool_choice function name not allowed: {name}"
+        try:
+            tc = ToolChoiceFunctionParam.model_validate(tool_choice)
+        except Exception:  # noqa: BLE001
+            return "invalid tool_choice"
+        if tc.name in allowed_tool_names:
+            return None
+        return f"tool_choice function name not allowed: {tc.name}"
     return "invalid tool_choice"
 
 
@@ -83,7 +80,8 @@ async def resolve_manifest(
         context=ToolContext.model_validate(context) if isinstance(context, dict) else ToolContext(),
     )
     resp = await tool_runtime.manifest(req)
-    return resp.tools, resp.toolset_version
+    tools = [t.model_dump(exclude_none=True) for t in resp.tools]
+    return tools, resp.toolset_version
 
 
 async def run_tool_loop_nonstream(
@@ -108,12 +106,13 @@ async def run_tool_loop_nonstream(
         enabled_skills=enabled_skills or None,
     )
 
-    allowed_tool_names = {
-        t.get("function", {}).get("name")
-        for t in manifest_tools
-        if isinstance(t, dict) and t.get("type") == "function" and isinstance(t.get("function"), dict)
-    }
-    allowed_tool_names = {n for n in allowed_tool_names if isinstance(n, str)}
+    allowed_tool_names: set[str] = set()
+    for t in manifest_tools:
+        if not isinstance(t, dict) or t.get("type") != "function":
+            continue
+        name = t.get("name")
+        if isinstance(name, str) and name.strip():
+            allowed_tool_names.add(name.strip())
     err = _validate_tool_choice(body.get("tool_choice"), allowed_tool_names)
     if err is not None:
         return 400, {"error": {"message": err, "type": "invalid_request_error"}}
@@ -210,12 +209,13 @@ async def run_tool_loop_stream_buffered(
         enabled_skills=enabled_skills or None,
     )
 
-    allowed_tool_names = {
-        t.get("function", {}).get("name")
-        for t in manifest_tools
-        if isinstance(t, dict) and t.get("type") == "function" and isinstance(t.get("function"), dict)
-    }
-    allowed_tool_names = {n for n in allowed_tool_names if isinstance(n, str)}
+    allowed_tool_names: set[str] = set()
+    for t in manifest_tools:
+        if not isinstance(t, dict) or t.get("type") != "function":
+            continue
+        name = t.get("name")
+        if isinstance(name, str) and name.strip():
+            allowed_tool_names.add(name.strip())
     err = _validate_tool_choice(body.get("tool_choice"), allowed_tool_names)
     if err is not None:
         return 400, [encode_sse_event("error", json.dumps({"error": {"message": err, "type": "invalid_request_error"}}))]

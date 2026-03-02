@@ -70,7 +70,7 @@ AnyAgent/
   - 支持“Agent Packs”配置化：按 `agent_id` 选择该 agent 的行为/工具/skills/多智能体策略（见 2.1/2.2）
   - 支持幂等（Idempotency），支持断线重连的事件补发（至少在我们自有 client/gateway 路径上可用）
 
-> **Stateless 的精确含义**：Agent API 的 HTTP 入口层（Ingress）是无状态的——任意实例可处理任意请求，不在进程内长期持有会话状态。但 Worker 在执行 agent loop 期间是**有状态的**（持有 lease lock、维护 turn 上下文、保持与 LLM 的流式连接）。状态通过外置存储（Session Store / Event Store / Run Store）持久化，使得 Worker 实例可替换、可恢复。详见 `docs/stateless-agent-service-architecture.md`。
+> **Stateless 的精确含义**：Agent API 的 HTTP 入口层（Ingress）是无状态的——任意实例可处理任意请求，不在进程内长期持有会话状态。但 Worker 在执行 agent loop 期间是**有状态的**（持有 lease lock、维护 turn 上下文、保持与 LLM 的流式连接）。状态通过外置存储（Session Store / Event Store / Run Store）持久化，使得 Worker 实例可替换、可恢复。详见 `docs/architecture/stateless-agent-service-architecture.md`。
 - Gateway（长连接、可多实例）
   - 接入平台机器人：v0（Phase 1）先打通一个平台 connector（推荐飞书）；Discord/Telegram 作为 Phase 2+ 扩展
   - 做好会话映射（platform thread/channel -> AnyAgent session key）
@@ -96,7 +96,7 @@ v0（Phase 1）核心链路（必须交付）：
 2. `Agent Packs`：基于配置目录定义可对外服务的 agents（行为/工具/skills/多智能体约束），并在路由时强校验
 3. `Tool Runtime`：`manifest + execute` 契约稳定（**单进程/单服务即可**；不要求远程 executors / 控制面 / 分钟级热更新）
 4. `Platform Gateway`：一个平台 connector + 最小会话映射（platform thread -> `session_key`）
-5. 最小存储：Session/Run/Event + Dedupe + Lock（见 `docs/storage-minimal-design.md`）
+5. 最小存储：Session/Run/Event + Dedupe + Lock（见 `docs/architecture/storage-minimal-design.md`）
 
 Phase 2+ 扩展（Future，不应阻塞 v0）：
 
@@ -251,7 +251,7 @@ AnyAgent 的“无状态入口 + 有状态执行”依赖外置存储支撑可�
 - `Lock Service`：按 `session_partition_key` 的租约锁（TTL + 续租）
 - （可选）`Event Bus`：事件发布订阅（Ingress/Platform Gateway 订阅推送）
 
-v0 推荐的最小方案与关键 schema/生命周期/一致性边界见：`docs/storage-minimal-design.md`。
+v0 推荐的最小方案与关键 schema/生命周期/一致性边界见：`docs/architecture/storage-minimal-design.md`。
 
 <a id="req-4"></a>
 ## 4. 外部接口：OpenAI Responses API 兼容（Agent API）
@@ -282,7 +282,7 @@ Agent API 必须同时支持两种请求处理路径，对外行为统一（调�
 当 Platform Gateway 的场景不需要同步 SSE（例如飞书卡片消息可以通过独立的事件订阅通道获取增量更新）时，可以走 Command Queue + `202 Accepted` 路径：
 - Ingress 写入 Command Queue，返回 `202 { run_id, status: "accepted" }`
 - Platform Gateway 通过 Event Bus 订阅事件，异步获取执行结果
-- 这条路径与 `docs/stateless-agent-service-architecture.md` 中的异步执行语义一致
+- 这条路径与 `docs/architecture/stateless-agent-service-architecture.md` 中的异步执行语义一致
 
 > **设计决策**：v0 阶段对外 API（`/v1/responses`）的 `stream=true` **必须走同步 SSE 模式**，保证 OpenAI SDK 兼容。内部异步模式作为 Platform Gateway 的可选优化路径，不暴露给外部客户端。`stream=false`（非流式）可以走任一路径，最终返回完整 response JSON。
 
@@ -941,7 +941,7 @@ v0 允许多种策略并存，但必须做到“可解释、可审计”：
 
 并发模型的术语解释与落地实现细节（锁、队列分片、事件补发时序、abort 传播等）不在本节展开，统一见：
 
-- `docs/stateless-agent-service-architecture.md`
+- `docs/architecture/stateless-agent-service-architecture.md`
 
 <a id="req-8"></a>
 ## 8. 安全与合规（必须写清）

@@ -14,9 +14,9 @@
 
 ## 任务（Tasks）
 
-- [ ] P0 明确 multi-agent v0 目标/非目标与限制项（Req: `requirements.md#req-13-1`，`requirements.md#req-13-4`）
-- [ ] P0 定义 child thread/session 的核心实体与存储结构（Req: `requirements.md#req-13-2`）
-- [ ] P0 落地系统工具：`spawn_agent`（Req: `requirements.md#req-13-3`）
+- [x] P0 明确 multi-agent v0 目标/非目标与限制项（Req: `requirements.md#req-13-1`，`requirements.md#req-13-4`；Impl: `docs/_dev/multi-agent/multi-agent-v0.md:1`；Module: `multi-agent`）
+- [x] P0 定义 child thread/session 的核心实体与存储结构（Req: `requirements.md#req-13-2`；Impl: `docs/_dev/multi-agent/multi-agent-entities.md:1`；Module: `multi-agent`）
+- [x] P0 落地系统工具：`spawn_agent`（Req: `requirements.md#req-13-3`；Impl: `apps/agent-api/src/anyagent_agent_api/multiagent/manager.py:1`；Module: `multi-agent`）
 - [ ] P0 落地系统工具：`send_input`（Req: `requirements.md#req-13-3`）
 - [ ] P0 落地系统工具：`wait`（Req: `requirements.md#req-13-3`）
 - [ ] P1 落地系统工具：`close_agent` / `resume_agent`（Req: `requirements.md#req-13-3`，`requirements.md#req-13-8`）

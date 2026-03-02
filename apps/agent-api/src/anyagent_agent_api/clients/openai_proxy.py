@@ -7,7 +7,7 @@ import httpx
 from fastapi import Request
 from fastapi.responses import Response, StreamingResponse
 
-from .settings import Settings
+from ..settings import Settings
 
 
 HOP_BY_HOP_HEADERS = {
@@ -71,4 +71,3 @@ async def proxy_responses(
             headers=headers,
             media_type=content_type,
         )
-

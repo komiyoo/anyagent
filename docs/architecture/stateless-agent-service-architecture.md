@@ -67,7 +67,7 @@
 - `Lock Service`：按 `session_partition_key` 加租约锁（TTL + 续租）。
 - `Event Bus`：把 Worker 产生的增量事件广播给网关（也可与事件存储合并为“事件日志 + 订阅”）。
 
-存储落地（选型、schema、TTL/保留策略、一致性边界）见：`docs/storage-minimal-design.md`。
+存储落地（选型、schema、TTL/保留策略、一致性边界）见：`docs/architecture/storage-minimal-design.md`。
 
 ### 3.3 执行语义
 

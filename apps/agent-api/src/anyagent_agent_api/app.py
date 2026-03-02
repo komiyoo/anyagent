@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -15,6 +16,7 @@ from anyagent.agent_packs import AgentCatalog, AgentPack, AgentPackError, load_a
 from anyagent.agent_runtime import inject_skills_into_responses_body
 from anyagent.gateway.session import SessionBindingError
 from anyagent.gateway.session import session_partition_key as build_session_partition_key
+from anyagent.protocol.openai_responses import FunctionToolParam, ToolChoiceFunctionParam
 from anyagent.protocol.tool_runtime import PolicyHint, ToolContext
 from anyagent.skills import (
     SkillEnablement,
@@ -31,13 +33,14 @@ from anyagent.skills import (
 from anyagent.skills.models import SkillPackage
 
 from .auth import check_api_key
+from .clients.openai_client import create_responses_json
+from .clients.openai_proxy import _pick_upstream_headers, proxy_responses  # noqa: PLC2701
+from .clients.tool_runtime_client import ToolsetVersionMismatch, execute_tool, fetch_manifest
 from .errors import openai_error
 from .keyed_sequencer import KeyedSequencer
 from .manifest_cache import ManifestCache
-from .openai_client import create_responses_json, create_responses_sse_events
-from .openai_proxy import proxy_responses
+from .multiagent.manager import MultiAgentManager, stable_root_thread_id
 from .settings import Settings
-from .tool_runtime_client import ToolsetVersionMismatch, execute_tool, fetch_manifest
 
 
 logger = logging.getLogger("anyagent.agent_api")
@@ -131,38 +134,19 @@ def _get_session_key(metadata: dict[str, Any] | None) -> str | None:
     return None
 
 
-def _extract_requested_tool_names(tools: Any) -> list[str] | None:
-    if tools is None:
-        return None
-    if not isinstance(tools, list):
-        return None
-    out: list[str] = []
-    for t in tools:
-        if not isinstance(t, dict):
-            continue
-        if t.get("type") != "function":
-            continue
-        fn = t.get("function")
-        if not isinstance(fn, dict):
-            continue
-        name = fn.get("name")
-        if isinstance(name, str) and name.strip():
-            out.append(name.strip())
-    return out
-
-
 def _validate_tool_choice(tool_choice: Any, allowed_tool_names: set[str]) -> str | None:
     if tool_choice is None:
         return None
     if isinstance(tool_choice, str) and tool_choice in {"auto", "none", "required"}:
         return None
     if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
-        fn = tool_choice.get("function")
-        if isinstance(fn, dict) and isinstance(fn.get("name"), str):
-            name = fn["name"].strip()
-            if name in allowed_tool_names:
-                return None
-            return f"tool_choice function name not allowed: {name}"
+        try:
+            tc = ToolChoiceFunctionParam.model_validate(tool_choice)
+        except Exception:  # noqa: BLE001
+            return "invalid tool_choice"
+        if tc.name in allowed_tool_names:
+            return None
+        return f"tool_choice function name not allowed: {tc.name}"
     return "invalid tool_choice"
 
 
@@ -210,6 +194,7 @@ def create_app(settings: Settings) -> FastAPI:
         app.state.sequencer = KeyedSequencer()
         app.state.http = httpx.AsyncClient(timeout=None)
         app.state.manifest_cache = ManifestCache(ttl_seconds=settings.manifest_cache_ttl_seconds)
+        app.state.multiagent = MultiAgentManager()
         app.state.workspace_dir = Path(settings.workspace_dir).expanduser().resolve()
 
         try:
@@ -302,12 +287,25 @@ def create_app(settings: Settings) -> FastAPI:
             return openai_error(400, message=str(e), type_="invalid_request_error")
         stream = bool(body.get("stream") is True)
 
+        root_thread_id = stable_root_thread_id(session_partition_key)
+        thread_id = root_thread_id
+        thread_depth = 0
+        if isinstance(metadata, dict):
+            mtid = metadata.get("thread_id")
+            if isinstance(mtid, str) and mtid.strip():
+                thread_id = mtid.strip()
+            mdepth = metadata.get("thread_depth")
+            if isinstance(mdepth, int) and mdepth >= 0:
+                thread_depth = mdepth
+
         logger.info(
             "incoming /v1/responses",
             extra={
                 "agent_id": agent_id,
                 "session_key": session_key,
                 "session_partition_key": session_partition_key,
+                "thread_id": thread_id,
+                "thread_depth": thread_depth,
                 "stream": stream,
                 "idempotency_key": request.headers.get("idempotency-key"),
             },
@@ -341,12 +339,25 @@ def create_app(settings: Settings) -> FastAPI:
         enabled_skills = [s.stable_id for s in selected_skills]
 
         # --- tool visibility request set (union) ---
-        requested_from_request = _extract_requested_tool_names(body.get("tools")) or []
+        raw_tools = body.get("tools")
+        request_tools: list[FunctionToolParam] | None = None
+        if raw_tools is not None:
+            if not isinstance(raw_tools, list):
+                return openai_error(400, message="tools must be a list", type_="invalid_request_error")
+            parsed: list[FunctionToolParam] = []
+            for i, t in enumerate(raw_tools):
+                try:
+                    parsed.append(FunctionToolParam.model_validate(t))
+                except Exception as e:  # noqa: BLE001
+                    return openai_error(400, message=f"invalid tools[{i}]: {e}", type_="invalid_request_error")
+            request_tools = parsed
+
+        requested_from_request = [t.name for t in (request_tools or [])]
         requested_from_agent = pack.spec.tools.requested_tool_names or []
         requested_from_skills = requested_tool_names_for_skills(selected_skills)
         requested_tool_names = _dedupe_strs([*requested_from_agent, *requested_from_skills, *requested_from_request])
 
-        requested_tools = body.get("tools") if isinstance(body.get("tools"), list) else None
+        requested_tools = [t.model_dump(exclude_none=True) for t in (request_tools or [])] or None
 
         # --- tool context policy (server-generated; ignore caller policy) ---
         raw_context = metadata.get("context") if isinstance(metadata, dict) else None
@@ -410,12 +421,18 @@ def create_app(settings: Settings) -> FastAPI:
                 toolset_version=toolset_version,
             )
 
-        allowed_tool_names = {
-            t.get("function", {}).get("name")
-            for t in manifest_tools
-            if isinstance(t, dict) and t.get("type") == "function" and isinstance(t.get("function"), dict)
-        }
-        allowed_tool_names = {n for n in allowed_tool_names if isinstance(n, str)}
+        system_tools = request.app.state.multiagent.system_tools_for_pack(pack)
+        if system_tools:
+            manifest_tools = [*manifest_tools, *[t.model_dump(exclude_none=True) for t in system_tools]]
+        system_tool_names = {t.name for t in system_tools}
+
+        allowed_tool_names: set[str] = set()
+        for t in manifest_tools:
+            if not isinstance(t, dict) or t.get("type") != "function":
+                continue
+            name = t.get("name")
+            if isinstance(name, str) and name.strip():
+                allowed_tool_names.add(name.strip())
         err = _validate_tool_choice(body.get("tool_choice"), allowed_tool_names)
         if err is not None:
             return openai_error(400, message=err, type_="invalid_request_error")
@@ -448,6 +465,8 @@ def create_app(settings: Settings) -> FastAPI:
                 requested_tools=requested_tools,
                 context=context,
             )
+            if system_tools:
+                manifest_tools2 = [*manifest_tools2, *[t.model_dump(exclude_none=True) for t in system_tools]]
             request.app.state.manifest_cache.put(
                 agent_id=agent_id,
                 session_key=session_key,
@@ -500,118 +519,245 @@ def create_app(settings: Settings) -> FastAPI:
                 )
                 return tr2, toolset_version2, manifest_tools2
 
+        async def _execute_system_tool(
+            *,
+            tool_name: str,
+            arguments_json: Any,
+        ) -> dict[str, Any]:
+            try:
+                if tool_name != "spawn_agent":
+                    raise ValueError(f"unknown system tool: {tool_name}")
+                catalog2: AgentCatalog = request.app.state.agent_catalog
+                out = request.app.state.multiagent.spawn_agent(
+                    catalog=catalog2,
+                    parent_pack=pack,
+                    parent_thread_id=thread_id,
+                    parent_depth=thread_depth,
+                    root_thread_id=root_thread_id,
+                    arguments_json=arguments_json,
+                )
+                return {"status": "completed", "output": out}
+            except Exception as e:  # noqa: BLE001
+                code = str(e) if str(e) else "system_tool_error"
+                return {
+                    "status": "error",
+                    "error": {
+                        "type": "system_tool_error",
+                        "code": code,
+                        "message": str(e),
+                        "retryable": False,
+                    },
+                }
+
         async def do_work() -> Response:
             nonlocal manifest_tools, toolset_version
 
             if stream:
                 max_iters = 8
-                all_events: list[list[tuple[str | None, str]]] = []
 
-                status_code, events, completed, raw_text = await create_responses_sse_events(
-                    client=request.app.state.http,
-                    request=request,
-                    settings=settings,
-                    body=body,
-                    forward_idempotency_key=True,
-                )
-                if status_code >= 400 or completed is None:
-                    return Response(content=raw_text.encode("utf-8"), status_code=status_code, media_type="text/event-stream")
+                canonical_response_id = f"resp_anyagent_{uuid4().hex}"
 
-                canonical_response_id = completed.get("id") if isinstance(completed.get("id"), str) else "resp_anyagent"
-                all_events.append(events)
+                def _decode_completed_response(data: str) -> dict[str, Any] | None:
+                    try:
+                        payload = json.loads(data)
+                    except Exception:  # noqa: BLE001
+                        return None
+                    if not isinstance(payload, dict):
+                        return None
+                    resp = payload.get("response")
+                    if isinstance(resp, dict):
+                        return resp
+                    if isinstance(payload.get("id"), str):
+                        return payload
+                    return None
 
-                iters = 0
-                resp_json = completed
-                while iters < max_iters:
-                    iters += 1
-                    response_id = resp_json.get("id")
-                    if not isinstance(response_id, str) or not response_id:
-                        break
-                    calls = _extract_function_calls(resp_json)
-                    if not calls:
-                        break
+                async def _openai_stream_response(*, body2: dict[str, Any], forward_idempotency_key: bool) -> httpx.Response:
+                    url = str(settings.openai_base_url).rstrip("/") + "/responses"
+                    headers = _pick_upstream_headers(request, settings)
+                    if not forward_idempotency_key:
+                        headers.pop("idempotency-key", None)
+                    req2 = request.app.state.http.build_request("POST", url, headers=headers, json=body2)
+                    return await request.app.state.http.send(req2, stream=True, timeout=None)
 
-                    tool_outputs: list[dict[str, Any]] = []
-                    for call in calls:
-                        call_id = call.get("call_id")
-                        tool_name = call.get("name")
-                        arguments = call.get("arguments")
-                        if not isinstance(call_id, str) or not isinstance(tool_name, str):
-                            continue
-                        try:
-                            tr, toolset_version, manifest_tools = await _execute_with_version_retry(
-                                response_id=response_id,
-                                tool_call_id=call_id,
-                                tool_name=tool_name,
-                                arguments_json=arguments,
-                                deadline_ms=30_000,
-                            )
-                        except httpx.HTTPError as e:
-                            tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
-                        except ToolsetVersionMismatch as e:
-                            tr = {
-                                "status": "error",
-                                "error": {
-                                    "type": "tool_runtime_error",
-                                    "code": "toolset_version_mismatch",
-                                    "message": str(e),
-                                    "retryable": True,
-                                },
-                            }
-                        except Exception as e:  # noqa: BLE001
-                            tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
-
-                        if tr.get("status") == "completed" and isinstance(tr.get("output"), str):
-                            output_str = tr["output"]
-                        else:
-                            output_str = str({"error": tr.get("error"), "status": tr.get("status")})
-
-                        tool_outputs.append({"type": "function_call_output", "call_id": call_id, "output": output_str})
-
-                    if not tool_outputs:
-                        break
-
-                    next_body: dict[str, Any] = {
-                        "model": body.get("model"),
-                        "previous_response_id": response_id,
-                        "input": tool_outputs,
-                        "tools": manifest_tools,
-                        "metadata": body.get("metadata"),
-                        "stream": True,
-                    }
-                    if body.get("tool_choice") is not None:
-                        next_body["tool_choice"] = body.get("tool_choice")
-
-                    status_code, events, completed, raw_text = await create_responses_sse_events(
-                        client=request.app.state.http,
-                        request=request,
-                        settings=settings,
-                        body=next_body,
-                        forward_idempotency_key=False,
-                    )
-                    if status_code >= 400 or completed is None:
-                        break
-                    all_events.append(events)
-                    resp_json = completed
+                # preflight: open the first upstream stream so we can propagate status_code correctly
+                upstream0 = await _openai_stream_response(body2=body, forward_idempotency_key=True)
+                if upstream0.status_code >= 400:
+                    try:
+                        raw = await upstream0.aread()
+                    finally:
+                        await upstream0.aclose()
+                    media_type = upstream0.headers.get("content-type") or "application/json"
+                    return Response(content=raw, status_code=upstream0.status_code, media_type=media_type)
 
                 async def iter_sse() -> Any:
-                    for i, batch in enumerate(all_events):
-                        is_last = i == len(all_events) - 1
-                        for ev, data in batch:
+                    nonlocal manifest_tools, toolset_version
+
+                    iters = 0
+                    cur_body: dict[str, Any] = dict(body)
+                    cur_upstream: httpx.Response | None = upstream0
+                    forward_idempotency_key = True
+
+                    while iters < max_iters:
+                        iters += 1
+
+                        upstream = cur_upstream
+                        if upstream is None:
+                            upstream = await _openai_stream_response(body2=cur_body, forward_idempotency_key=forward_idempotency_key)
+                        cur_upstream = None
+                        forward_idempotency_key = False
+
+                        if upstream.status_code >= 400:
+                            try:
+                                raw = await upstream.aread()
+                            finally:
+                                await upstream.aclose()
+                            # best-effort surface upstream error in-stream; then terminate.
+                            yield _encode_sse_event("error", raw.decode("utf-8", errors="replace"))
+                            break
+
+                        completed: dict[str, Any] | None = None
+
+                        cur_event: str | None = None
+                        cur_data: list[str] = []
+
+                        async def flush_block() -> Any:
+                            nonlocal completed, cur_event, cur_data
+
+                            if cur_event is None and not cur_data:
+                                return
+
+                            data = "\n".join(cur_data)
+                            ev = cur_event
+                            cur_event = None
+                            cur_data = []
+
                             if data.strip() == "[DONE]":
-                                continue
-                            if ev == "response.completed" and not is_last:
-                                continue
+                                return
                             if ev is None and not data:
-                                continue
-                            # best-effort rewrite response_id / response.id
+                                return
+
+                            if ev == "response.completed":
+                                completed = _decode_completed_response(data)
+                                if completed is None:
+                                    return
+                                response_id = completed.get("id")
+                                if not isinstance(response_id, str) or not response_id:
+                                    return
+
+                                calls = _extract_function_calls(completed)
+                                if calls:
+                                    # intermediate completion: do not forward; tool loop will continue
+                                    return
+
+                            # backpressure strategy (v0):
+                            # - pull-based streaming: do not pre-buffer upstream SSE; yielding is tied to client drain
+                            # - if client disconnects, stop reading upstream asap
+                            if await request.is_disconnected():
+                                raise asyncio.CancelledError
+
+                            # best-effort rewrite response_id / response.id to a single stable id
                             try:
                                 payload = json.loads(data)
                             except Exception:  # noqa: BLE001
                                 yield _encode_sse_event(ev, data)
-                                continue
+                                return
+
                             _normalize_response_id(payload, canonical_response_id)
                             yield _encode_sse_event(ev, json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+
+                        try:
+                            async for line in upstream.aiter_lines():
+                                if await request.is_disconnected():
+                                    break
+                                if not line.strip():
+                                    async for chunk in flush_block():
+                                        yield chunk
+                                    continue
+                                if line.startswith("event:"):
+                                    cur_event = line[len("event:") :].strip() or None
+                                elif line.startswith("data:"):
+                                    cur_data.append(line[len("data:") :].lstrip())
+                                else:
+                                    continue
+
+                            # flush last block if any
+                            async for chunk in flush_block():
+                                yield chunk
+                        except asyncio.CancelledError:
+                            # client disconnected: stop immediately
+                            return
+                        finally:
+                            await upstream.aclose()
+
+                        if completed is None:
+                            break
+
+                        response_id = completed.get("id")
+                        if not isinstance(response_id, str) or not response_id:
+                            break
+
+                        calls = _extract_function_calls(completed)
+                        if not calls:
+                            break
+
+                        if await request.is_disconnected():
+                            break
+
+                        tool_outputs: list[dict[str, Any]] = []
+                        for call in calls:
+                            call_id = call.get("call_id")
+                            tool_name = call.get("name")
+                            arguments = call.get("arguments")
+                            if not isinstance(call_id, str) or not isinstance(tool_name, str):
+                                continue
+                            try:
+                                if tool_name in system_tool_names:
+                                    tr = await _execute_system_tool(tool_name=tool_name, arguments_json=arguments)
+                                else:
+                                    tr, toolset_version, manifest_tools = await _execute_with_version_retry(
+                                        response_id=response_id,
+                                        tool_call_id=call_id,
+                                        tool_name=tool_name,
+                                        arguments_json=arguments,
+                                        deadline_ms=30_000,
+                                    )
+                            except httpx.HTTPError as e:
+                                tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
+                            except ToolsetVersionMismatch as e:
+                                tr = {
+                                    "status": "error",
+                                    "error": {
+                                        "type": "tool_runtime_error",
+                                        "code": "toolset_version_mismatch",
+                                        "message": str(e),
+                                        "retryable": True,
+                                    },
+                                }
+                            except Exception as e:  # noqa: BLE001
+                                tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
+
+                            if tr.get("status") == "completed" and isinstance(tr.get("output"), str):
+                                output_str = tr["output"]
+                            else:
+                                output_str = str({"error": tr.get("error"), "status": tr.get("status")})
+
+                            tool_outputs.append({"type": "function_call_output", "call_id": call_id, "output": output_str})
+
+                        if not tool_outputs:
+                            break
+
+                        next_body: dict[str, Any] = {
+                            "model": body.get("model"),
+                            "previous_response_id": response_id,
+                            "input": tool_outputs,
+                            "tools": manifest_tools,
+                            "metadata": body.get("metadata"),
+                            "stream": True,
+                        }
+                        if body.get("tool_choice") is not None:
+                            next_body["tool_choice"] = body.get("tool_choice")
+
+                        cur_body = next_body
 
                     yield _encode_sse_event(None, "[DONE]")
 
@@ -648,13 +794,16 @@ def create_app(settings: Settings) -> FastAPI:
                     if not isinstance(call_id, str) or not isinstance(tool_name, str):
                         continue
                     try:
-                        tr, toolset_version, manifest_tools = await _execute_with_version_retry(
-                            response_id=response_id,
-                            tool_call_id=call_id,
-                            tool_name=tool_name,
-                            arguments_json=arguments,
-                            deadline_ms=30_000,
-                        )
+                        if tool_name in system_tool_names:
+                            tr = await _execute_system_tool(tool_name=tool_name, arguments_json=arguments)
+                        else:
+                            tr, toolset_version, manifest_tools = await _execute_with_version_retry(
+                                response_id=response_id,
+                                tool_call_id=call_id,
+                                tool_name=tool_name,
+                                arguments_json=arguments,
+                                deadline_ms=30_000,
+                            )
                     except httpx.HTTPError as e:
                         tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
                     except ToolsetVersionMismatch as e:

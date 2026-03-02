@@ -23,7 +23,7 @@
 - [x] P1 落地动态披露：注入技能指令（Req: `requirements.md#req-12-6-2`；Impl: `packages/anyagent/src/anyagent/agent_runtime/skills_injection.py:45`；Module: `agent_runtime`）
 - [x] P1 落地动态披露：披露工具（Req: `requirements.md#req-12-6-3`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:339`；Module: `agent-api`）
 - [x] P2 定义并实现 `GET /internal/skills/list`（给 Gateway/UI）（Req: `requirements.md#req-12-7`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:705`；Module: `agent-api`）
-- [x] P2 梳理并固化与 Tool Runtime 的交互关系（manifest -> tools[]）（Req: `requirements.md#req-12-8`；Impl: `docs/skills-tool-runtime-interaction.md:1`；Module: `docs`）
+- [x] P2 梳理并固化与 Tool Runtime 的交互关系（manifest -> tools[]）（Req: `requirements.md#req-12-8`；Impl: `docs/architecture/skills-tool-runtime-interaction.md:1`；Module: `docs`）
 
 ## 决策 & 争议点
 

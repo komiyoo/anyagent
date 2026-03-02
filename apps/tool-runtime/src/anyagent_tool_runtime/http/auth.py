@@ -4,7 +4,7 @@ from fastapi import Request
 from fastapi.responses import Response
 
 from .errors import tool_error
-from .settings import Settings
+from ..settings import Settings
 
 
 async def check_internal_auth(request: Request, settings: Settings) -> Response | None:
@@ -38,4 +38,3 @@ async def check_internal_auth(request: Request, settings: Settings) -> Response 
         )
 
     return None
-

@@ -5,6 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
@@ -20,10 +21,10 @@ from anyagent.tool_runtime.plugins import ToolRuntimePluginAPI
 from .api_models import ExecuteRequest, ManifestDecision, ManifestRequest
 from .auth import check_internal_auth
 from .errors import tool_error
-from .executors import Router, register_builtin_core_tools
-from .idempotency import InMemoryIdempotencyStore, ToolResult
-from .manifest import build_manifest
-from .settings import Settings
+from ..runtime.executors import Router, register_builtin_core_tools
+from ..runtime.idempotency import InMemoryIdempotencyStore, ToolResult
+from ..runtime.manifest import build_manifest
+from ..settings import Settings
 
 
 logger = logging.getLogger("anyagent.tool_runtime")
@@ -32,6 +33,15 @@ logger = logging.getLogger("anyagent.tool_runtime")
 def create_app(settings: Settings) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        if settings.allow_sandbox:
+            mode = (settings.sandbox_isolation_mode or "").strip().lower()
+            if mode not in {"container", "vm", "local_unsafe"}:
+                raise RuntimeError(
+                    "ALLOW_SANDBOX=1 requires SANDBOX_ISOLATION_MODE in {container, vm, local_unsafe} (default is disabled)"
+                )
+            if mode == "local_unsafe":
+                logger.warning("sandbox enabled in UNSAFE local mode; do not use in production")
+
         registry = ToolRegistry()
         await register_builtin_core_tools(registry)
 
@@ -122,7 +132,7 @@ def create_app(settings: Settings) -> FastAPI:
         return JSONResponse(
             status_code=200,
             content={
-                "tools": tools,
+                "tools": [t.model_dump(exclude_none=True) for t in tools],
                 "toolset_version": request.app.state.registry.toolset_version,
                 "decisions": [d.model_dump() for d in decisions] if decisions is not None else None,
             },
@@ -246,7 +256,7 @@ def create_app(settings: Settings) -> FastAPI:
                     "message": "cancelled",
                     "retryable": False,
                 },
-                meta={"duration_ms": 0, "output_truncated": False, "audit_ref": None},
+                meta={"duration_ms": 0, "output_truncated": False, "audit_ref": f"aud_{uuid4().hex}"},
             )
         await request.app.state.idem.set_done(idem_key, result)
         logger.info(
