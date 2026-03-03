@@ -2,3 +2,5 @@
 __pycache__
 *.pyc
 plugins/**/config.json
+.cloud/
+.runs/

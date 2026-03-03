@@ -29,6 +29,13 @@
 
 ### 3.1 推荐（生产默认）：PostgreSQL + Redis
 
+- **v0 决策（2026-03-02）**：选择 `PostgreSQL + Redis` 作为生产默认。
+- 对应配置项（env）建议冻结为：
+  - `POSTGRES_DSN`：Postgres 连接串（例如 `postgresql://user:pass@host:5432/anyagent`）
+  - `POSTGRES_SCHEMA`：默认 `public`
+  - `REDIS_DSN`：Redis 连接串（例如 `redis://host:6379/0`）
+  - `REDIS_NAMESPACE`：默认 `anyagent`（避免共享 Redis 时 key 冲突）
+
 - `PostgreSQL`：作为**持久化单一真源**（Session/Run/Event/Dedupe）。
 - `Redis`：作为**低延迟的临时能力层**（Lease Lock、Event Bus PubSub、可选的 Dedupe 热缓存）。
 
@@ -169,6 +176,24 @@ v0 推荐默认值（可配置）：
 
 - 优先以 `tenant_id` 分片做定期清理（批量删除/归档），避免全表扫描。
 - `events` 与 `runs` 建议可以按月分区（Partitioning），把清理从 DELETE 变为 DROP PARTITION（Phase 2+）。
+
+### 5.1 运维脚本（v0）
+
+Agent API 提供一个 Postgres 清理脚本（默认 **plan-only**，不会写库；需要显式 `--apply` 才会执行）：
+
+- `apps/agent-api/src/anyagent_agent_api/storage/retention.py`
+- CLI：`agent-api-retention`（见 `apps/agent-api/pyproject.toml`）
+
+执行示例：
+
+- 预估下一批次影响（不写库）：`POSTGRES_DSN=... uv run --project apps/agent-api agent-api-retention`
+- 实际执行（分批提交）：`POSTGRES_DSN=... uv run --project apps/agent-api agent-api-retention --apply`
+
+最小语义：
+
+- `Idempotency-Key TTL`：对已结束（`ended_at` 非空）的 runs，超过 TTL 后把 `runs.idempotency_key` 置空，避免唯一约束导致幂等键永久占用。
+- `Events retention`：按 run 的 `ended_at` 批量删除对应 `events`（用于控制断线补发窗口与成本）。
+- `Runs/Sessions retention`：按 `ended_at` / `updated_at` 批量删除历史数据。
 
 ## 6. 一致性与事务边界（Consistency）
 

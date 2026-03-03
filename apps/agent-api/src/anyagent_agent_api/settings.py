@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from pydantic import AnyHttpUrl, Field
+from typing import Literal
+
+from pydantic import AnyHttpUrl, Field, PostgresDsn, RedisDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,3 +25,10 @@ class Settings(BaseSettings):
     enable_keyed_serialization: bool = Field(default=True, alias="ENABLE_KEYED_SERIALIZATION")
 
     manifest_cache_ttl_seconds: float = Field(default=5.0, alias="MANIFEST_CACHE_TTL_SECONDS")
+
+    # Storage (v0 choice: Postgres+Redis). Optional until wired into runtime.
+    storage_mode: Literal["auto", "none", "external"] = Field(default="auto", alias="STORAGE_MODE")
+    postgres_dsn: PostgresDsn | None = Field(default=None, alias="POSTGRES_DSN")
+    redis_dsn: RedisDsn | None = Field(default=None, alias="REDIS_DSN")
+    redis_namespace: str = Field(default="anyagent", alias="REDIS_NAMESPACE")
+    postgres_schema: str = Field(default="public", alias="POSTGRES_SCHEMA")

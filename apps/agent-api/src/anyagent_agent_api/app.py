@@ -37,10 +37,13 @@ from .clients.openai_client import create_responses_json
 from .clients.openai_proxy import _pick_upstream_headers, proxy_responses  # noqa: PLC2701
 from .clients.tool_runtime_client import ToolsetVersionMismatch, execute_tool, fetch_manifest
 from .errors import openai_error
+from .internal import create_internal_events_router, create_internal_skills_router
 from .keyed_sequencer import KeyedSequencer
 from .manifest_cache import ManifestCache
 from .multiagent.manager import MultiAgentManager, stable_root_thread_id
+from .sse import encode_sse_event
 from .settings import Settings
+from .storage import create_storage_runtime
 
 
 logger = logging.getLogger("anyagent.agent_api")
@@ -177,16 +180,6 @@ def _normalize_response_id(payload: Any, canonical_response_id: str) -> None:
             _normalize_response_id(v, canonical_response_id)
 
 
-def _encode_sse_event(event: str | None, data: str) -> bytes:
-    parts: list[str] = []
-    if event:
-        parts.append(f"event: {event}")
-    for line in data.splitlines() or [""]:
-        parts.append(f"data: {line}")
-    parts.append("")
-    return ("\n".join(parts) + "\n").encode("utf-8")
-
-
 def create_app(settings: Settings) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -195,6 +188,8 @@ def create_app(settings: Settings) -> FastAPI:
         app.state.http = httpx.AsyncClient(timeout=None)
         app.state.manifest_cache = ManifestCache(ttl_seconds=settings.manifest_cache_ttl_seconds)
         app.state.multiagent = MultiAgentManager()
+        app.state.storage = await create_storage_runtime(settings)
+        app.state.storage_tasks: set[asyncio.Task[object]] = set()
         app.state.workspace_dir = Path(settings.workspace_dir).expanduser().resolve()
 
         try:
@@ -238,6 +233,10 @@ def create_app(settings: Settings) -> FastAPI:
         try:
             yield
         finally:
+            try:
+                await app.state.storage.aclose()
+            except Exception:  # noqa: BLE001
+                pass
             await app.state.http.aclose()
 
     app = FastAPI(lifespan=lifespan)
@@ -310,6 +309,80 @@ def create_app(settings: Settings) -> FastAPI:
                 "idempotency_key": request.headers.get("idempotency-key"),
             },
         )
+
+        storage = request.app.state.storage
+        idem_raw = request.headers.get("idempotency-key")
+        idempotency_key = idem_raw.strip() if isinstance(idem_raw, str) else ""
+        idempotency_key = idempotency_key if idempotency_key else None
+        if idempotency_key is not None and len(idempotency_key) > 256:
+            return openai_error(400, message="Idempotency-Key too long (max 256)", type_="invalid_request_error")
+
+        idem_created = False
+        idem_response_id: str | None = None
+
+        async def _iter_sse_from_store(*, response_id: str) -> Any:
+            after_seq = 0
+            while True:
+                events = await storage.event_store.list(response_id=response_id, after_seq=after_seq, limit=200)
+                if events:
+                    for ev in events:
+                        after_seq = int(ev.seq)
+                        yield encode_sse_event(ev.event, ev.data)
+                        if ev.event is None and ev.data.strip() == "[DONE]":
+                            return
+                    continue
+
+                run = await storage.run_store.get(response_id)
+                if run is not None and run.status in {"completed", "errored"}:
+                    if isinstance(run.final_response_json, dict):
+                        data = json.dumps(run.final_response_json, ensure_ascii=False, separators=(",", ":"))
+                        yield encode_sse_event("response.completed", data)
+                    yield encode_sse_event(None, "[DONE]")
+                    return
+
+                if hasattr(storage.event_store, "wait_new"):
+                    await storage.event_store.wait_new(response_id=response_id, after_seq=after_seq, timeout_s=1.0)
+                else:
+                    await asyncio.sleep(0.25)
+
+        async def _wait_run_final(*, response_id: str, timeout_s: float) -> dict[str, Any] | None:
+            deadline = asyncio.get_event_loop().time() + timeout_s
+            while asyncio.get_event_loop().time() < deadline:
+                run = await storage.run_store.get(response_id)
+                if run is not None and run.status in {"completed", "errored"} and isinstance(run.final_response_json, dict):
+                    return run.final_response_json
+                await asyncio.sleep(0.25)
+            return None
+
+        if idempotency_key is not None:
+            candidate_response_id = f"resp_anyagent_{uuid4().hex}"
+            idem_created, run = await storage.run_store.try_create_started(
+                response_id=candidate_response_id,
+                session_partition_key=session_partition_key,
+                idempotency_key=idempotency_key,
+                stream=stream,
+            )
+            if run.session_partition_key != session_partition_key:
+                return openai_error(
+                    409,
+                    message="Idempotency-Key conflict (session mismatch)",
+                    type_="invalid_request_error",
+                    code="idempotency_key_conflict",
+                )
+
+            idem_response_id = run.response_id
+
+            if not idem_created:
+                if stream:
+                    return StreamingResponse(_iter_sse_from_store(response_id=idem_response_id), media_type="text/event-stream")
+
+                if run.status in {"completed", "errored"} and isinstance(run.final_response_json, dict):
+                    return JSONResponse(status_code=200, content=run.final_response_json)
+
+                final = await _wait_run_final(response_id=idem_response_id, timeout_s=60.0)
+                if final is not None:
+                    return JSONResponse(status_code=200, content=final)
+                return openai_error(504, message="Idempotent request still in progress", type_="timeout_error")
 
         # --- skills selection (restart-based discovery; per-run selection) ---
         all_skills: list[SkillPackage] = list(request.app.state.global_skills) + list(request.app.state.agent_skills.get(agent_id, []))
@@ -523,22 +596,111 @@ def create_app(settings: Settings) -> FastAPI:
             *,
             tool_name: str,
             arguments_json: Any,
+            tool_call_id: str,
         ) -> dict[str, Any]:
+            event_base = {
+                "event_source": "anyagent.multiagent",
+                "event_tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+                "agent_id": agent_id,
+                "session_key": session_key,
+                "session_partition_key": session_partition_key,
+                "root_thread_id": root_thread_id,
+                "parent_thread_id": thread_id,
+                "parent_thread_depth": thread_depth,
+            }
+
+            if tool_name == "spawn_agent":
+                logger.info("collab_agent_spawn_begin", extra=event_base)
+            elif tool_name == "send_input":
+                logger.info("collab_agent_interaction_begin", extra=event_base)
+            elif tool_name == "wait":
+                logger.info("collab_waiting_begin", extra=event_base)
+            elif tool_name == "close_agent":
+                logger.info("collab_close_begin", extra=event_base)
+            elif tool_name == "resume_agent":
+                logger.info("collab_resume_begin", extra=event_base)
+
             try:
-                if tool_name != "spawn_agent":
+                if tool_name == "spawn_agent":
+                    catalog2: AgentCatalog = request.app.state.agent_catalog
+                    out = request.app.state.multiagent.spawn_agent(
+                        catalog=catalog2,
+                        parent_pack=pack,
+                        parent_thread_id=thread_id,
+                        parent_depth=thread_depth,
+                        root_thread_id=root_thread_id,
+                        arguments_json=arguments_json,
+                    )
+                elif tool_name == "send_input":
+                    out = request.app.state.multiagent.send_input(
+                        parent_thread_id=thread_id,
+                        parent_depth=thread_depth,
+                        root_thread_id=root_thread_id,
+                        arguments_json=arguments_json,
+                    )
+                elif tool_name == "wait":
+                    out = await request.app.state.multiagent.wait(
+                        parent_thread_id=thread_id,
+                        parent_depth=thread_depth,
+                        root_thread_id=root_thread_id,
+                        arguments_json=arguments_json,
+                    )
+                elif tool_name == "close_agent":
+                    out = request.app.state.multiagent.close_agent(
+                        parent_thread_id=thread_id,
+                        parent_depth=thread_depth,
+                        root_thread_id=root_thread_id,
+                        arguments_json=arguments_json,
+                    )
+                elif tool_name == "resume_agent":
+                    out = request.app.state.multiagent.resume_agent(
+                        parent_thread_id=thread_id,
+                        parent_depth=thread_depth,
+                        root_thread_id=root_thread_id,
+                        arguments_json=arguments_json,
+                    )
+                else:
                     raise ValueError(f"unknown system tool: {tool_name}")
-                catalog2: AgentCatalog = request.app.state.agent_catalog
-                out = request.app.state.multiagent.spawn_agent(
-                    catalog=catalog2,
-                    parent_pack=pack,
-                    parent_thread_id=thread_id,
-                    parent_depth=thread_depth,
-                    root_thread_id=root_thread_id,
-                    arguments_json=arguments_json,
-                )
+                extra2 = dict(event_base)
+                child_thread_id = None
+                if tool_name == "spawn_agent" and isinstance(out, str):
+                    try:
+                        j = json.loads(out)
+                    except Exception:  # noqa: BLE001
+                        j = None
+                    if isinstance(j, dict) and isinstance(j.get("thread_id"), str):
+                        child_thread_id = j["thread_id"]
+                        extra2["child_thread_id"] = child_thread_id
+
+                if tool_name == "spawn_agent":
+                    logger.info("collab_agent_spawn_end", extra=extra2)
+                elif tool_name == "send_input":
+                    logger.info("collab_agent_interaction_end", extra=extra2)
+                elif tool_name == "wait":
+                    logger.info("collab_waiting_end", extra=extra2)
+                elif tool_name == "close_agent":
+                    logger.info("collab_close_end", extra=extra2)
+                elif tool_name == "resume_agent":
+                    logger.info("collab_resume_end", extra=extra2)
+
                 return {"status": "completed", "output": out}
             except Exception as e:  # noqa: BLE001
                 code = str(e) if str(e) else "system_tool_error"
+                extra2 = dict(event_base)
+                extra2["error_code"] = code
+                extra2["error_message"] = str(e)
+
+                if tool_name == "spawn_agent":
+                    logger.info("collab_agent_spawn_end", extra=extra2)
+                elif tool_name == "send_input":
+                    logger.info("collab_agent_interaction_end", extra=extra2)
+                elif tool_name == "wait":
+                    logger.info("collab_waiting_end", extra=extra2)
+                elif tool_name == "close_agent":
+                    logger.info("collab_close_end", extra=extra2)
+                elif tool_name == "resume_agent":
+                    logger.info("collab_resume_end", extra=extra2)
                 return {
                     "status": "error",
                     "error": {
@@ -553,6 +715,250 @@ def create_app(settings: Settings) -> FastAPI:
             nonlocal manifest_tools, toolset_version
 
             if stream:
+                if idempotency_key is not None and idem_created and isinstance(idem_response_id, str) and idem_response_id:
+                    upstream_headers0 = _pick_upstream_headers(request, settings)
+
+                    async def _run_stream_to_store() -> None:
+                        nonlocal manifest_tools, toolset_version
+
+                        max_iters = 8
+                        canonical_response_id = idem_response_id
+                        cur_body: dict[str, Any] = json.loads(json.dumps(body))
+                        forward_idempotency_key = True
+
+                        async def _append_event(ev: str | None, data: str) -> None:
+                            try:
+                                seq = await storage.event_store.append(
+                                    response_id=canonical_response_id,
+                                    session_partition_key=session_partition_key,
+                                    event=ev,
+                                    data=data,
+                                )
+                                if hasattr(storage.run_store, "set_last_event_seq"):
+                                    await storage.run_store.set_last_event_seq(response_id=canonical_response_id, last_event_seq=int(seq))
+                            except Exception:  # noqa: BLE001
+                                return
+
+                        async def _with_lease(fn):  # type: ignore[no-untyped-def]
+                            if getattr(storage, "mode", "none") != "external":
+                                return await fn()
+
+                            owner = canonical_response_id
+                            handle = await storage.lease_lock.acquire(
+                                key=session_partition_key,
+                                owner=owner,
+                                ttl_ms=30_000,
+                                wait_timeout_ms=30_000,
+                            )
+                            if handle is None:
+                                raise RuntimeError("lease_lock_unavailable")
+
+                            renew_task: asyncio.Task[object] | None = None
+
+                            async def _renew_loop() -> None:
+                                while True:
+                                    await asyncio.sleep(10.0)
+                                    ok = await storage.lease_lock.renew(key=session_partition_key, owner=owner, ttl_ms=30_000)
+                                    if not ok:
+                                        raise RuntimeError("lease_lock_lost")
+
+                            try:
+                                renew_task = asyncio.create_task(_renew_loop())
+                                return await fn()
+                            finally:
+                                if renew_task is not None:
+                                    renew_task.cancel()
+                                await storage.lease_lock.release(key=session_partition_key, owner=owner)
+
+                        async def _openai_stream_response(*, body2: dict[str, Any]) -> httpx.Response:
+                            url = str(settings.openai_base_url).rstrip("/") + "/responses"
+                            headers = dict(upstream_headers0)
+                            if not forward_idempotency_key:
+                                headers.pop("idempotency-key", None)
+                            req2 = request.app.state.http.build_request("POST", url, headers=headers, json=body2)
+                            return await request.app.state.http.send(req2, stream=True, timeout=None)
+
+                        final_response: dict[str, Any] | None = None
+                        error_json: dict[str, Any] | None = None
+
+                        async def _run_inner() -> None:
+                            nonlocal forward_idempotency_key, cur_body, final_response, error_json, manifest_tools, toolset_version
+
+                            iters = 0
+                            while iters < max_iters:
+                                iters += 1
+                                upstream = await _openai_stream_response(body2=cur_body)
+                                forward_idempotency_key = False
+
+                                if upstream.status_code >= 400:
+                                    try:
+                                        raw = await upstream.aread()
+                                    finally:
+                                        await upstream.aclose()
+                                    await _append_event("error", raw.decode("utf-8", errors="replace"))
+                                    error_json = {"type": "upstream_error", "message": "upstream error"}
+                                    break
+
+                                completed: dict[str, Any] | None = None
+                                cur_event: str | None = None
+                                cur_data: list[str] = []
+
+                                def _decode_completed_response(data: str) -> dict[str, Any] | None:
+                                    try:
+                                        payload = json.loads(data)
+                                    except Exception:  # noqa: BLE001
+                                        return None
+                                    if not isinstance(payload, dict):
+                                        return None
+                                    resp = payload.get("response")
+                                    if isinstance(resp, dict):
+                                        return resp
+                                    if isinstance(payload.get("id"), str):
+                                        return payload
+                                    return None
+
+                                async def flush_block() -> None:
+                                    nonlocal completed, cur_event, cur_data, final_response
+
+                                    if cur_event is None and not cur_data:
+                                        return
+
+                                    data = "\n".join(cur_data)
+                                    ev = cur_event
+                                    cur_event = None
+                                    cur_data = []
+
+                                    if data.strip() == "[DONE]":
+                                        return
+                                    if ev is None and not data:
+                                        return
+
+                                    if ev == "response.completed":
+                                        completed = _decode_completed_response(data)
+                                        if completed is None:
+                                            return
+                                        # If function calls exist, tool loop will continue; do not emit this completion.
+                                        if _extract_function_calls(completed):
+                                            return
+
+                                    try:
+                                        payload = json.loads(data)
+                                    except Exception:  # noqa: BLE001
+                                        await _append_event(ev, data)
+                                        return
+
+                                    _normalize_response_id(payload, canonical_response_id)
+                                    data2 = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+                                    await _append_event(ev, data2)
+
+                                    if ev == "response.completed" and isinstance(completed, dict):
+                                        _normalize_response_id(completed, canonical_response_id)
+                                        final_response = completed
+
+                                try:
+                                    async for line in upstream.aiter_lines():
+                                        if not line.strip():
+                                            await flush_block()
+                                            continue
+                                        if line.startswith("event:"):
+                                            cur_event = line[len("event:") :].strip() or None
+                                        elif line.startswith("data:"):
+                                            cur_data.append(line[len("data:") :].lstrip())
+                                        else:
+                                            continue
+                                    await flush_block()
+                                finally:
+                                    await upstream.aclose()
+
+                                if completed is None:
+                                    break
+
+                                upstream_response_id = completed.get("id")
+                                if not isinstance(upstream_response_id, str) or not upstream_response_id:
+                                    break
+
+                                calls = _extract_function_calls(completed)
+                                if not calls:
+                                    break
+
+                                tool_outputs: list[dict[str, Any]] = []
+                                for call in calls:
+                                    call_id = call.get("call_id")
+                                    tool_name = call.get("name")
+                                    arguments = call.get("arguments")
+                                    if not isinstance(call_id, str) or not isinstance(tool_name, str):
+                                        continue
+                                    try:
+                                        if tool_name in system_tool_names:
+                                            tr = await _execute_system_tool(
+                                                tool_name=tool_name,
+                                                arguments_json=arguments,
+                                                tool_call_id=call_id,
+                                            )
+                                        else:
+                                            tr, toolset_version, manifest_tools = await _execute_with_version_retry(
+                                                response_id=canonical_response_id,
+                                                tool_call_id=call_id,
+                                                tool_name=tool_name,
+                                                arguments_json=arguments,
+                                                deadline_ms=30_000,
+                                            )
+                                    except Exception as e:  # noqa: BLE001
+                                        tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
+
+                                    if tr.get("status") == "completed" and isinstance(tr.get("output"), str):
+                                        output_str = tr["output"]
+                                    else:
+                                        output_str = str({"error": tr.get("error"), "status": tr.get("status")})
+
+                                    tool_outputs.append({"type": "function_call_output", "call_id": call_id, "output": output_str})
+
+                                if not tool_outputs:
+                                    break
+
+                                next_body: dict[str, Any] = {
+                                    "model": body.get("model"),
+                                    "previous_response_id": upstream_response_id,
+                                    "input": tool_outputs,
+                                    "tools": manifest_tools,
+                                    "metadata": body.get("metadata"),
+                                    "stream": True,
+                                }
+                                if body.get("tool_choice") is not None:
+                                    next_body["tool_choice"] = body.get("tool_choice")
+                                cur_body = next_body
+
+                        async def _run_all() -> None:
+                            try:
+                                await _with_lease(_run_inner)
+                                await _append_event(None, "[DONE]")
+                                await storage.run_store.set_final(
+                                    response_id=canonical_response_id,
+                                    status="completed" if error_json is None else "errored",
+                                    final_response_json=final_response,
+                                    error_json=error_json,
+                                )
+                            except Exception as e:  # noqa: BLE001
+                                await _append_event("error", str(e))
+                                await _append_event(None, "[DONE]")
+                                await storage.run_store.set_final(
+                                    response_id=canonical_response_id,
+                                    status="errored",
+                                    final_response_json=final_response,
+                                    error_json={"type": "storage_error", "message": str(e)},
+                                )
+
+                        if settings.enable_keyed_serialization:
+                            await request.app.state.sequencer.run(session_partition_key, _run_all)
+                        else:
+                            await _run_all()
+
+                    task = asyncio.create_task(_run_stream_to_store())
+                    request.app.state.storage_tasks.add(task)
+                    task.add_done_callback(lambda t: request.app.state.storage_tasks.discard(t))  # type: ignore[arg-type]
+
+                    return StreamingResponse(_iter_sse_from_store(response_id=idem_response_id), media_type="text/event-stream")
+
                 max_iters = 8
 
                 canonical_response_id = f"resp_anyagent_{uuid4().hex}"
@@ -612,7 +1018,7 @@ def create_app(settings: Settings) -> FastAPI:
                             finally:
                                 await upstream.aclose()
                             # best-effort surface upstream error in-stream; then terminate.
-                            yield _encode_sse_event("error", raw.decode("utf-8", errors="replace"))
+                            yield encode_sse_event("error", raw.decode("utf-8", errors="replace"))
                             break
 
                         completed: dict[str, Any] | None = None
@@ -659,11 +1065,11 @@ def create_app(settings: Settings) -> FastAPI:
                             try:
                                 payload = json.loads(data)
                             except Exception:  # noqa: BLE001
-                                yield _encode_sse_event(ev, data)
+                                yield encode_sse_event(ev, data)
                                 return
 
                             _normalize_response_id(payload, canonical_response_id)
-                            yield _encode_sse_event(ev, json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+                            yield encode_sse_event(ev, json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
 
                         try:
                             async for line in upstream.aiter_lines():
@@ -712,7 +1118,11 @@ def create_app(settings: Settings) -> FastAPI:
                                 continue
                             try:
                                 if tool_name in system_tool_names:
-                                    tr = await _execute_system_tool(tool_name=tool_name, arguments_json=arguments)
+                                    tr = await _execute_system_tool(
+                                        tool_name=tool_name,
+                                        arguments_json=arguments,
+                                        tool_call_id=call_id,
+                                    )
                                 else:
                                     tr, toolset_version, manifest_tools = await _execute_with_version_retry(
                                         response_id=response_id,
@@ -759,7 +1169,7 @@ def create_app(settings: Settings) -> FastAPI:
 
                         cur_body = next_body
 
-                    yield _encode_sse_event(None, "[DONE]")
+                    yield encode_sse_event(None, "[DONE]")
 
                 return StreamingResponse(iter_sse(), media_type="text/event-stream")
 
@@ -772,6 +1182,29 @@ def create_app(settings: Settings) -> FastAPI:
                 forward_idempotency_key=True,
             )
             if status_code >= 400 or not isinstance(resp_json, dict):
+                if idempotency_key is not None and idem_created and isinstance(idem_response_id, str) and idem_response_id:
+                    err_json = resp_json if isinstance(resp_json, dict) else {"error": {"message": "upstream_error"}}
+                    await storage.run_store.set_final(
+                        response_id=idem_response_id,
+                        status="errored",
+                        final_response_json=None,
+                        error_json=err_json.get("error") if isinstance(err_json, dict) else None,
+                    )
+                    try:
+                        await storage.event_store.append(
+                            response_id=idem_response_id,
+                            session_partition_key=session_partition_key,
+                            event="error",
+                            data=json.dumps(err_json, ensure_ascii=False, separators=(",", ":")),
+                        )
+                        await storage.event_store.append(
+                            response_id=idem_response_id,
+                            session_partition_key=session_partition_key,
+                            event=None,
+                            data="[DONE]",
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
                 if isinstance(resp_json, dict):
                     return JSONResponse(status_code=status_code, content=resp_json)
                 return openai_error(status_code, message="Upstream error", type_="upstream_error")
@@ -795,7 +1228,11 @@ def create_app(settings: Settings) -> FastAPI:
                         continue
                     try:
                         if tool_name in system_tool_names:
-                            tr = await _execute_system_tool(tool_name=tool_name, arguments_json=arguments)
+                            tr = await _execute_system_tool(
+                                tool_name=tool_name,
+                                arguments_json=arguments,
+                                tool_call_id=call_id,
+                            )
                         else:
                             tr, toolset_version, manifest_tools = await _execute_with_version_retry(
                                 response_id=response_id,
@@ -849,70 +1286,82 @@ def create_app(settings: Settings) -> FastAPI:
                 if status_code >= 400 or not isinstance(resp_json, dict):
                     break
 
+            if idempotency_key is not None and idem_created and isinstance(idem_response_id, str) and idem_response_id and isinstance(resp_json, dict):
+                try:
+                    _normalize_response_id(resp_json, idem_response_id)
+                except Exception:  # noqa: BLE001
+                    pass
+
+                await storage.run_store.set_final(
+                    response_id=idem_response_id,
+                    status="completed" if status_code < 400 else "errored",
+                    final_response_json=resp_json,
+                    error_json=resp_json.get("error") if status_code >= 400 else None,
+                )
+                try:
+                    await storage.event_store.append(
+                        response_id=idem_response_id,
+                        session_partition_key=session_partition_key,
+                        event="response.completed",
+                        data=json.dumps(resp_json, ensure_ascii=False, separators=(",", ":")),
+                    )
+                    await storage.event_store.append(
+                        response_id=idem_response_id,
+                        session_partition_key=session_partition_key,
+                        event=None,
+                        data="[DONE]",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+
             return JSONResponse(status_code=status_code, content=resp_json)
 
-        if settings.enable_keyed_serialization:
-            return await request.app.state.sequencer.run(session_partition_key, do_work)
-        return await do_work()
+        async def _run_with_local_serialization() -> Response:
+            if settings.enable_keyed_serialization:
+                return await request.app.state.sequencer.run(session_partition_key, do_work)
+            return await do_work()
 
-    @app.get("/internal/skills/list")
-    async def internal_skills_list(request: Request, agent_id: str = "main") -> Response:
-        auth_err = await check_api_key(request, settings)
-        if auth_err is not None:
-            return auth_err
-
-        catalog: AgentCatalog = request.app.state.agent_catalog
-        pack = catalog.get(agent_id)
-        if pack is None:
-            return openai_error(404, message=f"unknown agent_id: {agent_id}", type_="invalid_request_error")
-
-        all_skills: list[SkillPackage] = list(request.app.state.global_skills) + list(request.app.state.agent_skills.get(agent_id, []))
-
-        disabled_paths: set[str] = set()
-        for raw in pack.spec.skills.disabled_paths or []:
-            if not isinstance(raw, str) or not raw.strip():
-                continue
-            s = raw.strip()
-            if s.startswith("skill://"):
-                s = s[len("skill://") :]
-            p = Path(s).expanduser()
-            if p.name != "SKILL.md":
-                continue
-            disabled_paths.add(canonical_skill_md_path(p))
-
-        enablement = SkillEnablement(user_disabled_paths=frozenset(disabled_paths))
-
-        skills_out: list[dict[str, Any]] = []
-        for s in all_skills:
-            short_description = None
-            if s.frontmatter.metadata is not None:
-                short_description = s.frontmatter.metadata.short_description
-            skills_out.append(
-                {
-                    "stable_id": s.stable_id,
-                    "name": s.frontmatter.name,
-                    "description": s.frontmatter.description,
-                    "short_description": short_description,
-                    "scope": s.scope,
-                    "enabled": enablement.is_enabled(s),
-                    "requested_tool_names": requested_tool_names_for_skill(s),
-                }
+        # In external storage mode, enforce multi-instance session serialization via Redis lease lock.
+        # Skip here for idempotent stream leaders because the actual work happens in a background task.
+        if getattr(storage, "mode", "none") == "external" and not (
+            stream and idempotency_key is not None and idem_created and isinstance(idem_response_id, str) and idem_response_id
+        ):
+            owner = idem_response_id if isinstance(idem_response_id, str) and idem_response_id else f"lease_{uuid4().hex}"
+            handle = await storage.lease_lock.acquire(
+                key=session_partition_key,
+                owner=owner,
+                ttl_ms=30_000,
+                wait_timeout_ms=30_000,
             )
+            if handle is None:
+                return openai_error(
+                    409,
+                    message="session busy (lease lock)",
+                    type_="rate_limit_error",
+                    code="lease_lock_unavailable",
+                    retryable=True,
+                )
 
-        load_errors: list[dict[str, Any]] = []
-        for path, reason in request.app.state.global_skill_errors:
-            load_errors.append({"scope": "global", "path": path, "reason": reason})
-        for path, reason in request.app.state.agent_skill_errors.get(agent_id, []):
-            load_errors.append({"scope": "agent", "path": path, "reason": reason})
+            renew_task: asyncio.Task[object] | None = None
 
-        return JSONResponse(
-            status_code=200,
-            content={
-                "agent_id": agent_id,
-                "disabled_paths": sorted(disabled_paths),
-                "load_errors": load_errors,
-                "skills": skills_out,
-            },
-        )
+            async def _renew_loop() -> None:
+                while True:
+                    await asyncio.sleep(10.0)
+                    ok = await storage.lease_lock.renew(key=session_partition_key, owner=owner, ttl_ms=30_000)
+                    if not ok:
+                        raise RuntimeError("lease_lock_lost")
+
+            try:
+                renew_task = asyncio.create_task(_renew_loop())
+                return await _run_with_local_serialization()
+            finally:
+                if renew_task is not None:
+                    renew_task.cancel()
+                await storage.lease_lock.release(key=session_partition_key, owner=owner)
+
+        return await _run_with_local_serialization()
+
+    app.include_router(create_internal_events_router(settings))
+    app.include_router(create_internal_skills_router(settings))
 
     return app

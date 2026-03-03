@@ -39,7 +39,7 @@ v0 必须实现并默认启用以下限制（Req: `requirements.md#req-13-4`）�
 
 - `max_depth = 2`
 - `max_threads = 8`
-- `wait.timeout_ms`：最小 `500ms`，最大 `60_000ms`
+- `wait.timeout_ms`：最小 `10_000ms`，默认 `30_000ms`，最大 `3_600_000ms`
 - `run_timeout_seconds = 600`（10 分钟）
 
 ## 4) tools / skills 隔离策略（v0 默认）

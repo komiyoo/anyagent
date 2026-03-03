@@ -15,9 +15,9 @@
 ## 任务（Tasks）
 
 - [x] P0 补齐存储层最小设计方案文档（Req: `requirements.md#req-3-1`；Impl: `docs/architecture/storage-minimal-design.md:1`；Module: `storage`）
-- [ ] P0 确认 v0 存储技术选型（Postgres+Redis / Postgres-only）并固化配置项（Req: `requirements.md#req-3-1`）
-- [ ] P0 落地 Session/Run/Event 表结构与索引（migration）（Req: `requirements.md#req-3-1`）
-- [ ] P0 落地 Dedupe（Idempotency-Key）写入/命中语义（Req: `requirements.md#req-7`）
-- [ ] P0 落地 Lease Lock（TTL + 续租 + owner 校验）语义（Req: `requirements.md#req-7`）
-- [ ] P1 落地事件补发接口与游标语义（last_seq）（Req: `requirements.md#req-7`）
-- [ ] P2 落地 retention/TTL 清理策略与运维脚本（Req: `requirements.md#req-3-1`）
+- [x] P0 确认 v0 存储技术选型（Postgres+Redis / Postgres-only）并固化配置项（Req: `requirements.md#req-3-1`；Impl: `packages/anyagent/src/anyagent/storage/settings.py:1`；Module: `storage`）
+- [x] P0 落地 Session/Run/Event 表结构与索引（migration）（Req: `requirements.md#req-3-1`；Impl: `apps/agent-api/migrations/0001_init.sql:1`；Module: `storage`）
+- [x] P0 落地 Dedupe（Idempotency-Key）写入/命中语义（Req: `requirements.md#req-7`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:368`, `apps/agent-api/src/anyagent_agent_api/storage/postgres.py:72`；Module: `storage`）
+- [x] P0 落地 Lease Lock（TTL + 续租 + owner 校验）语义（Req: `requirements.md#req-7`；Impl: `apps/agent-api/src/anyagent_agent_api/storage/redis_lock.py:1`, `apps/agent-api/src/anyagent_agent_api/app.py:1339`；Module: `storage`）
+- [x] P1 落地事件补发接口与游标语义（last_seq）（Req: `requirements.md#req-7`；Impl: `apps/agent-api/src/anyagent_agent_api/internal/events.py:1`；Module: `storage`）
+- [x] P2 落地 retention/TTL 清理策略与运维脚本（Req: `requirements.md#req-3-1`；Impl: `apps/agent-api/src/anyagent_agent_api/storage/retention.py:1`；Module: `storage`）

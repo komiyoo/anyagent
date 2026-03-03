@@ -21,8 +21,8 @@
 - [x] P1 实现 skill permissions 与 sandbox/tool policy 交互（Req: `requirements.md#req-12-5`；Impl: `packages/anyagent/src/anyagent/skills/permissions.py:99`；Module: `skills`）
 - [x] P1 落地动态披露：选择技能（含 AgentSpec `default_selected` + `metadata.skills` + `$skill` mention）（Req: `requirements.md#req-12-6-1`；Impl: `packages/anyagent/src/anyagent/skills/selection.py:135`；Module: `skills`）
 - [x] P1 落地动态披露：注入技能指令（Req: `requirements.md#req-12-6-2`；Impl: `packages/anyagent/src/anyagent/agent_runtime/skills_injection.py:45`；Module: `agent_runtime`）
-- [x] P1 落地动态披露：披露工具（Req: `requirements.md#req-12-6-3`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:339`；Module: `agent-api`）
-- [x] P2 定义并实现 `GET /internal/skills/list`（给 Gateway/UI）（Req: `requirements.md#req-12-7`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:705`；Module: `agent-api`）
+- [x] P1 落地动态披露：披露工具（Req: `requirements.md#req-12-6-3`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:440`；Module: `agent-api`）
+- [x] P2 定义并实现 `GET /internal/skills/list`（给 Gateway/UI）（Req: `requirements.md#req-12-7`；Impl: `apps/agent-api/src/anyagent_agent_api/internal/skills.py:51`；Module: `agent-api`）
 - [x] P2 梳理并固化与 Tool Runtime 的交互关系（manifest -> tools[]）（Req: `requirements.md#req-12-8`；Impl: `docs/architecture/skills-tool-runtime-interaction.md:1`；Module: `docs`）
 
 ## 决策 & 争议点

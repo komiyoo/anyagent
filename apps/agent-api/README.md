@@ -20,11 +20,20 @@
 - `uv sync`
 - `uv run agent-api`
 
+## 运维
+
+- 迁移：`POSTGRES_DSN=... uv run agent-api-migrate`
+- 清理（默认 plan-only）：`POSTGRES_DSN=... uv run agent-api-retention`
+- 清理（实际执行）：`POSTGRES_DSN=... uv run agent-api-retention --apply`
+
 ## API
 
 - `GET /healthz`
 - `GET /readyz`
 - `POST /v1/responses`
+- `GET /internal/skills/list`（鉴权同 `/v1/responses`）
+- `GET /internal/events/list?response_id=...&last_seq=...`（按游标补发事件）
+- `GET /internal/events/stream?response_id=...&last_seq=...`（SSE：先补发再追尾）
 
 ## v0 约束（重要）
 

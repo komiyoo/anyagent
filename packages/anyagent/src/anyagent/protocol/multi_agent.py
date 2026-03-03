@@ -34,6 +34,29 @@ class SpawnAgentResult(BaseModel):
     nickname: str | None = None
 
 
+class SendInputArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    message: str | None = None
+    items: list[dict] | None = None
+    interrupt: bool | None = None
+
+    @model_validator(mode="after")
+    def _validate_has_input(self) -> "SendInputArgs":
+        msg = (self.message or "").strip() or None
+        has_items = isinstance(self.items, list) and len(self.items) > 0
+        if msg is None and not has_items:
+            raise ValueError("send_input requires message or items")
+        return self
+
+
+class SendInputResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    submission_id: str
+
+
 class WaitArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -54,3 +77,26 @@ class WaitResult(BaseModel):
     agents_states: dict[str, AgentState]
     timed_out: bool
 
+
+class CloseAgentArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+
+
+class CloseAgentResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool
+
+
+class ResumeAgentArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+
+
+class ResumeAgentResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool
