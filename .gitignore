@@ -4,3 +4,4 @@ __pycache__
 plugins/**/config.json
 .cloud/
 .runs/
+.cache/

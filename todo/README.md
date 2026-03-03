@@ -62,6 +62,7 @@
 - `todo/tests-acceptance.md`：测试与验收（对应 `requirements.md#req-9`）
 - `todo/skills-disclosure.md`：Skills 加载与动态披露（对应 `requirements.md#req-12`）
 - `todo/multi-agent.md`：Multi-Agent（对应 `requirements.md#req-13`）
+- `todo/sdk.md`：接入侧 SDK（Responses API + 类型/协议）（对应 `requirements.md#req-4`）
 
 ## 新增一个模块 TODO 文件
 

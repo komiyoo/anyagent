@@ -14,6 +14,8 @@
   - 附带 OpenClaw / pi-mono 的概念对照（用于校准理解）
 - [docs/storage-minimal-design.md](docs/storage-minimal-design.md)
   - 聚焦“存储落地”：Session/Run/Event/Dedupe/Lock 的最小 schema、保留策略与一致性边界
+- [docs/architecture/responses-api-sdk-and-server.md](docs/architecture/responses-api-sdk-and-server.md)
+  - 聚焦“接入侧 SDK + 服务侧 Agent Server”统一对齐 OpenAI Responses API，并给出泳道视角与模块边界
 
 ## 工具
 

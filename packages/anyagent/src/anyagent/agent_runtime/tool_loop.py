@@ -3,24 +3,35 @@ from __future__ import annotations
 import json
 from typing import Any, Iterable
 
+from pydantic import TypeAdapter
+
+from openai.types.responses.function_tool_param import FunctionToolParam
+from openai.types.responses.response import Response
+from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
+from openai.types.responses.response_input_item_param import FunctionCallOutput
+from openai.types.responses.response_stream_event import ResponseStreamEvent
+from openai.types.responses.tool_choice_function_param import ToolChoiceFunctionParam
+
 from anyagent.protocol.tool_runtime import ExecuteRequest, ManifestRequest, ToolContext
-from anyagent.protocol.openai_responses import FunctionToolParam, ToolChoiceFunctionParam
 from anyagent.tool_runtime.client import ToolRuntimeClient
 
 from .skills_injection import inject_skills_into_responses_body
 from anyagent.skills.models import SkillPackage
 
-from .openai_responses_client import OpenAIResponsesClient
-from .sse import encode_sse_event, normalize_response_id
+from anyagent.protocol.sse import encode_sse_event, normalize_response_id
+
+from .model_providers import (
+    ModelProvider,
+    ModelProviderInvalidRequestError,
+    ModelProviderTransportError,
+    ModelProviderUpstreamError,
+)
 
 
-def _extract_function_calls(response_json: dict[str, Any]) -> list[dict[str, Any]]:
-    output = response_json.get("output")
-    if not isinstance(output, list):
-        return []
-    out: list[dict[str, Any]] = []
-    for item in output:
-        if isinstance(item, dict) and item.get("type") == "function_call":
+def _extract_function_calls(response: Response) -> list[ResponseFunctionToolCall]:
+    out: list[ResponseFunctionToolCall] = []
+    for item in response.output:
+        if isinstance(item, ResponseFunctionToolCall):
             out.append(item)
     return out
 
@@ -33,10 +44,12 @@ def _extract_tool_names_from_request(tools: Any) -> list[str] | None:
     out: list[str] = []
     for i, t in enumerate(tools):
         try:
-            tool = FunctionToolParam.model_validate(t)
+            tool = TypeAdapter(FunctionToolParam).validate_python(t)
         except Exception as e:  # noqa: BLE001
             raise ValueError(f"invalid tools[{i}]: {e}") from e
-        out.append(tool.name)
+        name = tool.get("name")
+        if isinstance(name, str) and name.strip():
+            out.append(name.strip())
     return out
 
 
@@ -47,12 +60,13 @@ def _validate_tool_choice(tool_choice: Any, allowed_tool_names: set[str]) -> str
         return None
     if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
         try:
-            tc = ToolChoiceFunctionParam.model_validate(tool_choice)
+            tc = TypeAdapter(ToolChoiceFunctionParam).validate_python(tool_choice)
         except Exception:  # noqa: BLE001
             return "invalid tool_choice"
-        if tc.name in allowed_tool_names:
+        name = tc.get("name")
+        if isinstance(name, str) and name in allowed_tool_names:
             return None
-        return f"tool_choice function name not allowed: {tc.name}"
+        return f"tool_choice function name not allowed: {name}"
     return "invalid tool_choice"
 
 
@@ -86,7 +100,7 @@ async def resolve_manifest(
 
 async def run_tool_loop_nonstream(
     *,
-    openai: OpenAIResponsesClient,
+    model_provider: ModelProvider,
     tool_runtime: ToolRuntimeClient,
     agent_id: str,
     session_key: str | None,
@@ -123,25 +137,32 @@ async def run_tool_loop_nonstream(
     if selected_skills:
         body, _warnings = inject_skills_into_responses_body(body=body, selected_skills=selected_skills, role="developer")
 
-    status_code, resp_json = await openai.create_json(body=body, idempotency_key=idempotency_key)
-    if status_code >= 400 or not isinstance(resp_json, dict):
-        return status_code, resp_json if isinstance(resp_json, dict) else {"error": {"message": "upstream_error", "type": "upstream_error"}}
+    try:
+        resp = await model_provider.create_response(body=body, idempotency_key=idempotency_key)
+    except ModelProviderInvalidRequestError as e:
+        return 400, {"error": {"message": e.message, "type": "invalid_request_error"}}
+    except ModelProviderUpstreamError as e:
+        if isinstance(e.body, dict):
+            return e.status_code, e.body
+        return e.status_code, {"error": {"message": e.message or "upstream_error", "type": "upstream_error"}}
+    except ModelProviderTransportError as e:
+        return 502, {"error": {"message": e.message, "type": "upstream_error"}}
 
     iters = 0
     while iters < max_iters:
         iters += 1
-        response_id = resp_json.get("id")
-        if not isinstance(response_id, str) or not response_id:
+        response_id = resp.id
+        if not isinstance(response_id, str) or not response_id.strip():
             break
-        calls = _extract_function_calls(resp_json)
+        calls = _extract_function_calls(resp)
         if not calls:
             break
 
-        tool_outputs: list[dict[str, Any]] = []
+        tool_outputs: list[FunctionCallOutput] = []
         for call in calls:
-            call_id = call.get("call_id")
-            tool_name = call.get("name")
-            arguments = call.get("arguments")
+            call_id = call.call_id
+            tool_name = call.name
+            arguments = call.arguments
             if not isinstance(call_id, str) or not isinstance(tool_name, str):
                 continue
 
@@ -177,16 +198,21 @@ async def run_tool_loop_nonstream(
         if body.get("tool_choice") is not None:
             next_body["tool_choice"] = body.get("tool_choice")
 
-        status_code, resp_json = await openai.create_json(body=next_body, idempotency_key=None)
-        if status_code >= 400 or not isinstance(resp_json, dict):
+        try:
+            resp = await model_provider.create_response(body=next_body, idempotency_key=None)
+        except ModelProviderInvalidRequestError:
+            break
+        except ModelProviderUpstreamError:
+            break
+        except ModelProviderTransportError:
             break
 
-    return status_code, resp_json
+    return 200, resp.model_dump(exclude_none=True, by_alias=True)
 
 
 async def run_tool_loop_stream_buffered(
     *,
-    openai: OpenAIResponsesClient,
+    model_provider: ModelProvider,
     tool_runtime: ToolRuntimeClient,
     agent_id: str,
     session_key: str | None,
@@ -226,29 +252,35 @@ async def run_tool_loop_stream_buffered(
     if selected_skills:
         body, _warnings = inject_skills_into_responses_body(body=body, selected_skills=selected_skills, role="developer")
 
-    status_code, events, completed, raw_text = await openai.create_sse_buffer(body=body, idempotency_key=idempotency_key)
-    if status_code >= 400 or completed is None:
-        return status_code, [raw_text.encode("utf-8")]
+    try:
+        events0, completed0 = await model_provider.create_response_stream_buffered(body=body, idempotency_key=idempotency_key)
+    except ModelProviderUpstreamError as e:
+        raw = e.raw if isinstance(e.raw, (bytes, bytearray)) else None
+        return e.status_code, [raw or json.dumps(e.body or {"error": {"message": "upstream_error"}}).encode("utf-8")]
+    except ModelProviderInvalidRequestError as e:
+        return 400, [json.dumps({"error": {"message": e.message, "type": "invalid_request_error"}}, ensure_ascii=False).encode("utf-8")]
+    except ModelProviderTransportError as e:
+        return 502, [json.dumps({"error": {"message": e.message, "type": "upstream_error"}}, ensure_ascii=False).encode("utf-8")]
 
-    canonical_response_id = completed.get("id") if isinstance(completed.get("id"), str) else "resp_anyagent"
-    batches: list[list[tuple[str | None, str]]] = [events]
+    canonical_response_id = completed0.id if isinstance(completed0.id, str) else "resp_anyagent"
+    batches: list[list[ResponseStreamEvent]] = [events0]
 
     iters = 0
-    resp_json = completed
+    resp = completed0
     while iters < max_iters:
         iters += 1
-        response_id = resp_json.get("id")
-        if not isinstance(response_id, str) or not response_id:
+        response_id = resp.id
+        if not isinstance(response_id, str) or not response_id.strip():
             break
-        calls = _extract_function_calls(resp_json)
+        calls = _extract_function_calls(resp)
         if not calls:
             break
 
-        tool_outputs: list[dict[str, Any]] = []
+        tool_outputs: list[FunctionCallOutput] = []
         for call in calls:
-            call_id = call.get("call_id")
-            tool_name = call.get("name")
-            arguments = call.get("arguments")
+            call_id = call.call_id
+            tool_name = call.name
+            arguments = call.arguments
             if not isinstance(call_id, str) or not isinstance(tool_name, str):
                 continue
 
@@ -285,29 +317,29 @@ async def run_tool_loop_stream_buffered(
         if body.get("tool_choice") is not None:
             next_body["tool_choice"] = body.get("tool_choice")
 
-        status_code, events, completed, raw_text = await openai.create_sse_buffer(body=next_body, idempotency_key=None)
-        if status_code >= 400 or completed is None:
+        try:
+            events_i, completed_i = await model_provider.create_response_stream_buffered(body=next_body, idempotency_key=None)
+        except ModelProviderUpstreamError:
             break
-        batches.append(events)
-        resp_json = completed
+        except ModelProviderInvalidRequestError:
+            break
+        except ModelProviderTransportError:
+            break
+
+        batches.append(events_i)
+        resp = completed_i
 
     def iter_bytes() -> Iterable[bytes]:
         for i, batch in enumerate(batches):
             is_last = i == len(batches) - 1
-            for ev, data in batch:
-                if data.strip() == "[DONE]":
+            for ev in batch:
+                if ev.type == "response.completed" and not is_last:
                     continue
-                if ev == "response.completed" and not is_last:
-                    continue
-                if ev is None and not data:
-                    continue
-                try:
-                    payload = json.loads(data)
-                except Exception:  # noqa: BLE001
-                    yield encode_sse_event(ev, data)
-                    continue
+                payload = ev.model_dump(exclude_none=True, by_alias=True)
                 normalize_response_id(payload, canonical_response_id)
-                yield encode_sse_event(ev, json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+                yield encode_sse_event(
+                    ev.type, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+                )
         yield encode_sse_event(None, "[DONE]")
 
     return 200, iter_bytes()

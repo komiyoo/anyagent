@@ -4,8 +4,9 @@
 
 ## Inbox（待分流）
 
-- [ ] P1 <任务描述>（Req: `requirements.md#req-...` 或 `TBD`）
-- [ ] P2 <想法/改进点>（Req: `TBD`）
+- [x] P1 SDK 接入侧与 Agent Server 对齐 OpenAI Responses API（已分流）（迁移到：`todo/sdk.md`；Impl: `todo/sdk.md:1`；Module: `sdk`）
+- [ ] P1 对接 Anthropic Claude ModelProvider（Req: `TBD`）
+- [ ] P1 对接 Google Gemini ModelProvider（Req: `TBD`）
 
 ## Needs Triage（需要先澄清/拆解）
 
@@ -19,4 +20,3 @@
 ## 已归档（可选）
 
 - [ ] <已完成/已迁移的条目>（迁移到：`todo/<module>.md`）
-

@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..auth import check_api_key
 from ..errors import openai_error
 from ..settings import Settings
-from ..sse import encode_sse_event
+from anyagent.protocol.sse import encode_sse_event
 
 
 class InternalEventItem(BaseModel):

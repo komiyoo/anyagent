@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .openai_responses import FunctionToolParam
+from .openai_responses import AnyAgentFunctionToolParam
 
 
 class TraceContext(BaseModel):
@@ -71,7 +71,7 @@ class ManifestDecision(BaseModel):
 
 
 class ManifestResponse(BaseModel):
-    tools: list[FunctionToolParam]
+    tools: list[AnyAgentFunctionToolParam]
     toolset_version: int
     decisions: list[ManifestDecision] | None = None
 

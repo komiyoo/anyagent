@@ -1,18 +1,18 @@
 # AnyAgent：AI Agent 自动化研发行为规范（Agent-Naive / SSOT / 可观测 / 可重放）
 
-本文件 `AGENTS.md` 的定位：**指导 AI Agent 在本仓库进行自动化研发的行为规范**（不是产品文档、不是需求文档、也不是“代码之外的第二套真相”）。
+本文件 `AGENTS.md` 的定位：**指导 AI Agent 在本仓库进行自动化研发的行为规范**（不是产品文档、不是需求文档、也不是“代码之外的第二套真相”）
 
-本仓库刻意按 **Agentic Engineering** 方式组织：让“第一次打开仓库的 agent / 工程师”也能稳定地定位、实现、验证、复盘；并能把改动沉淀为可复用的能力（compound engineering）。
+本仓库刻意按 **Agentic Engineering** 方式组织：让“第一次打开仓库的 agent / 工程师”也能稳定地定位、实现、验证、复盘；并能把改动沉淀为可复用的能力（compound engineering）
 
 理念参考：`docs/_notes/third-party/wx/agent_design_metting.md`（上下文工程 / 验证闭环 / 工具化 / Agentic codebase / 复合式工程）。
 
 ---
 
-## 0) 首要职责（我们只做自己的）
+## 0) 首要职责
 
-- 你的首要责任是 **项目长期可维护性** 与 **未来用户（人类 + agent）的体验**，而不是“只把当前需求凑合做完”。
-- 任何非平凡改动都要先做上下文收集与约束对齐（`requirements.md` / `todo/` / `docs/architecture|security|acceptance/`），再落地实现。
-- 如果任务本身不够明确：优先把它变得可实现（补 `todo/*` 的 `[needs-design]` 决策点、补需求锚点、补验收方式），而不是盲目写代码。
+- 首要责任是 **项目长期可维护性** 与 **未来用户（人类 + agent）的体验**，而不是“只把当前需求凑合做完”
+- 任何非平凡改动都要先做上下文收集与约束对齐（`requirements.md` / `todo/` / `docs/architecture|security|acceptance/`），再落地实现
+- 如果任务本身不够明确：优先把它变得可实现（补 `todo/*` 的 `[needs-design]` 决策点、补需求锚点、补验收方式），而不是盲目写代码
 
 ---
 
@@ -27,9 +27,7 @@
 
 ---
 
-## 2) 单一真源（SSOT）地图（必须遵守）
-
-> 目标：减少“口头完成 / 文档漂移 / 规则分叉”，让事实可查询、可重放、可验证。
+## 2) 单一真源（SSOT）地图
 
 - **需求真源（What/Why）**：`requirements.md`（用 `requirements.md#req-*` 稳定锚点引用）
 - **任务真源（When/Who/Progress）**：`todo/*.md`（按文件内顺序推进；完成时必须补 `Impl/Module` 证据）
@@ -62,7 +60,7 @@
 - `docs/architecture/stateless-agent-service-architecture.md`（`Event`、`seq`、reconnect/replay 语义）
 - `docs/architecture/storage-minimal-design.md`（Run/Event Store 最小 schema）
 
-### 产物与引用（Artifacts）
+### 产物与引用
 
 任何“可复盘”的东西都应当能被引用到：
 
@@ -158,7 +156,8 @@
 
 ### Git 安全规则（防止破坏并行工作）
 
-- 未经明确授权：不要删除/移动大批文件，不要重写历史，不要清理工作区。
+- **允许破坏性调整**：默认不做兼容层/兼容 shim，只保留“唯一、当前、最自然”的实现；允许删除/移动旧路径以维持单一真源（SSOT），除非用户明确要求保留兼容。
+- 不要重写历史，不要做不可恢复的工作区清理。
 - 禁止破坏性命令：`git reset --hard`、`git checkout .`、`git clean -fd`、`git stash`。
 - staged 变更必须可控：不要用 `git add -A` / `git add .`；只 `git add <你本次改动的文件>`。
 - 任何需要 `git push` 的动作：必须先征求用户同意。
@@ -183,6 +182,7 @@
   - 结构化数据优先用 `pydantic` 模型/Typed 结构表达，避免到处散落 `dict[str, Any]`。
   - 不要凭记忆“编协议/编 SDK 字段”：以 `requirements.md`、官方 SDK/类型定义、以及仓库内 `anyagent.protocol.*` 为准。
   - 错误处理要显式且可机读：避免吞异常或返回不可解析的字符串错误。
+  - **Docstring 约束（必须）**：新增/修改对外可见（public）的 `module/class/function/method` 必须写 docstring，且**第一行必须是单句摘要**（用于自动“功能披露/调用链说明”）；必要时补 `Args/Returns/Raises`。
 
 ---
 

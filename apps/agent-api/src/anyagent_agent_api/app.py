@@ -41,7 +41,7 @@ from .internal import create_internal_events_router, create_internal_skills_rout
 from .keyed_sequencer import KeyedSequencer
 from .manifest_cache import ManifestCache
 from .multiagent.manager import MultiAgentManager, stable_root_thread_id
-from .sse import encode_sse_event
+from anyagent.protocol.sse import encode_sse_event
 from .settings import Settings
 from .storage import create_storage_runtime
 

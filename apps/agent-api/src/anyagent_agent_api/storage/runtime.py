@@ -3,13 +3,14 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol
 
 from psycopg_pool import AsyncConnectionPool
 from redis.asyncio import Redis
 
 from ..settings import Settings
 from .inmemory import InMemoryEventStore, InMemoryLeaseLock, InMemoryRunStore
+from .models import EventRecord, RunRecord
 from .postgres import PostgresEventStore, PostgresRunStore
 from .redis_lock import RedisLeaseLock
 
@@ -22,12 +23,67 @@ _SCHEMA_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$")
 StorageModeResolved = Literal["none", "external"]
 
 
+class LeaseLockHandleProto(Protocol):
+    key: str
+    owner: str
+
+
+class LeaseLockProto(Protocol):
+    async def acquire(self, *, key: str, owner: str, ttl_ms: int, wait_timeout_ms: int) -> LeaseLockHandleProto | None: ...
+
+    async def renew(self, *, key: str, owner: str, ttl_ms: int) -> bool: ...
+
+    async def release(self, *, key: str, owner: str) -> bool: ...
+
+
+class RunStoreProto(Protocol):
+    async def get_by_idempotency_key(self, key: str) -> RunRecord | None: ...
+
+    async def get(self, response_id: str) -> RunRecord | None: ...
+
+    async def try_create_started(
+        self,
+        *,
+        response_id: str,
+        session_partition_key: str,
+        idempotency_key: str,
+        stream: bool,
+    ) -> tuple[bool, RunRecord]: ...
+
+    async def set_final(
+        self,
+        *,
+        response_id: str,
+        status: str,
+        final_response_json: dict | None,
+        error_json: dict | None,
+    ) -> None: ...
+
+
+class RunStoreWithLastEventSeqProto(RunStoreProto, Protocol):
+    async def set_last_event_seq(self, *, response_id: str, last_event_seq: int) -> None: ...
+
+
+class EventStoreProto(Protocol):
+    async def append(self, *, response_id: str, session_partition_key: str, event: str | None, data: str) -> int: ...
+
+    async def list(self, *, response_id: str, after_seq: int, limit: int) -> list[EventRecord]: ...
+
+
+class EventStoreWithWaitNewProto(EventStoreProto, Protocol):
+    async def wait_new(self, *, response_id: str, after_seq: int, timeout_s: float) -> None: ...
+
+
+class EventStoreWithTailSeqProto(EventStoreProto, Protocol):
+    async def tail_seq(self, *, response_id: str) -> int: ...
+
+
 @dataclass
 class StorageRuntime:
     mode: StorageModeResolved
-    run_store: object
-    event_store: object
-    lease_lock: object
+    run_store: RunStoreProto
+    event_store: EventStoreProto
+    lease_lock: LeaseLockProto
     pg_pool: AsyncConnectionPool | None = None
     redis: Redis | None = None
 
