@@ -23,4 +23,4 @@ build-backend = "hatchling.build"
 packages = ["src/anyagent_tool_runtime"]
 
 [tool.uv.sources]
-anyagent = { path = "../../packages/anyagent" }
+anyagent = { path = "../../packages/anyagent", editable = true }

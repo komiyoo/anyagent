@@ -6,7 +6,7 @@ from typing import Any
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from .models import EventRecord, RunRecord
+from .models import EventRecord, RunRecord, SessionRecord
 
 
 class PostgresRunStore:
@@ -132,6 +132,221 @@ class PostgresRunStore:
                     ),
                 )
             await conn.commit()
+
+    async def set_final_with_session_snapshot(
+        self,
+        *,
+        response_id: str,
+        status: str,
+        final_response_json: dict[str, Any] | None,
+        error_json: dict[str, Any] | None,
+        session_partition_key: str,
+        agent_id: str,
+        session_key: str,
+        snapshot_json: dict[str, Any],
+        expected_snapshot_version: int,
+    ) -> tuple[bool, SessionRecord | None]:
+        """Commit run final state + session snapshot CAS in one transaction."""
+        snapshot_payload = json.dumps(snapshot_json, ensure_ascii=False, separators=(",", ":"))
+        async with self._pool.connection() as conn:
+            conn.row_factory = dict_row
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    UPDATE runs
+                       SET status = %s,
+                           final_response_json = %s::jsonb,
+                           error_json = %s::jsonb,
+                           ended_at = now(),
+                           updated_at = now()
+                     WHERE response_id = %s
+                    """,
+                    (
+                        status,
+                        json.dumps(final_response_json, ensure_ascii=False, separators=(",", ":")) if final_response_json is not None else None,
+                        json.dumps(error_json, ensure_ascii=False, separators=(",", ":")) if error_json is not None else None,
+                        response_id,
+                    ),
+                )
+
+                # Try CAS update first when row exists.
+                await cur.execute(
+                    """
+                    UPDATE sessions
+                       SET snapshot_json = %s::jsonb,
+                           snapshot_version = snapshot_version + 1,
+                           updated_at = now()
+                     WHERE session_partition_key = %s
+                       AND snapshot_version = %s
+                    RETURNING session_partition_key, agent_id, session_key, snapshot_json, snapshot_version
+                    """,
+                    (snapshot_payload, session_partition_key, int(expected_snapshot_version)),
+                )
+                row = await cur.fetchone()
+                if row:
+                    await conn.commit()
+                    return (
+                        True,
+                        SessionRecord(
+                            session_partition_key=str(row["session_partition_key"]),
+                            agent_id=str(row["agent_id"]),
+                            session_key=str(row["session_key"]),
+                            snapshot_json=row.get("snapshot_json") if isinstance(row.get("snapshot_json"), dict) else {},
+                            snapshot_version=int(row.get("snapshot_version") or 0),
+                        ),
+                    )
+
+                # Bootstrap row on first write only when expected version is 0.
+                if int(expected_snapshot_version) == 0:
+                    await cur.execute(
+                        """
+                        INSERT INTO sessions(session_partition_key, agent_id, session_key, snapshot_json, snapshot_version)
+                        VALUES (%s, %s, %s, %s::jsonb, 0)
+                        ON CONFLICT (session_partition_key) DO NOTHING
+                        RETURNING session_partition_key, agent_id, session_key, snapshot_json, snapshot_version
+                        """,
+                        (session_partition_key, agent_id, session_key, snapshot_payload),
+                    )
+                    row = await cur.fetchone()
+                    if row:
+                        await conn.commit()
+                        return (
+                            True,
+                            SessionRecord(
+                                session_partition_key=str(row["session_partition_key"]),
+                                agent_id=str(row["agent_id"]),
+                                session_key=str(row["session_key"]),
+                                snapshot_json=row.get("snapshot_json") if isinstance(row.get("snapshot_json"), dict) else {},
+                                snapshot_version=int(row.get("snapshot_version") or 0),
+                            ),
+                        )
+
+                # CAS failed: rollback transaction so runs/sessions remain consistent.
+                await conn.rollback()
+                async with conn.cursor() as cur2:
+                    await cur2.execute(
+                        """
+                        SELECT session_partition_key, agent_id, session_key, snapshot_json, snapshot_version
+                          FROM sessions
+                         WHERE session_partition_key = %s
+                         LIMIT 1
+                        """,
+                        (session_partition_key,),
+                    )
+                    cur_row = await cur2.fetchone()
+                if not cur_row:
+                    return False, None
+                return (
+                    False,
+                    SessionRecord(
+                        session_partition_key=str(cur_row["session_partition_key"]),
+                        agent_id=str(cur_row["agent_id"]),
+                        session_key=str(cur_row["session_key"]),
+                        snapshot_json=cur_row.get("snapshot_json") if isinstance(cur_row.get("snapshot_json"), dict) else {},
+                        snapshot_version=int(cur_row.get("snapshot_version") or 0),
+                    ),
+                )
+
+
+class PostgresSessionStore:
+    def __init__(self, *, pool: AsyncConnectionPool) -> None:
+        self._pool = pool
+
+    async def get(self, *, session_partition_key: str) -> SessionRecord | None:
+        async with self._pool.connection() as conn:
+            conn.row_factory = dict_row
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT session_partition_key, agent_id, session_key, snapshot_json, snapshot_version
+                      FROM sessions
+                     WHERE session_partition_key = %s
+                     LIMIT 1
+                    """,
+                    (session_partition_key,),
+                )
+                row = await cur.fetchone()
+        if not row:
+            return None
+        return SessionRecord(
+            session_partition_key=str(row["session_partition_key"]),
+            agent_id=str(row["agent_id"]),
+            session_key=str(row["session_key"]),
+            snapshot_json=row.get("snapshot_json") if isinstance(row.get("snapshot_json"), dict) else {},
+            snapshot_version=int(row.get("snapshot_version") or 0),
+        )
+
+    async def create_if_absent(
+        self,
+        *,
+        session_partition_key: str,
+        agent_id: str,
+        session_key: str,
+        snapshot_json: dict[str, Any],
+    ) -> SessionRecord:
+        payload = json.dumps(snapshot_json, ensure_ascii=False, separators=(",", ":"))
+        async with self._pool.connection() as conn:
+            conn.row_factory = dict_row
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    INSERT INTO sessions(session_partition_key, agent_id, session_key, snapshot_json, snapshot_version)
+                    VALUES (%s, %s, %s, %s::jsonb, 0)
+                    ON CONFLICT (session_partition_key) DO NOTHING
+                    """,
+                    (session_partition_key, agent_id, session_key, payload),
+                )
+            await conn.commit()
+        rec = await self.get(session_partition_key=session_partition_key)
+        if rec is not None:
+            return rec
+        return SessionRecord(
+            session_partition_key=session_partition_key,
+            agent_id=agent_id,
+            session_key=session_key,
+            snapshot_json=json.loads(payload),
+            snapshot_version=0,
+        )
+
+    async def update_snapshot_cas(
+        self,
+        *,
+        session_partition_key: str,
+        expected_snapshot_version: int,
+        snapshot_json: dict[str, Any],
+        agent_id: str,
+        session_key: str,
+    ) -> tuple[bool, SessionRecord | None]:
+        payload = json.dumps(snapshot_json, ensure_ascii=False, separators=(",", ":"))
+        async with self._pool.connection() as conn:
+            conn.row_factory = dict_row
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    UPDATE sessions
+                       SET snapshot_json = %s::jsonb,
+                           snapshot_version = snapshot_version + 1,
+                           updated_at = now()
+                     WHERE session_partition_key = %s
+                       AND snapshot_version = %s
+                    RETURNING session_partition_key, agent_id, session_key, snapshot_json, snapshot_version
+                    """,
+                    (payload, session_partition_key, int(expected_snapshot_version)),
+                )
+                row = await cur.fetchone()
+            await conn.commit()
+        if row:
+            return (
+                True,
+                SessionRecord(
+                    session_partition_key=str(row["session_partition_key"]),
+                    agent_id=str(row["agent_id"]),
+                    session_key=str(row["session_key"]),
+                    snapshot_json=row.get("snapshot_json") if isinstance(row.get("snapshot_json"), dict) else {},
+                    snapshot_version=int(row.get("snapshot_version") or 0),
+                ),
+            )
+        return False, await self.get(session_partition_key=session_partition_key)
 
 
 class PostgresEventStore:

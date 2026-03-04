@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, Field
+from anyagent.protocol.agent_api_internal import (
+    InternalSkillListItem,
+    InternalSkillLoadError,
+    InternalSkillsListResponse,
+)
 
 from anyagent.agent_packs import AgentCatalog
 from anyagent.skills import SkillEnablement, canonical_skill_md_path, requested_tool_names_for_skill
@@ -14,35 +17,6 @@ from anyagent.skills.models import SkillPackage
 from ..auth import check_api_key
 from ..errors import openai_error
 from ..settings import Settings
-
-
-class InternalSkillListItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    stable_id: str
-    name: str
-    description: str | None = None
-    short_description: str | None = None
-    scope: str
-    enabled: bool
-    requested_tool_names: list[str] = Field(default_factory=list)
-
-
-class InternalSkillLoadError(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    scope: Literal["global", "agent"]
-    path: str
-    reason: str
-
-
-class InternalSkillsListResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    agent_id: str
-    disabled_paths: list[str] = Field(default_factory=list)
-    load_errors: list[InternalSkillLoadError] = Field(default_factory=list)
-    skills: list[InternalSkillListItem] = Field(default_factory=list)
 
 
 def create_internal_skills_router(settings: Settings) -> APIRouter:

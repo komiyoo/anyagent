@@ -6,31 +6,12 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from anyagent.protocol.agent_api_internal import InternalEventItem, InternalEventsListResponse
 
 from ..auth import check_api_key
 from ..errors import openai_error
 from ..settings import Settings
-from anyagent.protocol.sse import encode_sse_event
-
-
-class InternalEventItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    seq: int = Field(ge=1)
-    event: str | None = None
-    data: str
-
-
-class InternalEventsListResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    response_id: str
-    requested_last_seq: int = Field(ge=0)
-    next_last_seq: int = Field(ge=0)
-    events: list[InternalEventItem] = Field(default_factory=list)
-    done: bool
-    run_status: str | None = None
+from anyagent.protocol.sse import encode_sse_block, encode_sse_event
 
 
 def _json_dumps(obj: Any) -> str:
@@ -144,7 +125,7 @@ def create_internal_events_router(settings: Settings) -> APIRouter:
                 if events:
                     for ev in events:
                         after_seq = int(ev.seq)
-                        yield encode_sse_event(ev.event, str(ev.data))
+                        yield encode_sse_block(event=ev.event, data=str(ev.data), id=str(ev.seq))
                         if ev.event is None and str(ev.data).strip() == "[DONE]":
                             return
                     continue

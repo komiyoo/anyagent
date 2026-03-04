@@ -7,6 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .sse import SSEEvent
 
+# Re-export a few OpenAI SDK param models so callers can validate request shapes
+# without duplicating fast-moving schema definitions.
+from openai.types.responses.function_tool_param import FunctionToolParam
+from openai.types.responses.tool_choice_function_param import ToolChoiceFunctionParam
+
 if TYPE_CHECKING:
     from openai.types.responses.response import Response as OpenAIResponse
     from openai.types.responses.response_stream_event import ResponseStreamEvent as OpenAIResponseStreamEvent

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -30,3 +30,12 @@ class EventRecord(BaseModel):
     event: str | None = None
     data: str
 
+
+class SessionRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_partition_key: str
+    agent_id: str
+    session_key: str
+    snapshot_json: dict[str, Any]
+    snapshot_version: int = Field(default=0, ge=0)

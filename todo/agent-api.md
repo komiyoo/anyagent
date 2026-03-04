@@ -27,6 +27,10 @@
 - [x] P1 Skills：支持 agent 私有 skills root + AgentSpec `default_selected` + skills 注入 + dependencies->requested_tool_names（Req: `requirements.md#req-12-2`，`requirements.md#req-12-6-1`，`requirements.md#req-12-6-2`，`requirements.md#req-12-6-3`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:309`, `packages/anyagent/src/anyagent/skills/selection.py:135`；Module: `agent-api`）
 - [x] P1 实现 Tool Runtime manifest 缓存（短 TTL + cache key 设计）（Req: `requirements.md#req-5-2-2`；Impl: `apps/agent-api/src/anyagent_agent_api/manifest_cache.py:18`；Module: `agent-api`）
 - [x] P1 处理 `toolset_version_mismatch`：刷新 manifest 并对单次 tool call 重试 1 次（Req: `requirements.md#req-5-1`，`requirements.md#req-5-2-2`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:458`；Module: `agent-api`）
+- [x] P0 实现会话恢复：读取 `Session Store` 快照并按 `last_response_id/transcript` 组装首轮 OpenAI Responses `input`（Req: `requirements.md#req-4-6-1`，`requirements.md#req-3-1`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:239`, `apps/agent-api/src/anyagent_agent_api/app.py:452`；Module: `agent-api`）
+- [x] P0 实现会话运行参数绑定：`model/temperature/top_p/frequency_penalty/presence_penalty/reasoning` 默认复用，仅显式传参时字段级 merge 更新（Req: `requirements.md#req-4-6-2`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:184`, `apps/agent-api/src/anyagent_agent_api/app.py:199`, `apps/agent-api/src/anyagent_agent_api/app.py:447`；Module: `agent-api`）
+- [x] P0 修正工具回合参数继承：`previous_response_id` 后续回合必须复用同一 `effective_runtime_config`（Req: `requirements.md#req-4-6-2`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:1317`, `apps/agent-api/src/anyagent_agent_api/app.py:1606`, `apps/agent-api/src/anyagent_agent_api/app.py:1767`；Module: `agent-api`）
+- [x] P1 在 run 终态回写会话快照（`resume_cursor + runtime_config`）并补结构化日志字段（Req: `requirements.md#req-4-6-1`，`requirements.md#req-4-6-2`，`requirements.md#req-7`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:572`, `apps/agent-api/src/anyagent_agent_api/app.py:614`, `apps/agent-api/src/anyagent_agent_api/app.py:454`；Module: `agent-api`）
 
 ## 决策 & 争议点
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any, TypeAlias
 
 # ---- SSE protocol primitives (SSOT) ----
@@ -17,40 +18,13 @@ from typing import Any, TypeAlias
 SSEEvent: TypeAlias = tuple[str | None, str]
 
 
-class SSEEventDecoder:
-    """
-    Incremental SSE block decoder.
+@dataclass(slots=True)
+class SSEBlock:
+    """One SSE block with optional id/event and required data."""
 
-    Usage:
-    - Feed lines one by one (without trailing newline).
-    - When a blank line is seen, one event block is emitted (if any).
-    """
-
-    def __init__(self) -> None:
-        self._cur_event: str | None = None
-        self._cur_data: list[str] = []
-
-    def feed_line(self, line: str) -> list[SSEEvent]:
-        if not line.strip():
-            return self.flush()
-
-        if line.startswith("event:"):
-            self._cur_event = line[len("event:") :].strip() or None
-            return []
-
-        if line.startswith("data:"):
-            self._cur_data.append(line[len("data:") :].lstrip())
-            return []
-
-        return []
-
-    def flush(self) -> list[SSEEvent]:
-        if self._cur_event is None and not self._cur_data:
-            return []
-        ev = (self._cur_event, "\n".join(self._cur_data))
-        self._cur_event = None
-        self._cur_data = []
-        return [ev]
+    id: str | None
+    event: str | None
+    data: str
 
 
 def parse_sse_events(text: str) -> list[SSEEvent]:
@@ -88,7 +62,57 @@ def parse_sse_events(text: str) -> list[SSEEvent]:
 
 
 def encode_sse_event(event: str | None, data: str) -> bytes:
+    return encode_sse_block(event=event, data=data, id=None)
+
+
+class SSEBlockDecoder:
+    """
+    Incremental SSE block decoder that also captures `id:` when present.
+
+    Notes:
+    - We still ignore unknown SSE fields (retry:, comments, etc.).
+    - `id` is carried as a string to match the wire format.
+    """
+
+    def __init__(self) -> None:
+        self._cur_id: str | None = None
+        self._cur_event: str | None = None
+        self._cur_data: list[str] = []
+
+    def feed_line(self, line: str) -> list[SSEBlock]:
+        if not line.strip():
+            return self.flush()
+
+        if line.startswith("id:"):
+            self._cur_id = line[len("id:") :].strip() or None
+            return []
+
+        if line.startswith("event:"):
+            self._cur_event = line[len("event:") :].strip() or None
+            return []
+
+        if line.startswith("data:"):
+            self._cur_data.append(line[len("data:") :].lstrip())
+            return []
+
+        return []
+
+    def flush(self) -> list[SSEBlock]:
+        if self._cur_id is None and self._cur_event is None and not self._cur_data:
+            return []
+        blk = SSEBlock(id=self._cur_id, event=self._cur_event, data="\n".join(self._cur_data))
+        self._cur_id = None
+        self._cur_event = None
+        self._cur_data = []
+        return [blk]
+
+
+def encode_sse_block(*, event: str | None, data: str, id: str | None) -> bytes:
+    """Encode one SSE block with optional `id:` and `event:`."""
+
     parts: list[str] = []
+    if id:
+        parts.append(f"id: {id}")
     if event:
         parts.append(f"event: {event}")
     for line in data.splitlines() or [""]:

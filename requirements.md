@@ -384,6 +384,48 @@ tool_choice 策略（v0）：
   - 请求携带的 `tools[]` 只能作为“提示/期望集合”，最终必须经 Tool Runtime 过滤。
 - 任何不在 Tool Runtime 工具注册表/manifest 中的工具名，都必须被忽略（或返回明确错误），禁止“客户端注入新工具名”。
 
+<a id="req-4-6"></a>
+### 4.6 会话恢复（Session Resume）与运行时配置绑定（Session Runtime Config）
+
+为满足“连续会话无损承接上下文”，AnyAgent 必须把跨请求状态从进程内存提升为可持久化、可加载的会话快照语义。
+
+<a id="req-4-6-1"></a>
+#### 4.6.1 跨请求上下文恢复与首轮 `input` 组装（OpenAI Responses Provider）
+
+AnyAgent 对 OpenAI Responses Provider 的最小恢复语义如下：
+
+- 同一个 `session_partition_key` 的后续请求，必须从 Session Store（或 `STORAGE_MODE=none` 的本地持久化）加载会话快照，而不是依赖进程内存。
+- 会话快照至少要包含一种可恢复游标：
+  - `last_response_id`（优先，OpenAI Responses provider 推荐）
+  - 或可重放的会话 items/transcript（当上游不支持 `previous_response_id` 时兜底）
+- 首轮上游请求组装规则（当前调用的“用户增量输入”记为 `request_delta_input`）：
+  - 若快照含 `last_response_id`：首轮请求应使用 `previous_response_id=<last_response_id>` + `input=request_delta_input`
+  - 若无 `last_response_id` 但有 transcript：首轮请求应使用 `input=<snapshot_transcript + request_delta_input>`
+  - 若无快照：按新会话处理
+- run 完成后，必须把新的恢复游标写回会话快照（至少包含新的 `last_response_id` 或等价可恢复引用），保证下一次请求可继续承接。
+
+<a id="req-4-6-2"></a>
+#### 4.6.2 会话运行参数绑定与 merge 更新
+
+AnyAgent 必须支持“会话级运行参数绑定”，避免同一会话跨请求出现模型/采样参数漂移。
+
+- 受管字段集合（v0）：
+  - `model`
+  - `temperature`
+  - `top_p`
+  - `frequency_penalty`
+  - `presence_penalty`
+  - `reasoning`
+- 绑定与更新规则：
+  - 会话创建时（首次请求）初始化 `runtime_config`（来源：请求显式字段 + 服务端默认值）。
+  - 后续请求默认复用会话中的 `runtime_config`。
+  - 仅当调用方在本次请求里显式提供对应字段时，才对该字段做 merge 式更新（按字段覆盖，不影响未提供字段）。
+- 工具回合一致性：
+  - 同一个 run 内所有后续 `POST /responses`（含 `previous_response_id + function_call_output` 回合）必须沿用同一个 `effective_runtime_config`，不能只保留 `model` 丢失其余受管字段。
+- 持久化规则：
+  - run 终态提交时，需要把最终 `effective_runtime_config` 回写到 Session Store，供下一次请求继续使用。
+  - 更新会话快照时必须带版本语义（CAS 或等价机制），防止并发覆盖造成配置回退。
+
 <a id="req-5"></a>
 ## 5. 内部接口：Tool Runtime（独立服务）
 
@@ -935,6 +977,8 @@ v0 允许多种策略并存，但必须做到“可解释、可审计”：
 
 - **会话内串行、会话间并行**：同一 `session_partition_key` 的 runs 需要串行化（keyed serialization）。
 - **幂等**：支持 `Idempotency-Key` 去重，避免 webhook 重试触发重复回复。
+- **会话恢复（resume）**：同一 `session_partition_key` 的后续请求，必须可从持久化会话快照恢复上下文（不依赖进程内存），并能在实例重启后继续服务。
+- **会话配置一致性**：会话级 `runtime_config` 必须默认稳定复用；只有请求显式传参时才做字段级 merge 更新。
 - **backpressure**：对 SSE/WebSocket 推送慢消费者要有断开/丢弃策略，避免拖垮系统。
 - **draining**：支持部署滚动升级时拒绝新请求但让进行中任务收敛。
 - **断线恢复**：至少 Gateway 侧要能基于 Event Store 做补发（last_seq/游标）。
@@ -962,6 +1006,9 @@ v0 允许多种策略并存，但必须做到“可解释、可审计”：
   - 非流式 `POST /v1/responses`
   - 流式 `stream=true`，事件顺序正确，能读到最终 `response.completed`，并以 `[DONE]` 结束
   - 触发一次 function tool call，并在服务端执行工具后继续推理产出最终回答
+  - 同一 `session_partition_key` 发起两次请求：第二次不重复发送历史对话，仍能承接第一次上下文（验证 Session Resume）
+  - 验证会话级运行参数绑定：首次绑定 `model/temperature/top_p/frequency_penalty/presence_penalty/reasoning` 后，后续不传参保持不变；显式传参只更新对应字段
+  - 验证工具回合参数一致性：同一 run 的后续 `previous_response_id` 回合沿用同一 `effective_runtime_config`
 
 <a id="req-9-2"></a>
 ### 9.2 Gateway 端到端验收

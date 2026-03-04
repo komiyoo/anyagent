@@ -19,6 +19,7 @@ dependencies = [
 agent-api = "anyagent_agent_api.main:main"
 agent-api-migrate = "anyagent_agent_api.storage.migrate:main"
 agent-api-retention = "anyagent_agent_api.storage.retention:main"
+agent-api-rollout-replay = "anyagent_agent_api.storage.rollout_replay:main"
 
 [build-system]
 requires = ["hatchling>=1.24"]
@@ -28,4 +29,4 @@ build-backend = "hatchling.build"
 packages = ["src/anyagent_agent_api"]
 
 [tool.uv.sources]
-anyagent = { path = "../../packages/anyagent" }
+anyagent = { path = "../../packages/anyagent", editable = true }

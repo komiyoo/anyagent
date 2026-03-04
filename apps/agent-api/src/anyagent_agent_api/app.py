@@ -5,6 +5,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from time import time
 from typing import Any
 from uuid import uuid4
 
@@ -42,6 +43,16 @@ from .keyed_sequencer import KeyedSequencer
 from .manifest_cache import ManifestCache
 from .multiagent.manager import MultiAgentManager, stable_root_thread_id
 from anyagent.protocol.sse import encode_sse_event
+from anyagent.protocol.stage_events import (
+    AnyAgentCommandPlannedEvent,
+    AnyAgentCommandResultEvent,
+    AnyAgentToolPlannedEvent,
+    AnyAgentToolResultEvent,
+    AnyAgentToolResultMeta,
+    StageError,
+    summarize_command,
+    summarize_payload,
+)
 from .settings import Settings
 from .storage import create_storage_runtime
 
@@ -60,6 +71,119 @@ def _dedupe_strs(values: list[str]) -> list[str]:
             continue
         seen.add(s)
         out.append(s)
+    return out
+
+
+_MANAGED_RUNTIME_FIELDS: tuple[str, ...] = (
+    "model",
+    "temperature",
+    "top_p",
+    "frequency_penalty",
+    "presence_penalty",
+    "reasoning",
+)
+
+
+def _json_clone(value: Any) -> Any:
+    """Return a JSON-safe deep copy for request/session payloads."""
+
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _extract_runtime_updates_from_request(body: dict[str, Any]) -> dict[str, Any]:
+    """Extract explicit managed runtime fields from one request body."""
+
+    out: dict[str, Any] = {}
+    for key in _MANAGED_RUNTIME_FIELDS:
+        if key in body:
+            out[key] = _json_clone(body.get(key))
+    return out
+
+
+def _merge_runtime_config(*, base_runtime_config: dict[str, Any], explicit_updates: dict[str, Any]) -> dict[str, Any]:
+    """Merge explicit request updates into session-bound runtime_config."""
+
+    merged = _json_clone(base_runtime_config if isinstance(base_runtime_config, dict) else {})
+    if not isinstance(merged, dict):
+        merged = {}
+    for key, value in explicit_updates.items():
+        merged[key] = _json_clone(value)
+    return merged
+
+
+def _apply_runtime_config_to_body(*, body: dict[str, Any], runtime_config: dict[str, Any]) -> dict[str, Any]:
+    """Apply effective runtime_config to one upstream request body (SSOT for managed fields)."""
+
+    out = dict(body)
+    for key in _MANAGED_RUNTIME_FIELDS:
+        if isinstance(runtime_config, dict) and key in runtime_config:
+            out[key] = _json_clone(runtime_config[key])
+        else:
+            out.pop(key, None)
+    return out
+
+
+def _build_initial_session_snapshot(*, runtime_config: dict[str, Any]) -> dict[str, Any]:
+    """Build the minimal v0 session snapshot structure."""
+
+    return {
+        "provider": "openai_responses",
+        "runtime_config": _json_clone(runtime_config),
+        "resume_cursor": {"last_response_id": None, "fallback_transcript_items": []},
+    }
+
+
+def _apply_session_resume_to_body(*, body: dict[str, Any], session_snapshot: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    """
+    Apply session resume cursor to the first upstream request body.
+
+    Rule: only fill `previous_response_id` when caller did not explicitly provide it.
+    """
+
+    out = dict(body)
+    prev = out.get("previous_response_id")
+    if isinstance(prev, str) and prev.strip():
+        return out, prev.strip()
+
+    resume_cursor = session_snapshot.get("resume_cursor")
+    if not isinstance(resume_cursor, dict):
+        return out, None
+    last_response_id = resume_cursor.get("last_response_id")
+    if isinstance(last_response_id, str) and last_response_id.strip():
+        out["previous_response_id"] = last_response_id.strip()
+        return out, last_response_id.strip()
+    return out, None
+
+
+def _build_next_session_snapshot(
+    *,
+    previous_snapshot: dict[str, Any],
+    runtime_config: dict[str, Any],
+    resume_last_response_id: str | None,
+    run_response_id: str | None,
+    last_event_seq: int | None,
+) -> dict[str, Any]:
+    """Build the next snapshot JSON for CAS update at run-final time."""
+
+    out = _json_clone(previous_snapshot if isinstance(previous_snapshot, dict) else {})
+    if not isinstance(out, dict):
+        out = {}
+    out["provider"] = "openai_responses"
+    out["runtime_config"] = _json_clone(runtime_config if isinstance(runtime_config, dict) else {})
+    resume = out.get("resume_cursor")
+    if not isinstance(resume, dict):
+        resume = {}
+    if isinstance(resume_last_response_id, str) and resume_last_response_id.strip():
+        resume["last_response_id"] = resume_last_response_id.strip()
+    out["resume_cursor"] = resume
+    out["last_run"] = {
+        "response_id": run_response_id,
+        "last_event_seq": int(last_event_seq) if isinstance(last_event_seq, int) else 0,
+        "updated_at_ms": int(time() * 1000),
+    }
     return out
 
 
@@ -327,6 +451,10 @@ def create_app(settings: Settings) -> FastAPI:
                 if events:
                     for ev in events:
                         after_seq = int(ev.seq)
+                        # Internal observability events must not leak into the external
+                        # OpenAI Responses-compatible SSE stream.
+                        if isinstance(ev.event, str) and ev.event.startswith("anyagent."):
+                            continue
                         yield encode_sse_event(ev.event, ev.data)
                         if ev.event is None and ev.data.strip() == "[DONE]":
                             return
@@ -383,6 +511,439 @@ def create_app(settings: Settings) -> FastAPI:
                 if final is not None:
                     return JSONResponse(status_code=200, content=final)
                 return openai_error(504, message="Idempotent request still in progress", type_="timeout_error")
+
+        # --- session resume + runtime_config binding (req-4-6) ---
+        session_record = await storage.session_store.get(session_partition_key=session_partition_key)
+        if session_record is None:
+            # Initialize a new session snapshot based on explicit request fields.
+            init_runtime = _extract_runtime_updates_from_request(body)
+            init_snapshot = _build_initial_session_snapshot(runtime_config=init_runtime)
+            session_record = await storage.session_store.create_if_absent(
+                session_partition_key=session_partition_key,
+                agent_id=agent_id,
+                session_key=session_key,
+                snapshot_json=init_snapshot,
+            )
+
+        session_snapshot = session_record.snapshot_json if isinstance(session_record.snapshot_json, dict) else {}
+        session_snapshot_version = int(getattr(session_record, "snapshot_version", 0) or 0)
+
+        explicit_runtime_updates = _extract_runtime_updates_from_request(body)
+        base_runtime_config = session_snapshot.get("runtime_config") if isinstance(session_snapshot.get("runtime_config"), dict) else {}
+        effective_runtime_config = _merge_runtime_config(
+            base_runtime_config=base_runtime_config if isinstance(base_runtime_config, dict) else {},
+            explicit_updates=explicit_runtime_updates,
+        )
+
+        body = _apply_runtime_config_to_body(body=body, runtime_config=effective_runtime_config)
+        body, resume_previous_response_id = _apply_session_resume_to_body(body=body, session_snapshot=session_snapshot)
+
+        def _trace_id_from_context(context_obj: dict[str, Any] | None) -> str | None:
+            if not isinstance(context_obj, dict):
+                return None
+            trc = context_obj.get("trace")
+            if isinstance(trc, dict) and isinstance(trc.get("trace_id"), str) and trc.get("trace_id").strip():
+                return trc["trace_id"].strip()
+            return None
+
+        async def _append_internal_event_best_effort(
+            *,
+            response_id: str,
+            event: str | None,
+            data: str,
+            tool_call_id: str | None = None,
+            tool_name: str | None = None,
+        ) -> int | None:
+            """
+            Append one event into Event Store (best-effort).
+
+            This must never break the main request path.
+            """
+
+            try:
+                seq = await storage.event_store.append(
+                    response_id=response_id,
+                    session_partition_key=session_partition_key,
+                    event=event,
+                    data=data,
+                )
+                if hasattr(storage.run_store, "set_last_event_seq"):
+                    try:
+                        await storage.run_store.set_last_event_seq(response_id=response_id, last_event_seq=int(seq))
+                    except Exception:  # noqa: BLE001
+                        pass
+                return int(seq)
+            except Exception as e:  # noqa: BLE001
+                logger.debug(
+                    "event_append_failed",
+                    extra={
+                        "response_id": response_id,
+                        "event": event,
+                        "tool_call_id": tool_call_id,
+                        "tool_name": tool_name,
+                        "error": str(e),
+                    },
+                )
+                return None
+
+        async def _append_internal_event_model_best_effort(
+            *,
+            response_id: str,
+            event: str,
+            model: Any,
+            tool_call_id: str | None = None,
+            tool_name: str | None = None,
+        ) -> int | None:
+            try:
+                payload = model.model_dump(exclude_none=True) if hasattr(model, "model_dump") else model
+                data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            except Exception as e:  # noqa: BLE001
+                logger.debug(
+                    "event_encode_failed",
+                    extra={
+                        "response_id": response_id,
+                        "event": event,
+                        "tool_call_id": tool_call_id,
+                        "tool_name": tool_name,
+                        "error": str(e),
+                    },
+                )
+                return None
+            return await _append_internal_event_best_effort(
+                response_id=response_id,
+                event=event,
+                data=data,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+            )
+
+        async def _append_stage_tool_planned_best_effort(
+            *,
+            persist_response_id: str,
+            tool_call_id: str,
+            tool_name: str,
+            arguments_json: Any,
+            trace_id: str | None,
+        ) -> None:
+            planned = AnyAgentToolPlannedEvent(
+                response_id=persist_response_id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                arguments=summarize_payload(arguments_json),
+                trace_id=trace_id,
+                ts_ms=int(time() * 1000),
+            )
+            await _append_internal_event_model_best_effort(
+                response_id=persist_response_id,
+                event="anyagent.tool.planned",
+                model=planned,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+            )
+            await _append_stage_command_planned_best_effort(
+                persist_response_id=persist_response_id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                arguments_json=arguments_json,
+                trace_id=trace_id,
+            )
+
+        def _maybe_extract_command_from_arguments(*, tool_name: str, arguments_json: Any) -> dict[str, Any] | None:
+            """
+            Best-effort extract command-like fields from tool arguments.
+
+            Returns a dict containing:
+            - command: str
+            - workdir: str|None
+            - timeout_ms: int|None
+            """
+
+            if not isinstance(tool_name, str) or not tool_name:
+                return None
+            if not isinstance(arguments_json, dict):
+                return None
+
+            # Heuristic: only attempt for tools that are likely to represent a command execution.
+            name = tool_name.lower()
+            if not ("shell" in name or "command" in name or name.endswith(".exec")):
+                return None
+
+            cmd: str | None = None
+            for k in ("command", "cmd", "bash", "script"):
+                v = arguments_json.get(k)
+                if isinstance(v, str) and v.strip():
+                    cmd = v.strip()
+                    break
+
+            if cmd is None:
+                argv = arguments_json.get("argv") or arguments_json.get("args")
+                if isinstance(argv, list) and argv and all(isinstance(x, str) for x in argv):
+                    import shlex
+
+                    cmd = " ".join(shlex.quote(x) for x in argv if x)
+
+            if cmd is None:
+                return None
+
+            workdir = arguments_json.get("workdir") or arguments_json.get("cwd")
+            workdir_out = workdir.strip() if isinstance(workdir, str) and workdir.strip() else None
+
+            timeout_ms = arguments_json.get("timeout_ms")
+            if timeout_ms is None:
+                timeout_ms = arguments_json.get("timeout")
+            timeout_out: int | None = None
+            if isinstance(timeout_ms, int):
+                timeout_out = max(0, int(timeout_ms))
+
+            return {"command": cmd, "workdir": workdir_out, "timeout_ms": timeout_out}
+
+        async def _append_stage_command_planned_best_effort(
+            *,
+            persist_response_id: str,
+            tool_call_id: str,
+            tool_name: str,
+            arguments_json: Any,
+            trace_id: str | None,
+        ) -> None:
+            try:
+                info = _maybe_extract_command_from_arguments(tool_name=tool_name, arguments_json=arguments_json)
+                if info is None:
+                    return
+                planned = AnyAgentCommandPlannedEvent(
+                    response_id=persist_response_id,
+                    command=summarize_command(str(info["command"])),
+                    workdir=info.get("workdir"),
+                    timeout_ms=info.get("timeout_ms"),
+                    source_tool_call_id=tool_call_id,
+                    source_tool_name=tool_name,
+                    trace_id=trace_id,
+                    ts_ms=int(time() * 1000),
+                )
+                await _append_internal_event_model_best_effort(
+                    response_id=persist_response_id,
+                    event="anyagent.command.planned",
+                    model=planned,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                )
+            except Exception:  # noqa: BLE001
+                return
+
+        async def _append_stage_tool_result_best_effort(
+            *,
+            persist_response_id: str,
+            tool_call_id: str,
+            tool_name: str,
+            tr: dict[str, Any],
+            trace_id: str | None,
+        ) -> None:
+            status = tr.get("status") if isinstance(tr, dict) else None
+            meta = tr.get("meta") if isinstance(tr, dict) else None
+            err = tr.get("error") if isinstance(tr, dict) else None
+            out = tr.get("output") if isinstance(tr, dict) else None
+
+            meta_model = AnyAgentToolResultMeta()
+            if isinstance(meta, dict):
+                meta_model = AnyAgentToolResultMeta(
+                    duration_ms=meta.get("duration_ms") if meta.get("duration_ms") is not None else None,
+                    output_truncated=meta.get("output_truncated") if meta.get("output_truncated") is not None else None,
+                    audit_ref=meta.get("audit_ref") if isinstance(meta.get("audit_ref"), str) else None,
+                )
+
+            err_model = None
+            if isinstance(err, dict) and isinstance(err.get("type"), str):
+                err_model = StageError(
+                    type=str(err.get("type")),
+                    code=err.get("code") if isinstance(err.get("code"), str) else None,
+                    message=str(err.get("message") or "tool_error"),
+                    retryable=err.get("retryable") if err.get("retryable") is not None else None,
+                )
+
+            result = AnyAgentToolResultEvent(
+                response_id=persist_response_id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                status=str(status) if isinstance(status, str) else "unknown",
+                meta=meta_model,
+                output=summarize_payload(out)
+                if isinstance(out, (str, dict, list, bytes, bytearray, memoryview))
+                else None,
+                error=err_model,
+                trace_id=trace_id,
+                ts_ms=int(time() * 1000),
+            )
+            await _append_internal_event_model_best_effort(
+                response_id=persist_response_id,
+                event="anyagent.tool.result",
+                model=result,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+            )
+            await _append_stage_command_result_best_effort(
+                persist_response_id=persist_response_id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                tr=tr,
+                meta_model=meta_model,
+                trace_id=trace_id,
+            )
+
+        async def _append_stage_command_result_best_effort(
+            *,
+            persist_response_id: str,
+            tool_call_id: str,
+            tool_name: str,
+            tr: dict[str, Any],
+            meta_model: AnyAgentToolResultMeta,
+            trace_id: str | None,
+        ) -> None:
+            try:
+                name = tool_name.lower() if isinstance(tool_name, str) else ""
+                if not ("shell" in name or "command" in name or name.endswith(".exec")):
+                    return
+                out = tr.get("output") if isinstance(tr, dict) else None
+                if not isinstance(out, str) or not out.strip():
+                    return
+
+                # Best-effort parse structured command result.
+                exit_code: int | None = None
+                stdout: Any = None
+                stderr: Any = None
+
+                if out.lstrip().startswith("{") and len(out) <= 200_000:
+                    try:
+                        obj = json.loads(out)
+                    except Exception:  # noqa: BLE001
+                        obj = None
+                    if isinstance(obj, dict):
+                        ec = obj.get("exit_code")
+                        if ec is None:
+                            ec = obj.get("code")
+                        if ec is None:
+                            ec = obj.get("returncode")
+                        if isinstance(ec, int):
+                            exit_code = int(ec)
+                        stdout = obj.get("stdout")
+                        stderr = obj.get("stderr")
+
+                result = AnyAgentCommandResultEvent(
+                    response_id=persist_response_id,
+                    exit_code=exit_code,
+                    stdout=summarize_payload(stdout) if isinstance(stdout, (str, dict, list)) else None,
+                    stderr=summarize_payload(stderr) if isinstance(stderr, (str, dict, list)) else None,
+                    duration_ms=meta_model.duration_ms,
+                    source_tool_call_id=tool_call_id,
+                    source_tool_name=tool_name,
+                    trace_id=trace_id,
+                    ts_ms=int(time() * 1000),
+                )
+                await _append_internal_event_model_best_effort(
+                    response_id=persist_response_id,
+                    event="anyagent.command.result",
+                    model=result,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                )
+            except Exception:  # noqa: BLE001
+                return
+
+        async def _persist_session_snapshot_only(
+            *,
+            run_response_id: str | None,
+            resume_last_response_id: str | None,
+            last_event_seq: int | None,
+        ) -> None:
+            """Persist session snapshot with CAS (best-effort, non-idempotent runs included)."""
+
+            try:
+                next_snapshot = _build_next_session_snapshot(
+                    previous_snapshot=session_snapshot,
+                    runtime_config=effective_runtime_config,
+                    resume_last_response_id=resume_last_response_id,
+                    run_response_id=run_response_id,
+                    last_event_seq=last_event_seq,
+                )
+                ok, latest = await storage.session_store.update_snapshot_cas(
+                    session_partition_key=session_partition_key,
+                    expected_snapshot_version=session_snapshot_version,
+                    snapshot_json=next_snapshot,
+                    agent_id=agent_id,
+                    session_key=session_key,
+                )
+                if not ok:
+                    logger.warning(
+                        "persist session snapshot failed (cas)",
+                        extra={
+                            "agent_id": agent_id,
+                            "session_partition_key": session_partition_key,
+                            "expected_snapshot_version": session_snapshot_version,
+                            "latest_snapshot_version": getattr(latest, "snapshot_version", None) if latest is not None else None,
+                        },
+                    )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("persist session snapshot failed: %s", e)
+
+        async def _persist_run_final_and_session(
+            *,
+            run_response_id: str,
+            status: str,
+            final_response_json: dict[str, Any] | None,
+            error_json: dict[str, Any] | None,
+            resume_last_response_id: str | None,
+            last_event_seq: int | None,
+        ) -> None:
+            """Persist run final state and advance session snapshot (prefer atomic external path)."""
+
+            next_snapshot = _build_next_session_snapshot(
+                previous_snapshot=session_snapshot,
+                runtime_config=effective_runtime_config,
+                resume_last_response_id=resume_last_response_id,
+                run_response_id=run_response_id,
+                last_event_seq=last_event_seq,
+            )
+
+            if hasattr(storage.run_store, "set_final_with_session_snapshot"):
+                try:
+                    ok, _latest = await storage.run_store.set_final_with_session_snapshot(  # type: ignore[attr-defined]
+                        response_id=run_response_id,
+                        status=status,
+                        final_response_json=final_response_json,
+                        error_json=error_json,
+                        session_partition_key=session_partition_key,
+                        agent_id=agent_id,
+                        session_key=session_key,
+                        snapshot_json=next_snapshot,
+                        expected_snapshot_version=session_snapshot_version,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("persist run final+session failed (atomic): %s", e)
+                    ok = False
+                if ok:
+                    return
+
+                # Fallback: at least commit run final to avoid leaving `started` runs behind.
+                try:
+                    await storage.run_store.set_final(
+                        response_id=run_response_id,
+                        status=status,
+                        final_response_json=final_response_json,
+                        error_json=error_json,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("persist run final failed (fallback): %s", e)
+                return
+
+            await storage.run_store.set_final(
+                response_id=run_response_id,
+                status=status,
+                final_response_json=final_response_json,
+                error_json=error_json,
+            )
+            await _persist_session_snapshot_only(
+                run_response_id=run_response_id,
+                resume_last_response_id=resume_last_response_id,
+                last_event_seq=last_event_seq,
+            )
 
         # --- skills selection (restart-based discovery; per-run selection) ---
         all_skills: list[SkillPackage] = list(request.app.state.global_skills) + list(request.app.state.agent_skills.get(agent_id, []))
@@ -711,6 +1272,105 @@ def create_app(settings: Settings) -> FastAPI:
                     },
                 }
 
+        async def _rollout_turn_started(*, response_id: str, turn_index: int, previous_response_id: str | None, mode: str) -> None:
+            w = getattr(storage, "rollout_writer", None)
+            if w is None:
+                return
+            try:
+                await w.append_turn_started(
+                    session_partition_key=session_partition_key,
+                    response_id=response_id,
+                    turn_index=turn_index,
+                    previous_response_id=previous_response_id,
+                    mode=mode,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug("rollout append_turn_started failed", extra={"response_id": response_id, "error": str(e)})
+
+        async def _rollout_turn_completed(
+            *, response_id: str, turn_index: int, status: str, function_call_count: int, output_item_count: int | None
+        ) -> None:
+            w = getattr(storage, "rollout_writer", None)
+            if w is None:
+                return
+            try:
+                await w.append_turn_completed(
+                    session_partition_key=session_partition_key,
+                    response_id=response_id,
+                    turn_index=turn_index,
+                    status=status,
+                    function_call_count=function_call_count,
+                    output_item_count=output_item_count,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug("rollout append_turn_completed failed", extra={"response_id": response_id, "error": str(e)})
+
+        async def _rollout_item_observed(*, response_id: str, turn_index: int, item_type: str, item_id: str | None, payload: Any) -> None:
+            w = getattr(storage, "rollout_writer", None)
+            if w is None:
+                return
+            try:
+                await w.append_item_observed(
+                    session_partition_key=session_partition_key,
+                    response_id=response_id,
+                    turn_index=turn_index,
+                    item_type=item_type,
+                    item_id=item_id,
+                    payload=payload,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug("rollout append_item_observed failed", extra={"response_id": response_id, "error": str(e)})
+
+        async def _rollout_tool_call_requested(
+            *,
+            response_id: str,
+            turn_index: int,
+            tool_call_id: str,
+            tool_name: str,
+            arguments_json: Any,
+            is_system_tool: bool,
+        ) -> None:
+            w = getattr(storage, "rollout_writer", None)
+            if w is None:
+                return
+            try:
+                await w.append_tool_call_requested(
+                    session_partition_key=session_partition_key,
+                    response_id=response_id,
+                    turn_index=turn_index,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    arguments_json=arguments_json,
+                    is_system_tool=is_system_tool,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug("rollout append_tool_call_requested failed", extra={"response_id": response_id, "error": str(e)})
+
+        async def _rollout_tool_call_completed(
+            *,
+            response_id: str,
+            turn_index: int,
+            tool_call_id: str,
+            tool_name: str,
+            tr: dict[str, Any],
+        ) -> None:
+            w = getattr(storage, "rollout_writer", None)
+            if w is None:
+                return
+            try:
+                await w.append_tool_call_completed(
+                    session_partition_key=session_partition_key,
+                    response_id=response_id,
+                    turn_index=turn_index,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    status=str(tr.get("status") or "unknown"),
+                    output=tr.get("output") if isinstance(tr, dict) else None,
+                    error=tr.get("error") if isinstance(tr, dict) else None,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug("rollout append_tool_call_completed failed", extra={"response_id": response_id, "error": str(e)})
+
         async def do_work() -> Response:
             nonlocal manifest_tools, toolset_version
 
@@ -725,19 +1385,8 @@ def create_app(settings: Settings) -> FastAPI:
                         canonical_response_id = idem_response_id
                         cur_body: dict[str, Any] = json.loads(json.dumps(body))
                         forward_idempotency_key = True
-
-                        async def _append_event(ev: str | None, data: str) -> None:
-                            try:
-                                seq = await storage.event_store.append(
-                                    response_id=canonical_response_id,
-                                    session_partition_key=session_partition_key,
-                                    event=ev,
-                                    data=data,
-                                )
-                                if hasattr(storage.run_store, "set_last_event_seq"):
-                                    await storage.run_store.set_last_event_seq(response_id=canonical_response_id, last_event_seq=int(seq))
-                            except Exception:  # noqa: BLE001
-                                return
+                        last_event_seq = 0
+                        last_upstream_response_id: str | None = None
 
                         async def _with_lease(fn):  # type: ignore[no-untyped-def]
                             if getattr(storage, "mode", "none") != "external":
@@ -787,6 +1436,13 @@ def create_app(settings: Settings) -> FastAPI:
                             iters = 0
                             while iters < max_iters:
                                 iters += 1
+                                prev_for_turn = cur_body.get("previous_response_id")
+                                await _rollout_turn_started(
+                                    response_id=canonical_response_id,
+                                    turn_index=iters,
+                                    previous_response_id=prev_for_turn.strip() if isinstance(prev_for_turn, str) and prev_for_turn.strip() else None,
+                                    mode="stream_store",
+                                )
                                 upstream = await _openai_stream_response(body2=cur_body)
                                 forward_idempotency_key = False
 
@@ -795,7 +1451,13 @@ def create_app(settings: Settings) -> FastAPI:
                                         raw = await upstream.aread()
                                     finally:
                                         await upstream.aclose()
-                                    await _append_event("error", raw.decode("utf-8", errors="replace"))
+                                    seq = await _append_internal_event_best_effort(
+                                        response_id=canonical_response_id,
+                                        event="error",
+                                        data=raw.decode("utf-8", errors="replace"),
+                                    )
+                                    if isinstance(seq, int):
+                                        last_event_seq = max(last_event_seq, seq)
                                     error_json = {"type": "upstream_error", "message": "upstream error"}
                                     break
 
@@ -818,7 +1480,7 @@ def create_app(settings: Settings) -> FastAPI:
                                     return None
 
                                 async def flush_block() -> None:
-                                    nonlocal completed, cur_event, cur_data, final_response
+                                    nonlocal completed, cur_event, cur_data, final_response, last_upstream_response_id
 
                                     if cur_event is None and not cur_data:
                                         return
@@ -837,19 +1499,34 @@ def create_app(settings: Settings) -> FastAPI:
                                         completed = _decode_completed_response(data)
                                         if completed is None:
                                             return
+                                        rid = completed.get("id")
+                                        if isinstance(rid, str) and rid.strip():
+                                            last_upstream_response_id = rid.strip()
                                         # If function calls exist, tool loop will continue; do not emit this completion.
                                         if _extract_function_calls(completed):
                                             return
 
-                                    try:
-                                        payload = json.loads(data)
-                                    except Exception:  # noqa: BLE001
-                                        await _append_event(ev, data)
-                                        return
+                                        try:
+                                            payload = json.loads(data)
+                                        except Exception:  # noqa: BLE001
+                                            seq = await _append_internal_event_best_effort(
+                                                response_id=canonical_response_id,
+                                                event=ev,
+                                                data=data,
+                                            )
+                                            if isinstance(seq, int):
+                                                last_event_seq = max(last_event_seq, seq)
+                                            return
 
-                                    _normalize_response_id(payload, canonical_response_id)
-                                    data2 = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-                                    await _append_event(ev, data2)
+                                        _normalize_response_id(payload, canonical_response_id)
+                                        data2 = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+                                        seq = await _append_internal_event_best_effort(
+                                            response_id=canonical_response_id,
+                                            event=ev,
+                                            data=data2,
+                                        )
+                                        if isinstance(seq, int):
+                                            last_event_seq = max(last_event_seq, seq)
 
                                     if ev == "response.completed" and isinstance(completed, dict):
                                         _normalize_response_id(completed, canonical_response_id)
@@ -878,8 +1555,25 @@ def create_app(settings: Settings) -> FastAPI:
                                     break
 
                                 calls = _extract_function_calls(completed)
+                                output = completed.get("output")
+                                output_item_count = len(output) if isinstance(output, list) else None
                                 if not calls:
+                                    await _rollout_turn_completed(
+                                        response_id=canonical_response_id,
+                                        turn_index=iters,
+                                        status="completed_no_tool",
+                                        function_call_count=0,
+                                        output_item_count=output_item_count,
+                                    )
                                     break
+
+                                await _rollout_turn_completed(
+                                    response_id=canonical_response_id,
+                                    turn_index=iters,
+                                    status="completed_with_tool",
+                                    function_call_count=len(calls),
+                                    output_item_count=output_item_count,
+                                )
 
                                 tool_outputs: list[dict[str, Any]] = []
                                 for call in calls:
@@ -888,6 +1582,32 @@ def create_app(settings: Settings) -> FastAPI:
                                     arguments = call.get("arguments")
                                     if not isinstance(call_id, str) or not isinstance(tool_name, str):
                                         continue
+                                    await _rollout_item_observed(
+                                        response_id=canonical_response_id,
+                                        turn_index=iters,
+                                        item_type="function_call",
+                                        item_id=call_id,
+                                        payload=call,
+                                    )
+                                    await _rollout_tool_call_requested(
+                                        response_id=canonical_response_id,
+                                        turn_index=iters,
+                                        tool_call_id=call_id,
+                                        tool_name=tool_name,
+                                        arguments_json=arguments,
+                                        is_system_tool=tool_name in system_tool_names,
+                                    )
+
+                                    trace_id = None
+                                    trace_id = _trace_id_from_context(context if isinstance(context, dict) else None)
+
+                                    await _append_stage_tool_planned_best_effort(
+                                        persist_response_id=canonical_response_id,
+                                        tool_call_id=call_id,
+                                        tool_name=tool_name,
+                                        arguments_json=arguments,
+                                        trace_id=trace_id,
+                                    )
                                     try:
                                         if tool_name in system_tool_names:
                                             tr = await _execute_system_tool(
@@ -902,9 +1622,25 @@ def create_app(settings: Settings) -> FastAPI:
                                                 tool_name=tool_name,
                                                 arguments_json=arguments,
                                                 deadline_ms=30_000,
-                                            )
+                                             )
                                     except Exception as e:  # noqa: BLE001
                                         tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
+
+                                    await _append_stage_tool_result_best_effort(
+                                        persist_response_id=canonical_response_id,
+                                        tool_call_id=call_id,
+                                        tool_name=tool_name,
+                                        tr=tr if isinstance(tr, dict) else {},
+                                        trace_id=trace_id,
+                                    )
+
+                                    await _rollout_tool_call_completed(
+                                        response_id=canonical_response_id,
+                                        turn_index=iters,
+                                        tool_call_id=call_id,
+                                        tool_name=tool_name,
+                                        tr=tr if isinstance(tr, dict) else {},
+                                    )
 
                                     if tr.get("status") == "completed" and isinstance(tr.get("output"), str):
                                         output_str = tr["output"]
@@ -917,7 +1653,6 @@ def create_app(settings: Settings) -> FastAPI:
                                     break
 
                                 next_body: dict[str, Any] = {
-                                    "model": body.get("model"),
                                     "previous_response_id": upstream_response_id,
                                     "input": tool_outputs,
                                     "tools": manifest_tools,
@@ -926,26 +1661,48 @@ def create_app(settings: Settings) -> FastAPI:
                                 }
                                 if body.get("tool_choice") is not None:
                                     next_body["tool_choice"] = body.get("tool_choice")
-                                cur_body = next_body
+                                cur_body = _apply_runtime_config_to_body(body=next_body, runtime_config=effective_runtime_config)
 
-                        async def _run_all() -> None:
-                            try:
-                                await _with_lease(_run_inner)
-                                await _append_event(None, "[DONE]")
-                                await storage.run_store.set_final(
-                                    response_id=canonical_response_id,
-                                    status="completed" if error_json is None else "errored",
-                                    final_response_json=final_response,
+                            async def _run_all() -> None:
+                                try:
+                                    await _with_lease(_run_inner)
+                                    seq = await _append_internal_event_best_effort(
+                                        response_id=canonical_response_id,
+                                        event=None,
+                                        data="[DONE]",
+                                    )
+                                    if isinstance(seq, int):
+                                        last_event_seq = max(last_event_seq, seq)
+                                    await _persist_run_final_and_session(
+                                        run_response_id=canonical_response_id,
+                                        status="completed" if error_json is None else "errored",
+                                        final_response_json=final_response,
                                     error_json=error_json,
-                                )
-                            except Exception as e:  # noqa: BLE001
-                                await _append_event("error", str(e))
-                                await _append_event(None, "[DONE]")
-                                await storage.run_store.set_final(
-                                    response_id=canonical_response_id,
-                                    status="errored",
-                                    final_response_json=final_response,
+                                    resume_last_response_id=last_upstream_response_id,
+                                    last_event_seq=last_event_seq,
+                                    )
+                                except Exception as e:  # noqa: BLE001
+                                    seq = await _append_internal_event_best_effort(
+                                        response_id=canonical_response_id,
+                                        event="error",
+                                        data=str(e),
+                                    )
+                                    if isinstance(seq, int):
+                                        last_event_seq = max(last_event_seq, seq)
+                                    seq = await _append_internal_event_best_effort(
+                                        response_id=canonical_response_id,
+                                        event=None,
+                                        data="[DONE]",
+                                    )
+                                    if isinstance(seq, int):
+                                        last_event_seq = max(last_event_seq, seq)
+                                    await _persist_run_final_and_session(
+                                        run_response_id=canonical_response_id,
+                                        status="errored",
+                                        final_response_json=final_response,
                                     error_json={"type": "storage_error", "message": str(e)},
+                                    resume_last_response_id=last_upstream_response_id,
+                                    last_event_seq=last_event_seq,
                                 )
 
                         if settings.enable_keyed_serialization:
@@ -1002,9 +1759,17 @@ def create_app(settings: Settings) -> FastAPI:
                     cur_body: dict[str, Any] = dict(body)
                     cur_upstream: httpx.Response | None = upstream0
                     forward_idempotency_key = True
+                    last_upstream_response_id: str | None = None
 
                     while iters < max_iters:
                         iters += 1
+                        prev_for_turn = cur_body.get("previous_response_id")
+                        await _rollout_turn_started(
+                            response_id=canonical_response_id,
+                            turn_index=iters,
+                            previous_response_id=prev_for_turn.strip() if isinstance(prev_for_turn, str) and prev_for_turn.strip() else None,
+                            mode="stream",
+                        )
 
                         upstream = cur_upstream
                         if upstream is None:
@@ -1027,7 +1792,7 @@ def create_app(settings: Settings) -> FastAPI:
                         cur_data: list[str] = []
 
                         async def flush_block() -> Any:
-                            nonlocal completed, cur_event, cur_data
+                            nonlocal completed, cur_event, cur_data, last_upstream_response_id
 
                             if cur_event is None and not cur_data:
                                 return
@@ -1049,6 +1814,7 @@ def create_app(settings: Settings) -> FastAPI:
                                 response_id = completed.get("id")
                                 if not isinstance(response_id, str) or not response_id:
                                     return
+                                last_upstream_response_id = response_id
 
                                 calls = _extract_function_calls(completed)
                                 if calls:
@@ -1103,8 +1869,25 @@ def create_app(settings: Settings) -> FastAPI:
                             break
 
                         calls = _extract_function_calls(completed)
+                        output = completed.get("output")
+                        output_item_count = len(output) if isinstance(output, list) else None
                         if not calls:
+                            await _rollout_turn_completed(
+                                response_id=canonical_response_id,
+                                turn_index=iters,
+                                status="completed_no_tool",
+                                function_call_count=0,
+                                output_item_count=output_item_count,
+                            )
                             break
+
+                        await _rollout_turn_completed(
+                            response_id=canonical_response_id,
+                            turn_index=iters,
+                            status="completed_with_tool",
+                            function_call_count=len(calls),
+                            output_item_count=output_item_count,
+                        )
 
                         if await request.is_disconnected():
                             break
@@ -1116,6 +1899,21 @@ def create_app(settings: Settings) -> FastAPI:
                             arguments = call.get("arguments")
                             if not isinstance(call_id, str) or not isinstance(tool_name, str):
                                 continue
+                            await _rollout_item_observed(
+                                response_id=canonical_response_id,
+                                turn_index=iters,
+                                item_type="function_call",
+                                item_id=call_id,
+                                payload=call,
+                            )
+                            await _rollout_tool_call_requested(
+                                response_id=canonical_response_id,
+                                turn_index=iters,
+                                tool_call_id=call_id,
+                                tool_name=tool_name,
+                                arguments_json=arguments,
+                                is_system_tool=tool_name in system_tool_names,
+                            )
                             try:
                                 if tool_name in system_tool_names:
                                     tr = await _execute_system_tool(
@@ -1146,6 +1944,14 @@ def create_app(settings: Settings) -> FastAPI:
                             except Exception as e:  # noqa: BLE001
                                 tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
 
+                            await _rollout_tool_call_completed(
+                                response_id=canonical_response_id,
+                                turn_index=iters,
+                                tool_call_id=call_id,
+                                tool_name=tool_name,
+                                tr=tr if isinstance(tr, dict) else {},
+                            )
+
                             if tr.get("status") == "completed" and isinstance(tr.get("output"), str):
                                 output_str = tr["output"]
                             else:
@@ -1157,7 +1963,6 @@ def create_app(settings: Settings) -> FastAPI:
                             break
 
                         next_body: dict[str, Any] = {
-                            "model": body.get("model"),
                             "previous_response_id": response_id,
                             "input": tool_outputs,
                             "tools": manifest_tools,
@@ -1167,8 +1972,13 @@ def create_app(settings: Settings) -> FastAPI:
                         if body.get("tool_choice") is not None:
                             next_body["tool_choice"] = body.get("tool_choice")
 
-                        cur_body = next_body
+                        cur_body = _apply_runtime_config_to_body(body=next_body, runtime_config=effective_runtime_config)
 
+                    await _persist_session_snapshot_only(
+                        run_response_id=canonical_response_id,
+                        resume_last_response_id=last_upstream_response_id,
+                        last_event_seq=None,
+                    )
                     yield encode_sse_event(None, "[DONE]")
 
                 return StreamingResponse(iter_sse(), media_type="text/event-stream")
@@ -1184,40 +1994,67 @@ def create_app(settings: Settings) -> FastAPI:
             if status_code >= 400 or not isinstance(resp_json, dict):
                 if idempotency_key is not None and idem_created and isinstance(idem_response_id, str) and idem_response_id:
                     err_json = resp_json if isinstance(resp_json, dict) else {"error": {"message": "upstream_error"}}
-                    await storage.run_store.set_final(
-                        response_id=idem_response_id,
-                        status="errored",
-                        final_response_json=None,
-                        error_json=err_json.get("error") if isinstance(err_json, dict) else None,
-                    )
+                    last_event_seq: int | None = None
                     try:
-                        await storage.event_store.append(
+                        await _append_internal_event_best_effort(
                             response_id=idem_response_id,
-                            session_partition_key=session_partition_key,
                             event="error",
                             data=json.dumps(err_json, ensure_ascii=False, separators=(",", ":")),
                         )
-                        await storage.event_store.append(
+                        seq2 = await _append_internal_event_best_effort(
                             response_id=idem_response_id,
-                            session_partition_key=session_partition_key,
                             event=None,
                             data="[DONE]",
                         )
+                        last_event_seq = int(seq2) if isinstance(seq2, int) else None
                     except Exception:  # noqa: BLE001
                         pass
+                    await _persist_run_final_and_session(
+                        run_response_id=idem_response_id,
+                        status="errored",
+                        final_response_json=None,
+                        error_json=err_json.get("error") if isinstance(err_json, dict) else None,
+                        resume_last_response_id=None,
+                        last_event_seq=last_event_seq,
+                    )
                 if isinstance(resp_json, dict):
                     return JSONResponse(status_code=status_code, content=resp_json)
                 return openai_error(status_code, message="Upstream error", type_="upstream_error")
 
             iters = 0
+            prev_response_id_for_turn = body.get("previous_response_id") if isinstance(body.get("previous_response_id"), str) else None
             while iters < max_iters:
                 iters += 1
                 response_id = resp_json.get("id")
                 if not isinstance(response_id, str) or not response_id:
                     break
                 calls = _extract_function_calls(resp_json)
+                rollout_response_id = idem_response_id if isinstance(idem_response_id, str) and idem_response_id else response_id
+                await _rollout_turn_started(
+                    response_id=rollout_response_id,
+                    turn_index=iters,
+                    previous_response_id=prev_response_id_for_turn.strip() if isinstance(prev_response_id_for_turn, str) and prev_response_id_for_turn.strip() else None,
+                    mode="nonstream",
+                )
+                output = resp_json.get("output")
+                output_item_count = len(output) if isinstance(output, list) else None
                 if not calls:
+                    await _rollout_turn_completed(
+                        response_id=rollout_response_id,
+                        turn_index=iters,
+                        status="completed_no_tool",
+                        function_call_count=0,
+                        output_item_count=output_item_count,
+                    )
                     break
+
+                await _rollout_turn_completed(
+                    response_id=rollout_response_id,
+                    turn_index=iters,
+                    status="completed_with_tool",
+                    function_call_count=len(calls),
+                    output_item_count=output_item_count,
+                )
 
                 tool_outputs: list[dict[str, Any]] = []
                 for call in calls:
@@ -1226,6 +2063,36 @@ def create_app(settings: Settings) -> FastAPI:
                     arguments = call.get("arguments")
                     if not isinstance(call_id, str) or not isinstance(tool_name, str):
                         continue
+                    await _rollout_item_observed(
+                        response_id=rollout_response_id,
+                        turn_index=iters,
+                        item_type="function_call",
+                        item_id=call_id,
+                        payload=call,
+                    )
+                    await _rollout_tool_call_requested(
+                        response_id=rollout_response_id,
+                        turn_index=iters,
+                        tool_call_id=call_id,
+                        tool_name=tool_name,
+                        arguments_json=arguments,
+                        is_system_tool=tool_name in system_tool_names,
+                    )
+
+                    trace_id = None
+                    if isinstance(context, dict):
+                        trc = context.get("trace")
+                        if isinstance(trc, dict) and isinstance(trc.get("trace_id"), str):
+                            trace_id = trc.get("trace_id")
+
+                    if idempotency_key is not None and idem_created and isinstance(idem_response_id, str) and idem_response_id:
+                        await _append_stage_tool_planned_best_effort(
+                            persist_response_id=idem_response_id,
+                            tool_call_id=call_id,
+                            tool_name=tool_name,
+                            arguments_json=arguments,
+                            trace_id=trace_id,
+                        )
                     try:
                         if tool_name in system_tool_names:
                             tr = await _execute_system_tool(
@@ -1256,6 +2123,22 @@ def create_app(settings: Settings) -> FastAPI:
                     except Exception as e:  # noqa: BLE001
                         tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
 
+                    if idempotency_key is not None and idem_created and isinstance(idem_response_id, str) and idem_response_id:
+                        await _append_stage_tool_result_best_effort(
+                            persist_response_id=idem_response_id,
+                            tool_call_id=call_id,
+                            tool_name=tool_name,
+                            tr=tr if isinstance(tr, dict) else {},
+                            trace_id=trace_id,
+                        )
+
+                    await _rollout_tool_call_completed(
+                        response_id=rollout_response_id,
+                        turn_index=iters,
+                        tool_call_id=call_id,
+                        tool_name=tool_name,
+                        tr=tr if isinstance(tr, dict) else {},
+                    )
                     if tr.get("status") == "completed" and isinstance(tr.get("output"), str):
                         output_str = tr["output"]
                     else:
@@ -1267,7 +2150,6 @@ def create_app(settings: Settings) -> FastAPI:
                     break
 
                 next_body: dict[str, Any] = {
-                    "model": body.get("model"),
                     "previous_response_id": response_id,
                     "input": tool_outputs,
                     "tools": manifest_tools,
@@ -1276,6 +2158,7 @@ def create_app(settings: Settings) -> FastAPI:
                 if body.get("tool_choice") is not None:
                     next_body["tool_choice"] = body.get("tool_choice")
 
+                next_body = _apply_runtime_config_to_body(body=next_body, runtime_config=effective_runtime_config)
                 status_code, resp_json = await create_responses_json(
                     client=request.app.state.http,
                     request=request,
@@ -1285,34 +2168,47 @@ def create_app(settings: Settings) -> FastAPI:
                 )
                 if status_code >= 400 or not isinstance(resp_json, dict):
                     break
+                prev_response_id_for_turn = response_id
 
             if idempotency_key is not None and idem_created and isinstance(idem_response_id, str) and idem_response_id and isinstance(resp_json, dict):
+                upstream_final_response_id = resp_json.get("id") if isinstance(resp_json.get("id"), str) else None
                 try:
                     _normalize_response_id(resp_json, idem_response_id)
                 except Exception:  # noqa: BLE001
                     pass
 
-                await storage.run_store.set_final(
-                    response_id=idem_response_id,
-                    status="completed" if status_code < 400 else "errored",
-                    final_response_json=resp_json,
-                    error_json=resp_json.get("error") if status_code >= 400 else None,
-                )
+                last_event_seq: int | None = None
                 try:
-                    await storage.event_store.append(
+                    _ = await _append_internal_event_best_effort(
                         response_id=idem_response_id,
-                        session_partition_key=session_partition_key,
                         event="response.completed",
                         data=json.dumps(resp_json, ensure_ascii=False, separators=(",", ":")),
                     )
-                    await storage.event_store.append(
+                    seq2 = await _append_internal_event_best_effort(
                         response_id=idem_response_id,
-                        session_partition_key=session_partition_key,
                         event=None,
                         data="[DONE]",
                     )
+                    last_event_seq = int(seq2)
                 except Exception:  # noqa: BLE001
                     pass
+                await _persist_run_final_and_session(
+                    run_response_id=idem_response_id,
+                    status="completed" if status_code < 400 else "errored",
+                    final_response_json=resp_json,
+                    error_json=resp_json.get("error") if status_code >= 400 else None,
+                    resume_last_response_id=upstream_final_response_id,
+                    last_event_seq=last_event_seq,
+                )
+
+            elif isinstance(resp_json, dict):
+                # Non-idempotent non-stream runs still advance session resume cursor/runtime_config.
+                upstream_final_response_id = resp_json.get("id") if isinstance(resp_json.get("id"), str) else None
+                await _persist_session_snapshot_only(
+                    run_response_id=upstream_final_response_id,
+                    resume_last_response_id=upstream_final_response_id,
+                    last_event_seq=None,
+                )
 
             return JSONResponse(status_code=status_code, content=resp_json)
 

@@ -122,6 +122,8 @@
 - 先改代码，再让文档与 TODO 引用代码事实（避免“文档先行、实现漂移”）。
 - 避免重复实现与旁路：同一规则/策略/枚举必须保持单一真源。
 - 对外协议/字段：以 `requirements.md` + `anyagent.protocol.*` 为准，禁止在多个位置各写一份“自己的协议解释”。
+- **协议优先（Protocol-First）**：新增/修改任何“可被其他模块消费”的协议或事件（外部 API、内部 `/internal/*`、SSE 事件、tool/runtime payload 等）时，必须先在 `anyagent.protocol.*` 定义/更新数据模型（Pydantic），再实现具体功能；server/client 必须复用同一份模型，禁止两边各自手写 `dict` shape 造成漂移。
+- **SDK/示例强类型（Typed-by-Default）**：任何 SDK（尤其 `packages/anyagent`）与示例项目都必须有完备的类型/协议系统支撑：对外输入/输出/事件必须有明确的 typed model（优先 `anyagent.protocol.*` 的 Pydantic 模型或 OpenAI 官方 SDK typed models）；示例代码必须使用这些类型完成解析/校验/构造，禁止“直接拼 `dict`/随手 json.loads 后到处传”导致协议漂移与不可维护。
 - 对外兼容面（Responses / Tool Runtime）：优先以 **协议模型** 与 **可观测字段** 为中心组织实现，确保 replay 与排障不靠猜。
 
 ### 实现后同步 TODO（必须）

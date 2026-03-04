@@ -10,6 +10,8 @@
 - `docs/acceptance/`：验收清单与用例（可复现验证）
 - `docs/security/`：威胁模型、sandbox 安全、tool policy、审计留痕
 - `docs/architecture/`：总体架构与关键子系统交互（skills/tool-runtime、stateless 语义、存储设计等）
+  - 运行时实体分层参考：`docs/architecture/agent-server-runtime-entities.md`
+  - Client 阶段性事件（tool/command 粒度）：`docs/architecture/agent-api-client-stage-events.md`
 - `docs/performance/`：压测基线、容量指标口径
 - `docs/_dev/`：研发期草案（Draft/WIP/TODO），不保证长期稳定
 - `docs/_notes/`：个人/第三方材料与调研笔记（非产品文档）
@@ -17,4 +19,3 @@
 约束：
 - 进度以 `todo/*.md` 为真源；`docs/_dev/` 仅作为研发对齐与沉淀辅助。
 - 若 `todo/*.md` 的 `Impl:` 引用到 docs 文件，移动文件后必须同步更新引用路径。
-

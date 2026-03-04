@@ -32,3 +32,7 @@ class Settings(BaseSettings):
     redis_dsn: RedisDsn | None = Field(default=None, alias="REDIS_DSN")
     redis_namespace: str = Field(default="anyagent", alias="REDIS_NAMESPACE")
     postgres_schema: str = Field(default="public", alias="POSTGRES_SCHEMA")
+    rollout_root_dir: str | None = Field(default=None, alias="ROLLOUT_ROOT_DIR")
+    rollout_rotate_max_bytes: int = Field(default=0, alias="ROLLOUT_ROTATE_MAX_BYTES")
+    rollout_rotate_max_age_seconds: int = Field(default=0, alias="ROLLOUT_ROTATE_MAX_AGE_SECONDS")
+    rollout_rotate_keep_files: int = Field(default=16, alias="ROLLOUT_ROTATE_KEEP_FILES")

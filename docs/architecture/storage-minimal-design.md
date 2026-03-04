@@ -80,6 +80,42 @@ CREATE INDEX sessions_updated_at_idx ON sessions (updated_at);
 - `snapshot_version` 用于乐观并发控制（CAS），避免并发写入覆盖（即使会话内串行也建议保留这条安全线）。
 - 若要做多租户，可把主键改为 `(tenant_id, session_partition_key)`。
 
+#### 4.1.1 `snapshot_json` 推荐结构（OpenAI Responses Provider）
+
+为支持“连续会话无损恢复 + 会话参数稳定复用”，建议把 `snapshot_json` 结构收敛为：
+
+```json
+{
+  "provider": "openai_responses",
+  "runtime_config": {
+    "model": "gpt-4.1-mini",
+    "temperature": 0.2,
+    "top_p": 1.0,
+    "frequency_penalty": 0.0,
+    "presence_penalty": 0.0,
+    "reasoning": {
+      "effort": "medium"
+    }
+  },
+  "resume_cursor": {
+    "last_response_id": "resp_xxx",
+    "fallback_transcript_items": []
+  },
+  "last_run": {
+    "response_id": "resp_xxx",
+    "last_event_seq": 42,
+    "updated_at_ms": 1760000000000
+  }
+}
+```
+
+字段语义：
+
+- `runtime_config`：会话级默认运行参数；后续请求默认复用，仅在调用方显式传对应字段时做字段级 merge 更新。
+- `resume_cursor.last_response_id`：OpenAI Responses 的首选恢复游标；下一次请求优先用 `previous_response_id + 本次增量 input` 继续会话。
+- `resume_cursor.fallback_transcript_items`：当 `last_response_id` 不可用时的兜底重建材料（可按保留策略裁剪）。
+- `last_run.*`：用于排障、验收与一致性检查，不参与业务语义判断。
+
 ### 4.2 runs（Run Store：一次 responses 执行）
 
 ```sql
@@ -225,6 +261,28 @@ Agent API 提供一个 Postgres 清理脚本（默认 **plan-only**，不会写�
 - 发布终态事件（`response.completed` / internal run end）
 
 这样可以保证：即使 Ingress/Platform Gateway 断线或错过 PubSub，仍能从 DB 里恢复终态与补发事件。
+
+### 6.3 Session Resume 的读-并-写顺序（必须）
+
+对于 `POST /v1/responses`，推荐把会话恢复与配置合并统一成固定顺序：
+
+1. 获取 `session_partition_key` 的 lease lock（会话内串行）。
+2. 读取 `sessions.snapshot_json`（无记录则初始化空快照）。
+3. 计算 `effective_runtime_config`：
+   - 基于快照中的 `runtime_config`
+   - 仅对请求中显式出现的受管字段做覆盖更新（`model/temperature/top_p/frequency_penalty/presence_penalty/reasoning`）
+4. 组装首轮上游请求：
+   - 若有 `resume_cursor.last_response_id`：使用 `previous_response_id + 本次增量 input`
+   - 否则使用 `fallback_transcript_items + 本次增量 input`
+5. run 完成后，在同一事务中写入：
+   - `runs` 终态（`status/final_response_json/error_json`）
+   - `sessions.snapshot_json`（更新 `runtime_config` + 新 `resume_cursor`）
+   - `sessions.snapshot_version = snapshot_version + 1`
+6. 提交事务后发布终态事件并释放锁。
+
+备注：
+
+- `STORAGE_MODE=none` 场景应保持等价语义（本地文件也要能恢复 `runtime_config + resume_cursor`），否则外置存储与本地模式行为会分叉。
 
 ## 7. Lock Service（Lease Lock）最小语义
 

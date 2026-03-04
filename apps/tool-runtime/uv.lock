@@ -23,7 +23,7 @@ wheels = [
 [[package]]
 name = "anyagent"
 version = "0.1.0"
-source = { directory = "../../packages/anyagent" }
+source = { editable = "../../packages/anyagent" }
 dependencies = [
     { name = "httpx" },
     { name = "jsonschema" },
@@ -596,7 +596,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyagent", directory = "../../packages/anyagent" },
+    { name = "anyagent", editable = "../../packages/anyagent" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic", specifier = ">=2.8" },

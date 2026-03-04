@@ -114,6 +114,23 @@
 | Platform Gateway | `true` | 路径 A 或 B（推荐 B + Event Bus 订阅） | 按选择返回 |
 | Platform Gateway | `false` | 路径 B | `202` + `run_id` |
 
+### 3.4 Session Resume 与会话运行参数绑定（对齐 `requirements.md#req-4-6`）
+
+同一 `session_partition_key` 的连续请求必须满足两件事：上下文可恢复、运行参数可复用且可控更新。
+
+- `Session Resume`（上下文恢复）：
+  - Worker 在执行前加载 Session Store 快照。
+  - 若快照有 `last_response_id`，首轮上游请求使用 `previous_response_id + 本次增量 input`。
+  - 若无 `last_response_id`，回退到 transcript/items 重建首轮 `input`。
+- `Session Runtime Config`（参数绑定）：
+  - 会话级默认参数由快照中的 `runtime_config` 提供。
+  - 调用方仅在本次请求显式提供字段时更新对应参数（字段级 merge），未提供字段保持不变。
+  - 受管字段建议固定为：`model/temperature/top_p/frequency_penalty/presence_penalty/reasoning`。
+- `Run 内一致性`：
+  - 同一 run 的所有后续回合（`previous_response_id + function_call_output`）必须沿用同一 `effective_runtime_config`，不能在中途漂移。
+- `Run 终态回写`：
+  - run 结束后写回新的 `resume_cursor`（如 `last_response_id`）和最终 `runtime_config`，供下一次请求恢复。
+
 ## 4. 并发控制模型（两级车道）
 
 目标：既保证“会话内严格顺序”，又能在高并发下保护系统资源。
