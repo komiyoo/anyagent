@@ -5,6 +5,8 @@ __all__ = [
     "sse",
     "agent_api_internal",
     "stage_events",
+    "command_derivation",
+    "tool_manifest_extensions",
 ]
 
 # Intentionally do not import submodules here:

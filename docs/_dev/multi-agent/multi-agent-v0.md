@@ -58,7 +58,7 @@ v0 默认隔离（Req: `requirements.md#req-13-5`）：
 - `tools[]` 中的 function tool 使用 `{"type":"function","name":"...","description":"...","parameters":{...},"strict":true}` 结构
 - `tool_choice` 中 function tool 使用 `{"type":"function","name":"..."}` 结构
 
-AnyAgent 侧：
+anyagent 侧：
 
 - 调用方请求中的 `tools[]` 仅作为“工具可见性请求/提示”参考；最终上游 `tools[]` 以 Tool Runtime manifest 为准（避免手写 schema 漂移）
 - 不兼容 legacy 嵌套 `{"type":"function","function":{"name":...}}` 形态：v0 起只维护一套 OpenAI SDK schema

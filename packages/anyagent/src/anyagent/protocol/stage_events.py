@@ -3,8 +3,8 @@ from __future__ import annotations
 """
 Stage events protocol (SSOT).
 
-These events are produced by AnyAgent Agent API (persisted into Event Store) and
-consumed by AnyAgent client SDKs to provide 1-level fine-grained runtime progress:
+These events are produced by anyagent Agent API (persisted into Event Store) and
+consumed by anyagent client SDKs to provide 1-level fine-grained runtime progress:
 - model stream events (wrapped)
 - tool planned/result
 - command planned/result (derived for command-like tools)
@@ -68,7 +68,7 @@ def _safe_json_dumps(value: Any, *, sort_keys: bool) -> str:
 
 
 _SENSITIVE_TEXT_RE = re.compile(
-    r"(?i)(api[_-]?key|token|secret|password|authorization\\s*:\\s*bearer|bearer\\s+[a-z0-9\\-_=]{8,}|sk-[a-z0-9]{8,})"
+    r"(?i)(api[_-]?key|token|secret|password|authorization\\s*:\\s*bearer|bearer\\s+[A-Za-z0-9\\-_=]{8,}|sk-[A-Za-z0-9_-]{8,})"
 )
 
 

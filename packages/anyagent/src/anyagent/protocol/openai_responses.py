@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from .sse import SSEEvent
 
@@ -29,13 +29,18 @@ class AnyAgentFunctionToolParam(BaseModel):
     - Response / stream event shapes should reuse OpenAI SDK schemas instead.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     type: Literal["function"] = "function"
     name: str
     description: str | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
     strict: bool = True
+    x_anyagent_kind: Literal["command"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("x-anyagent-kind", "x_anyagent_kind"),
+        serialization_alias="x-anyagent-kind",
+    )
 
 # ---- Stronger types (reuse OpenAI SDK schemas) ----
 #
@@ -43,7 +48,7 @@ class AnyAgentFunctionToolParam(BaseModel):
 # - `openai.types.responses.response.Response` (alias: `OpenAIResponse`)
 # - `openai.types.responses.response_stream_event.ResponseStreamEvent` (alias: `OpenAIResponseStreamEvent`)
 #
-# This avoids duplicating a fast-moving schema in AnyAgent, while still giving
+# This avoids duplicating a fast-moving schema in anyagent, while still giving
 # downstream callers a strong, discoverable type surface.
 
 

@@ -4,7 +4,7 @@
 
 ## 目标
 
-- 落地 AnyAgent 的最小存储原语（Session/Run/Event/Dedupe/Lock），支撑“无状态入口 + 可恢复执行”的并发架构与可靠性语义。
+- 落地 anyagent 的最小存储原语（Session/Run/Event/Dedupe/Lock），支撑“无状态入口 + 可恢复执行”的并发架构与可靠性语义。
 
 ## 里程碑（Milestones）
 

@@ -23,7 +23,7 @@ def _dep_to_requested_tools(dep: SkillToolDependency) -> list[str]:
 
     说明：
     - v0 允许返回 glob pattern（例如 `app.*`），由 Tool Runtime manifest 负责展开与最终收口。
-    - `mcp` 为未来扩展：v0 暂不映射到 AnyAgent Tool Runtime tool name。
+    - `mcp` 为未来扩展：v0 暂不映射到 anyagent Tool Runtime tool name。
     """
     transport = (dep.transport or "").strip()
     value = (dep.value or "").strip()

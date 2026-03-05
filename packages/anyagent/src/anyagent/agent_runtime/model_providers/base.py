@@ -6,7 +6,7 @@ from typing import Any, Protocol
 
 class ModelProviderError(RuntimeError):
     """
-    Base error for AnyAgent model providers.
+    Base error for anyagent model providers.
 
     We deliberately normalize provider-specific SDK errors into a small
     set of typed exceptions so higher layers (agent server / runtime)
@@ -40,7 +40,7 @@ class ModelProvider(Protocol):
     Important:
     - The AgentRuntime speaks *OpenAI Responses API* at its boundary.
     - Different upstream vendors (OpenAI / Anthropic / Google, etc.)
-      can implement this interface using their own SDKs, while AnyAgent
+      can implement this interface using their own SDKs, while anyagent
       keeps a single protocol surface.
     """
 

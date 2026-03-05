@@ -17,7 +17,9 @@ from anyagent.agent_packs import AgentCatalog, AgentPack, AgentPackError, load_a
 from anyagent.agent_runtime import inject_skills_into_responses_body
 from anyagent.gateway.session import SessionBindingError
 from anyagent.gateway.session import session_partition_key as build_session_partition_key
-from anyagent.protocol.openai_responses import FunctionToolParam, ToolChoiceFunctionParam
+from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam, ToolChoiceFunctionParam
+from anyagent.protocol.command_derivation import extract_command_planned_fields, extract_command_result_fields
+from anyagent.protocol.tool_manifest_extensions import strip_internal_tool_fields, tool_kind_for_tool_name
 from anyagent.protocol.tool_runtime import PolicyHint, ToolContext
 from anyagent.skills import (
     SkillEnablement,
@@ -191,7 +193,7 @@ def _build_agents_md_injection_text(pack: AgentPack) -> str:
     body = (pack.agents_md_text or "").rstrip()
     return "\n".join(
         [
-            "[AnyAgent Agent Pack]",
+            "[anyagent Agent Pack]",
             f"agent_id: {pack.agent_id}",
             f"path: {pack.agents_md_path}",
             f"sha256: {pack.agents_md_sha256}",
@@ -617,6 +619,84 @@ def create_app(settings: Settings) -> FastAPI:
                 tool_name=tool_name,
             )
 
+        async def _append_stage_command_planned_best_effort(
+            *,
+            persist_response_id: str,
+            tool_call_id: str,
+            tool_name: str,
+            arguments_json: Any,
+            trace_id: str | None,
+        ) -> None:
+            try:
+                tool_kind = tool_kind_for_tool_name(manifest_tools, tool_name)
+                info = extract_command_planned_fields(
+                    tool_name=tool_name,
+                    tool_kind=tool_kind,
+                    arguments_json=arguments_json,
+                )
+                if info is None:
+                    return
+                planned = AnyAgentCommandPlannedEvent(
+                    response_id=persist_response_id,
+                    command=summarize_command(info.command),
+                    workdir=info.workdir,
+                    timeout_ms=info.timeout_ms,
+                    source_tool_call_id=tool_call_id,
+                    source_tool_name=tool_name,
+                    trace_id=trace_id,
+                    ts_ms=int(time() * 1000),
+                )
+                await _append_internal_event_model_best_effort(
+                    response_id=persist_response_id,
+                    event="anyagent.command.planned",
+                    model=planned,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                )
+            except Exception:  # noqa: BLE001
+                return
+
+        async def _append_stage_command_result_best_effort(
+            *,
+            persist_response_id: str,
+            tool_call_id: str,
+            tool_name: str,
+            tr: dict[str, Any],
+            meta_model: AnyAgentToolResultMeta,
+            trace_id: str | None,
+        ) -> None:
+            try:
+                out = tr.get("output") if isinstance(tr, dict) else None
+                tool_kind = tool_kind_for_tool_name(manifest_tools, tool_name)
+                info = extract_command_result_fields(
+                    tool_name=tool_name,
+                    tool_kind=tool_kind,
+                    tool_output=out,
+                )
+                if info is None:
+                    return
+
+                result = AnyAgentCommandResultEvent(
+                    response_id=persist_response_id,
+                    exit_code=info.exit_code,
+                    stdout=summarize_payload(info.stdout) if isinstance(info.stdout, (str, dict, list)) else None,
+                    stderr=summarize_payload(info.stderr) if isinstance(info.stderr, (str, dict, list)) else None,
+                    duration_ms=meta_model.duration_ms,
+                    source_tool_call_id=tool_call_id,
+                    source_tool_name=tool_name,
+                    trace_id=trace_id,
+                    ts_ms=int(time() * 1000),
+                )
+                await _append_internal_event_model_best_effort(
+                    response_id=persist_response_id,
+                    event="anyagent.command.result",
+                    model=result,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                )
+            except Exception:  # noqa: BLE001
+                return
+
         async def _append_stage_tool_planned_best_effort(
             *,
             persist_response_id: str,
@@ -647,87 +727,6 @@ def create_app(settings: Settings) -> FastAPI:
                 arguments_json=arguments_json,
                 trace_id=trace_id,
             )
-
-        def _maybe_extract_command_from_arguments(*, tool_name: str, arguments_json: Any) -> dict[str, Any] | None:
-            """
-            Best-effort extract command-like fields from tool arguments.
-
-            Returns a dict containing:
-            - command: str
-            - workdir: str|None
-            - timeout_ms: int|None
-            """
-
-            if not isinstance(tool_name, str) or not tool_name:
-                return None
-            if not isinstance(arguments_json, dict):
-                return None
-
-            # Heuristic: only attempt for tools that are likely to represent a command execution.
-            name = tool_name.lower()
-            if not ("shell" in name or "command" in name or name.endswith(".exec")):
-                return None
-
-            cmd: str | None = None
-            for k in ("command", "cmd", "bash", "script"):
-                v = arguments_json.get(k)
-                if isinstance(v, str) and v.strip():
-                    cmd = v.strip()
-                    break
-
-            if cmd is None:
-                argv = arguments_json.get("argv") or arguments_json.get("args")
-                if isinstance(argv, list) and argv and all(isinstance(x, str) for x in argv):
-                    import shlex
-
-                    cmd = " ".join(shlex.quote(x) for x in argv if x)
-
-            if cmd is None:
-                return None
-
-            workdir = arguments_json.get("workdir") or arguments_json.get("cwd")
-            workdir_out = workdir.strip() if isinstance(workdir, str) and workdir.strip() else None
-
-            timeout_ms = arguments_json.get("timeout_ms")
-            if timeout_ms is None:
-                timeout_ms = arguments_json.get("timeout")
-            timeout_out: int | None = None
-            if isinstance(timeout_ms, int):
-                timeout_out = max(0, int(timeout_ms))
-
-            return {"command": cmd, "workdir": workdir_out, "timeout_ms": timeout_out}
-
-        async def _append_stage_command_planned_best_effort(
-            *,
-            persist_response_id: str,
-            tool_call_id: str,
-            tool_name: str,
-            arguments_json: Any,
-            trace_id: str | None,
-        ) -> None:
-            try:
-                info = _maybe_extract_command_from_arguments(tool_name=tool_name, arguments_json=arguments_json)
-                if info is None:
-                    return
-                planned = AnyAgentCommandPlannedEvent(
-                    response_id=persist_response_id,
-                    command=summarize_command(str(info["command"])),
-                    workdir=info.get("workdir"),
-                    timeout_ms=info.get("timeout_ms"),
-                    source_tool_call_id=tool_call_id,
-                    source_tool_name=tool_name,
-                    trace_id=trace_id,
-                    ts_ms=int(time() * 1000),
-                )
-                await _append_internal_event_model_best_effort(
-                    response_id=persist_response_id,
-                    event="anyagent.command.planned",
-                    model=planned,
-                    tool_call_id=tool_call_id,
-                    tool_name=tool_name,
-                )
-            except Exception:  # noqa: BLE001
-                return
 
         async def _append_stage_tool_result_best_effort(
             *,
@@ -783,69 +782,10 @@ def create_app(settings: Settings) -> FastAPI:
                 persist_response_id=persist_response_id,
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,
-                tr=tr,
+                tr=tr if isinstance(tr, dict) else {},
                 meta_model=meta_model,
                 trace_id=trace_id,
             )
-
-        async def _append_stage_command_result_best_effort(
-            *,
-            persist_response_id: str,
-            tool_call_id: str,
-            tool_name: str,
-            tr: dict[str, Any],
-            meta_model: AnyAgentToolResultMeta,
-            trace_id: str | None,
-        ) -> None:
-            try:
-                name = tool_name.lower() if isinstance(tool_name, str) else ""
-                if not ("shell" in name or "command" in name or name.endswith(".exec")):
-                    return
-                out = tr.get("output") if isinstance(tr, dict) else None
-                if not isinstance(out, str) or not out.strip():
-                    return
-
-                # Best-effort parse structured command result.
-                exit_code: int | None = None
-                stdout: Any = None
-                stderr: Any = None
-
-                if out.lstrip().startswith("{") and len(out) <= 200_000:
-                    try:
-                        obj = json.loads(out)
-                    except Exception:  # noqa: BLE001
-                        obj = None
-                    if isinstance(obj, dict):
-                        ec = obj.get("exit_code")
-                        if ec is None:
-                            ec = obj.get("code")
-                        if ec is None:
-                            ec = obj.get("returncode")
-                        if isinstance(ec, int):
-                            exit_code = int(ec)
-                        stdout = obj.get("stdout")
-                        stderr = obj.get("stderr")
-
-                result = AnyAgentCommandResultEvent(
-                    response_id=persist_response_id,
-                    exit_code=exit_code,
-                    stdout=summarize_payload(stdout) if isinstance(stdout, (str, dict, list)) else None,
-                    stderr=summarize_payload(stderr) if isinstance(stderr, (str, dict, list)) else None,
-                    duration_ms=meta_model.duration_ms,
-                    source_tool_call_id=tool_call_id,
-                    source_tool_name=tool_name,
-                    trace_id=trace_id,
-                    ts_ms=int(time() * 1000),
-                )
-                await _append_internal_event_model_best_effort(
-                    response_id=persist_response_id,
-                    event="anyagent.command.result",
-                    model=result,
-                    tool_call_id=tool_call_id,
-                    tool_name=tool_name,
-                )
-            except Exception:  # noqa: BLE001
-                return
 
         async def _persist_session_snapshot_only(
             *,
@@ -974,14 +914,14 @@ def create_app(settings: Settings) -> FastAPI:
 
         # --- tool visibility request set (union) ---
         raw_tools = body.get("tools")
-        request_tools: list[FunctionToolParam] | None = None
+        request_tools: list[AnyAgentFunctionToolParam] | None = None
         if raw_tools is not None:
             if not isinstance(raw_tools, list):
                 return openai_error(400, message="tools must be a list", type_="invalid_request_error")
-            parsed: list[FunctionToolParam] = []
+            parsed: list[AnyAgentFunctionToolParam] = []
             for i, t in enumerate(raw_tools):
                 try:
-                    parsed.append(FunctionToolParam.model_validate(t))
+                    parsed.append(AnyAgentFunctionToolParam.model_validate(t))
                 except Exception as e:  # noqa: BLE001
                     return openai_error(400, message=f"invalid tools[{i}]: {e}", type_="invalid_request_error")
             request_tools = parsed
@@ -1071,7 +1011,9 @@ def create_app(settings: Settings) -> FastAPI:
         if err is not None:
             return openai_error(400, message=err, type_="invalid_request_error")
 
-        body["tools"] = manifest_tools
+        # Tool Runtime may attach internal-only fields in manifest tools (e.g., `x-anyagent-kind`).
+        # Strip them before forwarding to upstream model providers (OpenAI, etc.).
+        body["tools"] = strip_internal_tool_fields(manifest_tools)
 
         # --- inject Agent Pack instructions + selected skills (developer role) ---
         body = _inject_text_into_responses_body(body=body, text=_build_agents_md_injection_text(pack), role="developer")
@@ -1655,7 +1597,7 @@ def create_app(settings: Settings) -> FastAPI:
                                 next_body: dict[str, Any] = {
                                     "previous_response_id": upstream_response_id,
                                     "input": tool_outputs,
-                                    "tools": manifest_tools,
+                                    "tools": strip_internal_tool_fields(manifest_tools),
                                     "metadata": body.get("metadata"),
                                     "stream": True,
                                 }
@@ -1965,7 +1907,7 @@ def create_app(settings: Settings) -> FastAPI:
                         next_body: dict[str, Any] = {
                             "previous_response_id": response_id,
                             "input": tool_outputs,
-                            "tools": manifest_tools,
+                            "tools": strip_internal_tool_fields(manifest_tools),
                             "metadata": body.get("metadata"),
                             "stream": True,
                         }
@@ -2152,7 +2094,7 @@ def create_app(settings: Settings) -> FastAPI:
                 next_body: dict[str, Any] = {
                     "previous_response_id": response_id,
                     "input": tool_outputs,
-                    "tools": manifest_tools,
+                    "tools": strip_internal_tool_fields(manifest_tools),
                     "metadata": body.get("metadata"),
                 }
                 if body.get("tool_choice") is not None:

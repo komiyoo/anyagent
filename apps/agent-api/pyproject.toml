@@ -1,7 +1,7 @@
 [project]
 name = "agent-api"
 version = "0.1.0"
-description = "AnyAgent Agent API (OpenAI Responses-compatible proxy)"
+description = "anyagent Agent API (OpenAI Responses-compatible proxy)"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",

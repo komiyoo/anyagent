@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 """
-AnyAgent Agent API client SDK (Python).
+anyagent Agent API client SDK (Python).
 
 This module provides:
-- A small HTTP client for AnyAgent Agent API internal endpoints (/internal/*).
-- Factory helpers to create OpenAI official SDK clients that talk to AnyAgent's
+- A small HTTP client for anyagent Agent API internal endpoints (/internal/*).
+- Factory helpers to create OpenAI official SDK clients that talk to anyagent's
   OpenAI Responses-compatible surface (POST /v1/responses).
 """
 
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 
 class AnyAgentAgentAPIClientSettings(BaseSettings):
-    """AnyAgent Agent API client settings."""
+    """anyagent Agent API client settings."""
 
     model_config = SettingsConfigDict(env_file=None, extra="ignore")
 
@@ -45,14 +45,14 @@ class AnyAgentAgentAPIClientSettings(BaseSettings):
 
 @dataclass(slots=True)
 class AnyAgentAgentAPIClients:
-    """Bundle of OpenAI official SDK clients for AnyAgent."""
+    """Bundle of OpenAI official SDK clients for anyagent."""
 
     sync: "OpenAI"
     async_: "AsyncOpenAI"
 
 
 class AnyAgentAgentAPIClient:
-    """HTTP client for AnyAgent Agent API (external + internal endpoints)."""
+    """HTTP client for anyagent Agent API (external + internal endpoints)."""
 
     def __init__(
         self,
@@ -70,16 +70,16 @@ class AnyAgentAgentAPIClient:
         return {"authorization": f"Bearer {self._api_key}"}
 
     def openai_base_url(self) -> str:
-        """Return the OpenAI SDK base_url pointing to this AnyAgent server."""
+        """Return the OpenAI SDK base_url pointing to this anyagent server."""
 
         return f"{self._base_url}/v1"
 
     def create_openai_clients(self) -> AnyAgentAgentAPIClients:
         """
-        Create OpenAI official SDK clients pointing to AnyAgent Agent API.
+        Create OpenAI official SDK clients pointing to anyagent Agent API.
 
         Notes:
-        - AnyAgent uses the same auth scheme as OpenAI SDK (`Authorization: Bearer ...`).
+        - anyagent uses the same auth scheme as OpenAI SDK (`Authorization: Bearer ...`).
           We deliberately pass `api_key=AGENT_API_KEY` so the official SDK sets
           the correct header.
         """
@@ -155,12 +155,12 @@ class AnyAgentAgentAPIClient:
         include_model_events: bool = True,
     ) -> AsyncIterator[StageEvent]:
         """
-        Stream typed stage events from AnyAgent internal event stream.
+        Stream typed stage events from anyagent internal event stream.
 
         Notes:
         - Requires `response_id` (typically used for replay/observability).
         - Emits `anyagent.model.stream_event` wrappers for OpenAI Responses SSE events.
-        - Emits AnyAgent stage events (`anyagent.tool.*`, `anyagent.command.*`) when present.
+        - Emits anyagent stage events (`anyagent.tool.*`, `anyagent.command.*`) when present.
         """
 
         adapter = TypeAdapter(StageEvent)
@@ -251,6 +251,6 @@ def create_anyagent_agent_api_client(
     settings: AnyAgentAgentAPIClientSettings,
     http: httpx.AsyncClient | None = None,
 ) -> AnyAgentAgentAPIClient:
-    """Create an AnyAgent Agent API client from settings."""
+    """Create an anyagent Agent API client from settings."""
 
     return AnyAgentAgentAPIClient(base_url=str(settings.base_url).rstrip("/"), api_key=settings.api_key, http=http)

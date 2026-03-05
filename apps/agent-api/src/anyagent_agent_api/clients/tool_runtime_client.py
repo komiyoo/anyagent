@@ -41,7 +41,7 @@ async def fetch_manifest(
     r.raise_for_status()
     data = r.json()
     resp = ManifestResponse.model_validate(data)
-    tools = [t.model_dump(exclude_none=True) for t in resp.tools]
+    tools = [t.model_dump(exclude_none=True, by_alias=True) for t in resp.tools]
     return tools, resp.toolset_version
 
 

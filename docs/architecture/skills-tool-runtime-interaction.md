@@ -44,6 +44,8 @@
    - Tool Runtime 根据 `requested_tool_names`（允许 glob pattern）过滤工具集，并基于 policy/context 做 allow/deny
    - Tool Runtime 返回：
      - `tools[]`：最终注入给上游模型的 OpenAI function tools
+       - 允许携带少量 AnyAgent 内部扩展字段（例如 `x-anyagent-kind: command`）用于 stage events 派生
+       - 约束：这些扩展字段**不得**转发给上游模型（Agent API 会在注入前剥离）
      - `toolset_version`：当前 registry 版本号（用于 execute 的乐观一致性校验）
 
 5) 上游模型调用工具 → Tool Runtime execute
@@ -111,4 +113,3 @@ Agent API 在内存里做短 TTL 缓存，减少同参数重复请求的 manifes
   - `stable_id`/`name`/`description`/`short_description`/`scope`
   - `enabled`（基于 AgentSpec `disabled_paths` 的 enablement 计算）
   - `requested_tool_names`（来自 skill `dependencies.tools` 映射）
-

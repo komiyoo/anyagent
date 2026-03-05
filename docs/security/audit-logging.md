@@ -24,7 +24,7 @@ Tool Runtime 在 `tool_execute.begin/done/cache_hit` 日志里至少包含：
 ## 2. 脱敏与限长（必须）
 
 - 禁止在日志中写入：
-  - 平台 token / AnyAgent API key / 内部 key
+  - 平台 token / anyagent API key / 内部 key
   - 原始 `arguments_json`（可能含 token、cookie、PII）
   - 原始工具输出（可能含敏感数据）
 - 若确需调试：
@@ -35,4 +35,3 @@ Tool Runtime 在 `tool_execute.begin/done/cache_hit` 日志里至少包含：
 
 - `audit_ref` 是一次 tool 调用的稳定引用（随 idempotency 缓存而复用）
 - 用于把 tool 执行日志、平台侧审计事件、以及后续持久化审计表关联起来
-

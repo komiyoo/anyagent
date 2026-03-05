@@ -15,7 +15,7 @@ class RetentionPolicy:
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="AnyAgent Agent API storage retention/TTL maintenance (Postgres).")
+    p = argparse.ArgumentParser(description="anyagent Agent API storage retention/TTL maintenance (Postgres).")
     p.add_argument("--apply", action="store_true", help="Apply changes (default: plan-only, no writes).")
     p.add_argument("--dsn", default=None, help="Postgres DSN (default: env POSTGRES_DSN).")
     p.add_argument("--schema", default=None, help='Postgres schema/search_path (default: env POSTGRES_SCHEMA or "public").')

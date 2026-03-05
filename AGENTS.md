@@ -1,4 +1,4 @@
-# AnyAgent：AI Agent 自动化研发行为规范（Agent-Naive / SSOT / 可观测 / 可重放）
+# anyagent：AI Agent 自动化研发行为规范（Agent-Naive / SSOT / 可观测 / 可重放）
 
 本文件 `AGENTS.md` 的定位：**指导 AI Agent 在本仓库进行自动化研发的行为规范**（不是产品文档、不是需求文档、也不是“代码之外的第二套真相”）
 
@@ -55,6 +55,7 @@
 - `seq`：run 内事件序号（单调递增），用于断线重连与事件补发/重放。
 
 参考实现与约束：
+
 - `requirements.md#req-5-9`（`context.trace` 结构）
 - `requirements.md#req-5-13`、`docs/security/audit-logging.md`（审计与留痕字段）
 - `docs/architecture/stateless-agent-service-architecture.md`（`Event`、`seq`、reconnect/replay 语义）

@@ -194,7 +194,7 @@ async def register_builtin_core_tools(registry: ToolRegistry) -> None:
             raise ValueError("forbidden url")
 
         async with httpx.AsyncClient(timeout=timeout_ms / 1000.0, follow_redirects=True) as client:
-            r = await client.get(url, headers={"user-agent": "AnyAgent/0"})
+            r = await client.get(url, headers={"user-agent": "anyagent/0"})
             text = r.text
             # 输出为 JSON string，便于上层处理
             return json.dumps(

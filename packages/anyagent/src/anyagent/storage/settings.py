@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class StorageSettings(BaseSettings):
     """
-    Storage settings for AnyAgent (v0 target: Postgres+Redis).
+    Storage settings for anyagent (v0 target: Postgres+Redis).
 
     Notes:
     - Keep fields optional until storage is actually wired into runtime paths.

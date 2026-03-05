@@ -14,11 +14,13 @@ from openai.types.responses.tool_choice_function_param import ToolChoiceFunction
 
 from anyagent.protocol.tool_runtime import ExecuteRequest, ManifestRequest, ToolContext
 from anyagent.tool_runtime.client import ToolRuntimeClient
+from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
 
 from .skills_injection import inject_skills_into_responses_body
 from anyagent.skills.models import SkillPackage
 
 from anyagent.protocol.sse import encode_sse_event, normalize_response_id
+from anyagent.protocol.tool_manifest_extensions import strip_internal_tool_fields
 
 from .model_providers import (
     ModelProvider,
@@ -44,12 +46,11 @@ def _extract_tool_names_from_request(tools: Any) -> list[str] | None:
     out: list[str] = []
     for i, t in enumerate(tools):
         try:
-            tool = TypeAdapter(FunctionToolParam).validate_python(t)
+            tool = AnyAgentFunctionToolParam.model_validate(t)
         except Exception as e:  # noqa: BLE001
             raise ValueError(f"invalid tools[{i}]: {e}") from e
-        name = tool.get("name")
-        if isinstance(name, str) and name.strip():
-            out.append(name.strip())
+        if isinstance(tool.name, str) and tool.name.strip():
+            out.append(tool.name.strip())
     return out
 
 
@@ -94,7 +95,7 @@ async def resolve_manifest(
         context=ToolContext.model_validate(context) if isinstance(context, dict) else ToolContext(),
     )
     resp = await tool_runtime.manifest(req)
-    tools = [t.model_dump(exclude_none=True) for t in resp.tools]
+    tools = [t.model_dump(exclude_none=True, by_alias=True) for t in resp.tools]
     return tools, resp.toolset_version
 
 
@@ -132,7 +133,7 @@ async def run_tool_loop_nonstream(
         return 400, {"error": {"message": err, "type": "invalid_request_error"}}
 
     body = dict(body)
-    body["tools"] = manifest_tools
+    body["tools"] = strip_internal_tool_fields(manifest_tools)
     body["stream"] = False
     if selected_skills:
         body, _warnings = inject_skills_into_responses_body(body=body, selected_skills=selected_skills, role="developer")
@@ -192,7 +193,7 @@ async def run_tool_loop_nonstream(
             "model": body.get("model"),
             "previous_response_id": response_id,
             "input": tool_outputs,
-            "tools": manifest_tools,
+            "tools": strip_internal_tool_fields(manifest_tools),
             "metadata": metadata,
         }
         if body.get("tool_choice") is not None:
@@ -247,7 +248,7 @@ async def run_tool_loop_stream_buffered(
         return 400, [encode_sse_event("error", json.dumps({"error": {"message": err, "type": "invalid_request_error"}}))]
 
     body = dict(body)
-    body["tools"] = manifest_tools
+    body["tools"] = strip_internal_tool_fields(manifest_tools)
     body["stream"] = True
     if selected_skills:
         body, _warnings = inject_skills_into_responses_body(body=body, selected_skills=selected_skills, role="developer")
@@ -310,7 +311,7 @@ async def run_tool_loop_stream_buffered(
             "model": body.get("model"),
             "previous_response_id": response_id,
             "input": tool_outputs,
-            "tools": manifest_tools,
+            "tools": strip_internal_tool_fields(manifest_tools),
             "metadata": metadata,
             "stream": True,
         }

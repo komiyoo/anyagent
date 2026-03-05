@@ -30,7 +30,7 @@ def build_skills_injection_text(skills: list[SkillPackage]) -> str:
         blocks.append(
             "\n".join(
                 [
-                    "[AnyAgent Skill]",
+                    "[anyagent Skill]",
                     f"name: {name}",
                     f"stable_id: {sid}",
                     "",

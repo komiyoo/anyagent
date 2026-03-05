@@ -20,7 +20,7 @@ from .base import (
 
 class OpenAIResponsesModelProviderSettings(BaseSettings):
     """
-    OpenAI-compatible Responses API settings (works for OpenAI or AnyAgent server).
+    OpenAI-compatible Responses API settings (works for OpenAI or anyagent server).
 
     Env:
     - OPENAI_API_KEY

@@ -555,7 +555,7 @@ def compute_overall_next(todo_progress: list[dict[str, object]]) -> list[dict[st
 
 def render_text(report: dict[str, object], *, requested_modules: list[str]) -> str:
     lines: list[str] = []
-    lines.append("AnyAgent 进度线索扫描")
+    lines.append("anyagent 进度线索扫描")
     lines.append(f"Root: {report['root']}")
     if "elapsed_ms" in report:
         lines.append(f"耗时: {report['elapsed_ms']}ms")

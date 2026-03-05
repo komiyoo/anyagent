@@ -21,7 +21,7 @@ Single Source of Truth:
 
 ## 1) 背景：为什么需要 Stage Events
 
-OpenAI Responses API 的 SSE 事件流天然是“模型侧”的增量输出；但 AnyAgent 的服务端 loop 还会发生：
+OpenAI Responses API 的 SSE 事件流天然是“模型侧”的增量输出；但 anyagent 的服务端 loop 还会发生：
 
 - tool 可见性计算（manifest）
 - tool 执行（Tool Runtime）
@@ -37,25 +37,25 @@ OpenAI Responses API 的 SSE 事件流天然是“模型侧”的增量输出；
 
 Stage Events 可以来自两个渠道：
 
-1) **Responses SSE（外部兼容面）**
+1. **Responses SSE（外部兼容面）**
 
 - 由 `POST /v1/responses?stream=true` 返回
 - 事件本体为 OpenAI SDK typed models：`openai.types.responses.ResponseStreamEvent`
 - 优点：标准化、兼容 OpenAI SDK
 - 局限：无法稳定表达“工具已被执行并返回结果”的服务端阶段（除非服务端额外注入事件）
 
-2) **AnyAgent Internal Events SSE（内部观测面）**
+2. **anyagent Internal Events SSE（内部观测面）**
 
 - 由 `GET /internal/events/stream?response_id=...&last_seq=...` 返回
 - 返回的是持久化的 SSE blocks（`event:` + `data:`），按 `seq` 单调递增，最终以 `[DONE]` 结束
-- 优点：天然支持断线补发与 replay；可承载 AnyAgent 自定义事件（例如 `anyagent.tool.*`）
+- 优点：天然支持断线补发与 replay；可承载 anyagent 自定义事件（例如 `anyagent.tool.*`）
 - 局限：只建议内部使用；默认需要鉴权（同 Agent API key）
 
 结论（推荐）：
 
 - v0 的 client SDK 优先消费 `/internal/events/stream`，并在其中同时承载：
   - 原始 Responses SSE events（与外部兼容面一致）
-  - AnyAgent 自定义 stage events（用于 tool/command 粒度）
+  - anyagent 自定义 stage events（用于 tool/command 粒度）
 
 ## 3) 事件分层（One-Level Granularity）
 
@@ -75,6 +75,7 @@ v0 只做一层 stage：
 类型单一真源（SSOT）：
 
 - Python typed models：`packages/anyagent/src/anyagent/protocol/stage_events.py`
+- command 派生规则（best-effort，单一真源）：`packages/anyagent/src/anyagent/protocol/command_derivation.py`
 
 ### 4.1 通用字段（所有事件都应包含）
 
@@ -85,21 +86,22 @@ v0 只做一层 stage：
   - `ts_ms?: int`：事件产生时间戳（可选；若缺失由 client 收到时补齐）
 
 实现说明（v0）：
+
 - `/internal/events/stream` 会用 SSE 的 `id:` 字段承载 `seq`（而不是把 `seq` 注入 OpenAI Responses 事件 payload），SDK 解码时会把它填入 `StageEvent.seq`。
 
 ### 4.2 事件类型（v0 最小集合）
 
-1) `anyagent.model.stream_event`
+1. `anyagent.model.stream_event`
 
 - `payload`: OpenAI Responses `ResponseStreamEvent` 的 JSON dict（typed model 可由 client 解码）
 
-2) `anyagent.tool.planned`
+2. `anyagent.tool.planned`
 
 - `tool_call_id: str`
 - `tool_name: str`
 - `arguments`: 默认仅返回摘要（见第 6 节）
 
-3) `anyagent.tool.result`
+3. `anyagent.tool.result`
 
 - `tool_call_id: str`
 - `tool_name: str`
@@ -111,7 +113,7 @@ v0 只做一层 stage：
 - `output`: 默认仅返回摘要（见第 6 节）
 - `error?`: 若失败则包含 `{type, code, message, retryable}`
 
-4) `anyagent.command.planned`（由 Agent API 从命令类 tool 的 arguments 派生，best-effort）
+4. `anyagent.command.planned`（由 Agent API 从命令类 tool 的 arguments 派生，best-effort）
 
 - `command: StagePayloadSummary`（命令字符串的摘要；默认带安全 preview，必要时会因疑似敏感信息而不返回 preview）
 - `workdir?: str`
@@ -119,7 +121,7 @@ v0 只做一层 stage：
 - `source_tool_call_id: str`
 - `source_tool_name: str`
 
-5) `anyagent.command.result`（由 Agent API 从命令类 tool 的 output 派生，best-effort）
+5. `anyagent.command.result`（由 Agent API 从命令类 tool 的 output 派生，best-effort）
 
 - `exit_code?: int`
 - `stdout/stderr`: 默认仅返回摘要（见第 6 节）
@@ -138,15 +140,15 @@ v0 只做一层 stage：
 - 输入：`response.output_item.added` / `response.output_item.done`（或最终 `response.completed` 中的 `ResponseFunctionToolCall` item）
 - 输出：`anyagent.tool.planned`
 
-注意：在 AnyAgent 的 server-side tool loop 场景下，“工具执行结果”不一定会作为 Responses 输出返回，因此 `anyagent.tool.result` 无法稳定推导。
+注意：在 anyagent 的 server-side tool loop 场景下，“工具执行结果”不一定会作为 Responses 输出返回，因此 `anyagent.tool.result` 无法稳定推导。
 
-### 5.2 从 AnyAgent Internal Events 获取（推荐）
+### 5.2 从 anyagent Internal Events 获取（推荐）
 
-AnyAgent Agent API 应在以下时点向 Event Store 追加 stage events（并通过 `/internal/events/stream` 发送给 client）：
+anyagent Agent API 应在以下时点向 Event Store 追加 stage events（并通过 `/internal/events/stream` 发送给 client）：
 
-1) 在调用 Tool Runtime execute 之前：追加 `anyagent.tool.planned`
-2) Tool Runtime 返回后：追加 `anyagent.tool.result`
-3) 若 tool 属于命令类工具且可解析：额外追加 `anyagent.command.planned` / `anyagent.command.result`（best-effort）
+1. 在调用 Tool Runtime execute 之前：追加 `anyagent.tool.planned`
+2. Tool Runtime 返回后：追加 `anyagent.tool.result`
+3. 若 tool 属于命令类工具且可解析：额外追加 `anyagent.command.planned` / `anyagent.command.result`（best-effort）
 
 client 映射：
 
@@ -154,9 +156,14 @@ client 映射：
 - `anyagent.tool.result` -> `anyagent.tool.result`
 - `anyagent.command.*` -> 直接透传为 `anyagent.command.*`（无需 client 自行派生）
 
+实现约定（v0）：
+
+- Agent API 判断“命令类工具”的主要依据是 Tool Runtime manifest tools 中的内部标记 `x-anyagent-kind: command`（SSOT：`anyagent.protocol.tool_manifest_extensions`）
+- 若该标记不存在，则允许 name-based 规则作为 fallback（仅用于兼容/过渡）
+
 注意（兼容性）：
 
-- `anyagent.*` 属于 internal 观测事件，AnyAgent 会在对外 `POST /v1/responses` 的 SSE 回放路径中过滤掉它们，避免 OpenAI SDK 收到未知事件类型。
+- `anyagent.*` 属于 internal 观测事件，anyagent 会在对外 `POST /v1/responses` 的 SSE 回放路径中过滤掉它们，避免 OpenAI SDK 收到未知事件类型。
 
 ## 6) 安全与脱敏（默认策略）
 

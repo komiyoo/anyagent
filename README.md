@@ -1,6 +1,6 @@
-# AnyAgent（文档索引）
+# anyagent（文档索引）
 
-本目录用于沉淀 AnyAgent 的需求与架构设计，目标是支撑“多业务项目复用 + 多 agent + 多套专业 skills”的长期演进。
+本目录用于沉淀 anyagent 的需求与架构设计，目标是支撑“多业务项目复用 + 多 agent + 多套专业 skills”的长期演进。
 
 ## 文档
 

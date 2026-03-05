@@ -1,6 +1,6 @@
 # 存储层最小设计（v0）
 
-本文补齐 AnyAgent 在“无状态入口 + 可恢复执行”模式下所需的最小存储设计：技术选型、关键实体 schema、生命周期与一致性边界。它是 `requirements.md#req-3-1` 与 `docs/architecture/stateless-agent-service-architecture.md` 的落地补充。
+本文补齐 anyagent 在“无状态入口 + 可恢复执行”模式下所需的最小存储设计：技术选型、关键实体 schema、生命周期与一致性边界。它是 `requirements.md#req-3-1` 与 `docs/architecture/stateless-agent-service-architecture.md` 的落地补充。
 
 ## 1. 目标（Why）
 
@@ -86,26 +86,26 @@ CREATE INDEX sessions_updated_at_idx ON sessions (updated_at);
 
 ```json
 {
-  "provider": "openai_responses",
-  "runtime_config": {
-    "model": "gpt-4.1-mini",
-    "temperature": 0.2,
-    "top_p": 1.0,
-    "frequency_penalty": 0.0,
-    "presence_penalty": 0.0,
-    "reasoning": {
-      "effort": "medium"
-    }
-  },
-  "resume_cursor": {
-    "last_response_id": "resp_xxx",
-    "fallback_transcript_items": []
-  },
-  "last_run": {
-    "response_id": "resp_xxx",
-    "last_event_seq": 42,
-    "updated_at_ms": 1760000000000
-  }
+	"provider": "openai_responses",
+	"runtime_config": {
+		"model": "gpt-4.1-mini",
+		"temperature": 0.2,
+		"top_p": 1.0,
+		"frequency_penalty": 0.0,
+		"presence_penalty": 0.0,
+		"reasoning": {
+			"effort": "medium"
+		}
+	},
+	"resume_cursor": {
+		"last_response_id": "resp_xxx",
+		"fallback_transcript_items": []
+	},
+	"last_run": {
+		"response_id": "resp_xxx",
+		"last_event_seq": 42,
+		"updated_at_ms": 1760000000000
+	}
 }
 ```
 
@@ -121,7 +121,7 @@ CREATE INDEX sessions_updated_at_idx ON sessions (updated_at);
 ```sql
 CREATE TABLE runs (
   tenant_id               TEXT NULL,
-  response_id             TEXT NOT NULL, -- OpenAI Responses 的 response_id（AnyAgent 侧也作为 run_id）
+  response_id             TEXT NOT NULL, -- OpenAI Responses 的 response_id（anyagent 侧也作为 run_id）
   session_partition_key   TEXT NOT NULL,
 
   idempotency_key         TEXT NULL,     -- 来自请求头 Idempotency-Key

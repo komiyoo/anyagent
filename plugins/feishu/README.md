@@ -1,6 +1,6 @@
 # Feishu plugin (reference)
 
-本目录是 `requirements.md#req-6-2` 的 reference：演示如何通过 AnyAgent 插件体系将 `feishu.*` tools 注入到 Tool Runtime。
+本目录是 `requirements.md#req-6-2` 的 reference：演示如何通过 anyagent 插件体系将 `feishu.*` tools 注入到 Tool Runtime。
 
 ## 文件约定
 
@@ -12,15 +12,15 @@
 
 ## 如何在 Tool Runtime 启用
 
-1) 复制配置：
+1. 复制配置：
 
 - 将 `config.example.json` 复制为 `config.json`（本地文件，不入 git）
 
-2) 设置 token（示例：直接提供 tenant access token）：
+2. 设置 token（示例：直接提供 tenant access token）：
 
 - `export FEISHU_TENANT_ACCESS_TOKEN=...`
 
-3) 启动 Tool Runtime：
+3. 启动 Tool Runtime：
 
 - `cd apps/tool-runtime`
 - `export TOOL_RUNTIME_PLUGIN_ROOTS=../../plugins`
@@ -33,4 +33,3 @@
 - `feishu.doc.create(title, folder_token, content?)`（`content` 目前不支持，传入会报错）
 
 其余能力（`doc.patch` / `drive.upload` / `perm.grant`）会以明确错误返回，留待后续按需求补齐。
-

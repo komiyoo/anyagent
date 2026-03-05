@@ -4,17 +4,18 @@ from typing import Any
 
 from anyagent.tool_runtime.models import ToolDefinition
 from anyagent.tool_runtime.registry import ToolRegistry
-from anyagent.protocol.openai_responses import FunctionToolParam
+from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
 
 from .policy import is_allowed_by_policy
 
 
-def to_openai_function_tool(td: ToolDefinition) -> FunctionToolParam:
-    return FunctionToolParam(
+def to_openai_function_tool(td: ToolDefinition) -> AnyAgentFunctionToolParam:
+    return AnyAgentFunctionToolParam(
         name=td.name,
         description=(td.description or ""),
         parameters=td.parameters,
         strict=True,
+        x_anyagent_kind=td.kind,
     )
 
 
@@ -42,7 +43,7 @@ def build_manifest(
     requested_tool_names: list[str] | None,
     allow_sandbox: bool,
     context: dict[str, Any] | None = None,
-) -> tuple[list[FunctionToolParam], list[tuple[str, str, str]] | None]:
+) -> tuple[list[AnyAgentFunctionToolParam], list[tuple[str, str, str]] | None]:
     tools = registry.list_tools()
 
     decisions: list[tuple[str, str, str]] | None = None
@@ -51,7 +52,7 @@ def build_manifest(
         decisions = []
         tools = [t for t in tools if _matches_requested(t.name, requested_tool_names)]
 
-    out: list[FunctionToolParam] = []
+    out: list[AnyAgentFunctionToolParam] = []
     for td in tools:
         allowed, reason = is_allowed_by_policy(
             tool_name=td.name,

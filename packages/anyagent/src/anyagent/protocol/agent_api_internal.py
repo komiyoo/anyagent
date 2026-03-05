@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-AnyAgent Agent API internal endpoints protocol (SSOT).
+anyagent Agent API internal endpoints protocol (SSOT).
 
 This module defines the request/response models for Agent API internal endpoints:
 - /internal/events/list

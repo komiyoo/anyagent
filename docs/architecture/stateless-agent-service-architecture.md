@@ -59,7 +59,7 @@
 
 ### 3.2 关键组件
 
-- `Ingress`（HTTP 入口层）：鉴权、限流、接收命令、推送 SSE/WebSocket。**注意**：本文的 `Ingress` 是 Agent API 的 HTTP 接入层，不是 AnyAgent 的 `Platform Gateway`（平台连接器服务）。Platform Gateway 是 Ingress 的上游调用方之一。
+- `Ingress`（HTTP 入口层）：鉴权、限流、接收命令、推送 SSE/WebSocket。**注意**：本文的 `Ingress` 是 Agent API 的 HTTP 接入层，不是 anyagent 的 `Platform Gateway`（平台连接器服务）。Platform Gateway 是 Ingress 的上游调用方之一。
 - `Command Queue`：存放用户命令（prompt/steer/follow_up/abort），建议支持按 `session_partition_key` 分区/路由。
 - `Worker Pool`：多个 Worker 并行消费不同会话任务（跨会话并行）。
 - `Session Store`：持久化会话状态（消息、快照、游标等）。
@@ -107,12 +107,12 @@
 
 #### 路径选择规则
 
-| 调用方 | `stream` 参数 | 路径 | 响应 |
-|--------|--------------|------|------|
-| OpenAI SDK 直连 | `true` | 路径 A（同步 SSE） | SSE 事件流 |
-| OpenAI SDK 直连 | `false` | 路径 A 或 B 均可 | `200` + 完整 response JSON |
-| Platform Gateway | `true` | 路径 A 或 B（推荐 B + Event Bus 订阅） | 按选择返回 |
-| Platform Gateway | `false` | 路径 B | `202` + `run_id` |
+| 调用方           | `stream` 参数 | 路径                                   | 响应                       |
+| ---------------- | ------------- | -------------------------------------- | -------------------------- |
+| OpenAI SDK 直连  | `true`        | 路径 A（同步 SSE）                     | SSE 事件流                 |
+| OpenAI SDK 直连  | `false`       | 路径 A 或 B 均可                       | `200` + 完整 response JSON |
+| Platform Gateway | `true`        | 路径 A 或 B（推荐 B + Event Bus 订阅） | 按选择返回                 |
+| Platform Gateway | `false`       | 路径 B                                 | `202` + `run_id`           |
 
 ### 3.4 Session Resume 与会话运行参数绑定（对齐 `requirements.md#req-4-6`）
 
@@ -362,8 +362,8 @@ sequenceDiagram
 
 ## 11. Tool Runtime（避免重复，统一指向 requirements）
 
-Tool Runtime 的协议、联邦路由、幂等/取消/审计语义等在 AnyAgent 中属于“契约型内容”，以需求文档为准：
+Tool Runtime 的协议、联邦路由、幂等/取消/审计语义等在 anyagent 中属于“契约型内容”，以需求文档为准：
 
-- `/Users/ticoag/Documents/myws/clawers/AnyAgent/requirements.md` 的 **第 5 节（内部接口：Tool Runtime）**
+- `/Users/ticoag/Documents/myws/clawers/anyagent/requirements.md` 的 **第 5 节（内部接口：Tool Runtime）**
 
 本文档仅聚焦“无状态并发与可恢复执行”这条主线（keyed serialization、事件补发、慢消费者治理等），不再重复 Tool Runtime 的设计与图。

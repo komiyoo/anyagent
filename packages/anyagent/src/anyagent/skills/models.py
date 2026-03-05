@@ -25,7 +25,7 @@ class SkillFrontMatter(BaseModel):
 
 class SkillToolDependency(BaseModel):
     """
-    v0 对齐 Codex 的 dependencies.tools[] 的最小形态（AnyAgent 只用其中一部分字段）。
+    v0 对齐 Codex 的 dependencies.tools[] 的最小形态（anyagent 只用其中一部分字段）。
     """
 
     model_config = ConfigDict(extra="allow")

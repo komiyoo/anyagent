@@ -1,7 +1,7 @@
 [project]
 name = "tool-runtime"
 version = "0.1.0"
-description = "AnyAgent Tool Runtime (router + executors, v0 single-process)"
+description = "anyagent Tool Runtime (router + executors, v0 single-process)"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",

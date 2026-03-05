@@ -31,8 +31,8 @@
 - 超时：必须支持硬超时 kill（`deadline_ms`）
 - 输出限额：stdout/stderr 必须截断（`TOOL_OUTPUT_MAX_BYTES`）
 - 审计：记录会话与调用链路（`agent_id/session_key/response_id/tool_call_id/tool_name`）
-- 秘钥隔离：sandbox 侧禁止读取平台 token、AnyAgent API key、内部 key 等敏感信息
+- 秘钥隔离：sandbox 侧禁止读取平台 token、anyagent API key、内部 key 等敏感信息
 
 说明：
-- 当前 v0 的 Tool Runtime 只提供 sandbox 的 **禁用默认策略与安全闸门**；具体 sandbox executor 的隔离落地应以此文档为验收基线推进。
 
+- 当前 v0 的 Tool Runtime 只提供 sandbox 的 **禁用默认策略与安全闸门**；具体 sandbox executor 的隔离落地应以此文档为验收基线推进。

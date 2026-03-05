@@ -5,7 +5,7 @@
 ## 目标
 
 - 接入侧（SDK）统一使用 OpenAI Responses API（优先 OpenAI 官方 SDK 类型/模型）。
-- 服务侧（AnyAgent Agent Server / Agent API）对外提供 Responses API（`POST /v1/responses` + SSE）。
+- 服务侧（anyagent Agent Server / Agent API）对外提供 Responses API（`POST /v1/responses` + SSE）。
 - 数据模型/协议/类型注释优先，尽量收敛单一真源（SSOT）。
 
 ## 任务（Tasks）

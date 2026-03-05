@@ -1,6 +1,6 @@
 # TODO（按模块拆分）
 
-本目录用于用 **Markdown checkbox** 维护 AnyAgent 的工程任务，并且让每条任务都能追溯到需求文档 `requirements.md` 的稳定锚点（方案 B）。
+本目录用于用 **Markdown checkbox** 维护 anyagent 的工程任务，并且让每条任务都能追溯到需求文档 `requirements.md` 的稳定锚点（方案 B）。
 
 ## 约定
 
@@ -11,7 +11,7 @@
 - TODO 文件里的每条任务应尽量附带需求引用：`requirements.md#req-...`
 - 进度默认按文件内顺序（从上到下）理解：新增任务建议**追加到末尾**，避免频繁重排导致“做到第几个”含义漂移
 
-> 说明：本仓库当前没有 `AnyAgent/requirements.md`，因此这里使用 `requirements.md` 作为 canonical 路径。若后续迁移为 monorepo 子目录结构，再批量替换链接目标即可。
+> 说明：本仓库当前没有 `anyagent/requirements.md`，因此这里使用 `requirements.md` 作为 canonical 路径。若后续迁移为 monorepo 子目录结构，再批量替换链接目标即可。
 
 ### 2) 锚点命名规则（稳定链接）
 

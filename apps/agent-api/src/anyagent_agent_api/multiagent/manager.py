@@ -100,7 +100,7 @@ def spawn_agent_tool_schema() -> FunctionToolParam:
     schema.setdefault("required", [])
     return FunctionToolParam(
         name="spawn_agent",
-        description="Spawn a child agent thread (AnyAgent system tool).",
+        description="Spawn a child agent thread (anyagent system tool).",
         parameters=schema,
         strict=True,
     )
@@ -112,7 +112,7 @@ def send_input_tool_schema() -> FunctionToolParam:
     schema.setdefault("required", [])
     return FunctionToolParam(
         name="send_input",
-        description="Send input to an existing child agent thread (AnyAgent system tool).",
+        description="Send input to an existing child agent thread (anyagent system tool).",
         parameters=schema,
         strict=True,
     )
@@ -124,7 +124,7 @@ def wait_tool_schema() -> FunctionToolParam:
     schema.setdefault("required", [])
     return FunctionToolParam(
         name="wait",
-        description="Wait for one or more child agent threads to reach a terminal status (AnyAgent system tool).",
+        description="Wait for one or more child agent threads to reach a terminal status (anyagent system tool).",
         parameters=schema,
         strict=True,
     )
@@ -136,7 +136,7 @@ def close_agent_tool_schema() -> FunctionToolParam:
     schema.setdefault("required", [])
     return FunctionToolParam(
         name="close_agent",
-        description="Close a child agent thread and release resources (AnyAgent system tool).",
+        description="Close a child agent thread and release resources (anyagent system tool).",
         parameters=schema,
         strict=True,
     )
@@ -148,7 +148,7 @@ def resume_agent_tool_schema() -> FunctionToolParam:
     schema.setdefault("required", [])
     return FunctionToolParam(
         name="resume_agent",
-        description="Resume a previously closed child agent thread (AnyAgent system tool).",
+        description="Resume a previously closed child agent thread (anyagent system tool).",
         parameters=schema,
         strict=True,
     )

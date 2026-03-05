@@ -1,4 +1,4 @@
--- AnyAgent Agent API storage schema (v0)
+-- anyagent Agent API storage schema (v0)
 -- This migration is schema-agnostic; the runner sets `search_path`.
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS sessions_updated_at_idx ON sessions (updated_at);
 
--- runs: one run per response_id (AnyAgent uses response_id as run_id)
+-- runs: one run per response_id (anyagent uses response_id as run_id)
 CREATE TABLE IF NOT EXISTS runs (
   tenant_id               TEXT NULL,
   response_id             TEXT NOT NULL,

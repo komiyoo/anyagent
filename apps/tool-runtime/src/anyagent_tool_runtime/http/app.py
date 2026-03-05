@@ -132,7 +132,7 @@ def create_app(settings: Settings) -> FastAPI:
         return JSONResponse(
             status_code=200,
             content={
-                "tools": [t.model_dump(exclude_none=True) for t in tools],
+                "tools": [t.model_dump(exclude_none=True, by_alias=True) for t in tools],
                 "toolset_version": request.app.state.registry.toolset_version,
                 "decisions": [d.model_dump() for d in decisions] if decisions is not None else None,
             },

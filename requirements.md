@@ -1,8 +1,8 @@
-# AnyAgent 需求文档（v0）
+# anyagent 需求文档（v0）
 
 ## 0. 背景与目标
 
-AnyAgent 是一个“可作为基础设施复用”的 Agent 服务体系，解决两个问题：
+anyagent 是一个“可作为基础设施复用”的 Agent 服务体系，解决两个问题：
 
 1. 对外提供 **OpenAI SDK Responses API 兼容** 的服务端接口（`POST /v1/responses` + SSE streaming），使任意客户端可以用 OpenAI 官方 SDK 方式接入，并获得端到端 agent loop 体验（含工具调用）。
 2. 提供一个 **Gateway 组件**，用于接入飞书/Discord/Telegram 等平台机器人，把平台的可操作能力以“工具”注入到 agent loop 中（例如飞书：群联系人信息、云文档创建/修改等）。
@@ -25,7 +25,7 @@ AnyAgent 是一个“可作为基础设施复用”的 Agent 服务体系，解�
     - `anyagent.tool_runtime`：Tool Runtime 侧工具注册与插件宿主（tool registry、`registerTool(...)`、路由注册、schema 校验）
 - `Reference Implementation`（可运行的参考部署）
   - 把 `Agent API + Gateway + Tool Runtime + Sandbox` 以“可读、可替换”的方式编排起来
-  - 参考 OpenClaw 的做法：既提供 `/v1/responses` 兼容入口（AnyAgent 的 Agent API），也可提供 `/tools/invoke` 这类工具直调入口（AnyAgent 的 Tool Runtime，可选）
+  - 参考 OpenClaw 的做法：既提供 `/v1/responses` 兼容入口（anyagent 的 Agent API），也可提供 `/tools/invoke` 这类工具直调入口（anyagent 的 Tool Runtime，可选）
 - `Project Template`（业务项目脚手架）
   - 提供一键拉起的部署样例（Docker/Compose/Helm 任选其一），但不要把业务规则写进模板
   - 业务项目只需要：
@@ -36,7 +36,7 @@ AnyAgent 是一个“可作为基础设施复用”的 Agent 服务体系，解�
 建议的仓库结构（示意，不绑定语言）：
 
 ```text
-AnyAgent/
+anyagent/
   packages/
     anyagent/                    # 单一 SDK 包：agent_runtime/protocol/gateway/skills/tool_runtime
   apps/
@@ -71,9 +71,10 @@ AnyAgent/
   - 支持幂等（Idempotency），支持断线重连的事件补发（至少在我们自有 client/gateway 路径上可用）
 
 > **Stateless 的精确含义**：Agent API 的 HTTP 入口层（Ingress）是无状态的——任意实例可处理任意请求，不在进程内长期持有会话状态。但 Worker 在执行 agent loop 期间是**有状态的**（持有 lease lock、维护 turn 上下文、保持与 LLM 的流式连接）。状态通过外置存储（Session Store / Event Store / Run Store）持久化，使得 Worker 实例可替换、可恢复。详见 `docs/architecture/stateless-agent-service-architecture.md`。
+
 - Gateway（长连接、可多实例）
   - 接入平台机器人：v0（Phase 1）先打通一个平台 connector（推荐飞书）；Discord/Telegram 作为 Phase 2+ 扩展
-  - 做好会话映射（platform thread/channel -> AnyAgent session key）
+  - 做好会话映射（platform thread/channel -> anyagent session key）
   - 注入平台能力（capabilities -> context + tool visibility hints），并把平台消息/回调可靠地转发给 Agent API
   - 输出到平台（含平台支持的“流式效果”：打字/编辑消息/卡片更新等）
 - Tool Runtime（独立服务、可横向扩展）
@@ -123,9 +124,10 @@ Phase 2+ 扩展（Future，不应阻塞 v0）：
 - 所有持久化实体预留 `tenant_id` 字段（v0 默认单租户，可为空或固定值）。
 
 <a id="req-2-1"></a>
+
 ### 2.1 Agent Packs（配置目录即行为包，开箱即用）
 
-AnyAgent v0 必须支持通过“配置目录”定义可对外提供服务的 agent，以及其行为/工具/skills 组合，而不是通过修改代码注册。
+anyagent v0 必须支持通过“配置目录”定义可对外提供服务的 agent，以及其行为/工具/skills 组合，而不是通过修改代码注册。
 
 约定：业务项目/工作区内存在一个公共配置根目录：
 
@@ -148,6 +150,7 @@ AnyAgent v0 必须支持通过“配置目录”定义可对外提供服务的 a
 - 同一个 `agent_id` 只能定义一次；重复定义必须 fail-fast（避免行为不确定）。
 
 <a id="req-2-1-1"></a>
+
 #### 2.1.1 AGENTS.md 注入语义（v0 强制）
 
 - AgentRuntime 在每次 run 初始化 prompt 时，必须把 `<agent_pack_dir>/AGENTS.md` 的内容作为**配置侧指令**注入模型上下文。
@@ -169,6 +172,7 @@ AnyAgent v0 必须支持通过“配置目录”定义可对外提供服务的 a
 - 当同名 `agent_id` 在多个 roots 中出现时，必须有清晰的优先级（建议：Repo > Admin > System > User），且结果可审计（记录来自哪个 root/path）。
 
 <a id="req-2-2"></a>
+
 ### 2.2 AgentSpec（agent.yaml）最小 schema（v0 强制）
 
 `agent.yaml` 定义该 agent 的配置集合（AgentSpec）。v0 最小必须包含以下字段（其余字段允许扩展但不得破坏兼容）：
@@ -200,11 +204,11 @@ AnyAgent v0 必须支持通过“配置目录”定义可对外提供服务的 a
 ```yaml
 exposed: true
 tools:
-  requested_tool_names: ["core.web_fetch", "app.*"]
+  requested_tool_names: ['core.web_fetch', 'app.*']
 skills:
-  default_selected: ["repo-helper"]
+  default_selected: ['repo-helper']
 multiagent:
-  spawn_allow_agent_ids: ["researcher", "coder"]
+  spawn_allow_agent_ids: ['researcher', 'coder']
 ```
 
 ## 3. 高层架构（组件边界）
@@ -217,7 +221,7 @@ flowchart LR
     T[Telegram Bot API]
   end
 
-  subgraph AnyAgent["AnyAgent 系统"]
+  subgraph anyagent["anyagent 系统"]
     GW[Gateway<br/>Long-lived connectors]
     API[Agent API<br/>Ingress: Stateless<br/>Worker: Stateful during run<br/>OpenAI Responses Compatible]
     TR[Tool Runtime<br/>Independent Service<br/>Tool Router + Executors]
@@ -240,9 +244,10 @@ flowchart LR
 - session/run/event 等状态外置到存储，支持横向扩展。
 
 <a id="req-3-1"></a>
+
 ### 3.1 存储层（v0 最小设计，建议单独成文）
 
-AnyAgent 的“无状态入口 + 有状态执行”依赖外置存储支撑可恢复与可横向扩展。v0 至少需要以下存储原语：
+anyagent 的“无状态入口 + 有状态执行”依赖外置存储支撑可恢复与可横向扩展。v0 至少需要以下存储原语：
 
 - `Session Store`：会话快照（消息/游标/策略等）
 - `Run Store`：run 元数据与状态机（started/completed/errored/aborted/timeout）
@@ -254,9 +259,11 @@ AnyAgent 的“无状态入口 + 有状态执行”依赖外置存储支撑可�
 v0 推荐的最小方案与关键 schema/生命周期/一致性边界见：`docs/architecture/storage-minimal-design.md`。
 
 <a id="req-4"></a>
+
 ## 4. 外部接口：OpenAI Responses API 兼容（Agent API）
 
 <a id="req-4-1"></a>
+
 ### 4.1 Endpoint
 
 - `POST /v1/responses`
@@ -272,6 +279,7 @@ Agent API 必须同时支持两种请求处理路径，对外行为统一（调�
 当外部客户端（OpenAI SDK 或 Platform Gateway）发起 `POST /v1/responses` 且 `stream=true` 时，**必须在同一个 HTTP 连接上立即开始返回 SSE 事件**。这是 OpenAI SDK 的强预期——客户端发出请求后立即开始消费事件流，而不是先收到 `202 Accepted` 再从另一个连接拿事件。
 
 实现路径：
+
 - Ingress 收到请求后，在同一连接上阻塞等待 Worker 认领并执行
 - Worker 产生的事件通过 Event Bus 实时推送回 Ingress，Ingress 直接写入 SSE 响应流
 - 如果 Worker 尚未认领（排队中），Ingress 可以先发送心跳（`:` 注释行）保持连接
@@ -280,6 +288,7 @@ Agent API 必须同时支持两种请求处理路径，对外行为统一（调�
 **内部异步模式**（用于 Platform Gateway 的非实时场景）：
 
 当 Platform Gateway 的场景不需要同步 SSE（例如飞书卡片消息可以通过独立的事件订阅通道获取增量更新）时，可以走 Command Queue + `202 Accepted` 路径：
+
 - Ingress 写入 Command Queue，返回 `202 { run_id, status: "accepted" }`
 - Platform Gateway 通过 Event Bus 订阅事件，异步获取执行结果
 - 这条路径与 `docs/architecture/stateless-agent-service-architecture.md` 中的异步执行语义一致
@@ -292,15 +301,17 @@ Agent API 必须同时支持两种请求处理路径，对外行为统一（调�
 - `POST /v1/responses/{response_id}/cancel`：用于中断正在执行的 response
 
 <a id="req-4-2"></a>
+
 ### 4.2 鉴权
 
 - `Authorization: Bearer <AGENT_API_KEY>`
 - 支持 `Idempotency-Key` header（用于客户端/网关重试去重）
 
 <a id="req-4-3"></a>
+
 ### 4.3 会话标识（Session Key）
 
-因为 OpenAI Responses API 原生不强制 `session_id` 字段，AnyAgent v0 定义如下约定：
+因为 OpenAI Responses API 原生不强制 `session_id` 字段，anyagent v0 定义如下约定：
 
 - 优先从请求的 `metadata.session_key`（或 `user`）里解析出 `session_key`。
 - 同时支持从 `metadata.agent_id`（或 `model` 约定、HTTP header）解析出 `agent_id`，用于选择 AgentSpec（见 2.1/2.2）。
@@ -314,14 +325,13 @@ Agent API 必须同时支持两种请求处理路径，对外行为统一（调�
 - Agent API 生成一个临时会话（仅用于该次 response），但不保证跨请求延续上下文。
 
 <a id="req-4-3-1"></a>
+
 ### 4.3.1 多 Agent（agent_id）选择与隔离（必须写死的规则）
 
-为了让一个业务项目里“多个 agent 同时对外提供服务”可控且可扩展，AnyAgent v0 建议把 agent 的选择与隔离规则固定为：
+为了让一个业务项目里“多个 agent 同时对外提供服务”可控且可扩展，anyagent v0 建议把 agent 的选择与隔离规则固定为：
 
 - `agent_id` 的来源优先级（从高到低）：
-  - `metadata.agent_id`
-  -（可选）HTTP header：`x-agent-id`（用于 gateway 内部调用或受控客户端）
-  -（可选）`model` 约定：`agent:<agent_id>`（仅当你希望用 model 字段做路由时）
+  - `metadata.agent_id` -（可选）HTTP header：`x-agent-id`（用于 gateway 内部调用或受控客户端）-（可选）`model` 约定：`agent:<agent_id>`（仅当你希望用 model 字段做路由时）
   - 默认：`main`
 - `agent_id` 的合法性与暴露面控制（配置化强约束）：
   - `agent_id` 必须满足 `[a-zA-Z0-9_.-]{1,64}`。
@@ -341,6 +351,7 @@ Agent API 必须同时支持两种请求处理路径，对外行为统一（调�
 - 同一个 agent 内则仍然保持“会话内串行、跨会话并行”
 
 <a id="req-4-4"></a>
+
 ### 4.4 Streaming 事件（SSE）
 
 目标：OpenAI SDK 的 `.responses.create({ stream: true })` 可以直接消费。
@@ -364,6 +375,7 @@ Agent API 必须同时支持两种请求处理路径，对外行为统一（调�
 - 事件顺序可重放（内部存 Event Store，便于断线补发）
 
 <a id="req-4-5"></a>
+
 ### 4.5 Tools（OpenAI function tools）
 
 - `tools` 字段：客户端/Gateway 可以在 request 中携带 tool definitions（OpenAI function tools）。
@@ -385,14 +397,16 @@ tool_choice 策略（v0）：
 - 任何不在 Tool Runtime 工具注册表/manifest 中的工具名，都必须被忽略（或返回明确错误），禁止“客户端注入新工具名”。
 
 <a id="req-4-6"></a>
+
 ### 4.6 会话恢复（Session Resume）与运行时配置绑定（Session Runtime Config）
 
-为满足“连续会话无损承接上下文”，AnyAgent 必须把跨请求状态从进程内存提升为可持久化、可加载的会话快照语义。
+为满足“连续会话无损承接上下文”，anyagent 必须把跨请求状态从进程内存提升为可持久化、可加载的会话快照语义。
 
 <a id="req-4-6-1"></a>
+
 #### 4.6.1 跨请求上下文恢复与首轮 `input` 组装（OpenAI Responses Provider）
 
-AnyAgent 对 OpenAI Responses Provider 的最小恢复语义如下：
+anyagent 对 OpenAI Responses Provider 的最小恢复语义如下：
 
 - 同一个 `session_partition_key` 的后续请求，必须从 Session Store（或 `STORAGE_MODE=none` 的本地持久化）加载会话快照，而不是依赖进程内存。
 - 会话快照至少要包含一种可恢复游标：
@@ -405,9 +419,10 @@ AnyAgent 对 OpenAI Responses Provider 的最小恢复语义如下：
 - run 完成后，必须把新的恢复游标写回会话快照（至少包含新的 `last_response_id` 或等价可恢复引用），保证下一次请求可继续承接。
 
 <a id="req-4-6-2"></a>
+
 #### 4.6.2 会话运行参数绑定与 merge 更新
 
-AnyAgent 必须支持“会话级运行参数绑定”，避免同一会话跨请求出现模型/采样参数漂移。
+anyagent 必须支持“会话级运行参数绑定”，避免同一会话跨请求出现模型/采样参数漂移。
 
 - 受管字段集合（v0）：
   - `model`
@@ -427,11 +442,13 @@ AnyAgent 必须支持“会话级运行参数绑定”，避免同一会话跨�
   - 更新会话快照时必须带版本语义（CAS 或等价机制），防止并发覆盖造成配置回退。
 
 <a id="req-5"></a>
+
 ## 5. 内部接口：Tool Runtime（独立服务）
 
 Tool Runtime 是一个独立模块/服务（可多实例水平扩容），不由 Gateway 承载。
 
 <a id="req-5-1"></a>
+
 ### 5.1 Tool Execute API（Agent API -> Tool Runtime）
 
 为了保证 agent loop 在一次请求内完成（Worker 持有 lease 期间执行完整循环），Agent API 需要一个标准化工具执行接口。
@@ -463,6 +480,7 @@ Tool Runtime 是一个独立模块/服务（可多实例水平扩容），不由
   - `session_partition_key = "{agent_id}::{session_key}"`
 
 <a id="req-5-2"></a>
+
 ### 5.2 Tool Manifest（Tool Runtime -> Agent API）
 
 由于 Tool Runtime 是独立服务，v0 强制由 Tool Runtime 作为“工具可见性与清单”的权威来源：
@@ -495,6 +513,7 @@ Agent API 的行为建议：
 - 这样能同时支持“直连 Agent API 的 OpenAI SDK client”和“经 Gateway 的平台机器人”两条入口。
 
 <a id="req-5-2-2"></a>
+
 ### 5.2.2 Manifest 缓存策略（建议，v0 可先做最小版）
 
 `manifest` 的变化频率通常远低于请求频率，如果每次 `/v1/responses` 都同步 RPC 获取一次，会放大延迟并把 Tool Runtime 的可用性变成硬依赖。
@@ -510,6 +529,7 @@ Agent API 的行为建议：
 - **降级（可选，需显式开关）**：在 Tool Runtime 短暂不可用时，可选择“允许在 `max_stale` 窗口内使用过期缓存继续服务”，但必须记录审计与告警，并默认关闭（避免策略变更/撤权后仍继续披露）。
 
 <a id="req-5-2-1"></a>
+
 ### 5.2.1 Tool Registry 与热更新（控制面，可选）
 
 动态披露（Dynamic Disclosure）解决的是“本次 run 披露哪些工具”，而不是“运行时注册/反注册工具”。
@@ -529,7 +549,7 @@ v0 强制：
   - tool 定义必须包含：`name/description/parameters/category`（category：`core|app|sandbox|channel`）
   - `parameters` 必须按 5.7 的约束可直接映射为 OpenAI function tool schema（最终披露以 Tool Runtime registry 为准）
   - `name` 必须满足 5.6 命名规范，且建议：
-    - AnyAgent 内置：`core.*`
+    - anyagent 内置：`core.*`
     - 业务项目：`app.*`
     - 平台插件：`<channel>.*`（如 `feishu.*`）
     - 沙盒：`sandbox.*`
@@ -538,7 +558,7 @@ v0 强制：
 
 约束（v0 强制）：
 
-- AnyAgent 自带的 `core.*` 工具也应走同一套 `registerTool(...)` 注册路径（保证 Tool Runtime registry 是“单一真源”，避免 schema 漂移）
+- anyagent 自带的 `core.*` 工具也应走同一套 `registerTool(...)` 注册路径（保证 Tool Runtime registry 是“单一真源”，避免 schema 漂移）
 - 平台插件注册的 `<channel>.*` tools 与业务注册的 `app.*` tools 也遵循同一注册流程与校验标准（同一错误分层、同一审计字段）
 - Tool Runtime 必须校验 `tool.name` 与 `tool.category` 一致，且不得被调用方伪造：
   - `core.*` 必须是 `category=core`
@@ -547,7 +567,7 @@ v0 强制：
   - `<channel>.*`（如 `feishu.*`）必须是 `category=channel`
 - Tool Runtime 必须拒绝重复注册同名 `tool_name`（禁止覆盖/替换），避免工具投毒与 schema 漂移。
 - 业务项目与平台插件 **不得** 注册或声明路由 `core.*` / `sandbox.*`：
-  - `core.*` / `sandbox.*` 仅允许 AnyAgent 内置模块注册（受信任构建产物）
+  - `core.*` / `sandbox.*` 仅允许 anyagent 内置模块注册（受信任构建产物）
   - 业务方只允许注册 `app.*`
   - 平台插件只允许注册自身 `<channel>.*`
 - 若开启 `registerNamespaceRoute(prefix, executor_id)`：
@@ -569,11 +589,12 @@ v0 强制：
 - `toolset_version` 必须单调递增；Tool Runtime 必须以“原子快照”方式生效（`manifest/execute` 不得看到部分更新态）
 
 <a id="req-5-3"></a>
+
 ### 5.3 工具分类与“联邦式 Tool Runtime”（核心讨论结论）
 
 在真实 agent loop 里，工具通常来自 4 个来源，且执行特性不同：
 
-1. `core` 内置工具（AnyAgent 自带）
+1. `core` 内置工具（anyagent 自带）
    - 例：`core.web_search`、`core.web_fetch`
    - 特性：无平台依赖，偏 I/O 与配额控制，适合做成无状态服务或内置模块
 2. `app` 业务工具（业务项目自定义）
@@ -586,7 +607,7 @@ v0 强制：
    - 例：`feishu.doc.create`、`feishu.directory.get_chat_members`
    - 特性：依赖平台 token、目录缓存、权限边界，适合放在 Tool Runtime 的 channel executor（独立扩缩容；Gateway 仅做连接器与消息回传）
 
-因此 AnyAgent 不建议把 Tool Runtime 理解为“单一进程里的一个函数表”，而是采用 **联邦式 Tool Runtime（Tool Runtime Federation）**：
+因此 anyagent 不建议把 Tool Runtime 理解为“单一进程里的一个函数表”，而是采用 **联邦式 Tool Runtime（Tool Runtime Federation）**：
 
 - Agent API 负责跑完整 agent loop（解析 tool call、等待工具结果、继续推理）。
 - 工具执行由“Tool Runtime Router”统一对外暴露接口，并按 `tool_name` 路由到对应执行器（v0 固化为 **Tool Runtime 独立服务部署**，不嵌入 Gateway；executors 的“进程形态”可演进）：
@@ -628,6 +649,7 @@ flowchart LR
 ```
 
 <a id="req-5-4"></a>
+
 ### 5.4 Tool Runtime 的执行语义（参考 pi-mono / openclaw 的共同点）
 
 pi-mono (`@mariozechner/pi-agent-core`) 的抽象要点：
@@ -643,14 +665,15 @@ openclaw 的抽象要点（Gateway 内执行）：
 - 通过 `/tools/invoke` HTTP endpoint 暴露“工具远程调用”（有鉴权、tool policy/allowlist、输入错误映射 400/403/500）
 - 对高风险工具（例如 `exec`）有更细的安全策略：host 选择（sandbox/gateway/node）、allowlist、安全等级/审批等
 
-AnyAgent v0 的执行语义建议对齐它们的交集（实现上可逐步增强）：
+anyagent v0 的执行语义建议对齐它们的交集（实现上可逐步增强）：
 
 - 必须：同步返回最终 `output`（string），以便写入 OpenAI Responses 的 `function_call_output.output`
 - 必须：支持 `timeout_ms` / `deadline_ms`（避免 serverless 连接被长时间占用）
 - 必须：支持取消（Agent API 在 run abort 时向 Tool Runtime 发出取消）
-- 可选：支持 `onUpdate` 式的工具进度上报，但 **不强制映射到 OpenAI Responses SSE**（避免破坏 SDK 兼容）；可以作为 AnyAgent 内部事件流供 Gateway/UI 使用
+- 可选：支持 `onUpdate` 式的工具进度上报，但 **不强制映射到 OpenAI Responses SSE**（避免破坏 SDK 兼容）；可以作为 anyagent 内部事件流供 Gateway/UI 使用
 
 <a id="req-5-5"></a>
+
 ### 5.5 Sandbox 工具（code execute / exec）的最小安全要求
 
 因为 `sandbox.exec` 这类工具会执行任意代码/命令，v0 也必须明确最低安全线：
@@ -659,14 +682,15 @@ AnyAgent v0 的执行语义建议对齐它们的交集（实现上可逐步增�
 - 输出限额：stdout/stderr 最大字节数，避免 OOM
 - 超时：硬超时 kill
 - 审计：记录执行的命令、工作目录、资源消耗、调用方会话与发起人
-- 秘钥隔离：sandbox 侧禁止读取平台 token、AnyAgent API key 等敏感信息
+- 秘钥隔离：sandbox 侧禁止读取平台 token、anyagent API key 等敏感信息
 
 （如果 v0 暂不做完整隔离，也必须在文档里明确风险与禁用默认策略。）
 
 <a id="req-5-6"></a>
+
 ### 5.6 Tool 命名规范（必须统一，否则路由与权限无法收敛）
 
-参考 openclaw 的 `createOpenClawTools()`（统一组装 core + plugin tools）与其工具调用入口（例如 `/tools/invoke`），AnyAgent 也必须把 tool name 当成“全系统主键”。
+参考 openclaw 的 `createOpenClawTools()`（统一组装 core + plugin tools）与其工具调用入口（例如 `/tools/invoke`），anyagent 也必须把 tool name 当成“全系统主键”。
 
 约束（v0 强制）：
 
@@ -698,9 +722,10 @@ AnyAgent v0 的执行语义建议对齐它们的交集（实现上可逐步增�
   - `telegram.message.send`
 
 <a id="req-5-7"></a>
+
 ### 5.7 Tool Definition（出现在 `/v1/responses` 的 `tools[]`）的统一约定
 
-AnyAgent 对外只做 OpenAI Responses API，因此工具定义必须能直接落在 OpenAI “function tool” 结构里：
+anyagent 对外只做 OpenAI Responses API，因此工具定义必须能直接落在 OpenAI “function tool” 结构里：
 
 - `type: "function"`
 - `function.name: string`（满足 5.6 命名规范）
@@ -716,22 +741,24 @@ AnyAgent 对外只做 OpenAI Responses API，因此工具定义必须能直接�
 说明：这与 pi-mono 的 `AgentTool.parameters`（TypeBox 结构最终也是一个 JSON schema 对象）是一致的；与 openclaw 的工具参数校验路径也一致。
 
 <a id="req-5-8"></a>
+
 ### 5.8 `/internal/tools/execute` 请求体与响应体（字段级契约）
 
 <a id="req-5-8-1"></a>
+
 #### 5.8.1 Request（Agent API -> Tool Runtime Router）
 
 ```json
 {
-  "tenant_id": "t_default",
-  "agent_id": "main",
-  "session_key": "feishu:oc_123:om_456",
-  "response_id": "resp_...",
-  "tool_call_id": "call_...",
-  "tool_name": "feishu.doc.create",
-  "arguments_json": "{\"title\":\"Spec\",\"folder_id\":\"fld...\"}",
-  "deadline_ms": 30000,
-  "context": { "trace": { "trace_id": "..." }, "channel": { "provider": "feishu" } }
+	"tenant_id": "t_default",
+	"agent_id": "main",
+	"session_key": "feishu:oc_123:om_456",
+	"response_id": "resp_...",
+	"tool_call_id": "call_...",
+	"tool_name": "feishu.doc.create",
+	"arguments_json": "{\"title\":\"Spec\",\"folder_id\":\"fld...\"}",
+	"deadline_ms": 30000,
+	"context": { "trace": { "trace_id": "..." }, "channel": { "provider": "feishu" } }
 }
 ```
 
@@ -748,17 +775,18 @@ AnyAgent 对外只做 OpenAI Responses API，因此工具定义必须能直接�
 - `context`：标准化上下文（见 5.9）
 
 <a id="req-5-8-2"></a>
+
 #### 5.8.2 Response（Tool Runtime -> Agent API）
 
 ```json
 {
-  "status": "completed",
-  "output": "{\"doc_id\":\"doccn...\"}",
-  "meta": {
-    "duration_ms": 532,
-    "output_truncated": false,
-    "audit_ref": "aud_..."
-  }
+	"status": "completed",
+	"output": "{\"doc_id\":\"doccn...\"}",
+	"meta": {
+		"duration_ms": 532,
+		"output_truncated": false,
+		"audit_ref": "aud_..."
+	}
 }
 ```
 
@@ -766,14 +794,14 @@ AnyAgent 对外只做 OpenAI Responses API，因此工具定义必须能直接�
 
 ```json
 {
-  "status": "error",
-  "error": {
-    "type": "tool_input_error",
-    "code": "missing_required_field",
-    "message": "folder_id required",
-    "retryable": false
-  },
-  "meta": { "duration_ms": 12, "audit_ref": "aud_..." }
+	"status": "error",
+	"error": {
+		"type": "tool_input_error",
+		"code": "missing_required_field",
+		"message": "folder_id required",
+		"retryable": false
+	},
+	"meta": { "duration_ms": 12, "audit_ref": "aud_..." }
 }
 ```
 
@@ -784,6 +812,7 @@ AnyAgent 对外只做 OpenAI Responses API，因此工具定义必须能直接�
 - 对大结果（例如文件内容、二进制）必须走对象存储并返回引用（`output` 返回一个 URL/ref JSON 字符串）
 
 <a id="req-5-9"></a>
+
 ### 5.9 `context` 标准结构（平台无关 + 平台扩展）
 
 设计目标：
@@ -795,34 +824,34 @@ v0 标准结构（建议）：
 
 ```json
 {
-  "trace": {
-    "trace_id": "tr_...",
-    "span_id": "sp_..."
-  },
-  "requester": {
-    "id": "u_123",
-    "display_name": "Alice",
-    "is_owner": false
-  },
-  "channel": {
-    "provider": "feishu",
-    "account_id": "acc_default",
-    "chat_id": "oc_123",
-    "thread_id": "om_456",
-    "message_id": "omsg_789"
-  },
-  "auth_ref": {
-    "kind": "secret_ref",
-    "ref": "sec_feishu_acc_default"
-  },
-  "policy": {
-    "allow_tools": ["feishu.*", "core.*"],
-    "deny_tools": ["sandbox.*"]
-  },
-  "locale": {
-    "timezone": "Asia/Shanghai",
-    "lang": "zh-CN"
-  }
+	"trace": {
+		"trace_id": "tr_...",
+		"span_id": "sp_..."
+	},
+	"requester": {
+		"id": "u_123",
+		"display_name": "Alice",
+		"is_owner": false
+	},
+	"channel": {
+		"provider": "feishu",
+		"account_id": "acc_default",
+		"chat_id": "oc_123",
+		"thread_id": "om_456",
+		"message_id": "omsg_789"
+	},
+	"auth_ref": {
+		"kind": "secret_ref",
+		"ref": "sec_feishu_acc_default"
+	},
+	"policy": {
+		"allow_tools": ["feishu.*", "core.*"],
+		"deny_tools": ["sandbox.*"]
+	},
+	"locale": {
+		"timezone": "Asia/Shanghai",
+		"lang": "zh-CN"
+	}
 }
 ```
 
@@ -838,6 +867,7 @@ v0 标准结构（建议）：
 - 放在 `channel.ext` 下，避免污染顶层并保证跨平台兼容
 
 <a id="req-5-10"></a>
+
 ### 5.10 工具权限与策略（对齐 openclaw 的“tool policy”思想）
 
 openclaw 在 `/tools/invoke` 里会做一套 tool policy/allowlist pipeline，保证：
@@ -845,13 +875,14 @@ openclaw 在 `/tools/invoke` 里会做一套 tool policy/allowlist pipeline，�
 - 默认 deny 一批高风险工具
 - 根据 session/profile/provider/channel/account 等维度继承策略
 
-AnyAgent v0 也必须具备最小策略线：
+anyagent v0 也必须具备最小策略线：
 
 - 默认 deny：`sandbox.*`（除非显式开启）
 - 默认 allow：`core.web_search/core.web_fetch`（也应可被关闭）
 - channel tools 的 allow/deny 由 Tool Runtime 的策略与工具元数据决定（并在具体 executor 侧做 defense-in-depth 校验）
 
 <a id="req-5-11"></a>
+
 ### 5.11 幂等与去重（tool execute 级别）
 
 为应对：
@@ -867,9 +898,10 @@ Tool Runtime 必须实现幂等：
   - 若执行中：返回 `status=error` 且 `retryable=true`（或返回明确的 “in_progress” 语义，后续可扩展）
 
 <a id="req-5-12"></a>
+
 ### 5.12 取消（abort）语义（tool 级别）
 
-pi-mono 的工具执行支持 `AbortSignal`；AnyAgent 需要把它落在服务化接口上：
+pi-mono 的工具执行支持 `AbortSignal`；anyagent 需要把它落在服务化接口上：
 
 - `POST /internal/tools/cancel`
   - body：`{ tenant_id?, agent_id, session_key, response_id, tool_call_id }`
@@ -881,6 +913,7 @@ Agent API 的行为建议：
 - run 被 abort 后，优先发送 tool cancel，再停止继续推理
 
 <a id="req-5-13"></a>
+
 ### 5.13 可观测性与审计（tool 执行必须可追踪）
 
 所有 tool execute 必须产出结构化日志与审计记录，最少字段：
@@ -894,9 +927,11 @@ Agent API 的行为建议：
 - 日志必须对 `arguments_json` 与 `output` 做脱敏与限长（参考 openclaw 的 ToolInputError/ToolAuthorizationError 分层做法）
 
 <a id="req-6"></a>
+
 ## 6. Gateway：平台接入与消息交互（参考 OpenClaw）
 
 <a id="req-6-1"></a>
+
 ### 6.1 插件化要求
 
 由于 Tool Runtime 是独立服务，平台“连接器职责”和“工具职责”需要分别落在 Gateway 与 Tool Runtime：
@@ -923,6 +958,7 @@ Agent API 的行为建议：
   - 在 Tool Runtime 侧：`registerTool(...)` 注册 `<channel>.*` tools
 
 <a id="req-6-2"></a>
+
 ### 6.2 平台能力注入示例（飞书）
 
 目标能力（示例，不限于此）：
@@ -944,6 +980,7 @@ Agent API 的行为建议：
 - 降级策略：不支持则聚合后一次性发送
 
 <a id="req-6-3"></a>
+
 ### 6.3 会话/线程绑定策略
 
 Gateway 必须保证：
@@ -955,6 +992,7 @@ Gateway 必须保证：
   - 推荐 `session_partition_key = "{agent_id}::{session_key}"`（见 4.3.1）
 
 <a id="req-6-4"></a>
+
 ### 6.4 多 Agent 的路由（agent_id mapping）
 
 同一个业务项目里可能同时提供多个 agent（不同 persona/权限/skills），Gateway 需要把“平台消息”路由到正确的 `agent_id`。
@@ -973,6 +1011,7 @@ v0 允许多种策略并存，但必须做到“可解释、可审计”：
 无论采用哪种策略，Gateway 调用 Agent API 时都必须在 `metadata.agent_id` 里显式带上最终的 `agent_id`。
 
 <a id="req-7"></a>
+
 ## 7. 并发与可靠性要求（服务侧）
 
 - **会话内串行、会话间并行**：同一 `session_partition_key` 的 runs 需要串行化（keyed serialization）。
@@ -988,20 +1027,23 @@ v0 允许多种策略并存，但必须做到“可解释、可审计”：
 - `docs/architecture/stateless-agent-service-architecture.md`
 
 <a id="req-8"></a>
+
 ## 8. 安全与合规（必须写清）
 
-- 密钥管理：平台 token、AnyAgent API key、内部调用签名密钥不得落日志
+- 密钥管理：平台 token、anyagent API key、内部调用签名密钥不得落日志
 - SSRF 防护：如果支持 `input_file`/`input_image` URL，必须有 allowlist/重定向限制/超时限制
 - 权限边界：平台工具必须检查“当前请求上下文是否允许执行该动作”（群、用户、文档权限等）
 - 审计：Tool execution 与外部写操作必须记录审计事件（最少：谁、在什么会话、调用了什么 tool、影响目标）
 
 <a id="req-9"></a>
+
 ## 9. 测试与验收标准（v0）
 
 <a id="req-9-1"></a>
+
 ### 9.1 Responses API 兼容性验收
 
-- 使用 OpenAI 官方 SDK（TS/Python 任一）配置 `base_url` 指向 AnyAgent Agent API
+- 使用 OpenAI 官方 SDK（TS/Python 任一）配置 `base_url` 指向 anyagent Agent API
 - 能跑通：
   - 非流式 `POST /v1/responses`
   - 流式 `stream=true`，事件顺序正确，能读到最终 `response.completed`，并以 `[DONE]` 结束
@@ -1011,6 +1053,7 @@ v0 允许多种策略并存，但必须做到“可解释、可审计”：
   - 验证工具回合参数一致性：同一 run 的后续 `previous_response_id` 回合沿用同一 `effective_runtime_config`
 
 <a id="req-9-2"></a>
+
 ### 9.2 Gateway 端到端验收
 
 - 飞书/Discord/TG 任一平台先打通一个：
@@ -1038,11 +1081,12 @@ v0 允许多种策略并存，但必须做到“可解释、可审计”：
 - OpenClaw 的插件与 channel/tools 注册方式（用于 Gateway 插件体系）
 
 <a id="req-12"></a>
+
 ## 12. AgentRuntime：Skills 加载与动态披露（参考 Codex）
 
 > 范围提示：本节偏 Phase 2+ 的扩展能力定义。v0（Phase 1）只要求“工具可见性必须以 Tool Runtime manifest 为权威”，以及在需要时能把 `metadata.skills/enabled_skills` 作为上下文信号传递给 Tool Runtime 供审计/策略判定；完整的 skills 加载、依赖推导与 UI 动态披露链路可以后置实现。
 
-本节定义 AnyAgent 的 `AgentRuntime` 在 agent loop 中如何加载与使用 skills，并且满足“动态披露”：
+本节定义 anyagent 的 `AgentRuntime` 在 agent loop 中如何加载与使用 skills，并且满足“动态披露”：
 
 - skills 不应被默认注入给模型
 - skills 相关的 tools 也不应默认对模型可见
@@ -1056,7 +1100,8 @@ v0 允许多种策略并存，但必须做到“可解释、可审计”：
 - skills 的“注入”是按需发生（显式 mention/选择），而非全量注入
 
 <a id="req-12-1"></a>
-### 12.1 Skill 包结构（AnyAgent v0 建议对齐 Codex）
+
+### 12.1 Skill 包结构（anyagent v0 建议对齐 Codex）
 
 每个 skill 是一个目录，至少包含：
 
@@ -1080,9 +1125,10 @@ v0 允许多种策略并存，但必须做到“可解释、可审计”：
 - `name/description` 有长度上限（建议：name <= 64，description <= 1024）
 
 <a id="req-12-2"></a>
+
 ### 12.2 Skill Roots 与 Scope（Agent/Repo/User/System/Admin）
 
-AnyAgent 需要定义 skills 搜索路径（roots），并在加载时标注 scope，用于优先级与治理：
+anyagent 需要定义 skills 搜索路径（roots），并在加载时标注 scope，用于优先级与治理：
 
 - `Agent` scope：agent pack 内技能（每个 agent 的私有 skills）
   - 建议路径：`<workspace_dir>/.agents/agents/<agent_id>/skills/**/SKILL.md`
@@ -1103,9 +1149,10 @@ AnyAgent 需要定义 skills 搜索路径（roots），并在加载时标注 sco
 - 同名技能允许存在多个来源，但对 UI 展示与选择必须提供稳定 key（见 12.6）
 
 <a id="req-12-3"></a>
+
 ### 12.3 Skills Enable/Disable（动态披露前提）
 
-参考 Codex 的做法（基于 path 的 enable/disable），AnyAgent v0 也要支持禁用 skills：
+参考 Codex 的做法（基于 path 的 enable/disable），anyagent v0 也要支持禁用 skills：
 
 - 禁用粒度：以 `SKILL.md` 的绝对路径为 key（或其 canonicalized 路径）
 - 配置来源：
@@ -1118,6 +1165,7 @@ AnyAgent 需要定义 skills 搜索路径（roots），并在加载时标注 sco
 - 合规：某些环境不允许某些技能（例如网络访问）
 
 <a id="req-12-4"></a>
+
 ### 12.4 Skill Dependencies：工具依赖与运行时要求
 
 Codex 的 skill metadata 支持声明 `dependencies.tools[]`，字段包含：
@@ -1127,7 +1175,7 @@ Codex 的 skill metadata 支持声明 `dependencies.tools[]`，字段包含：
 - `transport`（例如 mcp/app/…）
 - `command/url`（启动或连接信息）
 
-AnyAgent v0 建议保留兼容形态，并映射到我们在第 5 节定义的 Tool Runtime Federation：
+anyagent v0 建议保留兼容形态，并映射到我们在第 5 节定义的 Tool Runtime Federation：
 
 - `dependencies.tools[]` 主要用于：
   1. 让 Gateway/UI 在披露技能前知道“该技能会用到哪些工具”
@@ -1143,11 +1191,12 @@ AnyAgent v0 建议保留兼容形态，并映射到我们在第 5 节定义的 T
 - `transport = "mcp"`：未来扩展（工具由 MCP server 提供；与 Codex 的 mcp:// 类似）
 
 <a id="req-12-5"></a>
+
 ### 12.5 Skill Permissions：影响 Sandbox 与 Tool Policy
 
 Codex 会把 `permissions` 编译成一个“权限档案”（包含 sandbox policy / network / fs read/write roots）。
 
-AnyAgent v0 的要求：
+anyagent v0 的要求：
 
 - skills 可以声明权限档案（至少网络与文件系统读写）
 - 当 skill 被选中时：
@@ -1159,12 +1208,14 @@ AnyAgent v0 的要求：
 - skill permissions 只能在“被允许运行”的范围内做细化，不得越权打开被全局禁用的能力
 
 <a id="req-12-6"></a>
+
 ### 12.6 动态披露（Dynamic Disclosure）机制：什么时候把 skill 注入与披露给模型
 
 <a id="req-12-6-1"></a>
+
 #### 12.6.1 选择技能（Skill Selection）
 
-参考 Codex 的显式 mention/选择机制，AnyAgent v0 定义以下技能选择来源（按优先级）：
+参考 Codex 的显式 mention/选择机制，anyagent v0 定义以下技能选择来源（按优先级）：
 
 1. AgentSpec 默认技能（结构化，服务端配置）
    - 来自 `agent.yaml` 的 `skills.default_selected`（见 2.2）
@@ -1187,6 +1238,7 @@ AnyAgent v0 的要求：
 - 如果某个 skill 未找到或被禁用（12.3），必须跳过并产生可审计的 decision（原因可解释）。
 
 <a id="req-12-6-2"></a>
+
 #### 12.6.2 注入技能指令（Skill Injection）
 
 当 skill 被选中时，AgentRuntime 必须把 skill 的 `SKILL.md` 正文注入到该次 run 的上下文中：
@@ -1202,6 +1254,7 @@ AnyAgent v0 的要求：
 - 注入失败（读文件失败）应产出 warning，但不应 crash 整个 run（fail-open）
 
 <a id="req-12-6-3"></a>
+
 #### 12.6.3 披露工具（Tool Disclosure）
 
 当 skill 被选中时，AgentRuntime 必须把“希望披露的工具名集合”（由 skill dependencies 推导 + 外部请求工具名）提交给 Tool Runtime 的 `manifest`，由 Tool Runtime 返回最终可见的 `tools[]`：
@@ -1213,9 +1266,10 @@ AnyAgent v0 的要求：
 - 最终可见集合必须由 Tool Runtime 的 policy/registry 决定（Agent API 不得私自扩大工具暴露面）
 
 <a id="req-12-7"></a>
+
 ### 12.7 内部 API：skills/list（给 Gateway/UI 动态披露用）
 
-为了让 Gateway 能做“动态披露”（比如在飞书里提示可用 skills、或在控制台列出可选 skills），AnyAgent v0 建议提供内部接口：
+为了让 Gateway 能做“动态披露”（比如在飞书里提示可用 skills、或在控制台列出可选 skills），anyagent v0 建议提供内部接口：
 
 - `GET /internal/skills/list?session_key=...`
   - 返回 `skills[]`：包含 `name/description/short_description/interface/dependencies/scope/path/enabled`
@@ -1227,6 +1281,7 @@ AnyAgent v0 的要求：
 - `path` 是否返回绝对路径要谨慎：对多租户建议只返回 `skill_id`，路径仅用于 server 内部
 
 <a id="req-12-8"></a>
+
 ### 12.8 与第 5 节 Tool Runtime 的交互关系（必须一致）
 
 总结一下三者关系：
@@ -1245,13 +1300,15 @@ AnyAgent v0 的要求：
   - 跑完整 agent loop
 
 <a id="req-13"></a>
+
 ## 13. Multi-Agent（Codex 风格 Collab Agents）
 
 > 范围提示：本节属于 Phase 2+（Future）能力设计，v0（Phase 1）不要求实现；但建议提前固化“命名/边界/隔离/审计”以减少后续返工。
 
-本节定义 AnyAgent 的多智能体能力，目标是“更像 Codex”：通过一组系统工具让主 agent 在一次 run 中创建、驱动、等待多个子 agent，并把子 agent 作为独立会话/线程进行治理。
+本节定义 anyagent 的多智能体能力，目标是“更像 Codex”：通过一组系统工具让主 agent 在一次 run 中创建、驱动、等待多个子 agent，并把子 agent 作为独立会话/线程进行治理。
 
 <a id="req-13-1"></a>
+
 ### 13.1 目标与非目标
 
 目标（Phase 2+）：
@@ -1267,6 +1324,7 @@ AnyAgent v0 的要求：
 - 不承诺任意复杂的多智能体协商协议（先实现可用的编排原语）
 
 <a id="req-13-2"></a>
+
 ### 13.2 核心实体
 
 > **命名澄清**：本节中的 `thread_id` 是 Multi-Agent 编排中子 agent 的运行时标识（child thread id），**不同于** 4.3.1 节中的 `agent_id`（AgentSpec 配置标识，如 `main`/`legal`/`sales`）。为避免歧义，子 agent 的标识统一使用 `thread_id`，不使用 `agent_id`。
@@ -1279,59 +1337,66 @@ AnyAgent v0 的要求：
   - `subagent.review/compact/other`（可选：未来扩展）
 
 <a id="req-13-3"></a>
+
 ### 13.3 系统工具（对外暴露给模型的 function tools）
 
 以下工具名为系统保留名（见 5.6 的例外条款），其参数以 JSON Schema 定义并由 AgentRuntime/AgentControl 强校验。
 
 1. `spawn_agent`
-  - 作用：创建一个新的 child thread，并可选地立刻投递一条输入
-  - args（建议）：
-    - `agent_id?: string`（目标 agent；对应 2.1 的 `<agent_id>` 目录名，且必须在父 agent 的 `multiagent.spawn_allow_agent_ids` allowlist 中）
-    - `agent_type?: string`（deprecated：`agent_id` 的别名；为了兼容部分编排客户端的字段命名习惯）
-      - 约束：`agent_id` 与 `agent_type` 必须二选一；若同时提供则必须一致，否则返回可读错误
-    - `message?: string`
-    - `items?: array`（富输入，未来扩展，v0 可留空）
-    - `skills?: string[]`（可选：显式指定 child 的 skills；默认不继承父已启用 skills，见 13.5）
-    - `fork_context?: boolean`（是否复制父上下文；v0 默认 false，避免泄漏与成本）
-  - returns：
-    - `thread_id: string`（child thread id；注意不是 AgentSpec 的 `agent_id`）
-    - `agent_id: string`（回显：该 child thread 绑定的 agent_id）
-    - `nickname?: string`（可选 UI 名称）
+
+- 作用：创建一个新的 child thread，并可选地立刻投递一条输入
+- args（建议）：
+  - `agent_id?: string`（目标 agent；对应 2.1 的 `<agent_id>` 目录名，且必须在父 agent 的 `multiagent.spawn_allow_agent_ids` allowlist 中）
+  - `agent_type?: string`（deprecated：`agent_id` 的别名；为了兼容部分编排客户端的字段命名习惯）
+    - 约束：`agent_id` 与 `agent_type` 必须二选一；若同时提供则必须一致，否则返回可读错误
+  - `message?: string`
+  - `items?: array`（富输入，未来扩展，v0 可留空）
+  - `skills?: string[]`（可选：显式指定 child 的 skills；默认不继承父已启用 skills，见 13.5）
+  - `fork_context?: boolean`（是否复制父上下文；v0 默认 false，避免泄漏与成本）
+- returns：
+  - `thread_id: string`（child thread id；注意不是 AgentSpec 的 `agent_id`）
+  - `agent_id: string`（回显：该 child thread 绑定的 agent_id）
+  - `nickname?: string`（可选 UI 名称）
 
 2. `send_input`
-  - 作用：向已有 child thread 投递输入
-  - args：
-    - `id: string`（child thread id）
-    - `message?: string`
-    - `items?: array`
-    - `interrupt?: boolean`（是否中断 child 当前任务）
-  - returns：
-    - `submission_id: string`
+
+- 作用：向已有 child thread 投递输入
+- args：
+  - `id: string`（child thread id）
+  - `message?: string`
+  - `items?: array`
+  - `interrupt?: boolean`（是否中断 child 当前任务）
+- returns：
+  - `submission_id: string`
 
 3. `wait`
-  - 作用：等待一个或多个 child thread 到达终态或超时，并返回状态快照
-  - args（建议）：
-    - `ids: string[]`
-    - `timeout_ms?: number`（v0 建议最小 10s，默认 30s，最大 1h，避免 tight polling）
-  - returns：
-    - `agents_states: object`（map: id -> `{status, message?}`）
-    - `timed_out: boolean`
+
+- 作用：等待一个或多个 child thread 到达终态或超时，并返回状态快照
+- args（建议）：
+  - `ids: string[]`
+  - `timeout_ms?: number`（v0 建议最小 10s，默认 30s，最大 1h，避免 tight polling）
+- returns：
+  - `agents_states: object`（map: id -> `{status, message?}`）
+  - `timed_out: boolean`
 
 4. `close_agent`
-  - 作用：关闭/回收 child thread（释放资源）
-  - args：
-    - `id: string`
-  - returns：
-    - `ok: boolean`
+
+- 作用：关闭/回收 child thread（释放资源）
+- args：
+  - `id: string`
+- returns：
+  - `ok: boolean`
 
 5. `resume_agent`
-  - 作用：从持久化记录恢复一个 child thread（用于宕机/迁移恢复）
-  - args：
-    - `id: string`（thread id）
-  - returns：
-    - `ok: boolean`
+
+- 作用：从持久化记录恢复一个 child thread（用于宕机/迁移恢复）
+- args：
+  - `id: string`（thread id）
+- returns：
+  - `ok: boolean`
 
 <a id="req-13-4"></a>
+
 ### 13.4 治理与限制（必须有）
 
 - `max_depth`：子 agent spawn 深度限制
@@ -1344,6 +1409,7 @@ AnyAgent v0 的要求：
   - `child run` 的最大运行时间（run_timeout_seconds）需可配置
 
 <a id="req-13-5"></a>
+
 ### 13.5 子 agent 与 tool/skills 的隔离策略（关键）
 
 默认隔离（v0 强制，除非显式开启 fork）：
@@ -1362,9 +1428,10 @@ AnyAgent v0 的要求：
 - 这与第 12 节的“skills 动态披露”一致：不默认注入，不默认披露依赖工具
 
 <a id="req-13-6"></a>
+
 ### 13.6 事件与审计（建议对齐 Codex 的 event 形态）
 
-为了让 Gateway/UI 可展示“子 agent 在做什么”，AnyAgent v0 建议对内产生以下事件（不要求对外 OpenAI SDK 兼容）：
+为了让 Gateway/UI 可展示“子 agent 在做什么”，anyagent v0 建议对内产生以下事件（不要求对外 OpenAI SDK 兼容）：
 
 - `collab_agent_spawn_begin`
 - `collab_agent_spawn_end`（含 child thread id 与状态）
@@ -1388,6 +1455,7 @@ AnyAgent v0 的要求：
   - 结果状态（completed/errored/not_found 等）
 
 <a id="req-13-7"></a>
+
 ### 13.7 与 `/v1/responses` 的关系（兼容性注意）
 
 对外仍然只暴露 `/v1/responses`。
@@ -1396,9 +1464,10 @@ AnyAgent v0 的要求：
 - 其 `function_call_output.output` 建议返回 JSON string（如 `{ "thread_id": "...", "nickname": "..." }`）
 - 不建议把 collab 事件映射为 OpenAI Responses SSE 的自定义 event（避免 SDK 不兼容）
   - 对外：只输出标准 OpenAI Responses stream events
-  - 对内（Gateway/UI）：订阅 AnyAgent 内部事件流（Event Store/Bus）
+  - 对内（Gateway/UI）：订阅 anyagent 内部事件流（Event Store/Bus）
 
 <a id="req-13-8"></a>
+
 ### 13.8 内部服务：AgentControl（执行与管理 child threads）
 
 为了让 Agent API 的 Ingress 层保持无状态，多智能体需要一个内部控制面组件（可以与 Agent API 同部署，但逻辑上建议分层）：
