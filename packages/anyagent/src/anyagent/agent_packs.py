@@ -9,6 +9,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from .mcp import MCPConfig
+
 
 class AgentPackError(Exception):
     pass
@@ -75,6 +77,7 @@ class AgentPack:
     agents_md_path: Path
     agents_md_text: str
     agents_md_sha256: str
+    mcp_config: MCPConfig | None = None
 
     @property
     def skills_dir(self) -> Path:
@@ -123,6 +126,7 @@ def load_agent_catalog(
     *,
     workspace_dir: Path,
     max_agents_md_bytes: int = 64 * 1024,
+    max_mcp_json_bytes: int = 256 * 1024,
 ) -> AgentCatalog:
     """
     v0：只支持单 root：
@@ -160,6 +164,14 @@ def load_agent_catalog(
 
         spec = AgentSpec.model_validate(_load_yaml_object(agent_yaml))
         agents_md_text, sha256 = _read_text_with_limit(agents_md, max_bytes=max_agents_md_bytes)
+        mcp_json = child / "mcp.json"
+        mcp_config: MCPConfig | None = None
+        if mcp_json.is_file():
+            mcp_raw, _ = _read_text_with_limit(mcp_json, max_bytes=max_mcp_json_bytes)
+            try:
+                mcp_config = MCPConfig.model_validate_json(mcp_raw)
+            except Exception as e:  # noqa: BLE001
+                raise AgentPackError(f"invalid mcp.json: {mcp_json}: {e}") from e
 
         packs[agent_id] = AgentPack(
             agent_id=agent_id,
@@ -168,6 +180,7 @@ def load_agent_catalog(
             agents_md_path=agents_md,
             agents_md_text=agents_md_text,
             agents_md_sha256=sha256,
+            mcp_config=mcp_config,
         )
 
     return AgentCatalog(packs=packs, root_dir=root_dir)

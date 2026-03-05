@@ -58,7 +58,7 @@
 - `todo/storage.md`：存储层最小方案与落地（对应 `requirements.md#req-3-1`）
 - `todo/gateway.md`：平台接入与消息交互（对应 `requirements.md#req-6`）
 - `todo/concurrency-reliability.md`：并发与可靠性（对应 `requirements.md#req-7`）
-- `todo/security-compliance.md`：安全与合规（对应 `requirements.md#req-8`）
+- `todo/security-compliance.md`：安全与合规，含 Credential Vault 凭证管理（对应 `requirements.md#req-8`）
 - `todo/tests-acceptance.md`：测试与验收（对应 `requirements.md#req-9`）
 - `todo/skills-disclosure.md`：Skills 加载与动态披露（对应 `requirements.md#req-12`）
 - `todo/multi-agent.md`：Multi-Agent（对应 `requirements.md#req-13`）

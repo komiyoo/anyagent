@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from typing import Any
 from uuid import uuid4
@@ -11,16 +12,30 @@ import jsonschema
 
 from anyagent.tool_runtime.models import ToolDefinition
 from anyagent.tool_runtime.registry import ToolRegistry
+from anyagent.protocol.tool_runtime import AuthRef
+from anyagent.protocol.credential_vault import CredentialScope
 
 from .idempotency import ToolResult
 from .policy import is_allowed_by_policy
+from .credential_store import CredentialStore
+
+
+logger = logging.getLogger("anyagent.tool_runtime")
 
 
 class Router:
-    def __init__(self, registry: ToolRegistry, *, allow_sandbox: bool, output_max_bytes: int) -> None:
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        *,
+        allow_sandbox: bool,
+        output_max_bytes: int,
+        credential_store: CredentialStore,
+    ) -> None:
         self._registry = registry
         self._allow_sandbox = allow_sandbox
         self._output_max_bytes = output_max_bytes
+        self._credential_store = credential_store
 
     @staticmethod
     def _parse_arguments(arguments_json: Any) -> dict[str, Any]:
@@ -50,9 +65,14 @@ class Router:
         tool_name: str,
         arguments_json: Any,
         context: dict[str, Any],
+        agent_id: str | None = None,
         deadline_ms: int | None = None,
     ) -> ToolResult:
         audit_ref = f"aud_{uuid4().hex}"
+        if agent_id is not None:
+            # Do not trust caller-provided agent_id; always use server-side binding.
+            context = {**context, "agent_id": agent_id}
+        context = {**context, "_audit_ref": audit_ref}
         rt = self._registry.get_tool(tool_name)
         if rt is None:
             return ToolResult(
@@ -87,15 +107,24 @@ class Router:
                 meta={"duration_ms": 0, "output_truncated": False, "audit_ref": audit_ref},
             )
 
+        creds_err, enriched_context = await self._maybe_inject_credentials(
+            tool_definition=td,
+            context=context,
+            agent_id=agent_id,
+            audit_ref=audit_ref,
+        )
+        if creds_err is not None:
+            return creds_err
+
         started = time.time()
         try:
             args = self._parse_arguments(arguments_json)
             self._validate_args(td.parameters, args)
             if deadline_ms is not None:
                 async with asyncio.timeout(deadline_ms / 1000.0):
-                    output = await rt.handler(args, context)
+                    output = await rt.handler(args, enriched_context)
             else:
-                output = await rt.handler(args, context)
+                output = await rt.handler(args, enriched_context)
             out, truncated = self._truncate(output)
             return ToolResult(
                 status="completed",
@@ -172,6 +201,58 @@ class Router:
                 },
             )
 
+    async def _maybe_inject_credentials(
+        self,
+        *,
+        tool_definition: ToolDefinition,
+        context: dict[str, Any],
+        agent_id: str | None,
+        audit_ref: str,
+    ) -> tuple[ToolResult | None, dict[str, Any]]:
+        if not tool_definition.credentials:
+            return None, context
+
+        auth_ref_ref = _extract_auth_ref_ref(context)
+        resolved: dict[str, str] = {}
+
+        for cred_spec in tool_definition.credentials:
+            ref = AuthRef(kind=cred_spec.ref_kind, ref=auth_ref_ref)
+            value = await self._credential_store.resolve(ref, scope_context={"agent_id": agent_id})
+            if value is None and cred_spec.required:
+                return (
+                    ToolResult(
+                        status="error",
+                        output=None,
+                        error={
+                            "type": "tool_authorization_error",
+                            "code": "credential_not_found",
+                            "message": f"required credential kind={cred_spec.ref_kind} not configured",
+                            "retryable": False,
+                        },
+                        meta={"duration_ms": 0, "output_truncated": False, "audit_ref": audit_ref},
+                    ),
+                    context,
+                )
+            if value is None:
+                continue
+            formatted = cred_spec.format.replace("{value}", value)
+            resolved[cred_spec.injection_target] = formatted
+
+        if not resolved:
+            return None, context
+        return None, {**context, "_credentials": resolved}
+
+
+def _extract_auth_ref_ref(context: dict[str, Any]) -> str | None:
+    auth_ref = context.get("auth_ref")
+    if isinstance(auth_ref, dict):
+        ref = auth_ref.get("ref")
+    else:
+        ref = None
+    if not isinstance(ref, str) or not ref.strip():
+        return None
+    return ref.strip()
+
 
 async def register_builtin_core_tools(registry: ToolRegistry) -> None:
     """
@@ -223,4 +304,93 @@ async def register_builtin_core_tools(registry: ToolRegistry) -> None:
             },
         ),
         handler=web_fetch,
+    )
+
+
+async def register_privileged_core_tools(*, registry: ToolRegistry, credential_store: CredentialStore) -> None:
+    """
+    Register privileged core tools that require explicit allowlist in policy.
+
+    These tools are dangerous by nature (write-only credential ops) and must never be
+    enabled by default. Policy enforcement is handled in runtime/policy.py.
+    """
+
+    async def credential_set(args: dict[str, Any], context: dict[str, Any]) -> str:
+        credential_id = args["credential_id"]
+        kind = args["kind"]
+        value = args["value"]
+
+        scope_raw = args.get("scope")
+        agent_id = context.get("agent_id") if isinstance(context.get("agent_id"), str) else None
+        if scope_raw is None:
+            if agent_id:
+                scope = CredentialScope(level="agent", agent_id=agent_id)
+            else:
+                scope = CredentialScope(level="global")
+        else:
+            scope = CredentialScope.model_validate(scope_raw)
+
+        metadata = args.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata must be an object")
+
+        await credential_store.set(
+            credential_id=str(credential_id).strip(),
+            kind=str(kind).strip(),
+            value=str(value),
+            scope=scope,
+            metadata=dict(metadata),
+        )
+
+        logger.info(
+            "credential_agent.set",
+            extra={
+                "audit_ref": context.get("_audit_ref"),
+                "actor": f"agent:{agent_id}" if agent_id else "agent:unknown",
+                "operation": "set",
+                "credential_id": str(credential_id).strip(),
+                "kind": str(kind).strip(),
+                "scope_level": scope.level,
+                "scope_agent_id": scope.agent_id,
+            },
+        )
+
+        return json.dumps(
+            {
+                "ok": True,
+                "credential_id": str(credential_id).strip(),
+                "kind": str(kind).strip(),
+                "scope": scope.model_dump(exclude_none=True),
+                "metadata": dict(metadata),
+            },
+            ensure_ascii=False,
+        )
+
+    registry.register_tool(
+        tool=ToolDefinition(
+            name="admin.credential_set",
+            description="Privileged: write-only set credential (no get). Requires explicit allowlist.",
+            category="core",
+            parameters={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["credential_id", "kind", "value"],
+                "properties": {
+                    "credential_id": {"type": "string", "minLength": 1},
+                    "kind": {"type": "string", "minLength": 1},
+                    "value": {"type": "string", "minLength": 1},
+                    "scope": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["level"],
+                        "properties": {
+                            "level": {"type": "string", "enum": ["global", "agent"]},
+                            "agent_id": {"type": "string"},
+                        },
+                    },
+                    "metadata": {"type": "object"},
+                },
+            },
+        ),
+        handler=credential_set,
     )

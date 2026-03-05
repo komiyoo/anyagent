@@ -21,6 +21,14 @@ class Settings(BaseSettings):
 
     tool_runtime_base_url: AnyHttpUrl = Field(default="http://127.0.0.1:8788", alias="TOOL_RUNTIME_BASE_URL")
     tool_runtime_internal_key: str = Field(alias="TOOL_RUNTIME_INTERNAL_KEY")
+    mcp_credential_store_backend: Literal["none", "env", "file"] = Field(
+        default="none",
+        alias="MCP_CREDENTIAL_STORE_BACKEND",
+    )
+    mcp_credential_store_file_root: str = Field(
+        default="/data/credentials",
+        alias="MCP_CREDENTIAL_STORE_FILE_ROOT",
+    )
 
     enable_keyed_serialization: bool = Field(default=True, alias="ENABLE_KEYED_SERIALIZATION")
 

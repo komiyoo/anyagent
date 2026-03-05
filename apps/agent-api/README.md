@@ -50,6 +50,34 @@
 - `GET /internal/events/stream?response_id=...&last_seq=...`（SSE：先补发再追尾）
   - 约定：SSE `id:` 字段即 Event Store 的 `seq`（单调递增游标）；SDK 会将其映射到 `StageEvent.seq`
 
+## Demo 定制化入口
+
+`apps/agent-api` 在本仓库中定位为“应用级编排 demo”：
+
+- 读取 `WORKSPACE_DIR/.agents/agents/<agent_id>/agent.yaml + AGENTS.md`
+- 根据 `metadata.agent_id` / `metadata.session_key` 做会话分片和策略收口
+- 动态拼接 skills + Tool Runtime manifest，形成最终可见工具集合
+
+快速验证（示例）：
+
+```bash
+curl -sS "http://127.0.0.1:8787/v1/responses" \
+  -H "Authorization: Bearer $AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model":"gpt-4.1-mini",
+    "input":"总结 example.com 首页标题",
+    "metadata":{"agent_id":"main","session_key":"demo-001"},
+    "tools":[{"type":"function","name":"core.web_fetch"}],
+    "tool_choice":{"type":"function","name":"core.web_fetch"}
+  }'
+```
+
+完整实操（含 Agent Packs/skills/插件/凭证）见：
+
+- `docs/acceptance/acceptance-demo-customization.md`
+- `docs/acceptance/acceptance-responses-api.md`
+
 ## v0 约束（重要）
 
 Agent API 以配置目录（Agent Packs）作为多 agent 的单一真源：

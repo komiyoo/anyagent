@@ -6,7 +6,7 @@ from typing import Callable
 from anyagent.plugins.api import PluginAPIBase
 
 from .models import ToolDefinition, ToolHandler
-from .registry import ToolRegistry
+from .registry import RESERVED_NAMES, ToolRegistry
 
 
 class ToolRuntimePluginError(Exception):
@@ -39,5 +39,11 @@ class ToolRuntimePluginAPI(PluginAPIBase):
         if not isinstance(tool, ToolDefinition):
             raise ToolRuntimePluginError("tool must be a ToolDefinition")
 
-        self.registry.register_tool(tool, h)
+        forbidden_prefixes = ("core.", "sandbox.", "admin.")
+        if tool.name in RESERVED_NAMES or tool.name.startswith(forbidden_prefixes):
+            raise ToolRuntimePluginError(
+                "plugin cannot register privileged tool names (core./sandbox./admin. or reserved); "
+                f"got: {tool.name}"
+            )
 
+        self.registry.register_tool(tool, h)

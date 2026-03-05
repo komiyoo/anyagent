@@ -4,7 +4,8 @@ from typing import Any
 
 import httpx
 
-from anyagent.protocol.tool_runtime import ManifestResponse
+from anyagent.protocol.tool_runtime import ExecuteRequest, ExecuteResponse, ManifestRequest, ToolContext
+from anyagent.tool_runtime.client import ToolRuntimeClient
 
 from ..settings import Settings
 
@@ -13,8 +14,14 @@ class ToolsetVersionMismatch(Exception):
     pass
 
 
-def _internal_auth_headers(settings: Settings) -> dict[str, str]:
-    return {"authorization": f"Bearer {settings.tool_runtime_internal_key}", "content-type": "application/json"}
+def _create_tool_runtime_client(*, client: httpx.AsyncClient, settings: Settings) -> ToolRuntimeClient:
+    """Create Tool Runtime client bound to the app-level shared AsyncClient."""
+
+    return ToolRuntimeClient(
+        base_url=str(settings.tool_runtime_base_url),
+        internal_key=settings.tool_runtime_internal_key,
+        http=client,
+    )
 
 
 async def fetch_manifest(
@@ -28,19 +35,16 @@ async def fetch_manifest(
     requested_tools: list[dict[str, Any]] | None,
     context: dict[str, Any] | None,
 ) -> tuple[list[dict[str, Any]], int]:
-    url = str(settings.tool_runtime_base_url).rstrip("/") + "/internal/tools/manifest"
-    payload: dict[str, Any] = {
-        "agent_id": agent_id,
-        "session_key": session_key,
-        "context": context or {},
-        "enabled_skills": enabled_skills,
-        "requested_tool_names": requested_tool_names,
-        "requested_tools": requested_tools,
-    }
-    r = await client.post(url, headers=_internal_auth_headers(settings), json=payload, timeout=10.0)
-    r.raise_for_status()
-    data = r.json()
-    resp = ManifestResponse.model_validate(data)
+    req = ManifestRequest(
+        agent_id=agent_id,
+        session_key=session_key,
+        context=ToolContext.model_validate(context or {}),
+        enabled_skills=enabled_skills,
+        requested_tool_names=requested_tool_names,
+        requested_tools=requested_tools,
+    )
+    tr_client = _create_tool_runtime_client(client=client, settings=settings)
+    resp = await tr_client.manifest(req)
     tools = [t.model_dump(exclude_none=True, by_alias=True) for t in resp.tools]
     return tools, resp.toolset_version
 
@@ -59,19 +63,21 @@ async def execute_tool(
     deadline_ms: int | None,
     toolset_version: int | None,
 ) -> dict[str, Any]:
+    req = ExecuteRequest(
+        agent_id=agent_id,
+        session_key=session_key or "ephemeral",
+        response_id=response_id,
+        tool_call_id=tool_call_id,
+        tool_name=tool_name,
+        arguments_json=arguments_json,
+        context=ToolContext.model_validate(context or {}),
+        deadline_ms=deadline_ms,
+        toolset_version=toolset_version,
+    )
+
     url = str(settings.tool_runtime_base_url).rstrip("/") + "/internal/tools/execute"
-    payload: dict[str, Any] = {
-        "agent_id": agent_id,
-        "session_key": session_key or "ephemeral",
-        "response_id": response_id,
-        "tool_call_id": tool_call_id,
-        "tool_name": tool_name,
-        "arguments_json": arguments_json,
-        "context": context or {},
-        "deadline_ms": deadline_ms,
-        "toolset_version": toolset_version,
-    }
-    r = await client.post(url, headers=_internal_auth_headers(settings), json=payload, timeout=60.0)
+    headers = {"authorization": f"Bearer {settings.tool_runtime_internal_key}", "content-type": "application/json"}
+    r = await client.post(url, headers=headers, json=req.model_dump(exclude_none=True), timeout=60.0)
 
     if r.status_code == 409:
         try:
@@ -84,6 +90,5 @@ async def execute_tool(
 
     r.raise_for_status()
     data = r.json()
-    if not isinstance(data, dict):
-        raise ValueError("invalid execute response")
-    return data
+    resp = ExecuteResponse.model_validate(data)
+    return resp.model_dump(exclude_none=True)

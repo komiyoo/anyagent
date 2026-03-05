@@ -10,7 +10,11 @@ dependencies = [
   "httpx>=0.28",
   "pyyaml>=6.0",
   "openai>=2.24.0",
+  "mcp>=1.0.0",
 ]
+
+[project.scripts]
+anyagent = "anyagent.cli:main"
 
 [build-system]
 requires = ["hatchling>=1.24"]

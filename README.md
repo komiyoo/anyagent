@@ -16,6 +16,10 @@
   - 聚焦“存储落地”：Session/Run/Event/Dedupe/Lock 的最小 schema、保留策略与一致性边界
 - [docs/architecture/responses-api-sdk-and-server.md](docs/architecture/responses-api-sdk-and-server.md)
   - 聚焦“接入侧 SDK + 服务侧 Agent Server”统一对齐 OpenAI Responses API，并给出泳道视角与模块边界
+- [docs/architecture/apps-packages-boundary.md](docs/architecture/apps-packages-boundary.md)
+  - `apps/*`（服务编排/demo）与 `packages/*`（协议/SDK/共享能力）的职责边界与收敛策略
+- [docs/acceptance/acceptance-demo-customization.md](docs/acceptance/acceptance-demo-customization.md)
+  - Demo 应用级定制化实操：Agent Packs、skills、插件、凭证与最小验收闭环
 
 ## 工具
 
@@ -30,7 +34,7 @@
 - [apps/tool-runtime/README.md](apps/tool-runtime/README.md)
   - Python + uv：`/internal/tools/manifest|execute|cancel`
 - [packages/anyagent](packages/anyagent)
-  - SDK 包：`anyagent.*`（当前包含 `anyagent.tool_runtime`，其余子模块为占位骨架）
+  - SDK/共享能力包：`anyagent.protocol.*`、`anyagent.agent_runtime.*`、`anyagent.skills.*`、`anyagent.tool_runtime.*`
 
 ## 关键约定（便于跨项目复用）
 

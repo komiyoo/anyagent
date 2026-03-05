@@ -7,11 +7,12 @@
 
 为避免平铺式堆叠，`docs/` 按“语义用途”分层：
 
-- `docs/acceptance/`：验收清单与用例（可复现验证）
-- `docs/security/`：威胁模型、sandbox 安全、tool policy、审计留痕
+- `docs/acceptance/`：验收清单与可复现手册（含 demo 定制化说明 `docs/acceptance/acceptance-demo-customization.md`）
+- `docs/security/`：威胁模型、sandbox 安全、tool policy、审计留痕、凭证管理（Credential Vault）
 - `docs/architecture/`：总体架构与关键子系统交互（skills/tool-runtime、stateless 语义、存储设计等）
   - 运行时实体分层参考：`docs/architecture/agent-server-runtime-entities.md`
   - Client 阶段性事件（tool/command 粒度）：`docs/architecture/agent-api-client-stage-events.md`
+  - apps/packages 职责边界与收敛策略：`docs/architecture/apps-packages-boundary.md`
 - `docs/performance/`：压测基线、容量指标口径
 - `docs/_dev/`：研发期草案（Draft/WIP/TODO），不保证长期稳定
 - `docs/_notes/`：个人/第三方材料与调研笔记（非产品文档）

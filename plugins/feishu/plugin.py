@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from anyagent.tool_runtime.models import ToolDefinition
+from anyagent.tool_runtime.models import ToolCredentialSpec, ToolDefinition
 
 
 @dataclass(frozen=True)
@@ -119,6 +119,16 @@ async def _get_bearer_token(*, config: dict[str, Any], context: dict[str, Any]) 
     return token
 
 
+async def _get_authorization_header(*, config: dict[str, Any], context: dict[str, Any]) -> str:
+    creds = context.get("_credentials")
+    if isinstance(creds, dict):
+        auth_header = creds.get("header:Authorization")
+        if isinstance(auth_header, str) and auth_header.strip():
+            return auth_header.strip()
+    token = await _get_bearer_token(config=config, context=context)
+    return f"Bearer {token}"
+
+
 async def _get_chat_members(args: dict[str, Any], context: dict[str, Any], *, config: dict[str, Any]) -> str:
     chat_id = args["chat_id"]
     page_size = args.get("page_size")
@@ -126,7 +136,7 @@ async def _get_chat_members(args: dict[str, Any], context: dict[str, Any], *, co
 
     base_url = _base_url(config)
     timeout_ms = _timeout_ms(config)
-    token = await _get_bearer_token(config=config, context=context)
+    auth_header = await _get_authorization_header(config=config, context=context)
 
     url = f"{base_url}/open-apis/im/v1/chats/{chat_id}/members"
     params: dict[str, Any] = {}
@@ -136,7 +146,7 @@ async def _get_chat_members(args: dict[str, Any], context: dict[str, Any], *, co
         params["page_token"] = page_token
 
     async with httpx.AsyncClient(timeout=timeout_ms / 1000.0, follow_redirects=True) as client:
-        r = await client.get(url, params=params, headers={"Authorization": f"Bearer {token}"})
+        r = await client.get(url, params=params, headers={"Authorization": auth_header})
         data = r.json()
     return json.dumps(data, ensure_ascii=False)
 
@@ -150,13 +160,13 @@ async def _doc_create(args: dict[str, Any], context: dict[str, Any], *, config: 
 
     base_url = _base_url(config)
     timeout_ms = _timeout_ms(config)
-    token = await _get_bearer_token(config=config, context=context)
+    auth_header = await _get_authorization_header(config=config, context=context)
 
     url = f"{base_url}/open-apis/docx/v1/documents"
     async with httpx.AsyncClient(timeout=timeout_ms / 1000.0, follow_redirects=True) as client:
         r = await client.post(
             url,
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": auth_header},
             json={"title": title, "folder_token": folder_token},
         )
         data = r.json()
@@ -179,6 +189,15 @@ def register(api) -> None:  # entrypoint
             name="feishu.directory.get_chat_members",
             description="Get Feishu chat members (raw Feishu API JSON).",
             category="channel",
+            credentials=[
+                ToolCredentialSpec(
+                    ref_kind="bearer_token",
+                    injection_target="header:Authorization",
+                    format="Bearer {value}",
+                    required=True,
+                    description="Feishu tenant access token.",
+                )
+            ],
             parameters={
                 "type": "object",
                 "additionalProperties": False,
@@ -199,6 +218,15 @@ def register(api) -> None:  # entrypoint
             name="feishu.doc.create",
             description="Create a Feishu Doc (docx). Requires title + folder_token.",
             category="channel",
+            credentials=[
+                ToolCredentialSpec(
+                    ref_kind="bearer_token",
+                    injection_target="header:Authorization",
+                    format="Bearer {value}",
+                    required=True,
+                    description="Feishu tenant access token.",
+                )
+            ],
             parameters={
                 "type": "object",
                 "additionalProperties": False,

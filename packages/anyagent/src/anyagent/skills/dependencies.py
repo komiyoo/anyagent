@@ -23,7 +23,7 @@ def _dep_to_requested_tools(dep: SkillToolDependency) -> list[str]:
 
     说明：
     - v0 允许返回 glob pattern（例如 `app.*`），由 Tool Runtime manifest 负责展开与最终收口。
-    - `mcp` 为未来扩展：v0 暂不映射到 anyagent Tool Runtime tool name。
+    - `mcp` 为 agent-api 并行工具来源：返回 `mcp.<label>.*` 模式用于声明性可见性请求。
     """
     transport = (dep.transport or "").strip()
     value = (dep.value or "").strip()
@@ -32,6 +32,11 @@ def _dep_to_requested_tools(dep: SkillToolDependency) -> list[str]:
         return []
 
     if transport == "mcp":
+        if dep.url:
+            # v0: url 仅做声明用途，不自动映射到具体 server label。
+            return []
+        if value:
+            return [f"mcp.{value}.*"]
         return []
 
     if transport in {"core", "app", "sandbox"}:
@@ -94,4 +99,3 @@ def requested_tool_names_for_skills(skills: list[SkillPackage]) -> list[str]:
                 seen.add(n)
                 merged.append(n)
     return merged
-

@@ -24,12 +24,17 @@ def is_allowed_by_policy(
     allow_list = [p for p in (allow_patterns or []) if isinstance(p, str) and p.strip()]
     deny_list = [p for p in (deny_patterns or []) if isinstance(p, str) and p.strip()]
 
+    privileged_tools = {"admin.credential_set"}
+
     for pat in deny_list:
         if pattern_match(tool_name, pat):
             return False, "denied_by_policy"
 
     if category == "sandbox" and not allow_sandbox:
         return False, "sandbox_disabled"
+
+    if tool_name in privileged_tools and not allow_list:
+        return False, "privileged_tool_requires_allowlist"
 
     if allow_list:
         for pat in allow_list:
@@ -41,4 +46,3 @@ def is_allowed_by_policy(
     if category in ("core", "app"):
         return True, "default_allow_core_app"
     return False, "default_deny_channel_sandbox"
-

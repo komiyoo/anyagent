@@ -16,7 +16,7 @@ Rules:
 from typing import Any, Literal
 
 
-AnyAgentToolKind = Literal["command"]
+AnyAgentToolKind = Literal["command", "mcp"]
 
 _INTERNAL_TOOL_FIELDS = frozenset({"x-anyagent-kind", "x_anyagent_kind"})
 
@@ -29,6 +29,8 @@ def tool_kind_from_tool_param(tool: dict[str, Any]) -> AnyAgentToolKind | None:
         raw = tool.get("x_anyagent_kind")
     if raw == "command":
         return "command"
+    if raw == "mcp":
+        return "mcp"
     return None
 
 
@@ -60,4 +62,3 @@ def strip_internal_tool_fields(tools: list[dict[str, Any]]) -> list[dict[str, An
             continue
         out.append({k: v for k, v in t.items() if k not in _INTERNAL_TOOL_FIELDS})
     return out
-

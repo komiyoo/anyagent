@@ -8,6 +8,10 @@
 - 流式 `stream=true` SSE：事件顺序可消费、能读到最终 `response.completed`、以 `[DONE]` 结束
 - 至少一次 function tool call：Tool Runtime execute 后继续推理并产出最终回答
 
+如果你需要“应用级定制化（Agent Packs/skills/插件/凭证）”的一站式实操，请优先参考：
+
+- `docs/acceptance/acceptance-demo-customization.md`
+
 ## 0. 前置条件
 
 1. 启动 Tool Runtime（默认端口 `8788`）与 Agent API（默认端口 `8787`）
@@ -91,3 +95,21 @@ uv run --with openai -s ../../scripts/acceptance_openai_sdk_smoke.py
   - 检查 Tool Runtime 是否启动
   - 检查 Tool Runtime policy 是否允许（默认允许 `core.*`，但仍可能被 deny）
   - 检查 `requested_tool_names` 是否包含目标工具名
+
+## 5. MCP 并行工具源验收（v0）
+
+目标：验证 MCP 作为 Agent API 并行工具来源可被正确加载、合并与路由（不依赖真实外部 MCP server）。
+
+推荐运行：
+
+```bash
+cd apps/agent-api
+uv run -s ../../scripts/acceptance_mcp_federation_smoke.py
+```
+
+验收点：
+
+- Agent Pack 的 `mcp.json` 可被加载并做 transport 推断
+- skill dependency `transport: mcp` 映射到 `mcp.<label>.*`
+- MCP manager 可把工具转换为 `mcp.<label>.<tool>` 并完成调用路由
+- SDK helper `resolve_manifest_with_mcp` 可合并 Tool Runtime 与 MCP 工具清单

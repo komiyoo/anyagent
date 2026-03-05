@@ -15,3 +15,7 @@
 - [x] P0 补齐 function tool schema（Tool Runtime manifest SSOT）（Req: `requirements.md#req-4-5`；Impl: `packages/anyagent/src/anyagent/protocol/openai_responses.py:18`；Module: `protocol`）
 - [x] P0 复用 OpenAI SDK Response/StreamEvent schema 作为强类型提示（Req: `requirements.md#req-4-4`；Impl: `packages/anyagent/src/anyagent/protocol/openai_responses.py:45`；Module: `protocol`）
 - [x] P1 补齐接入侧/服务侧泳道与模块边界文档（Req: `requirements.md#req-4`；Impl: `docs/architecture/responses-api-sdk-and-server.md:1`；Module: `docs`）
+- [x] P0 增强 SDK tool loop：支持 MCP manifest 合并与 `mcp.` 执行分流（Req: `requirements.md#req-4-5`，`requirements.md#req-12-4`；Impl: `packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:103`；Module: `agent_runtime`）
+  - refs: `packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:216`
+- [x] P1 收敛文档信息架构：补充 apps/packages 职责边界与 demo 定制化实操手册（Req: `requirements.md#req-4`，`requirements.md#req-2-1`；Impl: `docs/architecture/apps-packages-boundary.md:1`；Module: `docs`）
+  - refs: `docs/acceptance/acceptance-demo-customization.md:1`

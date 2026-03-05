@@ -54,6 +54,9 @@ class ToolRegistry:
             return "core"
         if name.startswith("core."):
             return "core"
+        # Privileged internal tools (v1 Credential Vault).
+        if name.startswith("admin."):
+            return "core"
         if name.startswith("app."):
             return "app"
         if name.startswith("sandbox."):

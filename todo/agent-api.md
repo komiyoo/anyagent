@@ -31,6 +31,11 @@
 - [x] P0 实现会话运行参数绑定：`model/temperature/top_p/frequency_penalty/presence_penalty/reasoning` 默认复用，仅显式传参时字段级 merge 更新（Req: `requirements.md#req-4-6-2`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:184`, `apps/agent-api/src/anyagent_agent_api/app.py:199`, `apps/agent-api/src/anyagent_agent_api/app.py:447`；Module: `agent-api`）
 - [x] P0 修正工具回合参数继承：`previous_response_id` 后续回合必须复用同一 `effective_runtime_config`（Req: `requirements.md#req-4-6-2`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:1317`, `apps/agent-api/src/anyagent_agent_api/app.py:1606`, `apps/agent-api/src/anyagent_agent_api/app.py:1767`；Module: `agent-api`）
 - [x] P1 在 run 终态回写会话快照（`resume_cursor + runtime_config`）并补结构化日志字段（Req: `requirements.md#req-4-6-1`，`requirements.md#req-4-6-2`，`requirements.md#req-7`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:572`, `apps/agent-api/src/anyagent_agent_api/app.py:614`, `apps/agent-api/src/anyagent_agent_api/app.py:454`；Module: `agent-api`）
+- [x] P0 MCP：支持 Agent Pack 级 `mcp.json` 加载与启动期 fail-fast 校验（Req: `requirements.md#req-4-5`，`requirements.md#req-12-4`；Impl: `packages/anyagent/src/anyagent/agent_packs.py:164`；Module: `agent-api`）
+- [x] P0 MCP：`/v1/responses` 合并 MCP tools 与 Tool Runtime manifest，并按 `mcp.` 前缀路由执行（Req: `requirements.md#req-4-5`，`requirements.md#req-5-2`；Impl: `apps/agent-api/src/anyagent_agent_api/app.py:984`；Module: `agent-api`）
+  - refs: `apps/agent-api/src/anyagent_agent_api/app.py:1120`
+  - refs: `packages/anyagent/src/anyagent/mcp/manager.py:16`
+- [x] P1 收敛 Tool Runtime 客户端请求构造：manifest/execute 统一使用 shared typed model（Req: `requirements.md#req-4-5`，`requirements.md#req-5-1`，`requirements.md#req-5-2`；Impl: `apps/agent-api/src/anyagent_agent_api/clients/tool_runtime_client.py:1`；Module: `agent-api`）
 
 ## 决策 & 争议点
 

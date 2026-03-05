@@ -38,3 +38,45 @@ async def check_internal_auth(request: Request, settings: Settings) -> Response 
         )
 
     return None
+
+
+async def check_admin_auth(request: Request, settings: Settings) -> Response | None:
+    if not settings.admin_api_key:
+        return tool_error(
+            status_code=404,
+            type_="tool_auth_error",
+            code="admin_api_disabled",
+            message="Admin API is disabled",
+            retryable=False,
+        )
+
+    auth = request.headers.get("authorization")
+    if not auth:
+        return tool_error(
+            status_code=401,
+            type_="tool_auth_error",
+            code="missing_authorization",
+            message="Missing Authorization header",
+            retryable=False,
+        )
+
+    parts = auth.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return tool_error(
+            status_code=401,
+            type_="tool_auth_error",
+            code="invalid_authorization",
+            message="Invalid Authorization header",
+            retryable=False,
+        )
+
+    if parts[1].strip() != settings.admin_api_key:
+        return tool_error(
+            status_code=401,
+            type_="tool_auth_error",
+            code="invalid_key",
+            message="Invalid admin key",
+            retryable=False,
+        )
+
+    return None

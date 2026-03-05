@@ -12,6 +12,7 @@ __all__ = [
     "create_openai_responses_model_provider",
     "get_default_model_provider",
     "resolve_manifest",
+    "resolve_manifest_with_mcp",
     "run_tool_loop_nonstream",
     "run_tool_loop_stream_buffered",
 ]
@@ -19,6 +20,7 @@ __all__ = [
 from .skills_injection import SkillInjectionWarning, build_skills_injection_text, inject_skills_into_responses_body
 from .tool_loop import (
     resolve_manifest,
+    resolve_manifest_with_mcp,
     run_tool_loop_nonstream,
     run_tool_loop_stream_buffered,
 )

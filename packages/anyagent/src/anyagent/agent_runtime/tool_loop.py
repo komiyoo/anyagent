@@ -12,6 +12,7 @@ from openai.types.responses.response_input_item_param import FunctionCallOutput
 from openai.types.responses.response_stream_event import ResponseStreamEvent
 from openai.types.responses.tool_choice_function_param import ToolChoiceFunctionParam
 
+from anyagent.mcp.manager import MCPServerManager
 from anyagent.protocol.tool_runtime import ExecuteRequest, ManifestRequest, ToolContext
 from anyagent.tool_runtime.client import ToolRuntimeClient
 from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
@@ -99,6 +100,49 @@ async def resolve_manifest(
     return tools, resp.toolset_version
 
 
+async def resolve_manifest_with_mcp(
+    *,
+    tool_runtime: ToolRuntimeClient,
+    mcp_manager: MCPServerManager | None,
+    agent_id: str,
+    session_key: str | None,
+    metadata: dict[str, Any] | None,
+    request_tools: Any,
+    enabled_skills: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Resolves manifest tools from Tool Runtime and optional MCP sources."""
+    tr_tools, toolset_version = await resolve_manifest(
+        tool_runtime=tool_runtime,
+        agent_id=agent_id,
+        session_key=session_key,
+        metadata=metadata,
+        request_tools=request_tools,
+        enabled_skills=enabled_skills,
+    )
+    mcp_tools: list[dict[str, Any]] = []
+    if mcp_manager is not None:
+        mcp_tools = await mcp_manager.list_all_tools()
+    return [*tr_tools, *mcp_tools], toolset_version
+
+
+def _parse_call_arguments_to_dict(arguments: Any) -> dict[str, Any]:
+    """Parses model tool call arguments into a JSON object for MCP tools."""
+    if isinstance(arguments, dict):
+        return arguments
+    if isinstance(arguments, str):
+        raw = arguments.strip()
+        if not raw:
+            return {}
+        try:
+            obj = json.loads(raw)
+        except Exception as e:  # noqa: BLE001
+            raise ValueError(f"invalid tool arguments json: {e}") from e
+        if not isinstance(obj, dict):
+            raise ValueError("tool arguments must be a JSON object")
+        return obj
+    raise ValueError("tool arguments must be a JSON object")
+
+
 async def run_tool_loop_nonstream(
     *,
     model_provider: ModelProvider,
@@ -108,12 +152,14 @@ async def run_tool_loop_nonstream(
     body: dict[str, Any],
     idempotency_key: str | None,
     selected_skills: list[SkillPackage] | None = None,
+    mcp_manager: MCPServerManager | None = None,
     max_iters: int = 8,
 ) -> tuple[int, dict[str, Any]]:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     enabled_skills = [s.stable_id for s in (selected_skills or [])]
-    manifest_tools, toolset_version = await resolve_manifest(
+    manifest_tools, toolset_version = await resolve_manifest_with_mcp(
         tool_runtime=tool_runtime,
+        mcp_manager=mcp_manager,
         agent_id=agent_id,
         session_key=session_key,
         metadata=metadata,
@@ -167,23 +213,41 @@ async def run_tool_loop_nonstream(
             if not isinstance(call_id, str) or not isinstance(tool_name, str):
                 continue
 
-            tr = await tool_runtime.execute(
-                ExecuteRequest(
-                    agent_id=agent_id,
-                    session_key=session_key or "ephemeral",
-                    response_id=response_id,
-                    tool_call_id=call_id,
-                    tool_name=tool_name,
-                    arguments_json=arguments,
-                    deadline_ms=30_000,
-                    toolset_version=toolset_version,
-                    context=ToolContext(),
-                )
-            )
-            if tr.status == "completed":
-                output_str = tr.output
+            if tool_name.startswith("mcp."):
+                if mcp_manager is None:
+                    output_str = json.dumps(
+                        {"status": "error", "error": {"type": "mcp_error", "message": "mcp manager not configured"}},
+                        ensure_ascii=False,
+                    )
+                else:
+                    try:
+                        output_str = await mcp_manager.call_tool(
+                            tool_name,
+                            _parse_call_arguments_to_dict(arguments),
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        output_str = json.dumps(
+                            {"status": "error", "error": {"type": "mcp_error", "message": str(e)}},
+                            ensure_ascii=False,
+                        )
             else:
-                output_str = json.dumps({"status": tr.status, "error": tr.error.model_dump()}, ensure_ascii=False)
+                tr = await tool_runtime.execute(
+                    ExecuteRequest(
+                        agent_id=agent_id,
+                        session_key=session_key or "ephemeral",
+                        response_id=response_id,
+                        tool_call_id=call_id,
+                        tool_name=tool_name,
+                        arguments_json=arguments,
+                        deadline_ms=30_000,
+                        toolset_version=toolset_version,
+                        context=ToolContext(),
+                    )
+                )
+                if tr.status == "completed":
+                    output_str = tr.output
+                else:
+                    output_str = json.dumps({"status": tr.status, "error": tr.error.model_dump()}, ensure_ascii=False)
             tool_outputs.append({"type": "function_call_output", "call_id": call_id, "output": output_str})
 
         if not tool_outputs:
@@ -220,6 +284,7 @@ async def run_tool_loop_stream_buffered(
     body: dict[str, Any],
     idempotency_key: str | None,
     selected_skills: list[SkillPackage] | None = None,
+    mcp_manager: MCPServerManager | None = None,
     max_iters: int = 8,
 ) -> tuple[int, Iterable[bytes]]:
     """
@@ -227,8 +292,9 @@ async def run_tool_loop_stream_buffered(
     """
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     enabled_skills = [s.stable_id for s in (selected_skills or [])]
-    manifest_tools, toolset_version = await resolve_manifest(
+    manifest_tools, toolset_version = await resolve_manifest_with_mcp(
         tool_runtime=tool_runtime,
+        mcp_manager=mcp_manager,
         agent_id=agent_id,
         session_key=session_key,
         metadata=metadata,
@@ -285,23 +351,41 @@ async def run_tool_loop_stream_buffered(
             if not isinstance(call_id, str) or not isinstance(tool_name, str):
                 continue
 
-            tr = await tool_runtime.execute(
-                ExecuteRequest(
-                    agent_id=agent_id,
-                    session_key=session_key or "ephemeral",
-                    response_id=response_id,
-                    tool_call_id=call_id,
-                    tool_name=tool_name,
-                    arguments_json=arguments,
-                    deadline_ms=30_000,
-                    toolset_version=toolset_version,
-                    context=ToolContext(),
-                )
-            )
-            if tr.status == "completed":
-                output_str = tr.output
+            if tool_name.startswith("mcp."):
+                if mcp_manager is None:
+                    output_str = json.dumps(
+                        {"status": "error", "error": {"type": "mcp_error", "message": "mcp manager not configured"}},
+                        ensure_ascii=False,
+                    )
+                else:
+                    try:
+                        output_str = await mcp_manager.call_tool(
+                            tool_name,
+                            _parse_call_arguments_to_dict(arguments),
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        output_str = json.dumps(
+                            {"status": "error", "error": {"type": "mcp_error", "message": str(e)}},
+                            ensure_ascii=False,
+                        )
             else:
-                output_str = json.dumps({"status": tr.status, "error": tr.error.model_dump()}, ensure_ascii=False)
+                tr = await tool_runtime.execute(
+                    ExecuteRequest(
+                        agent_id=agent_id,
+                        session_key=session_key or "ephemeral",
+                        response_id=response_id,
+                        tool_call_id=call_id,
+                        tool_name=tool_name,
+                        arguments_json=arguments,
+                        deadline_ms=30_000,
+                        toolset_version=toolset_version,
+                        context=ToolContext(),
+                    )
+                )
+                if tr.status == "completed":
+                    output_str = tr.output
+                else:
+                    output_str = json.dumps({"status": tr.status, "error": tr.error.model_dump()}, ensure_ascii=False)
             tool_outputs.append({"type": "function_call_output", "call_id": call_id, "output": output_str})
 
         if not tool_outputs:

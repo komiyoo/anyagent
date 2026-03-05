@@ -5,8 +5,10 @@
 ## Inbox（待分流）
 
 - [x] P1 SDK 接入侧与 Agent Server 对齐 OpenAI Responses API（已分流）（迁移到：`todo/sdk.md`；Impl: `todo/sdk.md:1`；Module: `sdk`）
-- [ ] P1 对接 Anthropic Claude ModelProvider（Req: `TBD`）
-- [ ] P1 对接 Google Gemini ModelProvider（Req: `TBD`）
+- [x] P1 对接 Anthropic Claude ModelProvider（Req: `TBD`；Impl: `packages/anyagent/src/anyagent/agent_runtime/model_providers/anthropic_messages.py:1`；Module: `packages/anyagent`）
+  - refs: `packages/anyagent/src/anyagent/agent_runtime/model_providers/__init__.py:1`
+- [x] P1 对接 Google Gemini ModelProvider（Req: `TBD`；Impl: `packages/anyagent/src/anyagent/agent_runtime/model_providers/google_gemini.py:1`；Module: `packages/anyagent`）
+  - refs: `packages/anyagent/src/anyagent/agent_runtime/model_providers/__init__.py:53`
 
 ## Needs Triage（需要先澄清/拆解）
 

@@ -13,6 +13,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from anyagent.mcp import MCPManagerRegistry, MCPServerManager, build_mcp_credential_resolver
 from anyagent.agent_packs import AgentCatalog, AgentPack, AgentPackError, load_agent_catalog
 from anyagent.agent_runtime import inject_skills_into_responses_body
 from anyagent.gateway.session import SessionBindingError
@@ -306,6 +307,21 @@ def _normalize_response_id(payload: Any, canonical_response_id: str) -> None:
             _normalize_response_id(v, canonical_response_id)
 
 
+def _parse_tool_arguments_object(arguments_json: Any) -> dict[str, Any]:
+    """Parses tool call arguments into a JSON object for MCP execution."""
+    if isinstance(arguments_json, dict):
+        return arguments_json
+    if isinstance(arguments_json, str):
+        raw = arguments_json.strip()
+        if not raw:
+            return {}
+        obj = json.loads(raw)
+        if not isinstance(obj, dict):
+            raise ValueError("tool arguments must be a JSON object")
+        return obj
+    raise ValueError("tool arguments must be a JSON object")
+
+
 def create_app(settings: Settings) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -313,6 +329,11 @@ def create_app(settings: Settings) -> FastAPI:
         app.state.sequencer = KeyedSequencer()
         app.state.http = httpx.AsyncClient(timeout=None)
         app.state.manifest_cache = ManifestCache(ttl_seconds=settings.manifest_cache_ttl_seconds)
+        app.state.mcp_registry = MCPManagerRegistry()
+        app.state.mcp_credential_store = build_mcp_credential_resolver(
+            backend=settings.mcp_credential_store_backend,
+            file_root=settings.mcp_credential_store_file_root,
+        )
         app.state.multiagent = MultiAgentManager()
         app.state.storage = await create_storage_runtime(settings)
         app.state.storage_tasks: set[asyncio.Task[object]] = set()
@@ -359,6 +380,10 @@ def create_app(settings: Settings) -> FastAPI:
         try:
             yield
         finally:
+            try:
+                await app.state.mcp_registry.cleanup_all()
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 await app.state.storage.aclose()
             except Exception:  # noqa: BLE001
@@ -959,6 +984,32 @@ def create_app(settings: Settings) -> FastAPI:
         tool_context = apply_skills_permissions_to_tool_context(tool_context, skills=selected_skills)
         context = tool_context.model_dump(exclude_none=True)
 
+        mcp_manager: MCPServerManager | None = None
+        if pack.mcp_config is not None:
+            try:
+                mcp_manager = await request.app.state.mcp_registry.get_manager(
+                    agent_id=agent_id,
+                    mcp_config=pack.mcp_config,
+                    credential_store=request.app.state.mcp_credential_store,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "mcp manager init failed; proceeding without mcp tools",
+                    extra={"agent_id": agent_id, "error": str(e)},
+                )
+
+        async def _load_mcp_tools() -> list[dict[str, Any]]:
+            if mcp_manager is None:
+                return []
+            try:
+                return await mcp_manager.list_all_tools()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "mcp list_all_tools failed; proceeding without mcp tools",
+                    extra={"agent_id": agent_id, "error": str(e)},
+                )
+                return []
+
         cached = request.app.state.manifest_cache.get(
             agent_id=agent_id,
             session_key=session_key,
@@ -994,6 +1045,10 @@ def create_app(settings: Settings) -> FastAPI:
                 tools=manifest_tools,
                 toolset_version=toolset_version,
             )
+
+        mcp_tools = await _load_mcp_tools()
+        if mcp_tools:
+            manifest_tools = [*manifest_tools, *mcp_tools]
 
         system_tools = request.app.state.multiagent.system_tools_for_pack(pack)
         if system_tools:
@@ -1041,8 +1096,6 @@ def create_app(settings: Settings) -> FastAPI:
                 requested_tools=requested_tools,
                 context=context,
             )
-            if system_tools:
-                manifest_tools2 = [*manifest_tools2, *[t.model_dump(exclude_none=True) for t in system_tools]]
             request.app.state.manifest_cache.put(
                 agent_id=agent_id,
                 session_key=session_key,
@@ -1052,6 +1105,11 @@ def create_app(settings: Settings) -> FastAPI:
                 tools=manifest_tools2,
                 toolset_version=toolset_version2,
             )
+            mcp_tools2 = await _load_mcp_tools()
+            if mcp_tools2:
+                manifest_tools2 = [*manifest_tools2, *mcp_tools2]
+            if system_tools:
+                manifest_tools2 = [*manifest_tools2, *[t.model_dump(exclude_none=True) for t in system_tools]]
             return manifest_tools2, toolset_version2
 
         async def _execute_with_version_retry(
@@ -1062,6 +1120,40 @@ def create_app(settings: Settings) -> FastAPI:
             arguments_json: Any,
             deadline_ms: int | None,
         ) -> tuple[dict[str, Any], int, list[dict[str, Any]]]:
+            if tool_name.startswith("mcp."):
+                if mcp_manager is None:
+                    return (
+                        {
+                            "status": "error",
+                            "error": {
+                                "type": "mcp_error",
+                                "message": "mcp manager is not configured",
+                                "retryable": False,
+                            },
+                        },
+                        toolset_version,
+                        manifest_tools,
+                    )
+                try:
+                    output = await mcp_manager.call_tool(tool_name, _parse_tool_arguments_object(arguments_json))
+                    return (
+                        {"status": "completed", "output": output, "meta": {"duration_ms": 0, "output_truncated": False}},
+                        toolset_version,
+                        manifest_tools,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    return (
+                        {
+                            "status": "error",
+                            "error": {
+                                "type": "mcp_error",
+                                "message": str(e),
+                                "retryable": False,
+                            },
+                        },
+                        toolset_version,
+                        manifest_tools,
+                    )
             try:
                 tr = await execute_tool(
                     client=request.app.state.http,

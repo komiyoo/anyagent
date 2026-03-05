@@ -280,6 +280,10 @@ def parse_todo_progress(root: str) -> list[dict[str, object]]:
     impl_re = re.compile(r"\b(impl|实现)\s*:", re.IGNORECASE)
     module_re = re.compile(r"\b(module|模块)\s*:", re.IGNORECASE)
 
+    def is_deferred_item(text: str) -> bool:
+        # v2 规划项不应阻塞 v0/v1 的“下一条 TODO”提示。
+        return "[v2]" in text
+
     def iter_items(path: str) -> tuple[list[TodoItem], list[TodoItem]]:
         """
         返回 (tasks_items, all_items)
@@ -340,13 +344,14 @@ def parse_todo_progress(root: str) -> list[dict[str, object]]:
             continue
 
         primary = tasks_items if tasks_items else all_items
-        checked = sum(1 for it in primary if it.checked)
-        total = len(primary)
+        active = [it for it in primary if not is_deferred_item(it.text)]
+        checked = sum(1 for it in active if it.checked)
+        total = len(active)
 
         # 进度默认按“从上到下连续完成”理解：第一个未完成就是“当前/下一步”
         next_item: Optional[TodoItem] = None
         sequential_done = 0
-        for it in primary:
+        for it in active:
             if it.checked:
                 sequential_done += 1
                 continue
@@ -354,7 +359,7 @@ def parse_todo_progress(root: str) -> list[dict[str, object]]:
             break
 
         missing_evidence: list[TodoItem] = []
-        for it in primary:
+        for it in active:
             if not it.checked:
                 continue
             if not impl_re.search(it.text) or not module_re.search(it.text):

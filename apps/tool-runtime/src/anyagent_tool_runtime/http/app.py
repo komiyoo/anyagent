@@ -19,18 +19,29 @@ from anyagent.tool_runtime.registry import ToolRegistry
 from anyagent.tool_runtime.plugins import ToolRuntimePluginAPI
 
 from .api_models import ExecuteRequest, ManifestDecision, ManifestRequest
-from .auth import check_internal_auth
+from .auth import check_admin_auth, check_internal_auth
 from .errors import tool_error
-from ..runtime.executors import Router, register_builtin_core_tools
+from ..runtime.credential_store import CredentialStore, EnvBackend
+from ..runtime.file_credential_store import FileBackend
+from ..runtime.executors import Router, register_builtin_core_tools, register_privileged_core_tools
 from ..runtime.idempotency import InMemoryIdempotencyStore, ToolResult
 from ..runtime.manifest import build_manifest
 from ..settings import Settings
+from anyagent.protocol.credential_vault import AdminCredentialListResponse, AdminCredentialRef, AdminCredentialSetRequest
 
 
 logger = logging.getLogger("anyagent.tool_runtime")
 
 
 def create_app(settings: Settings) -> FastAPI:
+    def _create_credential_store(settings: Settings) -> CredentialStore:
+        backend = (settings.credential_store_backend or "").strip().lower()
+        if backend in {"", "env"}:
+            return EnvBackend()
+        if backend == "file":
+            return FileBackend(root=settings.credential_store_file_root)
+        raise RuntimeError(f"unsupported credential store backend: {settings.credential_store_backend}")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if settings.allow_sandbox:
@@ -42,8 +53,11 @@ def create_app(settings: Settings) -> FastAPI:
             if mode == "local_unsafe":
                 logger.warning("sandbox enabled in UNSAFE local mode; do not use in production")
 
+        credential_store = _create_credential_store(settings)
+
         registry = ToolRegistry()
         await register_builtin_core_tools(registry)
+        await register_privileged_core_tools(registry=registry, credential_store=credential_store)
 
         roots = [Path(p.strip()) for p in (settings.plugin_roots or "").split(",") if p.strip()]
         if roots:
@@ -63,9 +77,20 @@ def create_app(settings: Settings) -> FastAPI:
             if loaded:
                 logger.info("plugins loaded: %s", ", ".join(sorted({lp.manifest.plugin_id for lp in loaded})))
 
+        # v0 约束：sandbox executor 尚未实现；即使 ALLOW_SANDBOX=1，也不应注册任何 sandbox.* 工具。
+        sandbox_tools = [td.name for td in registry.list_tools() if td.category == "sandbox"]
+        if sandbox_tools:
+            raise RuntimeError(f"sandbox tools are not supported in v0; got: {', '.join(sorted(sandbox_tools))}")
+
         app.state.settings = settings
         app.state.registry = registry
-        app.state.router = Router(registry, allow_sandbox=settings.allow_sandbox, output_max_bytes=settings.output_max_bytes)
+        app.state.credential_store = credential_store
+        app.state.router = Router(
+            registry,
+            allow_sandbox=settings.allow_sandbox,
+            output_max_bytes=settings.output_max_bytes,
+            credential_store=credential_store,
+        )
         app.state.idem = InMemoryIdempotencyStore()
         yield
 
@@ -74,6 +99,118 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/healthz")
     async def healthz():
         return {"ok": True}
+
+    @app.post("/admin/credentials")
+    async def admin_credentials_set(request: Request) -> Response:
+        auth_err = await check_admin_auth(request, settings)
+        if auth_err is not None:
+            return auth_err
+        audit_ref = f"aud_{uuid4().hex}"
+
+        try:
+            body = await request.json()
+        except Exception:
+            return tool_error(
+                status_code=400,
+                type_="tool_input_error",
+                code="invalid_json",
+                message="invalid json body",
+                retryable=False,
+            )
+
+        try:
+            req = AdminCredentialSetRequest.model_validate(body)
+        except ValidationError as e:
+            return tool_error(
+                status_code=400,
+                type_="tool_input_error",
+                code="invalid_request",
+                message=str(e),
+                retryable=False,
+            )
+
+        try:
+            await request.app.state.credential_store.set(
+                credential_id=req.credential_id,
+                kind=req.kind,
+                value=req.value,
+                scope=req.scope,
+                metadata=req.metadata,
+            )
+        except ValueError as e:
+            return tool_error(
+                status_code=400,
+                type_="tool_input_error",
+                code="invalid_request",
+                message=str(e),
+                retryable=False,
+            )
+
+        logger.info(
+            "credential_admin.set",
+            extra={
+                "audit_ref": audit_ref,
+                "actor": "admin_api",
+                "operation": "set",
+                "credential_id": req.credential_id,
+                "kind": req.kind,
+                "scope_level": req.scope.level,
+                "scope_agent_id": req.scope.agent_id,
+            },
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content=AdminCredentialRef(
+                credential_id=req.credential_id,
+                kind=req.kind,
+                scope=req.scope,
+                metadata=req.metadata,
+            ).model_dump(exclude_none=True),
+        )
+
+    @app.get("/admin/credentials")
+    async def admin_credentials_list(request: Request) -> Response:
+        auth_err = await check_admin_auth(request, settings)
+        if auth_err is not None:
+            return auth_err
+
+        refs = await request.app.state.credential_store.list_refs()
+        credentials = [AdminCredentialRef.model_validate(r) for r in refs]
+        return JSONResponse(
+            status_code=200,
+            content=AdminCredentialListResponse(credentials=credentials).model_dump(exclude_none=True),
+        )
+
+    @app.delete("/admin/credentials/{credential_id}")
+    async def admin_credentials_delete(credential_id: str, request: Request) -> Response:
+        auth_err = await check_admin_auth(request, settings)
+        if auth_err is not None:
+            return auth_err
+        audit_ref = f"aud_{uuid4().hex}"
+
+        try:
+            ok = await request.app.state.credential_store.delete(credential_id)
+        except ValueError as e:
+            return tool_error(
+                status_code=400,
+                type_="tool_input_error",
+                code="invalid_request",
+                message=str(e),
+                retryable=False,
+            )
+
+        logger.info(
+            "credential_admin.delete",
+            extra={
+                "audit_ref": audit_ref,
+                "actor": "admin_api",
+                "operation": "delete",
+                "credential_id": credential_id,
+                "deleted": ok,
+            },
+        )
+        return JSONResponse(status_code=200, content={"ok": True, "deleted": ok})
 
     @app.post("/internal/tools/manifest")
     async def tools_manifest(request: Request) -> Response:
@@ -239,6 +376,7 @@ def create_app(settings: Settings) -> FastAPI:
                 tool_name=tool_name,
                 arguments_json=req.arguments_json,
                 context=req.context.model_dump(exclude_none=True),
+                agent_id=req.agent_id,
                 deadline_ms=req.deadline_ms,
             )
 

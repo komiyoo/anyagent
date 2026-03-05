@@ -392,9 +392,11 @@ tool_choice 策略（v0）：
 安全约束（v0 强制）：
 
 - Agent API **不信任** 外部请求直接提供的 `tools[]`（无论来自 OpenAI SDK 直连还是来自 Gateway）。
-- Agent API 必须以 Tool Runtime 返回的 `manifest.tools[]` 作为“允许披露给模型的工具全集”。
-  - 请求携带的 `tools[]` 只能作为“提示/期望集合”，最终必须经 Tool Runtime 过滤。
-- 任何不在 Tool Runtime 工具注册表/manifest 中的工具名，都必须被忽略（或返回明确错误），禁止“客户端注入新工具名”。
+- Agent API 必须先收敛“允许披露给模型的工具全集”：
+  - Tool Runtime `manifest.tools[]`（`core.* / app.* / sandbox.* / channel.*` 的权威来源）
+  - Agent Pack 的 `mcp.json`（`mcp.<server_label>.<tool_name>` 命名空间，作为并行来源）
+- 请求携带的 `tools[]` 只能作为“提示/期望集合”，最终必须经服务端收口（Tool Runtime 过滤 + MCP 配置过滤）。
+- 任何不在上述收口结果中的工具名，都必须被忽略（或返回明确错误），禁止“客户端注入新工具名”。
 
 <a id="req-4-6"></a>
 
@@ -483,7 +485,7 @@ Tool Runtime 是一个独立模块/服务（可多实例水平扩容），不由
 
 ### 5.2 Tool Manifest（Tool Runtime -> Agent API）
 
-由于 Tool Runtime 是独立服务，v0 强制由 Tool Runtime 作为“工具可见性与清单”的权威来源：
+由于 Tool Runtime 是独立服务，v0 对非 MCP 命名空间仍强制由 Tool Runtime 作为“工具可见性与清单”的权威来源；MCP 作为 Agent API 并行工具来源（来自 Agent Pack `mcp.json`）：
 
 - `POST /internal/tools/manifest`
   - 输入（request body）：`tenant_id?`, `agent_id`, `session_key`, `context`, `enabled_skills?`, `requested_tool_names?`, `requested_tools?`
@@ -500,13 +502,16 @@ Tool Runtime 是一个独立模块/服务（可多实例水平扩容），不由
 
 Agent API 的行为建议：
 
-- 对外请求无论是否携带 `tools[]`，Agent API 都应先向 Tool Runtime 拉取 manifest，然后再决定最终传给模型的 `tools[]`：
+- 对外请求无论是否携带 `tools[]`，Agent API 都应先向 Tool Runtime 拉取 manifest，再合并 MCP tools，然后决定最终传给模型的 `tools[]`：
   - 计算 `requested_tool_names`（并集）：
     - AgentSpec（`agent.yaml`）里的 `tools.requested_tool_names`
     - 外部请求携带的 `tools[].function.name`（若有）
     - 由 skill dependencies 推导出的工具名（若本次 run 选中了 skills）
   - 并将 `enabled_skills` 与 `requested_tools`（原样，仅审计/调试）一并传给 Tool Runtime
-  - 使用 Tool Runtime 返回的 `tools[]` 作为最终可见集合（避免 Agent API 私自扩大工具暴露面）
+  - 合并规则：
+    - Tool Runtime 返回 `tools[]`（非 MCP 命名空间）
+    - MCP Manager 返回 `mcp.*` tools（由 `mcp.json` + auth/filter 收口）
+  - 最终 `tools[]` 用于上游模型调用；执行阶段按工具名前缀路由（`mcp.*` 走 MCP，其余走 Tool Runtime）
 
 说明：
 
@@ -1188,7 +1193,7 @@ anyagent v0 建议保留兼容形态，并映射到我们在第 5 节定义的 T
 - `transport = "app"`：映射到 `app.*` 工具集合（业务项目自定义工具）
 - `transport = "sandbox"`：映射到 `sandbox.*` 工具集合
 - `transport = "channel"`：映射到 channel tools（例如 `feishu.*`），由 Tool Runtime 的 channel executor 承载
-- `transport = "mcp"`：未来扩展（工具由 MCP server 提供；与 Codex 的 mcp:// 类似）
+- `transport = "mcp"`：映射到 `mcp.<server_label>.*` 命名空间（server 生命周期与连接配置由 Agent Pack `mcp.json` 决定）
 
 <a id="req-12-5"></a>
 

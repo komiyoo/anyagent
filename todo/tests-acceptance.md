@@ -25,3 +25,4 @@
 - [x] P0 新增会话参数绑定验收：`model/temperature/top_p/frequency_penalty/presence_penalty/reasoning` 默认复用，显式传参时字段级 merge 更新（Req: `requirements.md#req-4-6-2`，`requirements.md#req-9-1`；Impl: `scripts/acceptance_session_resume_smoke.py:105`；Module: `scripts/agent-api`）
 - [x] P1 新增工具回合参数一致性验收：`previous_response_id` 回合继承同一 `effective_runtime_config`（Req: `requirements.md#req-4-6-2`，`requirements.md#req-9-1`；Impl: `scripts/acceptance_session_resume_smoke.py:132`；Module: `scripts/agent-api`）
 - [x] P1 新增 stage events 命令派生验收：command-like tool 的 `anyagent.command.*` 事件可被强类型解析，且命令预览默认脱敏（Req: `requirements.md#req-7`，`requirements.md#req-9`；Impl: `scripts/acceptance_command_stage_derivation_smoke.py:1`；Module: `scripts/sdk`）
+- [x] P1 新增 MCP Federation 验收：验证 `mcp.json` 加载、manifest 合并与 `mcp.` 路由（离线 fake server）（Req: `requirements.md#req-4-5`，`requirements.md#req-5-2`，`requirements.md#req-12-4`；Impl: `scripts/acceptance_mcp_federation_smoke.py:1`；Module: `scripts/mcp`）
