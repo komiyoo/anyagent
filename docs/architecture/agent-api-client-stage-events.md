@@ -7,7 +7,7 @@ Single Source of Truth:
 
 # Agent API Client：阶段性事件（Stage Events）设计（v0）
 
-目标：让内部封装的 `anyagent` Python client SDK 能以“阶段性结果”形式向上层返回更细粒度的运行进度，用于：
+目标：让 `anyagent` Client SDK 的 `events` 命名空间（`client.events.stream_typed()`）能以”阶段性结果”形式向上层返回更细粒度的运行进度，用于：
 
 - UI/日志：展示“要调用什么工具 + 参数摘要”
 - 可观测：展示“工具执行结果摘要 / 审计引用（audit_ref）”
@@ -53,7 +53,7 @@ Stage Events 可以来自两个渠道：
 
 结论（推荐）：
 
-- v0 的 client SDK 优先消费 `/internal/events/stream`，并在其中同时承载：
+- v0 的 client SDK 通过 `client.events.stream_typed(response_id)` 消费 `/internal/events/stream`，同时承载：
   - 原始 Responses SSE events（与外部兼容面一致）
   - anyagent 自定义 stage events（用于 tool/command 粒度）
 
@@ -194,7 +194,7 @@ client 映射：
 
 ```mermaid
 sequenceDiagram
-  participant C as Client SDK
+  participant C as AnyAgent Client (events namespace)
   participant AS as Agent API
   participant ES as Event Store
   participant TR as Tool Runtime
@@ -209,5 +209,5 @@ sequenceDiagram
   AS->>ES: append([DONE])
   C->>AS: GET /internal/events/stream
   AS-->>C: SSE blocks (model + tool + [DONE])
-  Note over C: decode to Stage Events\n(model/tool/command)
+  Note over C: client.events.stream_typed()\ndecode to StageEvent union\n(model/tool/command)
 ```

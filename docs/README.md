@@ -19,6 +19,8 @@
 - `docs/acceptance/`：验收清单与可复现手册（含 demo 定制化说明 [acceptance-demo-customization.md](acceptance/acceptance-demo-customization.md)）
 - `docs/security/`：威胁模型、sandbox 安全、tool policy、审计留痕、凭证管理（Credential Vault）
 - `docs/architecture/`：总体架构与关键子系统交互（skills/tool-runtime、stateless 语义、存储设计等）
+  - `docs/architecture/decisions/`：架构决策记录（ADR，记录取舍和边界）
+  - `docs/architecture/engineering/`：工程流程设计（CI、质量门、发布门禁）
   - 运行时实体分层参考：[agent-server-runtime-entities.md](architecture/agent-server-runtime-entities.md)
   - Client 阶段性事件（tool/command 粒度）：[agent-api-client-stage-events.md](architecture/agent-api-client-stage-events.md)
   - apps/packages 职责边界与收敛策略：[apps-packages-boundary.md](architecture/apps-packages-boundary.md)

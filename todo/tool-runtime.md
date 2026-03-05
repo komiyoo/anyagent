@@ -29,18 +29,18 @@
 
 ## 决策 & 争议点
 
-- [ ] Tool Registry 是否需要热更新控制面（v0 是否先不做）（Req: `requirements.md#req-5-2-1`）
-- [ ] “联邦式 Tool Runtime” 的拆分边界与路由规则是否在 v0 固化（Req: `requirements.md#req-5-3`）
+- [x] Tool Registry 热更新控制面：v0 不做 `/internal/tools/register|heartbeat`，采用启动期静态注册 + mismatch 刷新恢复（Req: `requirements.md#req-5-2-1`；Impl: `docs/architecture/decisions/tool-runtime-federation-v0.md:1`；Module: `architecture/tool-runtime`）
+- [x] “联邦式 Tool Runtime” 边界：v0 固化单服务部署（router + executors 同进程），不拆 remote executors（Req: `requirements.md#req-5-3`；Impl: `docs/architecture/decisions/tool-runtime-federation-v0.md:1`；Module: `architecture/tool-runtime`）
 
 ## Credential Vault 集成（v1）
 
 对应设计：`docs/security/credential-vault.md`
 
-- [ ] P0 扩展 ToolDefinition：新增 `credentials: list[ToolCredentialSpec]` 字段（Req: `requirements.md#req-5-9`，`requirements.md#req-8`；Module: `packages/anyagent`）
-- [ ] P0 实现 CredentialStore 抽象与 EnvBackend 默认后端（Req: `requirements.md#req-8`；Module: `tool-runtime`）
-- [ ] P0 Router.execute() 增加凭证 resolve + 注入逻辑（在 policy 校验后、handler 执行前）（Req: `requirements.md#req-8`；Module: `tool-runtime`）
-- [ ] P1 实现 Admin API endpoints（POST/GET/DELETE /admin/credentials，独立 ADMIN_API_KEY）（Req: `requirements.md#req-8`；Module: `tool-runtime`）
-- [ ] P1 实现 FileBackend 凭证存储（文件系统 + chmod 600）（Req: `requirements.md#req-8`；Module: `tool-runtime`）
+- [x] P0 扩展 ToolDefinition：新增 `credentials: list[ToolCredentialSpec]` 字段（Req: `requirements.md#req-5-9`，`requirements.md#req-8`；Impl: `packages/anyagent/src/anyagent/tool_runtime/models.py:12`；Module: `packages/anyagent`）
+- [x] P0 实现 CredentialStore 抽象与 EnvBackend 默认后端（Req: `requirements.md#req-8`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/runtime/credential_store.py:16`；Module: `tool-runtime`）
+- [x] P0 Router.execute() 增加凭证 resolve + 注入逻辑（在 policy 校验后、handler 执行前）（Req: `requirements.md#req-8`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/runtime/executors.py:204`；Module: `tool-runtime`）
+- [x] P1 实现 Admin API endpoints（POST/GET/DELETE /admin/credentials，独立 ADMIN_API_KEY）（Req: `requirements.md#req-8`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/http/app.py:103`；Module: `tool-runtime`）
+- [x] P1 实现 FileBackend 凭证存储（文件系统 + chmod 600）（Req: `requirements.md#req-8`；Impl: `apps/tool-runtime/src/anyagent_tool_runtime/runtime/file_credential_store.py:27`；Module: `tool-runtime`）
 - [ ] P1 改造 core.web_fetch：支持从 `_credentials` 获取认证头（适用于需要鉴权的 URL 访问）（Req: `requirements.md#req-5-9`；Module: `tool-runtime`）
 - [ ] P2 实现 core.web_search 内置工具（从 CredentialStore resolve 搜索引擎 API Key）（Req: `requirements.md#req-5-10`；Module: `tool-runtime`）
 

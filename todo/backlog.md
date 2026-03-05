@@ -12,13 +12,14 @@
 
 ## Needs Triage（需要先澄清/拆解）
 
-- [ ] P0 [needs-design] <需要产品/架构决策的问题>（Req: `requirements.md#req-...` 或 `TBD`）
-- [ ] P1 [blocked] <依赖外部输入/资源的事项>（依赖：<填>）
+- [x] P0 [needs-design] 对外接口策略收敛：OpenAI Responses First + AnyAgent SDK Superset（Req: `requirements.md#req-4-1`；迁移到：`docs/architecture/decisions/openai-first-api-surface.md`；Impl: `docs/architecture/decisions/openai-first-api-surface.md:1`；Module: `architecture/sdk`）
+- [x] P1 [needs-design] CI 质量门分层（离线 smoke 与文档护栏）与工作流落地（Req: `requirements.md#req-9`；迁移到：`docs/architecture/engineering/ci-pipeline.md`；Impl: `docs/architecture/engineering/ci-pipeline.md:1`；Module: `architecture/engineering`）
 
 ## 决策清单（建议用问题句）
 
-- [ ] <决策问题>：选项 A/B/C，各自 trade-off 是什么？（Req: `requirements.md#req-...` 或 `TBD`）
+- [x] Tool Runtime 热更新与联邦边界如何取舍（v0）？（Req: `requirements.md#req-5-2-1`，`requirements.md#req-5-3`；Impl: `docs/architecture/decisions/tool-runtime-federation-v0.md:1`；Module: `architecture/tool-runtime`）
+- [x] Skills 选择是否允许隐式触发（v0）？（Req: `requirements.md#req-12-6`；Impl: `docs/architecture/decisions/skills-selection-policy.md:1`；Module: `architecture/skills`）
 
 ## 已归档（可选）
 
-- [ ] <已完成/已迁移的条目>（迁移到：`todo/<module>.md`）
+- [x] 以上决策条目均已迁移到模块 TODO 与 ADR 文档（Impl: `docs/architecture/decisions/README.md:1`；Module: `architecture`）

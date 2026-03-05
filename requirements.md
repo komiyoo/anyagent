@@ -269,6 +269,7 @@ v0 推荐的最小方案与关键 schema/生命周期/一致性边界见：`docs
 - `POST /v1/responses`
   - 请求体尽量兼容 OpenAI Responses API
   - `stream=true` 时返回 SSE（`Content-Type: text/event-stream`）
+- 外部接入基线以 OpenAI 官方 SDK（Responses API）为主；anyagent Client SDK（`AnyAgent` 入口类）以资源型命名空间模式提供超集能力：`client.responses.*`（委托 OpenAI 官方 SDK）、`client.events.*`（内部观测/replay）、`client.skills.*`（技能发现），但不得破坏 OpenAI 主兼容面。设计决策见 `docs/architecture/decisions/openai-first-api-surface.md`
 
 #### 4.1.1 请求处理模式：同步 SSE vs 内部异步
 

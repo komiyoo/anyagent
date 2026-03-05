@@ -57,7 +57,7 @@ cp apps/agent-api/.env.example apps/agent-api/.env
 
 ```bash
 cd apps/agent-api
-uv run --env-file .env --with openai -s ../../scripts/acceptance_openai_sdk_smoke.py
+uv run --env-file .env --with openai -s ../../tests/acceptance/openai/acceptance_openai_sdk_smoke.py
 ```
 
 说明：
@@ -111,7 +111,27 @@ uv run --env-file .env --with openai -s ../../scripts/acceptance_openai_sdk_smok
   - 检查 Tool Runtime policy 是否允许（默认允许 `core.*`，但仍可能被 deny）
   - 检查 `requested_tool_names` 是否包含目标工具名
 
-## 5. MCP 并行工具源验收（v0）
+## 5. 可选增强 endpoint（v0）
+
+以下 endpoint 不影响 OpenAI SDK 主路径，但可用于运维与平台侧控制：
+
+- `GET /v1/responses/{response_id}`：查询当前状态或最终结果
+- `POST /v1/responses/{response_id}/cancel`：best-effort 取消正在执行的 run
+
+建议验收点：
+
+- 查询已完成 run 时返回最终 response JSON
+- 查询进行中 run 时返回最小状态对象（`status=in_progress`）
+- cancel 后可查询到 `status=cancelled`（或已有终态保持不变）
+
+离线 smoke（不依赖上游模型 API）：
+
+```bash
+cd apps/agent-api
+uv run -s ../../tests/acceptance/agent_api/acceptance_optional_responses_endpoints_smoke.py
+```
+
+## 6. MCP 并行工具源验收（v0）
 
 目标：验证 MCP 作为 Agent API 并行工具来源可被正确加载、合并与路由（不依赖真实外部 MCP server）。
 
@@ -119,7 +139,7 @@ uv run --env-file .env --with openai -s ../../scripts/acceptance_openai_sdk_smok
 
 ```bash
 cd apps/agent-api
-uv run -s ../../scripts/acceptance_mcp_federation_smoke.py
+uv run -s ../../tests/acceptance/mcp/acceptance_mcp_federation_smoke.py
 ```
 
 验收点：

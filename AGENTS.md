@@ -37,6 +37,21 @@
 
 ---
 
+### 公共抽象约束（新增）
+
+- **外部接口策略（OpenAI First + 资源型命名空间 SDK）**：
+  - 对外 API 的主契约以 OpenAI Responses API + OpenAI 官方 SDK 兼容为第一优先级。
+  - `packages/anyagent` 的 Client SDK 以 `AnyAgent` 入口类 + 资源型命名空间模式（`client.responses.*` / `client.events.*` / `client.skills.*`）承载超集能力，`responses` 委托 OpenAI 官方 SDK，不重复封装。不采用 local orchestration 模式。
+  - 设计决策：`docs/architecture/decisions/openai-first-api-surface.md`。
+- **层级化组织（禁止平铺）**：
+  - 代码与文档新增内容必须按“功能/模块/领域”分层落目录；禁止把同类文件持续平铺到单一目录根层。
+  - 新增子目录后必须补该目录 `README.md`（目录级 TOC），并把入口挂到上一级 TOC。
+- **CI 质量门（默认要求）**：
+  - 变更应至少通过“文档护栏 + 离线 smoke”两层 gate（可在 `.github/workflows/ci.yml` 与 `scripts/ci/*` 落地）。
+  - 在线验收（依赖外部密钥/服务）可以作为可选 gate，不得替代离线基础 gate。
+
+---
+
 ### 文档系统（Docs as Harness）
 
 本仓库把“文档 + 约束 + 验收脚本”视为 agent 的 **harness**（操作系统的一部分）：就近可发现、可维护、可机械校验。
@@ -153,8 +168,8 @@
 优先选择“最小且可复现”的验证：
 
 - 文档化验收：`docs/acceptance/acceptance-*.md`
-- Responses API 基本 smoke：`scripts/acceptance_openai_sdk_smoke.py`（见 `docs/acceptance/acceptance-responses-api.md`）
-- HTTP 直连 smoke（不依赖 OpenAI SDK）：`scripts/acceptance_responses_smoke.py`
+- Responses API 基本 smoke：`tests/acceptance/openai/acceptance_openai_sdk_smoke.py`（见 `docs/acceptance/acceptance-responses-api.md`）
+- HTTP 直连 smoke（不依赖 OpenAI SDK）：`tests/acceptance/agent_api/acceptance_responses_smoke.py`
 - 本地启动（Python + uv）：
   - `cd apps/tool-runtime && uv sync && TOOL_RUNTIME_INTERNAL_KEY=... uv run tool-runtime`
   - `cd apps/agent-api && uv sync && uv run agent-api`

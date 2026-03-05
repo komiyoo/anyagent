@@ -27,4 +27,4 @@
 
 ## 决策 & 争议点
 
-- [ ] 技能选择策略：显式 mention vs 自动推荐（v0 哪些场景允许隐式）（Req: `requirements.md#req-12-6`）
+- [x] 技能选择策略：显式优先 + 隐式默认关闭（v0 `allow_implicit_invocation=false`；Req: `requirements.md#req-12-6`；Impl: `docs/architecture/decisions/skills-selection-policy.md:1`；Module: `architecture/skills`）

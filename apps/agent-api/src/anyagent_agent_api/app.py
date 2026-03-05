@@ -63,6 +63,7 @@ from .clients.openai_client import create_responses_json
 from .clients.openai_proxy import _pick_upstream_headers, proxy_responses  # noqa: PLC2701
 from .clients.tool_runtime_client import ToolsetVersionMismatch, execute_tool, fetch_manifest
 from .errors import openai_error
+from .external import create_optional_responses_router
 from .internal import create_internal_events_router, create_internal_skills_router
 from .keyed_sequencer import KeyedSequencer
 from .manifest_cache import ManifestCache
@@ -2051,5 +2052,6 @@ def create_app(settings: Settings) -> FastAPI:
 
     app.include_router(create_internal_events_router(settings))
     app.include_router(create_internal_skills_router(settings))
+    app.include_router(create_optional_responses_router(settings))
 
     return app

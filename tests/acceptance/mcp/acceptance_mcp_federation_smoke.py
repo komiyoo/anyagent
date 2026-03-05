@@ -19,8 +19,16 @@ from typing import Any
 
 
 def _bootstrap_repo_imports() -> None:
-    """Adds `packages/anyagent/src` to import path when running from repo root."""
-    repo_root = Path(__file__).resolve().parents[1]
+    """Adds `packages/anyagent/src` to import path when running from a repo checkout."""
+
+    def _find_repo_root(start_dir: Path) -> Path:
+        for candidate in (start_dir, *start_dir.parents):
+            src = candidate / "packages" / "anyagent" / "src"
+            if src.is_dir():
+                return candidate
+        raise RuntimeError(f"repo root not found from: {start_dir}")
+
+    repo_root = _find_repo_root(Path(__file__).resolve().parent)
     src = repo_root / "packages" / "anyagent" / "src"
     if str(src) not in sys.path:
         sys.path.insert(0, str(src))

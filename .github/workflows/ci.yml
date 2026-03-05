@@ -1,0 +1,38 @@
+name: anyagent-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  offline-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: |
+          uv sync --project packages/anyagent --frozen
+          uv sync --project apps/agent-api --frozen
+          uv sync --project apps/tool-runtime --frozen
+
+      - name: Docs Guardrails
+        run: bash scripts/ci/run_docs_guardrails.sh
+
+      - name: Offline Smokes
+        run: bash scripts/ci/run_offline_smokes.sh
+

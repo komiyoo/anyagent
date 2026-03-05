@@ -16,7 +16,7 @@
 
 - 协议模型（`anyagent.protocol.*`）
 - 共享运行时 primitives（tool registry/client、session key、skills 选择与注入）
-- SDK/CLI 能力（供外部项目或 app 复用）
+- Client SDK：`AnyAgent` 资源型命名空间入口（`responses` / `events` / `skills` 子命名空间，见 `docs/architecture/decisions/openai-first-api-surface.md`）
 
 示例：
 

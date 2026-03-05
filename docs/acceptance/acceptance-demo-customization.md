@@ -166,9 +166,9 @@ anyagent credential set \
 
 ```bash
 cd apps/agent-api
-uv run -s ../../scripts/acceptance_session_resume_smoke.py
-uv run -s ../../scripts/acceptance_rollout_storage_consistency_smoke.py --require-external
-uv run --env-file .env --with openai -s ../../scripts/acceptance_openai_sdk_smoke.py
+uv run -s ../../tests/acceptance/agent_api/acceptance_session_resume_smoke.py
+uv run -s ../../tests/acceptance/storage/acceptance_rollout_storage_consistency_smoke.py --require-external
+uv run --env-file .env --with openai -s ../../tests/acceptance/openai/acceptance_openai_sdk_smoke.py
 ```
 
 ## 9. 常见问题

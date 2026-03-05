@@ -7,6 +7,7 @@ __all__ = [
     "stage_events",
     "command_derivation",
     "tool_manifest_extensions",
+    "responses_optional",
 ]
 
 # Intentionally do not import submodules here:

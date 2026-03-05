@@ -49,18 +49,35 @@ sequenceDiagram
 - **Singleton**：`anyagent.agent_runtime.model_providers` 提供 `get_default_model_provider()`（避免重复初始化 SDK client）
 - **协议工具 SSOT**：SSE 解析/编码在 `anyagent.protocol.sse` 收敛（供 SDK/Server 复用）
 
-## 4) Client SDK（anyagent Python）
+## 4) Client SDK（anyagent Python）— 资源型命名空间
 
-anyagent 同时提供一个面向 **Agent API** 的 Python client（用于“接入侧 SDK 代码”复用与对齐）：
+anyagent Client SDK 采用**资源型命名空间**模式，以 `AnyAgent` 为入口，通过子命名空间组织能力（设计决策见 `docs/architecture/decisions/openai-first-api-surface.md`）：
 
-- `anyagent.agent_api_client.AnyAgentAgentAPIClient`
-  - `create_openai_clients()`：创建 OpenAI 官方 SDK `OpenAI/AsyncOpenAI`，并自动把 `base_url` 指向 `Agent API /v1`
-  - `list_events()/stream_events()`：访问 `GET /internal/events/list|stream`（用于断线补发、调试、replay 观测）
-  - `list_skills()`：访问 `GET /internal/skills/list`（用于技能披露与审计）
+```python
+client = AnyAgent(api_key=”...”, base_url=”http://127.0.0.1:8787”)
 
-说明：
+# ── OpenAI 兼容面（responses 命名空间委托 OpenAI 官方 SDK）──
+client.responses.create(...)              # POST /v1/responses
+client.responses.retrieve(response_id)    # GET /v1/responses/{id}
+client.responses.cancel(response_id)      # POST /v1/responses/{id}/cancel
 
-- 外部兼容面仍以 OpenAI 官方 SDK 为主（Responses API typed models 由官方维护）
-- anyagent client 主要解决 “anyagent 专有 internal endpoints + 正确拼接 base_url/auth” 的重复劳动
-- `/internal/events/stream` 会在 SSE 的 `id:` 字段输出事件 `seq`（Event Store 序号），SDK 会将其映射为 `StageEvent.seq`，便于断线续传与 replay 观测
+# ── AnyAgent 超集面 ──
+client.events.list(response_id)           # GET /internal/events/list
+client.events.stream(response_id)         # GET /internal/events/stream → SSEBlock
+client.events.stream_typed(response_id)   # → StageEvent typed union
+
+client.skills.list(agent_id=”main”)       # GET /internal/skills/list
+
+# ── 便捷方法：直接获取 OpenAI 官方 SDK client ──
+client.as_openai_client()                 # → openai.OpenAI
+client.as_async_openai_client()           # → openai.AsyncOpenAI
+```
+
+设计要点：
+
+- `responses` 命名空间**委托 OpenAI 官方 SDK**（Responses API typed models 由官方维护），不重复封装 HTTP 调用
+- `events` / `skills` 命名空间承载 anyagent 专有 internal endpoints
+- 每个子命名空间是轻量类，共享 `_http` / `_base_url` / `_api_key` 引用
+- `/internal/events/stream` 的 SSE `id:` 字段承载事件 `seq`（Event Store 序号），SDK 映射为 `StageEvent.seq`，便于断线续传与 replay
 - 若希望获得 tool/command 粒度的阶段性事件（stage events），见：`docs/architecture/agent-api-client-stage-events.md`
+- 入口模块：`packages/anyagent/src/anyagent/agent_api_client.py`

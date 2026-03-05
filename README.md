@@ -20,6 +20,10 @@
   - 聚焦“接入侧 SDK + 服务侧 Agent Server”统一对齐 OpenAI Responses API，并给出泳道视角与模块边界
 - [docs/architecture/apps-packages-boundary.md](docs/architecture/apps-packages-boundary.md)
   - `apps/*`（服务编排/demo）与 `packages/*`（协议/SDK/共享能力）的职责边界与收敛策略
+- [docs/architecture/decisions/README.md](docs/architecture/decisions/README.md)
+  - 架构决策记录（ADR）：接口策略、skills 策略、tool runtime 边界取舍
+- [docs/architecture/engineering/ci-pipeline.md](docs/architecture/engineering/ci-pipeline.md)
+  - CI 分层质量门（docs guardrails + offline smokes + optional online smokes）
 - [docs/acceptance/acceptance-demo-customization.md](docs/acceptance/acceptance-demo-customization.md)
   - Demo 应用级定制化实操：Agent Packs、skills、插件、凭证与最小验收闭环
 
@@ -28,6 +32,8 @@
 - [scripts/anyagent_progress.py](scripts/anyagent_progress.py)
   - 默认只汇总 `todo/*.md` 进度：展示每个模块“下一条 TODO（第几条 + file:line）”，并提示已完成条目是否缺少 `Impl/Module` 证据字段
   - 仅在需要时用 `--scan-impl` 扫描实现线索（可选）
+- [tests/README.md](tests/README.md)
+  - 测试/验收脚本索引（acceptance/smoke），按模块分层沉淀，避免平铺在 `scripts/`
 - [scripts/docs/check.py](scripts/docs/check.py)
   - 检查 Markdown 断链与 `todo/*.md` 的 `Impl:` 证据引用是否漂移（用于降低文档熵）
 - [scripts/docs/pack.py](scripts/docs/pack.py)
@@ -43,6 +49,7 @@
   - Python + uv：`/internal/tools/manifest|execute|cancel`
 - [packages/anyagent](packages/anyagent)
   - SDK/共享能力包：`anyagent.protocol.*`、`anyagent.agent_runtime.*`、`anyagent.skills.*`、`anyagent.tool_runtime.*`
+  - Client SDK：`AnyAgent` 资源型命名空间入口（`client.responses.*` / `client.events.*` / `client.skills.*`）
 
 ## 关键约定（便于跨项目复用）
 

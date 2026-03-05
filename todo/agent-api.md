@@ -47,7 +47,11 @@
   - refs: `apps/agent-api/src/anyagent_agent_api/app.py:836`
 - [x] P1 下沉工具结果组装 helper：tool runtime error 构造与 `function_call_output` 输出文本统一复用（Req: `requirements.md#req-4-5`，`requirements.md#req-5-1`；Impl: `packages/anyagent/src/anyagent/agent_runtime/tool_results.py:1`；Module: `agent-runtime/agent-api`）
   - refs: `apps/agent-api/src/anyagent_agent_api/app.py:1423`
+- [x] P1 实现可选增强 endpoint：`GET /v1/responses/{response_id}`（Req: `requirements.md#req-4-1`；Impl: `apps/agent-api/src/anyagent_agent_api/external/responses_optional.py:90`；Module: `agent-api/external`）
+  - refs: `apps/agent-api/src/anyagent_agent_api/app.py:2055`
+- [x] P1 实现可选增强 endpoint：`POST /v1/responses/{response_id}/cancel`（v0 best-effort）（Req: `requirements.md#req-4-1`；Impl: `apps/agent-api/src/anyagent_agent_api/external/responses_optional.py:108`；Module: `agent-api/external`）
+  - refs: `packages/anyagent/src/anyagent/protocol/responses_optional.py:1`
 
 ## 决策 & 争议点
 
-- [ ] Agent API 对外暴露哪些 “可选增强” endpoint（查询/取消）在 v0 是否实现（Req: `requirements.md#req-4-1`）
+- [x] Agent API 对外暴露哪些 “可选增强” endpoint（查询/取消）在 v0 是否实现：采用 OpenAI First，v0 落地 `GET /v1/responses/{id}` 与 `POST /v1/responses/{id}/cancel`（Req: `requirements.md#req-4-1`；Impl: `docs/architecture/decisions/openai-first-api-surface.md:1`；Module: `architecture/agent-api`）

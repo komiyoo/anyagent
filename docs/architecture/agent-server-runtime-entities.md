@@ -176,7 +176,7 @@
 - `STORAGE_MODE=none` 时，事件与 run 快照会按 `session_partition_key` 追加到本地 `rollout.jsonl`（写入路径判重，append-only）。
 - `STORAGE_MODE=none` 支持 `rollout*.jsonl` 轮转（按大小/时间）与有界保留，replay 默认覆盖当前与归档文件。
 - 本地支持 rollout replay CLI，按 `session_partition_key/response_id` + `last_seq` 游标回放记录。
-- 已有 smoke 验收脚本覆盖 replay 与写入门控：`scripts/acceptance_rollout_replay_smoke.py`。
+- 已有 smoke 验收脚本覆盖 replay 与写入门控：`tests/acceptance/storage/acceptance_rollout_replay_smoke.py`。
 
 证据：
 
@@ -185,7 +185,7 @@
 - 内部补发/追尾：`apps/agent-api/src/anyagent_agent_api/internal/events.py:43`、`apps/agent-api/src/anyagent_agent_api/internal/events.py:99`。
 - 本地 rollout 写入器：`apps/agent-api/src/anyagent_agent_api/storage/rollout.py:52`。
 - 本地 rollout 回放工具：`apps/agent-api/src/anyagent_agent_api/storage/rollout_replay.py:1`。
-- 轮转/恢复 smoke：`scripts/acceptance_rollout_rotation_smoke.py:1`、`scripts/acceptance_session_resume_smoke.py:1`。
+- 轮转/恢复 smoke：`tests/acceptance/storage/acceptance_rollout_rotation_smoke.py:1`、`tests/acceptance/agent_api/acceptance_session_resume_smoke.py:1`。
 
 ## 3. 关键关联键（跨层串联）
 

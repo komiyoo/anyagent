@@ -2,6 +2,11 @@
 
 本目录承载“长期维护”的系统架构说明：边界、实体、事件语义、交互契约与收敛策略。
 
+子目录（避免平铺）：
+
+- `decisions/`：架构决策记录（ADR 风格，记录取舍与边界）
+- `engineering/`：工程流程设计（例如 CI 流水线、质量门）
+
 推荐阅读顺序（从全局到局部）：
 
 1) [stateless-agent-service-architecture.md](stateless-agent-service-architecture.md)：无状态服务语义（并发分片、幂等、事件补发、慢消费者治理）
@@ -11,6 +16,8 @@
 5) [agent-server-runtime-entities.md](agent-server-runtime-entities.md)：运行时实体分层（命名/职责/边界）
 6) [agent-api-client-stage-events.md](agent-api-client-stage-events.md)：Client 阶段性事件（tool/command 粒度）
 7) [apps-packages-boundary.md](apps-packages-boundary.md)：`apps/*` vs `packages/*` 的职责边界与收敛策略
+8) [decisions/README.md](decisions/README.md)：当前已落地的架构决策与状态
+9) [engineering/README.md](engineering/README.md)：工程流程设计（CI/质量门）
 
 约定：
 

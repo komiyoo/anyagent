@@ -70,7 +70,7 @@ def _require_openai_sdk() -> Any:
                 "missing dependency: openai (Python SDK)",
                 "",
                 "推荐运行方式（临时安装，不改 lock）：",
-                "  cd apps/agent-api && uv run --with openai -s ../../scripts/acceptance_openai_sdk_smoke.py",
+                "  cd apps/agent-api && uv run --with openai -s ../../tests/acceptance/openai/acceptance_openai_sdk_smoke.py",
                 "",
                 f"import error: {e}",
             ]

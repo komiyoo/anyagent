@@ -58,7 +58,7 @@
 ## 决策 & 争议点
 
 - [x] Credential Vault 架构选型：方案 A（Tool Runtime 内置 CredentialStore + 注入）vs 方案 B（AI Gateway 代理）→ 选择方案 A（关联：`requirements.md#req-8`；决策记录：`docs/security/credential-vault.md#0.3`）
-- [ ] Admin API 是否独立服务还是嵌入 Tool Runtime（v1 先嵌入，v2 可拆分）（关联：`requirements.md#req-8`）
+- [x] Admin API 是否独立服务还是嵌入 Tool Runtime：v1 继续嵌入，v2 满足规模阈值再拆分（关联：`requirements.md#req-8`；Impl: `docs/architecture/decisions/tool-runtime-federation-v0.md:1`；Module: `architecture/security`）
 
 ## 参考
 

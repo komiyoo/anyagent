@@ -28,3 +28,9 @@
 - [x] P1 收敛 tool result helper：SDK 提供统一的工具执行结果归一化与 `function_call_output` 组装，应用层仅复用（Req: `requirements.md#req-4-5`，`requirements.md#req-5-1`；Impl: `packages/anyagent/src/anyagent/agent_runtime/tool_results.py:1`；Module: `agent_runtime`）
   - refs: `packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:180`
   - refs: `apps/agent-api/src/anyagent_agent_api/app.py:1445`
+- [x] P1 AnyAgent Client SDK 资源型命名空间设计（`AnyAgent` 入口 + `responses`/`events`/`skills` 子命名空间），`responses` 委托 OpenAI 官方 SDK（Req: `requirements.md#req-4-1`；Impl: `packages/anyagent/src/anyagent/agent_api_client.py:267`；Module: `sdk`）
+  - refs: `packages/anyagent/src/anyagent/agent_api_client.py:101`（Responses）
+  - refs: `packages/anyagent/src/anyagent/agent_api_client.py:130`（Events）
+  - refs: `packages/anyagent/src/anyagent/agent_api_client.py:254`（Skills）
+  - refs: `packages/anyagent/src/anyagent/__init__.py:1`（公共导出）
+  - refs: `docs/architecture/decisions/openai-first-api-surface.md:1`

@@ -45,15 +45,17 @@ uv run --env-file .env agent-api
 - 清理（默认 plan-only）：`POSTGRES_DSN=... uv run agent-api-retention`
 - 清理（实际执行）：`POSTGRES_DSN=... uv run agent-api-retention --apply`
 - rollout 回放：`uv run agent-api-rollout-replay --session-partition-key '<agent_id>::<session_key>' --last-seq 0`
-- session 恢复/参数绑定 smoke：`uv run --project apps/agent-api python scripts/acceptance_session_resume_smoke.py`
-- rollout 存储一致性 smoke（none vs external）：`uv run --project apps/agent-api python scripts/acceptance_rollout_storage_consistency_smoke.py --require-external`
-- rollout 轮转 smoke：`uv run --project apps/agent-api python scripts/acceptance_rollout_rotation_smoke.py`
+- session 恢复/参数绑定 smoke：`uv run --project apps/agent-api python tests/acceptance/agent_api/acceptance_session_resume_smoke.py`
+- rollout 存储一致性 smoke（none vs external）：`uv run --project apps/agent-api python tests/acceptance/storage/acceptance_rollout_storage_consistency_smoke.py --require-external`
+- rollout 轮转 smoke：`uv run --project apps/agent-api python tests/acceptance/storage/acceptance_rollout_rotation_smoke.py`
 
 ## API
 
 - `GET /healthz`
 - `GET /readyz`
 - `POST /v1/responses`
+- `GET /v1/responses/{response_id}`（可选增强：查询 response 状态/结果）
+- `POST /v1/responses/{response_id}/cancel`（可选增强：best-effort 取消）
 - `GET /internal/skills/list`（鉴权同 `/v1/responses`）
 - `GET /internal/events/list?response_id=...&last_seq=...`（按游标补发事件）
 - `GET /internal/events/stream?response_id=...&last_seq=...`（SSE：先补发再追尾）
@@ -98,6 +100,6 @@ Agent API **不信任**外部请求传入的 `tools` / `tool_choice`：
 
 - 外部 `tools[]` 仅作为 `requested_tool_names/requested_tools` 传给 Tool Runtime `manifest` 用于“期望集合/审计”
 - 最终传给模型的 `tools[]` 必须以 Tool Runtime `manifest.tools[]` 为准
-- `stream=true` 支持 server-side tool loop，但当前实现为“先缓冲上游 SSE，再一次性回放给客户端”（保证 `[DONE]` 仅出现一次）
+- `stream=true` 支持 server-side tool loop，采用 pull-based 流式转发（不预缓冲整段上游 SSE，按客户端消费速率回压）
 - 当未配置外部存储（`STORAGE_MODE=none`）时，会在本地按 `session_partition_key` 追加写入 `rollout.jsonl`（append-only，写入路径判重）
 - 同一 `session_partition_key` 会加载/回写 Session Store 快照（`runtime_config + resume_cursor + snapshot_version`），用于 Session Resume 与会话级运行参数绑定
