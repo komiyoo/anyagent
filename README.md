@@ -9,10 +9,12 @@
   - 对内：Tool Runtime 协议、Gateway 插件模型、Skills 动态披露、Multi-Agent（Codex 风格）
 - [todo/README.md](todo/README.md)
   - 按模块拆分的工程 TODO（每条任务可追溯到 `requirements.md#req-*`）
-- [docs/stateless-agent-service-architecture.md](docs/stateless-agent-service-architecture.md)
+- [docs/README.md](docs/README.md)
+  - `docs/` 目录结构与文档分层约定（长期维护文档 vs 研发草案/笔记）
+- [docs/architecture/stateless-agent-service-architecture.md](docs/architecture/stateless-agent-service-architecture.md)
   - 聚焦“服务侧并发与无状态部署”：keyed serialization、幂等、事件补发、慢消费者治理
   - 附带 OpenClaw / pi-mono 的概念对照（用于校准理解）
-- [docs/storage-minimal-design.md](docs/storage-minimal-design.md)
+- [docs/architecture/storage-minimal-design.md](docs/architecture/storage-minimal-design.md)
   - 聚焦“存储落地”：Session/Run/Event/Dedupe/Lock 的最小 schema、保留策略与一致性边界
 - [docs/architecture/responses-api-sdk-and-server.md](docs/architecture/responses-api-sdk-and-server.md)
   - 聚焦“接入侧 SDK + 服务侧 Agent Server”统一对齐 OpenAI Responses API，并给出泳道视角与模块边界
@@ -26,6 +28,12 @@
 - [scripts/anyagent_progress.py](scripts/anyagent_progress.py)
   - 默认只汇总 `todo/*.md` 进度：展示每个模块“下一条 TODO（第几条 + file:line）”，并提示已完成条目是否缺少 `Impl/Module` 证据字段
   - 仅在需要时用 `--scan-impl` 扫描实现线索（可选）
+- [scripts/docs/check.py](scripts/docs/check.py)
+  - 检查 Markdown 断链与 `todo/*.md` 的 `Impl:` 证据引用是否漂移（用于降低文档熵）
+- [scripts/docs/pack.py](scripts/docs/pack.py)
+  - 按 tags/kind/status 打包“最小文档上下文列表”，支持渐进式披露（避免一次性加载过多无关文档）
+- [scripts/docs/index.py](scripts/docs/index.py)
+  - 生成 `docs/_manifest.txt`（纯文本 docs manifest），用于高效检索与按需加载（progressive disclosure）
 
 ## 实现（Work In Progress）
 

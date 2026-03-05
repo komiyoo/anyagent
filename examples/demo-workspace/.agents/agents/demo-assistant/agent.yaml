@@ -1,0 +1,9 @@
+exposed: true
+tools:
+  requested_tool_names:
+    - core.web_fetch
+skills:
+  default_selected: []
+multiagent:
+  spawn_allow_agent_ids: ["demo-assistant"]
+

@@ -19,3 +19,12 @@
   - refs: `packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:216`
 - [x] P1 收敛文档信息架构：补充 apps/packages 职责边界与 demo 定制化实操手册（Req: `requirements.md#req-4`，`requirements.md#req-2-1`；Impl: `docs/architecture/apps-packages-boundary.md:1`；Module: `docs`）
   - refs: `docs/acceptance/acceptance-demo-customization.md:1`
+- [x] P1 收敛 OpenAI Responses 公共 helper：`tool_choice` 校验、`function_call` 提取、tool arguments 解析由 `anyagent.protocol.openai_responses` 提供单一实现（Req: `requirements.md#req-4-4`，`requirements.md#req-4-5`；Impl: `packages/anyagent/src/anyagent/protocol/openai_responses.py:46`；Module: `protocol`）
+- [x] P1 收敛 Responses body 注入 helper：skills 注入与 Agent Pack 注入共用同一实现（Req: `requirements.md#req-2-1-1`，`requirements.md#req-12-6-2`；Impl: `packages/anyagent/src/anyagent/protocol/openai_responses.py:105`；Module: `protocol/agent_runtime`）
+  - refs: `packages/anyagent/src/anyagent/agent_runtime/skills_injection.py:45`
+- [x] P1 收敛 tool-loop follow-up payload helper：SDK runtime 与 Agent API 共用下一轮 body 构造与工具白名单提取（Req: `requirements.md#req-4-5`；Impl: `packages/anyagent/src/anyagent/agent_runtime/tool_loop_payloads.py:1`；Module: `agent_runtime`）
+  - refs: `packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:131`
+  - refs: `apps/agent-api/src/anyagent_agent_api/app.py:1742`
+- [x] P1 收敛 tool result helper：SDK 提供统一的工具执行结果归一化与 `function_call_output` 组装，应用层仅复用（Req: `requirements.md#req-4-5`，`requirements.md#req-5-1`；Impl: `packages/anyagent/src/anyagent/agent_runtime/tool_results.py:1`；Module: `agent_runtime`）
+  - refs: `packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:180`
+  - refs: `apps/agent-api/src/anyagent_agent_api/app.py:1445`

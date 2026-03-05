@@ -3,19 +3,16 @@ from __future__ import annotations
 import json
 from typing import Any, Iterable
 
-from pydantic import TypeAdapter
-
 from openai.types.responses.function_tool_param import FunctionToolParam
 from openai.types.responses.response import Response
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from openai.types.responses.response_input_item_param import FunctionCallOutput
 from openai.types.responses.response_stream_event import ResponseStreamEvent
-from openai.types.responses.tool_choice_function_param import ToolChoiceFunctionParam
 
 from anyagent.mcp.manager import MCPServerManager
 from anyagent.protocol.tool_runtime import ExecuteRequest, ManifestRequest, ToolContext
 from anyagent.tool_runtime.client import ToolRuntimeClient
-from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
+from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam, parse_tool_arguments_object, validate_tool_choice
 
 from .skills_injection import inject_skills_into_responses_body
 from anyagent.skills.models import SkillPackage
@@ -28,6 +25,12 @@ from .model_providers import (
     ModelProviderInvalidRequestError,
     ModelProviderTransportError,
     ModelProviderUpstreamError,
+)
+from .tool_loop_payloads import build_tool_loop_followup_body, extract_allowed_function_tool_names
+from .tool_results import (
+    build_completed_tool_result,
+    build_error_tool_result,
+    build_function_call_output_item,
 )
 
 
@@ -53,23 +56,6 @@ def _extract_tool_names_from_request(tools: Any) -> list[str] | None:
         if isinstance(tool.name, str) and tool.name.strip():
             out.append(tool.name.strip())
     return out
-
-
-def _validate_tool_choice(tool_choice: Any, allowed_tool_names: set[str]) -> str | None:
-    if tool_choice is None:
-        return None
-    if isinstance(tool_choice, str) and tool_choice in {"auto", "none", "required"}:
-        return None
-    if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
-        try:
-            tc = TypeAdapter(ToolChoiceFunctionParam).validate_python(tool_choice)
-        except Exception:  # noqa: BLE001
-            return "invalid tool_choice"
-        name = tc.get("name")
-        if isinstance(name, str) and name in allowed_tool_names:
-            return None
-        return f"tool_choice function name not allowed: {name}"
-    return "invalid tool_choice"
 
 
 async def resolve_manifest(
@@ -125,24 +111,6 @@ async def resolve_manifest_with_mcp(
     return [*tr_tools, *mcp_tools], toolset_version
 
 
-def _parse_call_arguments_to_dict(arguments: Any) -> dict[str, Any]:
-    """Parses model tool call arguments into a JSON object for MCP tools."""
-    if isinstance(arguments, dict):
-        return arguments
-    if isinstance(arguments, str):
-        raw = arguments.strip()
-        if not raw:
-            return {}
-        try:
-            obj = json.loads(raw)
-        except Exception as e:  # noqa: BLE001
-            raise ValueError(f"invalid tool arguments json: {e}") from e
-        if not isinstance(obj, dict):
-            raise ValueError("tool arguments must be a JSON object")
-        return obj
-    raise ValueError("tool arguments must be a JSON object")
-
-
 async def run_tool_loop_nonstream(
     *,
     model_provider: ModelProvider,
@@ -167,14 +135,8 @@ async def run_tool_loop_nonstream(
         enabled_skills=enabled_skills or None,
     )
 
-    allowed_tool_names: set[str] = set()
-    for t in manifest_tools:
-        if not isinstance(t, dict) or t.get("type") != "function":
-            continue
-        name = t.get("name")
-        if isinstance(name, str) and name.strip():
-            allowed_tool_names.add(name.strip())
-    err = _validate_tool_choice(body.get("tool_choice"), allowed_tool_names)
+    allowed_tool_names = extract_allowed_function_tool_names(manifest_tools=manifest_tools)
+    err = validate_tool_choice(body.get("tool_choice"), allowed_tool_names)
     if err is not None:
         return 400, {"error": {"message": err, "type": "invalid_request_error"}}
 
@@ -215,20 +177,23 @@ async def run_tool_loop_nonstream(
 
             if tool_name.startswith("mcp."):
                 if mcp_manager is None:
-                    output_str = json.dumps(
-                        {"status": "error", "error": {"type": "mcp_error", "message": "mcp manager not configured"}},
-                        ensure_ascii=False,
+                    tool_result = build_error_tool_result(
+                        error_type="mcp_error",
+                        message="mcp manager not configured",
                     )
                 else:
                     try:
-                        output_str = await mcp_manager.call_tool(
+                        output_text = await mcp_manager.call_tool(
                             tool_name,
-                            _parse_call_arguments_to_dict(arguments),
+                            parse_tool_arguments_object(arguments),
+                        )
+                        tool_result = build_completed_tool_result(
+                            output=output_text if isinstance(output_text, str) else str(output_text)
                         )
                     except Exception as e:  # noqa: BLE001
-                        output_str = json.dumps(
-                            {"status": "error", "error": {"type": "mcp_error", "message": str(e)}},
-                            ensure_ascii=False,
+                        tool_result = build_error_tool_result(
+                            error_type="mcp_error",
+                            message=str(e),
                         )
             else:
                 tr = await tool_runtime.execute(
@@ -245,23 +210,29 @@ async def run_tool_loop_nonstream(
                     )
                 )
                 if tr.status == "completed":
-                    output_str = tr.output
+                    tool_result = build_completed_tool_result(output=tr.output)
                 else:
-                    output_str = json.dumps({"status": tr.status, "error": tr.error.model_dump()}, ensure_ascii=False)
-            tool_outputs.append({"type": "function_call_output", "call_id": call_id, "output": output_str})
+                    tool_result = {"status": tr.status, "error": tr.error.model_dump()}
+            tool_outputs.append(
+                build_function_call_output_item(
+                    call_id=call_id,
+                    tool_result=tool_result,
+                    error_format="json",
+                )
+            )
 
         if not tool_outputs:
             break
 
-        next_body: dict[str, Any] = {
-            "model": body.get("model"),
-            "previous_response_id": response_id,
-            "input": tool_outputs,
-            "tools": strip_internal_tool_fields(manifest_tools),
-            "metadata": metadata,
-        }
-        if body.get("tool_choice") is not None:
-            next_body["tool_choice"] = body.get("tool_choice")
+        next_body = build_tool_loop_followup_body(
+            previous_response_id=response_id,
+            tool_outputs=tool_outputs,
+            manifest_tools=manifest_tools,
+            metadata=metadata,
+            tool_choice=body.get("tool_choice"),
+            stream=None,
+            model=body.get("model") if isinstance(body.get("model"), str) else None,
+        )
 
         try:
             resp = await model_provider.create_response(body=next_body, idempotency_key=None)
@@ -302,14 +273,8 @@ async def run_tool_loop_stream_buffered(
         enabled_skills=enabled_skills or None,
     )
 
-    allowed_tool_names: set[str] = set()
-    for t in manifest_tools:
-        if not isinstance(t, dict) or t.get("type") != "function":
-            continue
-        name = t.get("name")
-        if isinstance(name, str) and name.strip():
-            allowed_tool_names.add(name.strip())
-    err = _validate_tool_choice(body.get("tool_choice"), allowed_tool_names)
+    allowed_tool_names = extract_allowed_function_tool_names(manifest_tools=manifest_tools)
+    err = validate_tool_choice(body.get("tool_choice"), allowed_tool_names)
     if err is not None:
         return 400, [encode_sse_event("error", json.dumps({"error": {"message": err, "type": "invalid_request_error"}}))]
 
@@ -353,20 +318,23 @@ async def run_tool_loop_stream_buffered(
 
             if tool_name.startswith("mcp."):
                 if mcp_manager is None:
-                    output_str = json.dumps(
-                        {"status": "error", "error": {"type": "mcp_error", "message": "mcp manager not configured"}},
-                        ensure_ascii=False,
+                    tool_result = build_error_tool_result(
+                        error_type="mcp_error",
+                        message="mcp manager not configured",
                     )
                 else:
                     try:
-                        output_str = await mcp_manager.call_tool(
+                        output_text = await mcp_manager.call_tool(
                             tool_name,
-                            _parse_call_arguments_to_dict(arguments),
+                            parse_tool_arguments_object(arguments),
+                        )
+                        tool_result = build_completed_tool_result(
+                            output=output_text if isinstance(output_text, str) else str(output_text)
                         )
                     except Exception as e:  # noqa: BLE001
-                        output_str = json.dumps(
-                            {"status": "error", "error": {"type": "mcp_error", "message": str(e)}},
-                            ensure_ascii=False,
+                        tool_result = build_error_tool_result(
+                            error_type="mcp_error",
+                            message=str(e),
                         )
             else:
                 tr = await tool_runtime.execute(
@@ -383,24 +351,29 @@ async def run_tool_loop_stream_buffered(
                     )
                 )
                 if tr.status == "completed":
-                    output_str = tr.output
+                    tool_result = build_completed_tool_result(output=tr.output)
                 else:
-                    output_str = json.dumps({"status": tr.status, "error": tr.error.model_dump()}, ensure_ascii=False)
-            tool_outputs.append({"type": "function_call_output", "call_id": call_id, "output": output_str})
+                    tool_result = {"status": tr.status, "error": tr.error.model_dump()}
+            tool_outputs.append(
+                build_function_call_output_item(
+                    call_id=call_id,
+                    tool_result=tool_result,
+                    error_format="json",
+                )
+            )
 
         if not tool_outputs:
             break
 
-        next_body: dict[str, Any] = {
-            "model": body.get("model"),
-            "previous_response_id": response_id,
-            "input": tool_outputs,
-            "tools": strip_internal_tool_fields(manifest_tools),
-            "metadata": metadata,
-            "stream": True,
-        }
-        if body.get("tool_choice") is not None:
-            next_body["tool_choice"] = body.get("tool_choice")
+        next_body = build_tool_loop_followup_body(
+            previous_response_id=response_id,
+            tool_outputs=tool_outputs,
+            manifest_tools=manifest_tools,
+            metadata=metadata,
+            tool_choice=body.get("tool_choice"),
+            stream=True,
+            model=body.get("model") if isinstance(body.get("model"), str) else None,
+        )
 
         try:
             events_i, completed_i = await model_provider.create_response_stream_buffered(body=next_body, idempotency_key=None)

@@ -14,6 +14,24 @@
 
 ## 2. 环境准备
 
+推荐：使用 demo 默认配置模板，复制后直接替换即可（避免逐条 `export`）：
+
+```bash
+cp apps/tool-runtime/.env.example apps/tool-runtime/.env
+cp apps/agent-api/.env.example apps/agent-api/.env
+
+# 然后编辑 apps/agent-api/.env（至少替换 OPENAI_API_KEY）
+```
+
+初始化 demo workspace（Agent Packs/skills）：
+
+```bash
+mkdir -p .runs
+cp -R examples/demo-workspace .runs/demo-workspace
+```
+
+（可选）如果你希望继续使用 `export ...` 方式，也可以按下面设置：
+
 ```bash
 export TOOL_RUNTIME_INTERNAL_KEY="dev-internal-key"
 export AGENT_API_KEY="dev-agent-api-key"
@@ -36,6 +54,8 @@ mkdir -p "$WORKSPACE_DIR/.agents/skills"
 ```
 
 ## 3. 配置一个可暴露 Agent Pack
+
+如果你已经按上面的方式复制了 `examples/demo-workspace`，这里可以跳过。
 
 写入 `agent.yaml`：
 
@@ -69,10 +89,7 @@ MD
 ```bash
 cd apps/tool-runtime
 uv sync
-TOOL_RUNTIME_INTERNAL_KEY="$TOOL_RUNTIME_INTERNAL_KEY" \
-ADMIN_API_KEY="${ADMIN_API_KEY:-}" \
-TOOL_RUNTIME_PLUGIN_ROOTS="${TOOL_RUNTIME_PLUGIN_ROOTS:-}" \
-uv run tool-runtime
+uv run --env-file .env tool-runtime
 ```
 
 终端 B：
@@ -80,14 +97,12 @@ uv run tool-runtime
 ```bash
 cd apps/agent-api
 uv sync
-AGENT_API_KEY="$AGENT_API_KEY" \
-OPENAI_API_KEY="$OPENAI_API_KEY" \
-TOOL_RUNTIME_INTERNAL_KEY="$TOOL_RUNTIME_INTERNAL_KEY" \
-WORKSPACE_DIR="$WORKSPACE_DIR" \
-uv run agent-api
+uv run --env-file .env agent-api
 ```
 
 ## 5. 发起一次带 agent_id/session_key 的请求
+
+如果你是用 `.env` 启动服务（而不是 `export AGENT_API_KEY=...`），把下面的 `$AGENT_API_KEY` 替换为 `apps/agent-api/.env` 里的值即可（默认是 `dev-agent-api-key`）。
 
 ```bash
 curl -sS "http://127.0.0.1:8787/v1/responses" \
@@ -150,9 +165,10 @@ anyagent credential set \
 ## 8. 最小自动化验证
 
 ```bash
-uv run --project apps/agent-api python scripts/acceptance_session_resume_smoke.py
-uv run --project apps/agent-api python scripts/acceptance_rollout_storage_consistency_smoke.py --require-external
-uv run --project apps/agent-api -s ../../scripts/acceptance_openai_sdk_smoke.py
+cd apps/agent-api
+uv run -s ../../scripts/acceptance_session_resume_smoke.py
+uv run -s ../../scripts/acceptance_rollout_storage_consistency_smoke.py --require-external
+uv run --env-file .env --with openai -s ../../scripts/acceptance_openai_sdk_smoke.py
 ```
 
 ## 9. 常见问题

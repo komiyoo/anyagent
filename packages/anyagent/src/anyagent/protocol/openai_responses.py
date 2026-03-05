@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, TypeAdapter
 
 from .sse import SSEEvent
 
@@ -41,6 +41,117 @@ class AnyAgentFunctionToolParam(BaseModel):
         validation_alias=AliasChoices("x-anyagent-kind", "x_anyagent_kind"),
         serialization_alias="x-anyagent-kind",
     )
+
+
+def validate_tool_choice(tool_choice: Any, allowed_tool_names: set[str]) -> str | None:
+    """Validate `tool_choice` against an allowlist and return an error message when invalid."""
+
+    if tool_choice is None:
+        return None
+    if isinstance(tool_choice, str) and tool_choice in {"auto", "none", "required"}:
+        return None
+    if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
+        try:
+            tc = TypeAdapter(ToolChoiceFunctionParam).validate_python(tool_choice)
+        except Exception:  # noqa: BLE001
+            return "invalid tool_choice"
+
+        name: str | None
+        if isinstance(tc, dict):
+            raw_name = tc.get("name")
+            name = raw_name if isinstance(raw_name, str) else None
+        else:
+            raw_name = getattr(tc, "name", None)
+            name = raw_name if isinstance(raw_name, str) else None
+
+        if isinstance(name, str) and name in allowed_tool_names:
+            return None
+        return f"tool_choice function name not allowed: {name}"
+    return "invalid tool_choice"
+
+
+def extract_function_calls_from_response_json(response_json: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract function call items from an OpenAI Responses JSON payload."""
+
+    output = response_json.get("output")
+    if not isinstance(output, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in output:
+        if isinstance(item, dict) and item.get("type") == "function_call":
+            out.append(item)
+    return out
+
+
+def parse_tool_arguments_object(arguments_json: Any) -> dict[str, Any]:
+    """Parse tool arguments into a JSON object."""
+
+    if isinstance(arguments_json, dict):
+        return arguments_json
+    if isinstance(arguments_json, str):
+        raw = arguments_json.strip()
+        if not raw:
+            return {}
+        try:
+            obj = json.loads(raw)
+        except Exception as e:  # noqa: BLE001
+            raise ValueError(f"invalid tool arguments json: {e}") from e
+        if not isinstance(obj, dict):
+            raise ValueError("tool arguments must be a JSON object")
+        return obj
+    raise ValueError("tool arguments must be a JSON object")
+
+
+def decode_completed_response_payload(data: str) -> dict[str, Any] | None:
+    """Decode one `response.completed` data payload into response JSON."""
+
+    try:
+        payload = json.loads(data)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(payload, dict):
+        return None
+    resp = payload.get("response")
+    if isinstance(resp, dict):
+        return resp
+    if isinstance(payload.get("id"), str):
+        return payload
+    return None
+
+
+def inject_text_into_responses_body(*, body: dict[str, Any], text: str, role: Literal["developer", "system"] = "developer") -> dict[str, Any]:
+    """Inject one developer/system message into Responses body input before user content."""
+
+    if not isinstance(text, str) or not text.strip():
+        return body
+
+    body2 = dict(body)
+    injection_msg = {"role": role, "content": text}
+    inp = body2.get("input")
+
+    if isinstance(inp, str):
+        body2["input"] = [injection_msg, {"role": "user", "content": inp}]
+        return body2
+
+    if inp is None:
+        body2["input"] = [injection_msg]
+        return body2
+
+    if isinstance(inp, list):
+        out = list(inp)
+        insert_at = 0
+        for i, item in enumerate(out):
+            if isinstance(item, dict) and isinstance(item.get("role"), str):
+                item_role = item["role"]
+                if item_role in {"system", "developer"}:
+                    insert_at = i + 1
+                    continue
+            break
+        out.insert(insert_at, injection_msg)
+        body2["input"] = out
+        return body2
+
+    return body
 
 # ---- Stronger types (reuse OpenAI SDK schemas) ----
 #

@@ -1,3 +1,13 @@
+<!--
+---
+doc_kind: acceptance
+status: stable
+tags: ["acceptance", "responses-api", "sse", "tool-call", "sdk"]
+summary: 用 OpenAI 官方 SDK 对接 anyagent 的 base_url，验收 Responses API（含 SSE 与 tool call）兼容面。
+req: ["requirements.md#req-9-1"]
+---
+-->
+
 # Responses API 兼容性验收清单（v0）
 
 对应需求：`requirements.md#req-9-1`
@@ -10,7 +20,7 @@
 
 如果你需要“应用级定制化（Agent Packs/skills/插件/凭证）”的一站式实操，请优先参考：
 
-- `docs/acceptance/acceptance-demo-customization.md`
+- [acceptance-demo-customization.md](acceptance-demo-customization.md)
 
 ## 0. 前置条件
 
@@ -18,6 +28,15 @@
 2. 配置鉴权：
    - Agent API：`AGENT_API_KEY`
    - Tool Runtime：`TOOL_RUNTIME_INTERNAL_KEY`
+
+推荐：直接复制 demo 默认配置模板，替换关键字段即可：
+
+```bash
+cp apps/tool-runtime/.env.example apps/tool-runtime/.env
+cp apps/agent-api/.env.example apps/agent-api/.env
+
+# 然后编辑 apps/agent-api/.env（至少替换 OPENAI_API_KEY）
+```
 
 注意：
 
@@ -37,12 +56,8 @@
 推荐直接跑仓库内 smoke（优先复用官方 SDK 的 request/stream schema）：
 
 ```bash
-export ANYAGENT_AGENT_API_BASE_URL="http://127.0.0.1:8787"
-export AGENT_API_KEY="..."
-export ANYAGENT_OPENAI_MODEL="gpt-4.1-mini"
-
 cd apps/agent-api
-uv run --with openai -s ../../scripts/acceptance_openai_sdk_smoke.py
+uv run --env-file .env --with openai -s ../../scripts/acceptance_openai_sdk_smoke.py
 ```
 
 说明：

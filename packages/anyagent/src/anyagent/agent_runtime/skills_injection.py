@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from anyagent.protocol.openai_responses import inject_text_into_responses_body
 from anyagent.skills.models import SkillPackage
 
 
@@ -65,38 +66,8 @@ def inject_skills_into_responses_body(
     if not inj_text:
         return body, [SkillInjectionWarning(skill_stable_id=None, reason="empty_injection_text")]
 
-    body2 = dict(body)
-    inp = body2.get("input")
-
-    injection_msg = {"role": role, "content": inj_text}
-
-    # input is a string => interpret as a single user message
-    if isinstance(inp, str):
-        body2["input"] = [injection_msg, {"role": "user", "content": inp}]
-        return body2, warnings
-
-    # input is missing => create a new list
-    if inp is None:
-        body2["input"] = [injection_msg]
-        return body2, warnings
-
-    # input is a list => insert before first non-(system/developer) message
-    if isinstance(inp, list):
-        out = list(inp)
-        insert_at = 0
-        for i, item in enumerate(out):
-            if isinstance(item, dict) and isinstance(item.get("role"), str):
-                r = item["role"]
-                if r in {"system", "developer"}:
-                    insert_at = i + 1
-                    continue
-            # first non-prefix item
-            break
-        out.insert(insert_at, injection_msg)
-        body2["input"] = out
-        return body2, warnings
-
-    # unsupported structure
-    warnings.append(SkillInjectionWarning(skill_stable_id=None, reason="unsupported_body.input_shape"))
-    return body, warnings
-
+    body2 = inject_text_into_responses_body(body=body, text=inj_text, role=role)
+    if body2 is body:
+        warnings.append(SkillInjectionWarning(skill_stable_id=None, reason="unsupported_body.input_shape"))
+        return body, warnings
+    return body2, warnings

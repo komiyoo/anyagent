@@ -8,6 +8,14 @@
 
 ## 启动
 
+推荐方式（可直接替换配置）：
+
+```bash
+cp .env.example .env
+uv sync
+uv run --env-file .env tool-runtime
+```
+
 环境变量：
 
 - `TOOL_RUNTIME_INTERNAL_KEY=...`（内部鉴权）

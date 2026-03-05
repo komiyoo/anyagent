@@ -1,3 +1,12 @@
+<!--
+---
+doc_kind: architecture
+status: stable
+tags: ["stateless", "concurrency", "keyed-serialization", "idempotency", "replay", "sse"]
+summary: 定义会话分片串行、幂等、事件补发与慢消费者治理的无状态 Agent 服务语义。
+---
+-->
+
 # 无状态 Agent Chat 服务并发架构（增强版）
 
 本文聚焦“服务侧”：在多实例部署下，提供端到端 `agent chat`（流式输出、工具调用、可中断/可恢复），并支持较高并发。
@@ -67,7 +76,7 @@
 - `Lock Service`：按 `session_partition_key` 加租约锁（TTL + 续租）。
 - `Event Bus`：把 Worker 产生的增量事件广播给网关（也可与事件存储合并为“事件日志 + 订阅”）。
 
-存储落地（选型、schema、TTL/保留策略、一致性边界）见：`docs/architecture/storage-minimal-design.md`。
+存储落地（选型、schema、TTL/保留策略、一致性边界）见：[storage-minimal-design.md](storage-minimal-design.md)。
 
 ### 3.3 执行语义
 

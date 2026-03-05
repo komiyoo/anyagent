@@ -36,6 +36,17 @@
   - refs: `apps/agent-api/src/anyagent_agent_api/app.py:1120`
   - refs: `packages/anyagent/src/anyagent/mcp/manager.py:16`
 - [x] P1 收敛 Tool Runtime 客户端请求构造：manifest/execute 统一使用 shared typed model（Req: `requirements.md#req-4-5`，`requirements.md#req-5-1`，`requirements.md#req-5-2`；Impl: `apps/agent-api/src/anyagent_agent_api/clients/tool_runtime_client.py:1`；Module: `agent-api`）
+- [x] P1 下沉 tool-loop 公共 helper 到 `packages/anyagent`：tool_choice 校验、function_call 提取、arguments 解析与 response_id 归一化统一复用（Req: `requirements.md#req-4-4`，`requirements.md#req-4-5`；Impl: `packages/anyagent/src/anyagent/protocol/openai_responses.py:46`；Module: `protocol/agent-api`）
+  - refs: `packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:139`
+  - refs: `apps/agent-api/src/anyagent_agent_api/app.py:1012`
+- [x] P1 下沉 session/runtime 与 Agent Pack 注入 helper：`app.py` 仅保留编排逻辑，通用纯函数移入 `agent_runtime/*`（Req: `requirements.md#req-4-6-1`，`requirements.md#req-4-6-2`，`requirements.md#req-2-1-1`；Impl: `packages/anyagent/src/anyagent/agent_runtime/session_runtime.py:1`；Module: `agent-runtime/agent-api`）
+  - refs: `packages/anyagent/src/anyagent/agent_runtime/prompt_injection.py:1`
+  - refs: `apps/agent-api/src/anyagent_agent_api/app.py:17`
+- [x] P1 继续下沉 tool-loop payload helper：`allowed_tool_names` 提取与 follow-up body 构造统一复用，并收敛 `response.completed` 解码（Req: `requirements.md#req-4-4`，`requirements.md#req-4-5`；Impl: `packages/anyagent/src/anyagent/agent_runtime/tool_loop_payloads.py:1`；Module: `agent-runtime/protocol/agent-api`）
+  - refs: `packages/anyagent/src/anyagent/protocol/openai_responses.py:105`
+  - refs: `apps/agent-api/src/anyagent_agent_api/app.py:836`
+- [x] P1 下沉工具结果组装 helper：tool runtime error 构造与 `function_call_output` 输出文本统一复用（Req: `requirements.md#req-4-5`，`requirements.md#req-5-1`；Impl: `packages/anyagent/src/anyagent/agent_runtime/tool_results.py:1`；Module: `agent-runtime/agent-api`）
+  - refs: `apps/agent-api/src/anyagent_agent_api/app.py:1423`
 
 ## 决策 & 争议点
 

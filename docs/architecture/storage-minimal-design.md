@@ -1,6 +1,16 @@
+<!--
+---
+doc_kind: architecture
+status: stable
+tags: ["storage", "event-store", "dedupe", "lock", "postgres", "redis"]
+summary: 给出无状态入口 + 可恢复执行所需的最小存储实体与一致性边界（Session/Run/Event/Dedupe/Lock）。
+req: ["requirements.md#req-3-1"]
+---
+-->
+
 # 存储层最小设计（v0）
 
-本文补齐 anyagent 在“无状态入口 + 可恢复执行”模式下所需的最小存储设计：技术选型、关键实体 schema、生命周期与一致性边界。它是 `requirements.md#req-3-1` 与 `docs/architecture/stateless-agent-service-architecture.md` 的落地补充。
+本文补齐 anyagent 在“无状态入口 + 可恢复执行”模式下所需的最小存储设计：技术选型、关键实体 schema、生命周期与一致性边界。它是 `requirements.md#req-3-1` 与 [stateless-agent-service-architecture.md](stateless-agent-service-architecture.md) 的落地补充。
 
 ## 1. 目标（Why）
 

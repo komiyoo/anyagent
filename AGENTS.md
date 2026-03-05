@@ -37,6 +37,19 @@
 
 ---
 
+### 文档系统（Docs as Harness）
+
+本仓库把“文档 + 约束 + 验收脚本”视为 agent 的 **harness**（操作系统的一部分）：就近可发现、可维护、可机械校验。
+
+- `docs/README.md` 是 `docs/` 的结构约定；每个子目录都应有自己的 `README.md` 作为 **目录级 TOC**（减少“平铺式堆叠”与检索噪音）。
+- **长期维护文档**（`docs/acceptance|security|architecture|performance/`）必须能被 TOC 找到；新增/移动文档时同步更新对应目录 `README.md`。
+- **研发草案**（`docs/_dev/`）需要显式标注状态与“毕业条件”；完成后应迁移/提炼到长期维护文档或删除归档，避免熵持续累积。
+- **第三方/个人笔记**（`docs/_notes/`）用于调研与启发，不作为产品/实现真相来源；需要落地的约束必须回写到 `requirements.md` 或对应长期维护文档。
+- 维护文档引用一致性：移动/重命名 docs 后，优先跑 `python3 scripts/docs/check.py --root .`，修复断链与 TODO 的 `Impl:` 证据引用。
+- 渐进式披露：用 `python3 scripts/docs/pack.py --tags <topic>` 先筛出“最小文档上下文列表”，再按需打开对应文档，避免一次性加载过多无关上下文。
+
+设计参考（第三方摘要）：`docs/_notes/third-party/openai/harness-engineering.md`。
+
 ## 3) 一等公民概念（First-Class Concepts）
 
 这些概念用于 **链路可观测性** 与 **可重放（replay）**，也是你在实现/排障/验收时必须对齐的术语。

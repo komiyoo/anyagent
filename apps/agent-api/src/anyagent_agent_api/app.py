@@ -14,11 +14,33 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from anyagent.mcp import MCPManagerRegistry, MCPServerManager, build_mcp_credential_resolver
-from anyagent.agent_packs import AgentCatalog, AgentPack, AgentPackError, load_agent_catalog
-from anyagent.agent_runtime import inject_skills_into_responses_body
+from anyagent.agent_packs import AgentCatalog, AgentPackError, load_agent_catalog
+from anyagent.agent_runtime import (
+    apply_runtime_config_to_body,
+    apply_session_resume_to_body,
+    build_agents_md_injection_text,
+    build_initial_session_snapshot,
+    build_next_session_snapshot,
+    build_tool_loop_followup_body,
+    build_error_tool_result,
+    build_function_call_output_item,
+    coerce_tool_result,
+    dedupe_strs,
+    extract_runtime_updates_from_request,
+    extract_allowed_function_tool_names,
+    inject_skills_into_responses_body,
+    merge_runtime_config,
+)
 from anyagent.gateway.session import SessionBindingError
 from anyagent.gateway.session import session_partition_key as build_session_partition_key
-from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam, ToolChoiceFunctionParam
+from anyagent.protocol.openai_responses import (
+    AnyAgentFunctionToolParam,
+    decode_completed_response_payload,
+    extract_function_calls_from_response_json,
+    inject_text_into_responses_body,
+    parse_tool_arguments_object,
+    validate_tool_choice,
+)
 from anyagent.protocol.command_derivation import extract_command_planned_fields, extract_command_result_fields
 from anyagent.protocol.tool_manifest_extensions import strip_internal_tool_fields, tool_kind_for_tool_name
 from anyagent.protocol.tool_runtime import PolicyHint, ToolContext
@@ -45,7 +67,7 @@ from .internal import create_internal_events_router, create_internal_skills_rout
 from .keyed_sequencer import KeyedSequencer
 from .manifest_cache import ManifestCache
 from .multiagent.manager import MultiAgentManager, stable_root_thread_id
-from anyagent.protocol.sse import encode_sse_event
+from anyagent.protocol.sse import encode_sse_event, normalize_response_id
 from anyagent.protocol.stage_events import (
     AnyAgentCommandPlannedEvent,
     AnyAgentCommandResultEvent,
@@ -61,188 +83,6 @@ from .storage import create_storage_runtime
 
 
 logger = logging.getLogger("anyagent.agent_api")
-
-
-def _dedupe_strs(values: list[str]) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for v in values:
-        if not isinstance(v, str):
-            continue
-        s = v.strip()
-        if not s or s in seen:
-            continue
-        seen.add(s)
-        out.append(s)
-    return out
-
-
-_MANAGED_RUNTIME_FIELDS: tuple[str, ...] = (
-    "model",
-    "temperature",
-    "top_p",
-    "frequency_penalty",
-    "presence_penalty",
-    "reasoning",
-)
-
-
-def _json_clone(value: Any) -> Any:
-    """Return a JSON-safe deep copy for request/session payloads."""
-
-    try:
-        return json.loads(json.dumps(value, ensure_ascii=False))
-    except Exception:  # noqa: BLE001
-        return {}
-
-
-def _extract_runtime_updates_from_request(body: dict[str, Any]) -> dict[str, Any]:
-    """Extract explicit managed runtime fields from one request body."""
-
-    out: dict[str, Any] = {}
-    for key in _MANAGED_RUNTIME_FIELDS:
-        if key in body:
-            out[key] = _json_clone(body.get(key))
-    return out
-
-
-def _merge_runtime_config(*, base_runtime_config: dict[str, Any], explicit_updates: dict[str, Any]) -> dict[str, Any]:
-    """Merge explicit request updates into session-bound runtime_config."""
-
-    merged = _json_clone(base_runtime_config if isinstance(base_runtime_config, dict) else {})
-    if not isinstance(merged, dict):
-        merged = {}
-    for key, value in explicit_updates.items():
-        merged[key] = _json_clone(value)
-    return merged
-
-
-def _apply_runtime_config_to_body(*, body: dict[str, Any], runtime_config: dict[str, Any]) -> dict[str, Any]:
-    """Apply effective runtime_config to one upstream request body (SSOT for managed fields)."""
-
-    out = dict(body)
-    for key in _MANAGED_RUNTIME_FIELDS:
-        if isinstance(runtime_config, dict) and key in runtime_config:
-            out[key] = _json_clone(runtime_config[key])
-        else:
-            out.pop(key, None)
-    return out
-
-
-def _build_initial_session_snapshot(*, runtime_config: dict[str, Any]) -> dict[str, Any]:
-    """Build the minimal v0 session snapshot structure."""
-
-    return {
-        "provider": "openai_responses",
-        "runtime_config": _json_clone(runtime_config),
-        "resume_cursor": {"last_response_id": None, "fallback_transcript_items": []},
-    }
-
-
-def _apply_session_resume_to_body(*, body: dict[str, Any], session_snapshot: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
-    """
-    Apply session resume cursor to the first upstream request body.
-
-    Rule: only fill `previous_response_id` when caller did not explicitly provide it.
-    """
-
-    out = dict(body)
-    prev = out.get("previous_response_id")
-    if isinstance(prev, str) and prev.strip():
-        return out, prev.strip()
-
-    resume_cursor = session_snapshot.get("resume_cursor")
-    if not isinstance(resume_cursor, dict):
-        return out, None
-    last_response_id = resume_cursor.get("last_response_id")
-    if isinstance(last_response_id, str) and last_response_id.strip():
-        out["previous_response_id"] = last_response_id.strip()
-        return out, last_response_id.strip()
-    return out, None
-
-
-def _build_next_session_snapshot(
-    *,
-    previous_snapshot: dict[str, Any],
-    runtime_config: dict[str, Any],
-    resume_last_response_id: str | None,
-    run_response_id: str | None,
-    last_event_seq: int | None,
-) -> dict[str, Any]:
-    """Build the next snapshot JSON for CAS update at run-final time."""
-
-    out = _json_clone(previous_snapshot if isinstance(previous_snapshot, dict) else {})
-    if not isinstance(out, dict):
-        out = {}
-    out["provider"] = "openai_responses"
-    out["runtime_config"] = _json_clone(runtime_config if isinstance(runtime_config, dict) else {})
-    resume = out.get("resume_cursor")
-    if not isinstance(resume, dict):
-        resume = {}
-    if isinstance(resume_last_response_id, str) and resume_last_response_id.strip():
-        resume["last_response_id"] = resume_last_response_id.strip()
-    out["resume_cursor"] = resume
-    out["last_run"] = {
-        "response_id": run_response_id,
-        "last_event_seq": int(last_event_seq) if isinstance(last_event_seq, int) else 0,
-        "updated_at_ms": int(time() * 1000),
-    }
-    return out
-
-
-def _build_agents_md_injection_text(pack: AgentPack) -> str:
-    body = (pack.agents_md_text or "").rstrip()
-    return "\n".join(
-        [
-            "[anyagent Agent Pack]",
-            f"agent_id: {pack.agent_id}",
-            f"path: {pack.agents_md_path}",
-            f"sha256: {pack.agents_md_sha256}",
-            "",
-            "[AGENTS_BODY]",
-            body,
-        ]
-    ).rstrip()
-
-
-def _inject_text_into_responses_body(*, body: dict[str, Any], text: str, role: str = "developer") -> dict[str, Any]:
-    """
-    将一段文本以 developer/system 角色注入到 OpenAI Responses 风格 body.input 中。
-    注入位置：在第一个非 system/developer message 之前。
-    """
-    if not isinstance(text, str) or not text.strip():
-        return body
-
-    body2 = dict(body)
-    injection_msg = {"role": role, "content": text}
-    inp = body2.get("input")
-
-    # input is a string => interpret as a single user message
-    if isinstance(inp, str):
-        body2["input"] = [injection_msg, {"role": "user", "content": inp}]
-        return body2
-
-    # input is missing => create a new list
-    if inp is None:
-        body2["input"] = [injection_msg]
-        return body2
-
-    # input is a list => insert before first non-(system/developer) message
-    if isinstance(inp, list):
-        out = list(inp)
-        insert_at = 0
-        for i, item in enumerate(out):
-            if isinstance(item, dict) and isinstance(item.get("role"), str):
-                r = item["role"]
-                if r in {"system", "developer"}:
-                    insert_at = i + 1
-                    continue
-            break
-        out.insert(insert_at, injection_msg)
-        body2["input"] = out
-        return body2
-
-    return body
 
 
 def _get_agent_id(request: Request, metadata: dict[str, Any] | None) -> str:
@@ -262,64 +102,6 @@ def _get_session_key(metadata: dict[str, Any] | None) -> str | None:
     if isinstance(v, str) and v.strip():
         return v.strip()
     return None
-
-
-def _validate_tool_choice(tool_choice: Any, allowed_tool_names: set[str]) -> str | None:
-    if tool_choice is None:
-        return None
-    if isinstance(tool_choice, str) and tool_choice in {"auto", "none", "required"}:
-        return None
-    if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
-        try:
-            tc = ToolChoiceFunctionParam.model_validate(tool_choice)
-        except Exception:  # noqa: BLE001
-            return "invalid tool_choice"
-        if tc.name in allowed_tool_names:
-            return None
-        return f"tool_choice function name not allowed: {tc.name}"
-    return "invalid tool_choice"
-
-
-def _extract_function_calls(response_json: dict[str, Any]) -> list[dict[str, Any]]:
-    output = response_json.get("output")
-    if not isinstance(output, list):
-        return []
-    out: list[dict[str, Any]] = []
-    for item in output:
-        if isinstance(item, dict) and item.get("type") == "function_call":
-            out.append(item)
-    return out
-
-
-def _normalize_response_id(payload: Any, canonical_response_id: str) -> None:
-    if isinstance(payload, dict):
-        if payload.get("object") == "response" and isinstance(payload.get("id"), str):
-            payload["id"] = canonical_response_id
-        if isinstance(payload.get("response_id"), str):
-            payload["response_id"] = canonical_response_id
-        resp = payload.get("response")
-        if isinstance(resp, dict) and isinstance(resp.get("id"), str):
-            resp["id"] = canonical_response_id
-        for v in payload.values():
-            _normalize_response_id(v, canonical_response_id)
-    elif isinstance(payload, list):
-        for v in payload:
-            _normalize_response_id(v, canonical_response_id)
-
-
-def _parse_tool_arguments_object(arguments_json: Any) -> dict[str, Any]:
-    """Parses tool call arguments into a JSON object for MCP execution."""
-    if isinstance(arguments_json, dict):
-        return arguments_json
-    if isinstance(arguments_json, str):
-        raw = arguments_json.strip()
-        if not raw:
-            return {}
-        obj = json.loads(raw)
-        if not isinstance(obj, dict):
-            raise ValueError("tool arguments must be a JSON object")
-        return obj
-    raise ValueError("tool arguments must be a JSON object")
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -543,8 +325,8 @@ def create_app(settings: Settings) -> FastAPI:
         session_record = await storage.session_store.get(session_partition_key=session_partition_key)
         if session_record is None:
             # Initialize a new session snapshot based on explicit request fields.
-            init_runtime = _extract_runtime_updates_from_request(body)
-            init_snapshot = _build_initial_session_snapshot(runtime_config=init_runtime)
+            init_runtime = extract_runtime_updates_from_request(body)
+            init_snapshot = build_initial_session_snapshot(runtime_config=init_runtime)
             session_record = await storage.session_store.create_if_absent(
                 session_partition_key=session_partition_key,
                 agent_id=agent_id,
@@ -555,15 +337,15 @@ def create_app(settings: Settings) -> FastAPI:
         session_snapshot = session_record.snapshot_json if isinstance(session_record.snapshot_json, dict) else {}
         session_snapshot_version = int(getattr(session_record, "snapshot_version", 0) or 0)
 
-        explicit_runtime_updates = _extract_runtime_updates_from_request(body)
+        explicit_runtime_updates = extract_runtime_updates_from_request(body)
         base_runtime_config = session_snapshot.get("runtime_config") if isinstance(session_snapshot.get("runtime_config"), dict) else {}
-        effective_runtime_config = _merge_runtime_config(
+        effective_runtime_config = merge_runtime_config(
             base_runtime_config=base_runtime_config if isinstance(base_runtime_config, dict) else {},
             explicit_updates=explicit_runtime_updates,
         )
 
-        body = _apply_runtime_config_to_body(body=body, runtime_config=effective_runtime_config)
-        body, resume_previous_response_id = _apply_session_resume_to_body(body=body, session_snapshot=session_snapshot)
+        body = apply_runtime_config_to_body(body=body, runtime_config=effective_runtime_config)
+        body, resume_previous_response_id = apply_session_resume_to_body(body=body, session_snapshot=session_snapshot)
 
         def _trace_id_from_context(context_obj: dict[str, Any] | None) -> str | None:
             if not isinstance(context_obj, dict):
@@ -807,7 +589,7 @@ def create_app(settings: Settings) -> FastAPI:
                 persist_response_id=persist_response_id,
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,
-                tr=tr if isinstance(tr, dict) else {},
+                tr=coerce_tool_result(tr),
                 meta_model=meta_model,
                 trace_id=trace_id,
             )
@@ -821,7 +603,7 @@ def create_app(settings: Settings) -> FastAPI:
             """Persist session snapshot with CAS (best-effort, non-idempotent runs included)."""
 
             try:
-                next_snapshot = _build_next_session_snapshot(
+                next_snapshot = build_next_session_snapshot(
                     previous_snapshot=session_snapshot,
                     runtime_config=effective_runtime_config,
                     resume_last_response_id=resume_last_response_id,
@@ -859,7 +641,7 @@ def create_app(settings: Settings) -> FastAPI:
         ) -> None:
             """Persist run final state and advance session snapshot (prefer atomic external path)."""
 
-            next_snapshot = _build_next_session_snapshot(
+            next_snapshot = build_next_session_snapshot(
                 previous_snapshot=session_snapshot,
                 runtime_config=effective_runtime_config,
                 resume_last_response_id=resume_last_response_id,
@@ -954,7 +736,7 @@ def create_app(settings: Settings) -> FastAPI:
         requested_from_request = [t.name for t in (request_tools or [])]
         requested_from_agent = pack.spec.tools.requested_tool_names or []
         requested_from_skills = requested_tool_names_for_skills(selected_skills)
-        requested_tool_names = _dedupe_strs([*requested_from_agent, *requested_from_skills, *requested_from_request])
+        requested_tool_names = dedupe_strs([*requested_from_agent, *requested_from_skills, *requested_from_request])
 
         requested_tools = [t.model_dump(exclude_none=True) for t in (request_tools or [])] or None
 
@@ -971,8 +753,8 @@ def create_app(settings: Settings) -> FastAPI:
 
         pol = pack.spec.tools.policy
         if pol is not None:
-            allow = _dedupe_strs(pol.allow_tools or [])
-            deny = _dedupe_strs(pol.deny_tools or [])
+            allow = dedupe_strs(pol.allow_tools or [])
+            deny = dedupe_strs(pol.deny_tools or [])
             if allow or deny:
                 tool_context = ToolContext.model_validate(
                     {
@@ -1055,14 +837,8 @@ def create_app(settings: Settings) -> FastAPI:
             manifest_tools = [*manifest_tools, *[t.model_dump(exclude_none=True) for t in system_tools]]
         system_tool_names = {t.name for t in system_tools}
 
-        allowed_tool_names: set[str] = set()
-        for t in manifest_tools:
-            if not isinstance(t, dict) or t.get("type") != "function":
-                continue
-            name = t.get("name")
-            if isinstance(name, str) and name.strip():
-                allowed_tool_names.add(name.strip())
-        err = _validate_tool_choice(body.get("tool_choice"), allowed_tool_names)
+        allowed_tool_names = extract_allowed_function_tool_names(manifest_tools=manifest_tools)
+        err = validate_tool_choice(body.get("tool_choice"), allowed_tool_names)
         if err is not None:
             return openai_error(400, message=err, type_="invalid_request_error")
 
@@ -1071,7 +847,7 @@ def create_app(settings: Settings) -> FastAPI:
         body["tools"] = strip_internal_tool_fields(manifest_tools)
 
         # --- inject Agent Pack instructions + selected skills (developer role) ---
-        body = _inject_text_into_responses_body(body=body, text=_build_agents_md_injection_text(pack), role="developer")
+        body = inject_text_into_responses_body(body=body, text=build_agents_md_injection_text(pack), role="developer")
         body, skill_injection_warnings = inject_skills_into_responses_body(body=body, selected_skills=selected_skills, role="developer")
         if skill_decisions or skill_injection_warnings:
             logger.info(
@@ -1135,7 +911,7 @@ def create_app(settings: Settings) -> FastAPI:
                         manifest_tools,
                     )
                 try:
-                    output = await mcp_manager.call_tool(tool_name, _parse_tool_arguments_object(arguments_json))
+                    output = await mcp_manager.call_tool(tool_name, parse_tool_arguments_object(arguments_json))
                     return (
                         {"status": "completed", "output": output, "meta": {"duration_ms": 0, "output_truncated": False}},
                         toolset_version,
@@ -1499,20 +1275,6 @@ def create_app(settings: Settings) -> FastAPI:
                                 cur_event: str | None = None
                                 cur_data: list[str] = []
 
-                                def _decode_completed_response(data: str) -> dict[str, Any] | None:
-                                    try:
-                                        payload = json.loads(data)
-                                    except Exception:  # noqa: BLE001
-                                        return None
-                                    if not isinstance(payload, dict):
-                                        return None
-                                    resp = payload.get("response")
-                                    if isinstance(resp, dict):
-                                        return resp
-                                    if isinstance(payload.get("id"), str):
-                                        return payload
-                                    return None
-
                                 async def flush_block() -> None:
                                     nonlocal completed, cur_event, cur_data, final_response, last_upstream_response_id
 
@@ -1530,14 +1292,14 @@ def create_app(settings: Settings) -> FastAPI:
                                         return
 
                                     if ev == "response.completed":
-                                        completed = _decode_completed_response(data)
+                                        completed = decode_completed_response_payload(data)
                                         if completed is None:
                                             return
                                         rid = completed.get("id")
                                         if isinstance(rid, str) and rid.strip():
                                             last_upstream_response_id = rid.strip()
                                         # If function calls exist, tool loop will continue; do not emit this completion.
-                                        if _extract_function_calls(completed):
+                                        if extract_function_calls_from_response_json(completed):
                                             return
 
                                         try:
@@ -1552,7 +1314,7 @@ def create_app(settings: Settings) -> FastAPI:
                                                 last_event_seq = max(last_event_seq, seq)
                                             return
 
-                                        _normalize_response_id(payload, canonical_response_id)
+                                        normalize_response_id(payload, canonical_response_id)
                                         data2 = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
                                         seq = await _append_internal_event_best_effort(
                                             response_id=canonical_response_id,
@@ -1563,7 +1325,7 @@ def create_app(settings: Settings) -> FastAPI:
                                             last_event_seq = max(last_event_seq, seq)
 
                                     if ev == "response.completed" and isinstance(completed, dict):
-                                        _normalize_response_id(completed, canonical_response_id)
+                                        normalize_response_id(completed, canonical_response_id)
                                         final_response = completed
 
                                 try:
@@ -1588,7 +1350,7 @@ def create_app(settings: Settings) -> FastAPI:
                                 if not isinstance(upstream_response_id, str) or not upstream_response_id:
                                     break
 
-                                calls = _extract_function_calls(completed)
+                                calls = extract_function_calls_from_response_json(completed)
                                 output = completed.get("output")
                                 output_item_count = len(output) if isinstance(output, list) else None
                                 if not calls:
@@ -1658,13 +1420,16 @@ def create_app(settings: Settings) -> FastAPI:
                                                 deadline_ms=30_000,
                                              )
                                     except Exception as e:  # noqa: BLE001
-                                        tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
+                                        tr = build_error_tool_result(
+                                            error_type="tool_runtime_error",
+                                            message=str(e),
+                                        )
 
                                     await _append_stage_tool_result_best_effort(
                                         persist_response_id=canonical_response_id,
                                         tool_call_id=call_id,
                                         tool_name=tool_name,
-                                        tr=tr if isinstance(tr, dict) else {},
+                                        tr=coerce_tool_result(tr),
                                         trace_id=trace_id,
                                     )
 
@@ -1673,29 +1438,29 @@ def create_app(settings: Settings) -> FastAPI:
                                         turn_index=iters,
                                         tool_call_id=call_id,
                                         tool_name=tool_name,
-                                        tr=tr if isinstance(tr, dict) else {},
+                                        tr=coerce_tool_result(tr),
                                     )
 
-                                    if tr.get("status") == "completed" and isinstance(tr.get("output"), str):
-                                        output_str = tr["output"]
-                                    else:
-                                        output_str = str({"error": tr.get("error"), "status": tr.get("status")})
-
-                                    tool_outputs.append({"type": "function_call_output", "call_id": call_id, "output": output_str})
+                                    tool_outputs.append(
+                                        build_function_call_output_item(
+                                            call_id=call_id,
+                                            tool_result=coerce_tool_result(tr),
+                                            error_format="repr",
+                                        )
+                                    )
 
                                 if not tool_outputs:
                                     break
 
-                                next_body: dict[str, Any] = {
-                                    "previous_response_id": upstream_response_id,
-                                    "input": tool_outputs,
-                                    "tools": strip_internal_tool_fields(manifest_tools),
-                                    "metadata": body.get("metadata"),
-                                    "stream": True,
-                                }
-                                if body.get("tool_choice") is not None:
-                                    next_body["tool_choice"] = body.get("tool_choice")
-                                cur_body = _apply_runtime_config_to_body(body=next_body, runtime_config=effective_runtime_config)
+                                next_body = build_tool_loop_followup_body(
+                                    previous_response_id=upstream_response_id,
+                                    tool_outputs=tool_outputs,
+                                    manifest_tools=manifest_tools,
+                                    metadata=body.get("metadata"),
+                                    tool_choice=body.get("tool_choice"),
+                                    stream=True,
+                                )
+                                cur_body = apply_runtime_config_to_body(body=next_body, runtime_config=effective_runtime_config)
 
                             async def _run_all() -> None:
                                 try:
@@ -1753,20 +1518,6 @@ def create_app(settings: Settings) -> FastAPI:
                 max_iters = 8
 
                 canonical_response_id = f"resp_anyagent_{uuid4().hex}"
-
-                def _decode_completed_response(data: str) -> dict[str, Any] | None:
-                    try:
-                        payload = json.loads(data)
-                    except Exception:  # noqa: BLE001
-                        return None
-                    if not isinstance(payload, dict):
-                        return None
-                    resp = payload.get("response")
-                    if isinstance(resp, dict):
-                        return resp
-                    if isinstance(payload.get("id"), str):
-                        return payload
-                    return None
 
                 async def _openai_stream_response(*, body2: dict[str, Any], forward_idempotency_key: bool) -> httpx.Response:
                     url = str(settings.openai_base_url).rstrip("/") + "/responses"
@@ -1842,7 +1593,7 @@ def create_app(settings: Settings) -> FastAPI:
                                 return
 
                             if ev == "response.completed":
-                                completed = _decode_completed_response(data)
+                                completed = decode_completed_response_payload(data)
                                 if completed is None:
                                     return
                                 response_id = completed.get("id")
@@ -1850,7 +1601,7 @@ def create_app(settings: Settings) -> FastAPI:
                                     return
                                 last_upstream_response_id = response_id
 
-                                calls = _extract_function_calls(completed)
+                                calls = extract_function_calls_from_response_json(completed)
                                 if calls:
                                     # intermediate completion: do not forward; tool loop will continue
                                     return
@@ -1868,7 +1619,7 @@ def create_app(settings: Settings) -> FastAPI:
                                 yield encode_sse_event(ev, data)
                                 return
 
-                            _normalize_response_id(payload, canonical_response_id)
+                            normalize_response_id(payload, canonical_response_id)
                             yield encode_sse_event(ev, json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
 
                         try:
@@ -1902,7 +1653,7 @@ def create_app(settings: Settings) -> FastAPI:
                         if not isinstance(response_id, str) or not response_id:
                             break
 
-                        calls = _extract_function_calls(completed)
+                        calls = extract_function_calls_from_response_json(completed)
                         output = completed.get("output")
                         output_item_count = len(output) if isinstance(output, list) else None
                         if not calls:
@@ -1964,49 +1715,52 @@ def create_app(settings: Settings) -> FastAPI:
                                         deadline_ms=30_000,
                                     )
                             except httpx.HTTPError as e:
-                                tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
+                                tr = build_error_tool_result(
+                                    error_type="tool_runtime_error",
+                                    message=str(e),
+                                )
                             except ToolsetVersionMismatch as e:
-                                tr = {
-                                    "status": "error",
-                                    "error": {
-                                        "type": "tool_runtime_error",
-                                        "code": "toolset_version_mismatch",
-                                        "message": str(e),
-                                        "retryable": True,
-                                    },
-                                }
+                                tr = build_error_tool_result(
+                                    error_type="tool_runtime_error",
+                                    code="toolset_version_mismatch",
+                                    message=str(e),
+                                    retryable=True,
+                                )
                             except Exception as e:  # noqa: BLE001
-                                tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
+                                tr = build_error_tool_result(
+                                    error_type="tool_runtime_error",
+                                    message=str(e),
+                                )
 
                             await _rollout_tool_call_completed(
                                 response_id=canonical_response_id,
                                 turn_index=iters,
                                 tool_call_id=call_id,
                                 tool_name=tool_name,
-                                tr=tr if isinstance(tr, dict) else {},
+                                tr=coerce_tool_result(tr),
                             )
 
-                            if tr.get("status") == "completed" and isinstance(tr.get("output"), str):
-                                output_str = tr["output"]
-                            else:
-                                output_str = str({"error": tr.get("error"), "status": tr.get("status")})
-
-                            tool_outputs.append({"type": "function_call_output", "call_id": call_id, "output": output_str})
+                            tool_outputs.append(
+                                build_function_call_output_item(
+                                    call_id=call_id,
+                                    tool_result=coerce_tool_result(tr),
+                                    error_format="repr",
+                                )
+                            )
 
                         if not tool_outputs:
                             break
 
-                        next_body: dict[str, Any] = {
-                            "previous_response_id": response_id,
-                            "input": tool_outputs,
-                            "tools": strip_internal_tool_fields(manifest_tools),
-                            "metadata": body.get("metadata"),
-                            "stream": True,
-                        }
-                        if body.get("tool_choice") is not None:
-                            next_body["tool_choice"] = body.get("tool_choice")
+                        next_body = build_tool_loop_followup_body(
+                            previous_response_id=response_id,
+                            tool_outputs=tool_outputs,
+                            manifest_tools=manifest_tools,
+                            metadata=body.get("metadata"),
+                            tool_choice=body.get("tool_choice"),
+                            stream=True,
+                        )
 
-                        cur_body = _apply_runtime_config_to_body(body=next_body, runtime_config=effective_runtime_config)
+                        cur_body = apply_runtime_config_to_body(body=next_body, runtime_config=effective_runtime_config)
 
                     await _persist_session_snapshot_only(
                         run_response_id=canonical_response_id,
@@ -2062,7 +1816,7 @@ def create_app(settings: Settings) -> FastAPI:
                 response_id = resp_json.get("id")
                 if not isinstance(response_id, str) or not response_id:
                     break
-                calls = _extract_function_calls(resp_json)
+                calls = extract_function_calls_from_response_json(resp_json)
                 rollout_response_id = idem_response_id if isinstance(idem_response_id, str) and idem_response_id else response_id
                 await _rollout_turn_started(
                     response_id=rollout_response_id,
@@ -2143,26 +1897,29 @@ def create_app(settings: Settings) -> FastAPI:
                                 deadline_ms=30_000,
                             )
                     except httpx.HTTPError as e:
-                        tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
+                        tr = build_error_tool_result(
+                            error_type="tool_runtime_error",
+                            message=str(e),
+                        )
                     except ToolsetVersionMismatch as e:
-                        tr = {
-                            "status": "error",
-                            "error": {
-                                "type": "tool_runtime_error",
-                                "code": "toolset_version_mismatch",
-                                "message": str(e),
-                                "retryable": True,
-                            },
-                        }
+                        tr = build_error_tool_result(
+                            error_type="tool_runtime_error",
+                            code="toolset_version_mismatch",
+                            message=str(e),
+                            retryable=True,
+                        )
                     except Exception as e:  # noqa: BLE001
-                        tr = {"status": "error", "error": {"type": "tool_runtime_error", "message": str(e)}}
+                        tr = build_error_tool_result(
+                            error_type="tool_runtime_error",
+                            message=str(e),
+                        )
 
                     if idempotency_key is not None and idem_created and isinstance(idem_response_id, str) and idem_response_id:
                         await _append_stage_tool_result_best_effort(
                             persist_response_id=idem_response_id,
                             tool_call_id=call_id,
                             tool_name=tool_name,
-                            tr=tr if isinstance(tr, dict) else {},
+                            tr=coerce_tool_result(tr),
                             trace_id=trace_id,
                         )
 
@@ -2171,28 +1928,29 @@ def create_app(settings: Settings) -> FastAPI:
                         turn_index=iters,
                         tool_call_id=call_id,
                         tool_name=tool_name,
-                        tr=tr if isinstance(tr, dict) else {},
+                        tr=coerce_tool_result(tr),
                     )
-                    if tr.get("status") == "completed" and isinstance(tr.get("output"), str):
-                        output_str = tr["output"]
-                    else:
-                        output_str = str({"error": tr.get("error"), "status": tr.get("status")})
-
-                    tool_outputs.append({"type": "function_call_output", "call_id": call_id, "output": output_str})
+                    tool_outputs.append(
+                        build_function_call_output_item(
+                            call_id=call_id,
+                            tool_result=coerce_tool_result(tr),
+                            error_format="repr",
+                        )
+                    )
 
                 if not tool_outputs:
                     break
 
-                next_body: dict[str, Any] = {
-                    "previous_response_id": response_id,
-                    "input": tool_outputs,
-                    "tools": strip_internal_tool_fields(manifest_tools),
-                    "metadata": body.get("metadata"),
-                }
-                if body.get("tool_choice") is not None:
-                    next_body["tool_choice"] = body.get("tool_choice")
+                next_body = build_tool_loop_followup_body(
+                    previous_response_id=response_id,
+                    tool_outputs=tool_outputs,
+                    manifest_tools=manifest_tools,
+                    metadata=body.get("metadata"),
+                    tool_choice=body.get("tool_choice"),
+                    stream=None,
+                )
 
-                next_body = _apply_runtime_config_to_body(body=next_body, runtime_config=effective_runtime_config)
+                next_body = apply_runtime_config_to_body(body=next_body, runtime_config=effective_runtime_config)
                 status_code, resp_json = await create_responses_json(
                     client=request.app.state.http,
                     request=request,
@@ -2207,7 +1965,7 @@ def create_app(settings: Settings) -> FastAPI:
             if idempotency_key is not None and idem_created and isinstance(idem_response_id, str) and idem_response_id and isinstance(resp_json, dict):
                 upstream_final_response_id = resp_json.get("id") if isinstance(resp_json.get("id"), str) else None
                 try:
-                    _normalize_response_id(resp_json, idem_response_id)
+                    normalize_response_id(resp_json, idem_response_id)
                 except Exception:  # noqa: BLE001
                     pass
 

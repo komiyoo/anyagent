@@ -4,6 +4,15 @@
 
 ## 启动
 
+推荐方式（可直接替换配置）：
+
+```bash
+cp .env.example .env
+# 然后编辑 .env（至少替换 OPENAI_API_KEY）
+uv sync
+uv run --env-file .env agent-api
+```
+
 1. 准备环境变量（示例）：
 
 - `AGENT_API_KEY=...`（对外鉴权）

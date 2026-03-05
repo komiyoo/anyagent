@@ -33,7 +33,7 @@
 - 二次校验：不信任 Agent API/Gateway 的输入（尤其是 tool policy 与 tool name）
 - 工具执行：对 arguments 做 schema 校验、执行超时控制、输出截断、错误分层
 - 一致性：用 `toolset_version` 做乐观一致性校验（mismatch 返回 409）
-- **凭证注入**（v1 新增）：Tool Runtime 是唯一可以 resolve 凭证明文的组件，在 handler 执行前自动注入，handler 执行后丢弃（详见 `docs/security/credential-vault.md`）
+- **凭证注入**（v1 新增）：Tool Runtime 是唯一可以 resolve 凭证明文的组件，在 handler 执行前自动注入，handler 执行后丢弃（详见 [credential-vault.md](credential-vault.md)）
 
 ### 1.4 Credential Vault / CredentialStore（v1 新增：凭证存储面）
 
@@ -187,4 +187,4 @@ v1 新增审计字段（凭证操作）：
 - `actor`：操作发起方（`admin_api` / `agent:{agent_id}` / `tool_runtime:internal`）
 - 注意：`resolve` 操作的审计可选（高频，建议仅在 debug 模式开启）
 
-详细设计见：`docs/security/credential-vault.md`
+详细设计见：[credential-vault.md](credential-vault.md)

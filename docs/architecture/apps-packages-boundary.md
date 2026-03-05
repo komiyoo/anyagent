@@ -50,6 +50,18 @@
   - SSOT：`packages/anyagent/src/anyagent/protocol/tool_runtime.py`
 - Agent API -> Tool Runtime 的 manifest/execute 请求体构造改为 shared typed model（减少手写 payload 分叉）：
   - `apps/agent-api/src/anyagent_agent_api/clients/tool_runtime_client.py`
+- OpenAI Responses tool-loop 公共 helper（`tool_choice` 校验、`function_call` 提取、arguments 解析）下沉到 protocol 层复用：
+  - `packages/anyagent/src/anyagent/protocol/openai_responses.py`
+  - 消费方：`apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
+- Tool-loop follow-up payload 构造与工具名白名单提取下沉到 `agent_runtime`：
+  - `packages/anyagent/src/anyagent/agent_runtime/tool_loop_payloads.py`
+  - 消费方：`apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
+- 工具执行结果标准化（错误结构、`function_call_output` 序列化）下沉到 `agent_runtime`：
+  - `packages/anyagent/src/anyagent/agent_runtime/tool_results.py`
+  - 消费方：`apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
+- `response.completed` 事件 payload 解码收敛到 protocol helper，避免 app 内重复定义：
+  - `packages/anyagent/src/anyagent/protocol/openai_responses.py`
+  - 消费方：`apps/agent-api/src/anyagent_agent_api/app.py`
 
 ## 5. 允许的“非重复”差异
 
@@ -60,3 +72,24 @@
 - 与部署形态绑定的设置项与服务级异常映射
 
 这类能力可以保留在 `apps/*`，但其输入/输出协议模型仍必须复用 `packages`。
+
+## 6. 设计模式与文件层级建议
+
+### 分层模式（推荐）
+
+- `protocol/*`：Wire-level contract（请求/响应/SSE/字段校验/轻量 payload helper）
+- `agent_runtime/*`：运行时编排 primitives（manifest/tool-loop/session runtime/prompt 组装）
+- `apps/*`：HTTP orchestration（鉴权、存储、并发控制、落库与审计）
+
+### 文件层级收敛准则
+
+- 协议形态相关工具（例如 `tool_choice` 校验、`function_call` 提取、body 注入）优先放在 `anyagent.protocol.openai_responses`。
+- 与会话状态绑定的纯函数（runtime config merge、session snapshot build/resume）放在 `anyagent.agent_runtime.session_runtime`。
+- 业务提示拼接类逻辑（Agent Pack 注入文本）放在 `anyagent.agent_runtime.prompt_injection`，避免塞进 `app.py`。
+- 工具执行结果归一化（`status/error/output` 与 `function_call_output` 组装）放在 `anyagent.agent_runtime.tool_results`，应用层只做编排与审计。
+
+### 模式收益
+
+- 减少“同一规则在 app + sdk + runtime 三处重复实现”的漂移风险。
+- `app.py` 保持 orchestration 角色，方便后续拆分 controller/flow。
+- 未来做多服务/多 SDK 时，复用路径与责任边界更稳定。

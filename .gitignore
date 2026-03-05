@@ -1,6 +1,7 @@
 .venv
 __pycache__
 *.pyc
+.env
 plugins/**/config.json
 .cloud/
 .runs/

@@ -1,3 +1,13 @@
+<!--
+---
+doc_kind: security
+status: stable
+tags: ["security", "audit", "logging", "tool-runtime", "sensitive-data"]
+summary: 定义 tool_execute 审计留痕的结构化字段、脱敏与关联键（audit_ref/trace_id/response_id）。
+req: ["requirements.md#req-5-13", "requirements.md#req-8"]
+---
+-->
+
 # 审计与留痕（v0：结构化日志）
 
 对应需求：`requirements.md#req-5-13`、`requirements.md#req-8`

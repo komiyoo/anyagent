@@ -1,0 +1,29 @@
+# anyagent docs manifest v1
+# fields: path<TAB>doc_kind<TAB>status<TAB>tags(comma)<TAB>summary<TAB>req(comma)
+# regenerate: python3 scripts/docs/index.py --root .
+
+docs/AGENTS.md	harness	stable		本文件的目的：让 agent 在编辑 `docs/**` 时有**就近**可发现的写作/维护约束，避免文档系统熵增。	
+docs/README.md	docs	stable		本仓库的 `docs/` 同时承载两类内容：	
+docs/_dev/README.md	dev	wip		`docs/_dev/` 用于研发过程中的对齐与沉淀（Draft/WIP）。这里的内容**不保证长期稳定**，也不作为实现真相来源。	
+docs/_dev/multi-agent/multi-agent-entities.md	dev	wip		对应需求：`requirements.md#req-13-2`、`requirements.md#req-13-4`	
+docs/_dev/multi-agent/multi-agent-v0.md	dev	wip		对应需求：`requirements.md#req-13-1`、`requirements.md#req-13-4`、`requirements.md#req-13-5`	
+docs/_dev/multi-agent/responses-compat.md	dev	wip		对应需求：`requirements.md#req-13-7`	
+docs/acceptance/README.md	acceptance	stable		本目录用于“可复现、可验收”的最小闭环：一条命令/一组步骤，验证某个对外契约或关键链路。	
+docs/acceptance/acceptance-demo-customization.md	acceptance	stable		对应需求：`requirements.md#req-2`、`requirements.md#req-5`、`requirements.md#req-12`	
+docs/acceptance/acceptance-gateway-e2e.md	acceptance	stable		对应需求：`requirements.md#req-9-2`	
+docs/acceptance/acceptance-responses-api.md	acceptance	stable	acceptance,responses-api,sdk,sse,tool-call	用 OpenAI 官方 SDK 对接 anyagent 的 base_url，验收 Responses API（含 SSE 与 tool call）兼容面。	requirements.md#req-9-1
+docs/architecture/README.md	architecture	stable		本目录承载“长期维护”的系统架构说明：边界、实体、事件语义、交互契约与收敛策略。	
+docs/architecture/agent-api-client-stage-events.md	architecture	stable		目标：让内部封装的 `anyagent` Python client SDK 能以“阶段性结果”形式向上层返回更细粒度的运行进度，用于：	
+docs/architecture/agent-server-runtime-entities.md	architecture	stable		本文梳理 anyagent `agent-api + tool-runtime` 在 2026-03-04 当前代码中的运行时实体定义与层级关系，并对照 Codex 的 `Connection -> Thread -> Turn -> Item -> ToolCall` 体系，统一术语语义。	
+docs/architecture/apps-packages-boundary.md	architecture	stable		对应需求：`requirements.md#req-4`、`requirements.md#req-5`、`requirements.md#req-12`	
+docs/architecture/responses-api-sdk-and-server.md	architecture	stable		目标：让 **接入侧（Agent SDK）** 与 **服务侧（Agent Server）** 都围绕 OpenAI **Responses API**（`POST /v1/responses` + SSE）形成一个稳定、可复用、类型清晰的接口面。	
+docs/architecture/skills-tool-runtime-interaction.md	architecture	stable		对应需求：`requirements.md#req-12-8`	
+docs/architecture/stateless-agent-service-architecture.md	architecture	stable	concurrency,idempotency,keyed-serialization,replay,sse,stateless	定义会话分片串行、幂等、事件补发与慢消费者治理的无状态 Agent 服务语义。	
+docs/architecture/storage-minimal-design.md	architecture	stable	dedupe,event-store,lock,postgres,redis,storage	给出无状态入口 + 可恢复执行所需的最小存储实体与一致性边界（Session/Run/Event/Dedupe/Lock）。	requirements.md#req-3-1
+docs/performance/load-testing-baseline.md	performance	stable		对应需求：`requirements.md#req-7`	
+docs/security/README.md	security	stable		本目录承载安全相关的“长期维护”约束：威胁模型、权限边界、sandbox、安全审计与凭证管理。	
+docs/security/audit-logging.md	security	stable	audit,logging,security,sensitive-data,tool-runtime	定义 tool_execute 审计留痕的结构化字段、脱敏与关联键（audit_ref/trace_id/response_id）。	requirements.md#req-5-13,requirements.md#req-8
+docs/security/credential-vault.md	security	stable		对应需求：`requirements.md#req-8`、`requirements.md#req-5-9`	
+docs/security/sandbox-security.md	security	stable		对应需求：`requirements.md#req-5-5`、`requirements.md#req-8`	
+docs/security/security-threat-model.md	security	stable		对应需求：`requirements.md#req-8`	
+docs/security/tool-policy.md	security	stable		对应需求：`requirements.md#req-5-10`、`requirements.md#req-8`	
