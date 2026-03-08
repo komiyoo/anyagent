@@ -7,6 +7,13 @@ anyagent 是一个“可作为基础设施复用”的 Agent 服务体系，解�
 1. 对外提供 **OpenAI SDK Responses API 兼容** 的服务端接口（`POST /v1/responses` + SSE streaming），使任意客户端可以用 OpenAI 官方 SDK 方式接入，并获得端到端 agent loop 体验（含工具调用）。
 2. 提供一个 **Gateway 组件**，用于接入飞书/Discord/Telegram 等平台机器人，把平台的可操作能力以“工具”注入到 agent loop 中（例如飞书：群联系人信息、云文档创建/修改等）。
 
+### 0.0.1 仓库边界说明（当前拆分）
+
+- 本文描述的是 **anyagent 整体系统**（SDK + Agent API + Tool Runtime + Gateway + Multi-Agent）的需求边界，而不只是当前仓库中的文件集合。
+- 当前仓库 `anyagent/` 主要承载 SDK、协议模型、共享运行时能力与架构文档。
+- 可运行参考实现、demo workspace 与应用层验收已迁到同级项目 `../anyagent-apps/`。
+- 因此：本文保留 Agent Server 语义是刻意设计；但在阅读实现证据时，需要区分“当前仓库代码”与“同级参考实现”。
+
 ### 0.1 交付形态（面向多项目复用的“SDK 优先”）
 
 你的诉求是“多个业务项目复用同一套基础设施”，并且：
@@ -33,12 +40,13 @@ anyagent 是一个“可作为基础设施复用”的 Agent 服务体系，解�
     - （可选）放入共享 skills packs：`.agents/skills/`（跨 agent 复用）
     - 挂载平台 connector（飞书/Discord/TG 等）
 
-建议的仓库结构（示意，不绑定语言）：
+建议的仓库结构（示意，不绑定语言；当前实现已按 SDK 仓库 + 场景实践仓库拆分）：
 
 ```text
-anyagent/
+anyagent/                        # 当前仓库：SDK / protocol / shared runtime / docs
   packages/
     anyagent/                    # 单一 SDK 包：agent_runtime/protocol/gateway/skills/tool_runtime
+anyagent-apps/                   # 同级项目：reference implementation / demo / acceptance
   apps/
     agent-api/                   # Reference: /v1/responses hosting（Ingress 无状态 + Worker 执行）
     gateway/                     # Reference: feishu/discord/tg connectors + platform message rendering
@@ -190,7 +198,7 @@ anyagent v0 必须支持通过“配置目录”定义可对外提供服务的 a
 - `skills`
   - `default_selected?: string[]`：该 agent 的默认技能集合（开箱即用，不要求调用方每次都传 `metadata.skills`）。
     - 元素既可为 skill name（唯一匹配时生效），也可为 `skill://.../SKILL.md` 形式的路径引用（见 12.6.1）。
-  - `disabled_paths?: string[]`（可选）：禁用某些 skill path（见 12.3）。
+  - `disabled_paths?: string[]`（可选）：禁用某些 skills；配置时填写 **skill name**，运行时解析为当前可见 skill 的稳定标识（见 12.3）。
 - `multiagent`
   - `spawn_allow_agent_ids?: string[]`：该 agent 允许 spawn 的目标 agents（agent_id 列表）。
     - 默认空/缺省表示“禁止 spawn”。
@@ -1152,15 +1160,16 @@ anyagent 需要定义 skills 搜索路径（roots），并在加载时标注 sco
 去重与优先级：
 
 - 同一个 `path_to_skills_md` 只加载一次
-- 同名技能允许存在多个来源，但对 UI 展示与选择必须提供稳定 key（见 12.6）
+- 同名技能默认**不允许并存**；按 scope/root 优先级保留一份可见项（`Agent > Repo > Admin > System > User`），其余记入加载 errors 供审计
 
 <a id="req-12-3"></a>
 
 ### 12.3 Skills Enable/Disable（动态披露前提）
 
-参考 Codex 的做法（基于 path 的 enable/disable），anyagent v0 也要支持禁用 skills：
+参考 Codex 的做法，anyagent v0 也要支持禁用 skills：
 
-- 禁用粒度：以 `SKILL.md` 的绝对路径为 key（或其 canonicalized 路径）
+- 配置粒度：以 **skill name** 为 key；服务端在当前可见 skills 集合上解析到唯一 stable_id
+- 内部执行粒度：仍以被解析后的 `SKILL.md` canonical path / stable_id 为 key
 - 配置来源：
   - `User` 配置层（全局禁用某些技能）
   - `SessionFlags`（会话级动态禁用/启用，优先级高于 User）
@@ -1279,7 +1288,7 @@ anyagent v0 的要求：
 
 - `GET /internal/skills/list?session_key=...`
   - 返回 `skills[]`：包含 `name/description/short_description/interface/dependencies/scope/path/enabled`
-  - 返回 `disabled_paths[]` 与 `errors[]`（加载失败原因，类似 Codex）
+  - 返回 `disabled_paths[]`（服务端解析后的 stable_id/path）与 `errors[]`（加载失败原因，类似 Codex）
 
 注意：
 

@@ -16,7 +16,7 @@
 
 为避免平铺式堆叠，`docs/` 按“语义用途”分层：
 
-- `docs/acceptance/`：验收清单与可复现手册（含 demo 定制化说明 [acceptance-demo-customization.md](acceptance/acceptance-demo-customization.md)）
+- `docs/acceptance/`：当前仓库的验收入口说明（SDK-only）；运行型场景验收已迁到同级项目 `../anyagent-apps/docs/acceptance/`
 - `docs/security/`：威胁模型、sandbox 安全、tool policy、审计留痕、凭证管理（Credential Vault）
 - `docs/architecture/`：总体架构与关键子系统交互（skills/tool-runtime、stateless 语义、存储设计等）
   - `docs/architecture/decisions/`：架构决策记录（ADR，记录取舍和边界）

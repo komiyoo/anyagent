@@ -2,6 +2,8 @@
 
 本目录用于用 **Markdown checkbox** 维护 anyagent 的工程任务，并且让每条任务都能追溯到需求文档 `requirements.md` 的稳定锚点（方案 B）。
 
+说明：当前仓库聚焦 SDK / protocol / shared runtime；`agent-api`、`tool-runtime`、storage、应用层验收等运行型参考实现已迁到同级项目 `../anyagent-apps`。因此 `todo/*.md` 仍保留系统模块语义，但 `Impl:` 证据允许指向 `../anyagent-apps/...`。
+
 ## 约定
 
 ### 1) 单一真源（Single Source of Truth）
@@ -35,7 +37,7 @@
 
 其中：
 
-- `Impl:`：实现证据，推荐写成 `path:line`（例如 `apps/agent-api/src/server.ts:42`）
+- `Impl:`：实现证据，推荐写成 `path:line`（例如 `packages/anyagent/src/anyagent/cli.py:1` 或 `../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1`）
 - `Module:`：模块名（例如 `agent-api/tool-runtime/gateway/skills/multi-agent/security/tests/concurrency`）
 
 可选标签（用方括号即可，便于全文检索）：
@@ -51,6 +53,8 @@
 - 迁移时强制补齐 `Req: requirements.md#req-*`（或明确写 `TBD` 并说明原因），避免后续断链与“无法验收”。
 
 ## 模块文件
+
+说明：其中 `agent-api` / `tool-runtime` / `storage` / `tests-acceptance` 等模块，在当前阶段通常对应同级项目 `../anyagent-apps` 的实现与验收；当前仓库主要维护其需求、协议、共享能力与证据索引。
 
 - `todo/backlog.md`：未分配/待分流的事项收集箱（先收集，再迁移到具体模块）
 - `todo/agent-api.md`：对外 Responses API 兼容（对应 `requirements.md#req-4`）

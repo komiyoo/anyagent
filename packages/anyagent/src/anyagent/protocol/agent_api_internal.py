@@ -38,6 +38,7 @@ class InternalEventsListResponse(BaseModel):
     events: list[InternalEventItem] = Field(default_factory=list)
     done: bool
     run_status: str | None = None
+    effective_run_status: str | None = None
 
 
 class InternalSkillListItem(BaseModel):
@@ -73,4 +74,3 @@ class InternalSkillsListResponse(BaseModel):
     disabled_paths: list[str] = Field(default_factory=list)
     load_errors: list[InternalSkillLoadError] = Field(default_factory=list)
     skills: list[InternalSkillListItem] = Field(default_factory=list)
-

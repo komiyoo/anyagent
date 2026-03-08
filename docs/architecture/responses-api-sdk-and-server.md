@@ -54,28 +54,39 @@ sequenceDiagram
 anyagent Client SDK 采用**资源型命名空间**模式，以 `AnyAgent` 为入口，通过子命名空间组织能力（设计决策见 `docs/architecture/decisions/openai-first-api-surface.md`）：
 
 ```python
-client = AnyAgent(api_key=”...”, base_url=”http://127.0.0.1:8787”)
+from anyagent import AnyAgent
 
-# ── OpenAI 兼容面（responses 命名空间委托 OpenAI 官方 SDK）──
-client.responses.create(...)              # POST /v1/responses
-client.responses.retrieve(response_id)    # GET /v1/responses/{id}
-client.responses.cancel(response_id)      # POST /v1/responses/{id}/cancel
+client = AnyAgent(api_key="...", base_url="http://127.0.0.1:8787")
 
-# ── AnyAgent 超集面 ──
-client.events.list(response_id)           # GET /internal/events/list
-client.events.stream(response_id)         # GET /internal/events/stream → SSEBlock
-client.events.stream_typed(response_id)   # → StageEvent typed union
+# ── OpenAI 兼容面（优先使用 OpenAI 官方 SDK）──
+# sync
+oa = client.openai                        # → 缓存的 openai.OpenAI(base_url=.../v1)
+resp = oa.responses.create(...)           # POST /v1/responses
+resp2 = oa.responses.retrieve(resp.id)    # GET /v1/responses/{id}
 
-client.skills.list(agent_id=”main”)       # GET /internal/skills/list
+# async
+oaa = client.async_openai                 # → 缓存的 openai.AsyncOpenAI(base_url=.../v1)
+resp3 = await oaa.responses.create(...)   # POST /v1/responses
 
-# ── 便捷方法：直接获取 OpenAI 官方 SDK client ──
-client.as_openai_client()                 # → openai.OpenAI
-client.as_async_openai_client()           # → openai.AsyncOpenAI
+# ── 可选增强：AnyAgent response async helpers（返回 OpenAI-compatible Response payload）──
+payload = await client.responses.retrieve(resp.id)    # GET /v1/responses/{id}
+payload2 = await client.responses.cancel(resp.id)     # POST /v1/responses/{id}/cancel
+
+# ── AnyAgent 超集面（internal endpoints）──
+events = await client.events.list(resp.id)            # GET /internal/events/list
+async for ev in client.events.stream_typed(resp.id):  # GET /internal/events/stream → StageEvent
+    ...
+
+skills = await client.skills.list(agent_id="main")    # GET /internal/skills/list
 ```
 
 设计要点：
 
-- `responses` 命名空间**委托 OpenAI 官方 SDK**（Responses API typed models 由官方维护），不重复封装 HTTP 调用
+- `AnyAgent` 维持单一入口类；不额外拆 `AnyAgentSync` / `AsyncAnyAgent`，避免 sync/async 两套命名空间长期漂移
+- `client.openai` / `client.async_openai` 是主入口：缓存 OpenAI 官方 SDK client，承载 `responses.create/stream/retrieve/cancel`
+- `as_openai_client()` / `as_async_openai_client()` 保留为显式工厂，用于调用方需要全新 SDK client 实例的场景
+- `client.responses.*` 只保留 AnyAgent 自己补充的 async helper（`retrieve/cancel/retrieve_typed`），避免复制 `create/stream` 等 fast-moving 官方 SDK 能力
+- 可选增强 endpoint（`GET/POST /v1/responses/{id}`）用于兼容 OpenAI SDK 的 `responses.retrieve/cancel`
 - `events` / `skills` 命名空间承载 anyagent 专有 internal endpoints
 - 每个子命名空间是轻量类，共享 `_http` / `_base_url` / `_api_key` 引用
 - `/internal/events/stream` 的 SSE `id:` 字段承载事件 `seq`（Event Store 序号），SDK 映射为 `StageEvent.seq`，便于断线续传与 replay

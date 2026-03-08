@@ -111,5 +111,5 @@ Agent API 在内存里做短 TTL 缓存，减少同参数重复请求的 manifes
 
 - 输出字段包含：
   - `stable_id`/`name`/`description`/`short_description`/`scope`
-  - `enabled`（基于 AgentSpec `disabled_paths` 的 enablement 计算）
+  - `enabled`（基于 AgentSpec `disabled_paths` 中的 skill name 解析后计算）
   - `requested_tool_names`（来自 skill `dependencies.tools` 映射）

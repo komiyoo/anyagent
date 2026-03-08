@@ -18,7 +18,7 @@
 
 - `docs/**` 内部引用：优先用 **相对路径** Markdown 链接（可点击），例如 `[storage-minimal-design.md](architecture/storage-minimal-design.md)`。
 - 仓库根目录（如 `README.md`）引用 docs：用 `docs/...` 形式的仓库相对路径链接，例如 `docs/README.md`。
-- “证据引用”（面向可复盘的实现证据）：使用 `path:line`（例如 `apps/agent-api/src/.../app.py:42`），放在反引号里，避免与文档链接混淆。
+- “证据引用”（面向可复盘的实现证据）：使用 `path:line`（例如 `../anyagent-apps/apps/agent-api/src/.../app.py:42` 或 `packages/anyagent/src/...:42`），放在反引号里，避免与文档链接混淆。
 
 ## YAML 元信息（Front Matter，可选）
 

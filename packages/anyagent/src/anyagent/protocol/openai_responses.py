@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, TypeAdapter
@@ -117,6 +118,36 @@ def decode_completed_response_payload(data: str) -> dict[str, Any] | None:
     if isinstance(payload.get("id"), str):
         return payload
     return None
+
+
+OpenAIResponseStatus: TypeAlias = Literal["completed", "failed", "in_progress", "cancelled", "queued", "incomplete"]
+
+
+def build_minimal_openai_response_json(
+    *,
+    response_id: str,
+    status: OpenAIResponseStatus,
+    created_at_s: float | None = None,
+    model: str = "unknown",
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: object = "none",
+    parallel_tool_calls: bool = False,
+    output: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build a minimal OpenAI `Response` JSON payload for retrieve/cancel compatibility."""
+
+    created_at = float(created_at_s) if isinstance(created_at_s, (int, float)) else float(time.time())
+    return {
+        "id": str(response_id),
+        "object": "response",
+        "created_at": created_at,
+        "model": str(model),
+        "output": list(output) if isinstance(output, list) else [],
+        "parallel_tool_calls": bool(parallel_tool_calls),
+        "tool_choice": tool_choice,
+        "tools": list(tools) if isinstance(tools, list) else [],
+        "status": str(status),
+    }
 
 
 def inject_text_into_responses_body(*, body: dict[str, Any], text: str, role: Literal["developer", "system"] = "developer") -> dict[str, Any]:

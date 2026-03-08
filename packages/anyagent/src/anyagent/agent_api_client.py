@@ -3,9 +3,10 @@ from __future__ import annotations
 """
 anyagent Client SDK — 资源型命名空间入口。
 
-提供 ``AnyAgent`` 入口类，通过子命名空间组织能力：
+提供 ``AnyAgent`` 入口类，通过子命名空间与缓存属性组织能力：
 
-- ``client.responses`` — OpenAI Responses API 兼容面（委托 OpenAI 官方 SDK）
+- ``client.openai`` / ``client.async_openai`` — OpenAI 官方 SDK client（缓存属性）
+- ``client.responses`` — AnyAgent 补充的 `/v1/responses/{id}` async helpers
 - ``client.events``    — 内部观测 / replay（/internal/events/*）
 - ``client.skills``    — 技能发现（/internal/skills/list）
 
@@ -95,11 +96,11 @@ class _Namespace:
 
 
 # ---------------------------------------------------------------------------
-# client.responses — OpenAI Responses API 兼容面
+# client.responses — AnyAgent optional response helpers
 # ---------------------------------------------------------------------------
 
 class Responses(_Namespace):
-    """OpenAI Responses API compatible operations (``/v1/responses``)."""
+    """Async helpers for AnyAgent response query/cancel endpoints."""
 
     async def retrieve(self, response_id: str) -> dict[str, Any]:
         """Query response status or final payload via ``GET /v1/responses/{response_id}``."""
@@ -271,7 +272,11 @@ class AnyAgent:
 
         client = AnyAgent(api_key="...", base_url="http://127.0.0.1:8787")
 
-        # OpenAI compatible
+        # OpenAI-compatible primary path
+        resp = client.openai.responses.create(...)
+        async_resp = await client.async_openai.responses.create(...)
+
+        # AnyAgent async helpers for optional endpoints
         resp = await client.responses.retrieve(response_id)
         await client.responses.cancel(response_id)
 
@@ -297,22 +302,44 @@ class AnyAgent:
 
         self._base_url = base
         self._api_key = api_key
+        self._openai_client: OpenAI | None = None
+        self._async_openai_client: AsyncOpenAI | None = None
 
         self.responses = Responses(**shared)
         self.events = Events(**shared)
         self.skills = Skills(**shared)
 
+    def _openai_base_url(self) -> str:
+        """Return normalized OpenAI SDK base URL for this AnyAgent server."""
+        if self._base_url.endswith("/v1"):
+            return self._base_url
+        return f"{self._base_url}/v1"
+
+    @property
+    def openai(self) -> "OpenAI":
+        """Return a cached OpenAI SDK sync client bound to this AnyAgent server."""
+        if self._openai_client is None:
+            self._openai_client = self.as_openai_client()
+        return self._openai_client
+
+    @property
+    def async_openai(self) -> "AsyncOpenAI":
+        """Return a cached OpenAI SDK async client bound to this AnyAgent server."""
+        if self._async_openai_client is None:
+            self._async_openai_client = self.as_async_openai_client()
+        return self._async_openai_client
+
     def as_openai_client(self) -> "OpenAI":
-        """Create an OpenAI official SDK client pointing to this anyagent server."""
+        """Create a new OpenAI SDK sync client pointing to this AnyAgent server."""
         from openai import OpenAI
 
-        return OpenAI(api_key=self._api_key, base_url=f"{self._base_url}/v1")
+        return OpenAI(api_key=self._api_key, base_url=self._openai_base_url())
 
     def as_async_openai_client(self) -> "AsyncOpenAI":
-        """Create an async OpenAI official SDK client pointing to this anyagent server."""
+        """Create a new OpenAI SDK async client pointing to this AnyAgent server."""
         from openai import AsyncOpenAI
 
-        return AsyncOpenAI(api_key=self._api_key, base_url=f"{self._base_url}/v1")
+        return AsyncOpenAI(api_key=self._api_key, base_url=self._openai_base_url())
 
 
 # ---------------------------------------------------------------------------

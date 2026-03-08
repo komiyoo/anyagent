@@ -6,3 +6,4 @@ plugins/**/config.json
 .cloud/
 .runs/
 .cache/
+.vscode/

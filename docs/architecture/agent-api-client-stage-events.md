@@ -1,7 +1,7 @@
 <!--
 Single Source of Truth:
 - External API contract: requirements.md#req-4 (Responses API) / requirements.md#req-4-4 (SSE)
-- Internal events transport: apps/agent-api/src/anyagent_agent_api/internal/events.py
+- Internal events transport: ../anyagent-apps/apps/agent-api/src/anyagent_agent_api/internal/events.py
 - Tool audit logging fields: docs/security/audit-logging.md
 -->
 

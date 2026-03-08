@@ -227,13 +227,13 @@ v0 推荐默认值（可配置）：
 
 Agent API 提供一个 Postgres 清理脚本（默认 **plan-only**，不会写库；需要显式 `--apply` 才会执行）：
 
-- `apps/agent-api/src/anyagent_agent_api/storage/retention.py`
-- CLI：`agent-api-retention`（见 `apps/agent-api/pyproject.toml`）
+- `../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/retention.py`
+- CLI：`agent-api-retention`（见 `../anyagent-apps/apps/agent-api/pyproject.toml`）
 
 执行示例：
 
-- 预估下一批次影响（不写库）：`POSTGRES_DSN=... uv run --project apps/agent-api agent-api-retention`
-- 实际执行（分批提交）：`POSTGRES_DSN=... uv run --project apps/agent-api agent-api-retention --apply`
+- 预估下一批次影响（不写库）：`POSTGRES_DSN=... uv run --project ../anyagent-apps/apps/agent-api agent-api-retention`
+- 实际执行（分批提交）：`POSTGRES_DSN=... uv run --project ../anyagent-apps/apps/agent-api agent-api-retention --apply`
 
 最小语义：
 

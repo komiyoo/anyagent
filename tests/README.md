@@ -1,11 +1,11 @@
 # tests（测试脚本索引）
 
-本目录用于放置**可执行的测试/验收脚本**（以 acceptance/smoke 为主），避免把测试脚本平铺在 `scripts/` 下导致检索噪音与结构熵增加。
+本仓库当前仅保留面向 `packages/anyagent` 的可执行测试/验收脚本（以 acceptance/smoke 为主），避免把测试脚本平铺在 `scripts/` 下导致检索噪音与结构熵增加。
 
 ## 目录
 
 - [acceptance/README.md](acceptance/README.md)
-  - 面向协议/存储/会话/MCP 等关键链路的离线 smoke，以及少量可选的在线（依赖 OpenAI SDK/外部服务）验收脚本
+  - 面向 SDK 协议解析、Client surface 与 MCP federation 的离线 smoke
 
 ## 运行方式
 
@@ -16,5 +16,4 @@
 bash scripts/ci/run_offline_smokes.sh
 ```
 
-更详细的验收说明见 `docs/acceptance/*`。
-
+需要 `agent-api` / `tool-runtime` / storage / OpenAI 兼容面的集成验收，请到同级项目 `../anyagent-apps`。

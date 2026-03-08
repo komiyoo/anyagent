@@ -2,6 +2,8 @@
 
 对应需求：`requirements.md#req-4`、`requirements.md#req-5`、`requirements.md#req-12`
 
+说明：当前仓库只保留 `packages/anyagent`；本文中的 `apps/*` 指同级参考实现项目 `../anyagent-apps/apps/*`。
+
 ## 1. 目标
 
 本文件用于收敛 anyagent 仓库中的模块职责，避免“服务实现”和“共享 SDK/协议”重复演化，确保：
@@ -32,8 +34,8 @@
 
 示例：
 
-- Agent API 对外接口与会话编排：`apps/agent-api/src/anyagent_agent_api/app.py`
-- Tool Runtime 执行路由与审计：`apps/tool-runtime/src/anyagent_tool_runtime/http/app.py`
+- Agent API 对外接口与会话编排：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py`
+- Tool Runtime 执行路由与审计：`../anyagent-apps/apps/tool-runtime/src/anyagent_tool_runtime/http/app.py`
 
 ## 3. 收敛策略（Protocol-First）
 
@@ -46,22 +48,22 @@
 ## 4. 当前已收敛项（2026-03-05）
 
 - Tool Runtime HTTP 入参/出参模型由 app 本地定义收敛为复用协议模型：
-  - `apps/tool-runtime/src/anyagent_tool_runtime/http/api_models.py`
+  - `../anyagent-apps/apps/tool-runtime/src/anyagent_tool_runtime/http/api_models.py`
   - SSOT：`packages/anyagent/src/anyagent/protocol/tool_runtime.py`
 - Agent API -> Tool Runtime 的 manifest/execute 请求体构造改为 shared typed model（减少手写 payload 分叉）：
-  - `apps/agent-api/src/anyagent_agent_api/clients/tool_runtime_client.py`
+  - `../anyagent-apps/apps/agent-api/src/anyagent_agent_api/clients/tool_runtime_client.py`
 - OpenAI Responses tool-loop 公共 helper（`tool_choice` 校验、`function_call` 提取、arguments 解析）下沉到 protocol 层复用：
   - `packages/anyagent/src/anyagent/protocol/openai_responses.py`
-  - 消费方：`apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
+  - 消费方：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
 - Tool-loop follow-up payload 构造与工具名白名单提取下沉到 `agent_runtime`：
   - `packages/anyagent/src/anyagent/agent_runtime/tool_loop_payloads.py`
-  - 消费方：`apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
+  - 消费方：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
 - 工具执行结果标准化（错误结构、`function_call_output` 序列化）下沉到 `agent_runtime`：
   - `packages/anyagent/src/anyagent/agent_runtime/tool_results.py`
-  - 消费方：`apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
+  - 消费方：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
 - `response.completed` 事件 payload 解码收敛到 protocol helper，避免 app 内重复定义：
   - `packages/anyagent/src/anyagent/protocol/openai_responses.py`
-  - 消费方：`apps/agent-api/src/anyagent_agent_api/app.py`
+  - 消费方：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py`
 
 ## 5. 允许的“非重复”差异
 

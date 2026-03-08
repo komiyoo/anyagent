@@ -41,7 +41,7 @@ policy 通过 `context.policy` 传入 Tool Runtime（字段名对齐 `requiremen
 
 说明：
 
-- `core.web_search` 在需求里被列为默认可允许的 core 工具之一，但当前 v0 仅内置 `core.web_fetch`；是否引入 search 取决于外部搜索能力与配额治理。
+- `core.web_search` / `core.web_fetch` 当前都作为默认可允许的内置 core 工具存在；是否可执行仍受 Tool Runtime policy 与凭证配置共同约束。
 
 ## 4. Agent API 的职责（policy hint 生成）
 

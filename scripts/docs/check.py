@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 """
-Checks Markdown links and TODO evidence references for drift.
+Checks Markdown links, inline file references, and TODO evidence for drift.
 
 This script is intentionally lightweight (stdlib only) so it can be used as a
 mechanical guardrail to reduce doc entropy over time.
@@ -12,11 +12,46 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from pathlib import PurePosixPath
 
 
 _MD_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+_INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
 _IMPL_PATH_LINE_RE = re.compile(r"([A-Za-z0-9_./-]+):([0-9]{1,9})")
+_CODE_PATH_LINE_RE = re.compile(
+    r"(?<![A-Za-z0-9_])"
+    r"((?:\.\./|\./)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+)"
+    r"(?::([0-9]{1,9}))?"
+    r"(?![A-Za-z0-9_])"
+)
 _MANIFEST_REL = Path("docs/_manifest.txt")
+_SKIP_DIR_NAMES = {
+    ".cache",
+    ".git",
+    ".hg",
+    ".idea",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".runs",
+    ".svn",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+}
+_REPO_TOP_LEVEL_NAMES = {
+    ".agents",
+    ".github",
+    "apps",
+    "docs",
+    "examples",
+    "packages",
+    "plugins",
+    "scripts",
+    "tests",
+    "todo",
+}
 
 
 def _is_external_link(target: str) -> bool:
@@ -31,17 +66,13 @@ def _is_external_link(target: str) -> bool:
 def _iter_markdown_files(root: Path) -> list[Path]:
     candidates: list[Path] = []
 
-    for path in [root / "README.md", root / "AGENTS.md"]:
-        if path.exists():
-            candidates.append(path)
-
-    for base in ["docs", "todo", "apps", "packages", "plugins"]:
-        base_dir = root / base
-        if not base_dir.exists():
+    for md_path in root.rglob("*.md"):
+        if not md_path.is_file():
             continue
-        candidates.extend(p for p in base_dir.rglob("*.md") if p.is_file())
+        if any(part in _SKIP_DIR_NAMES for part in md_path.parts):
+            continue
+        candidates.append(md_path)
 
-    # stable order for reproducible output
     return sorted(set(candidates))
 
 
@@ -174,6 +205,130 @@ def _count_file_lines(path: Path) -> int:
         return sum(1 for _ in f)
 
 
+def _resolve_reference_path(root: Path, owner_path: Path, raw_path: str) -> Path | None:
+    candidates = [
+        (root / raw_path).resolve(),
+        (owner_path.parent / raw_path).resolve(),
+    ]
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _looks_like_repo_reference(raw_path: str, raw_line: str | None) -> bool:
+    if "..." in raw_path or "*" in raw_path:
+        return False
+
+    parts = [part for part in PurePosixPath(raw_path).parts if part not in {".", ".."}]
+    if not parts:
+        return False
+
+    first_part = parts[0]
+    if raw_line is not None:
+        return True
+    if first_part in _REPO_TOP_LEVEL_NAMES:
+        return True
+    if len(parts) >= 2 and parts[0].startswith("anyagent-") and parts[1] in _REPO_TOP_LEVEL_NAMES:
+        return True
+    return False
+
+
+def _validate_reference(
+    *,
+    root: Path,
+    owner_path: Path,
+    owner_line: int | None,
+    raw_path: str,
+    raw_line: str | None,
+    label: str,
+) -> list[str]:
+    errors: list[str] = []
+    rel_owner = owner_path.relative_to(root)
+    resolved = _resolve_reference_path(root, owner_path, raw_path)
+    location = f"{rel_owner}:{owner_line}" if owner_line is not None else str(rel_owner)
+    target_desc = f"{raw_path}:{raw_line}" if raw_line else raw_path
+
+    if resolved is None:
+        errors.append(f"{location}: {label} missing -> {target_desc}")
+        return errors
+
+    if raw_line is None:
+        return errors
+
+    if not resolved.is_file():
+        errors.append(f"{location}: {label} not a file -> {target_desc}")
+        return errors
+
+    try:
+        total_lines = _count_file_lines(resolved)
+    except OSError:
+        errors.append(f"{location}: {label} unreadable -> {target_desc}")
+        return errors
+
+    try:
+        referenced_line = int(raw_line)
+    except ValueError:
+        errors.append(f"{location}: {label} bad line -> {target_desc}")
+        return errors
+
+    if referenced_line < 1 or referenced_line > max(total_lines, 1):
+        errors.append(
+            f"{location}: {label} line out of range -> "
+            f"{target_desc} (file has {total_lines} lines)"
+        )
+
+    return errors
+
+
+def _check_inline_code_references(root: Path, md_path: Path) -> list[str]:
+    errors: list[str] = []
+    try:
+        lines = md_path.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        rel = md_path.relative_to(root)
+        return [f"{rel}: unreadable (non-utf8?)"]
+
+    seen: set[tuple[int, str, str | None]] = set()
+    for line_idx, line in enumerate(lines, start=1):
+        for code_match in _INLINE_CODE_RE.finditer(line):
+            inline_code = code_match.group(1).strip()
+            if not inline_code or "://" in inline_code or "*" in inline_code:
+                continue
+
+            for path_match in _CODE_PATH_LINE_RE.finditer(inline_code):
+                raw_path = path_match.group(1)
+                raw_line = path_match.group(2)
+                if not _looks_like_repo_reference(raw_path, raw_line):
+                    continue
+                token_key = (line_idx, raw_path, raw_line)
+                if token_key in seen:
+                    continue
+                seen.add(token_key)
+
+                if path_match.start() >= 2 and inline_code[path_match.start() - 2 : path_match.start()] == "//":
+                    continue
+                if any(ch in raw_path for ch in "<>$"):
+                    continue
+
+                errors.extend(
+                    _validate_reference(
+                        root=root,
+                        owner_path=md_path,
+                        owner_line=line_idx,
+                        raw_path=raw_path,
+                        raw_line=raw_line,
+                        label="inline file ref",
+                    )
+                )
+
+    return errors
+
+
 def _check_todo_impl_evidence(root: Path) -> list[str]:
     errors: list[str] = []
     todo_dir = root / "todo"
@@ -200,41 +355,16 @@ def _check_todo_impl_evidence(root: Path) -> list[str]:
                 if file_part.startswith(("a/", "b/")):
                     file_part = file_part[2:]
 
-                evidence_path = (root / file_part).resolve()
-                rel_todo = todo_path.relative_to(root)
-                if not evidence_path.exists():
-                    errors.append(
-                        f"{rel_todo}:{idx}: Impl evidence missing -> {file_part}:{line_part}"
+                errors.extend(
+                    _validate_reference(
+                        root=root,
+                        owner_path=todo_path,
+                        owner_line=idx,
+                        raw_path=file_part,
+                        raw_line=line_part,
+                        label="Impl evidence",
                     )
-                    continue
-
-                if not evidence_path.is_file():
-                    errors.append(
-                        f"{rel_todo}:{idx}: Impl evidence not a file -> {file_part}:{line_part}"
-                    )
-                    continue
-
-                try:
-                    total_lines = _count_file_lines(evidence_path)
-                except OSError:
-                    errors.append(
-                        f"{rel_todo}:{idx}: Impl evidence unreadable -> {file_part}:{line_part}"
-                    )
-                    continue
-
-                try:
-                    referenced_line = int(line_part)
-                except ValueError:
-                    errors.append(
-                        f"{rel_todo}:{idx}: Impl evidence bad line -> {file_part}:{line_part}"
-                    )
-                    continue
-
-                if referenced_line < 1 or referenced_line > max(total_lines, 1):
-                    errors.append(
-                        f"{rel_todo}:{idx}: Impl evidence line out of range -> "
-                        f"{file_part}:{line_part} (file has {total_lines} lines)"
-                    )
+                )
 
     return errors
 
@@ -254,6 +384,11 @@ def main() -> int:
         action="store_true",
         help="when --check-manifest, require docs/_notes entries too",
     )
+    parser.add_argument(
+        "--check-code-refs",
+        action="store_true",
+        help="also validate inline `path` / `path:line` references in markdown",
+    )
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -264,6 +399,8 @@ def main() -> int:
     errors: list[str] = []
     for md_path in _iter_markdown_files(root):
         errors.extend(_check_markdown_links(root, md_path))
+        if args.check_code_refs:
+            errors.extend(_check_inline_code_references(root, md_path))
 
     errors.extend(_check_todo_impl_evidence(root))
     if args.check_manifest:

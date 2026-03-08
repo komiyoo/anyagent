@@ -1,8 +1,0 @@
-interface:
-  display_name: "Repo Symbol Trace"
-  short_description: "Trace callers/callees call chains"
-  default_prompt: "Use $repo-symbol-trace to locate a Python symbol and disclose its callers/callees call chains with docstring summaries."
-
-policy:
-  allow_implicit_invocation: true
-

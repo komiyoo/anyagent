@@ -59,7 +59,7 @@ multi-agent 系统工具返回值会回灌为 `function_call_output`：
 ## 6) 最小验证（建议）
 
 1. 启动 Agent API（示例）：
-   - `cd apps/agent-api && uv run agent-api`
+   - `cd ../anyagent-apps/apps/agent-api && uv run agent-api`
 2. 触发一次 run，让模型调用 `spawn_agent` 并拿到 `thread_id`
 3. 继续同一个 response loop 内调用 `send_input` / `wait` / `close_agent`
 4. 观察 Agent API 日志中是否出现：

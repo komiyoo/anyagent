@@ -1,0 +1,12 @@
+exposed: true
+tools:
+  requested_tool_names: []
+skills:
+  default_selected: []
+  # 通过增删下面的名称控制 repo 内置 skill 是否启用。
+  # disabled_paths:
+  #   - agent-browser
+  #   - find-skills
+  disabled_paths: []
+multiagent:
+  spawn_allow_agent_ids: ["main"]

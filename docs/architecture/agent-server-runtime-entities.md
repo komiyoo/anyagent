@@ -1,10 +1,11 @@
 # Agent Server 运行时概念实体（含 Codex 对照）
 
-本文梳理 anyagent `agent-api + tool-runtime` 在 2026-03-04 当前代码中的运行时实体定义与层级关系，并对照 Codex 的 `Connection -> Thread -> Turn -> Item -> ToolCall` 体系，统一术语语义。
+本文梳理 anyagent `agent-api + tool-runtime` 的运行时实体定义与层级关系，并对照 Codex 的 `Connection -> Thread -> Turn -> Item -> ToolCall` 体系，统一术语语义。
 
 说明：
 
-- 本文优先描述“代码真实行为”（as-is），并引用需求锚点说明“规范期望”（to-be）。
+- 本文优先描述“参考实现真实行为”（as-is），并引用需求锚点说明“规范期望”（to-be）。
+- 当前运行型参考实现已迁到同级项目 `../anyagent-apps/`；文中的 `../anyagent-apps/apps/...` 与 `../anyagent-apps/tests/...` 路径即对应证据位置。
 - 需求定义基线：`requirements.md#req-2`、`requirements.md#req-4-3`、`requirements.md#req-4-4`、`requirements.md#req-4-5`、`requirements.md#req-5-8`、`requirements.md#req-5-13`。
 
 ## 1. 总览：anyagent 与 Codex 的层级映射
@@ -36,8 +37,8 @@
 证据：
 
 - 同连接 SSE 语义：`requirements.md:272`。
-- 实际 SSE 返回：`apps/agent-api/src/anyagent_agent_api/app.py:1174`。
-- 断线补发接口：`apps/agent-api/src/anyagent_agent_api/internal/events.py:99`。
+- 实际 SSE 返回：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1174`。
+- 断线补发接口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/internal/events.py:99`。
 
 ## 2.2 Session（Conversation 主边界）
 
@@ -57,10 +58,10 @@
 
 - 会话键约定：`requirements.md:301`。
 - 分片键实现：`packages/anyagent/src/anyagent/gateway/session.py:70`。
-- 入口解析：`apps/agent-api/src/anyagent_agent_api/app.py:279`、`apps/agent-api/src/anyagent_agent_api/app.py:284`。
-- 会话内串行：`apps/agent-api/src/anyagent_agent_api/app.py:1319`、`apps/agent-api/src/anyagent_agent_api/app.py:1324`。
-- Session Store 协议与实现：`apps/agent-api/src/anyagent_agent_api/storage/runtime.py:99`、`apps/agent-api/src/anyagent_agent_api/storage/postgres.py:251`、`apps/agent-api/src/anyagent_agent_api/storage/inmemory.py:168`。
-- Session Resume + Runtime Config 组装：`apps/agent-api/src/anyagent_agent_api/app.py:239`、`apps/agent-api/src/anyagent_agent_api/app.py:452`。
+- 入口解析：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:279`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:284`。
+- 会话内串行：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1319`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1324`。
+- Session Store 协议与实现：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/runtime.py:99`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/postgres.py:251`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/inmemory.py:168`。
+- Session Resume + Runtime Config 组装：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:239`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:452`。
 
 ## 2.3 Multi-Agent Thread（协作线程）
 
@@ -77,10 +78,10 @@
 
 证据：
 
-- 根线程生成：`apps/agent-api/src/anyagent_agent_api/app.py:289`。
-- thread 元数据读取：`apps/agent-api/src/anyagent_agent_api/app.py:293`。
-- 线程模型：`apps/agent-api/src/anyagent_agent_api/multiagent/manager.py:33`。
-- in-memory store：`apps/agent-api/src/anyagent_agent_api/multiagent/manager.py:157`。
+- 根线程生成：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:289`。
+- thread 元数据读取：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:293`。
+- 线程模型：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/multiagent/manager.py:33`。
+- in-memory store：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/multiagent/manager.py:157`。
 
 ## 2.4 Run / Response（一次执行实例）
 
@@ -97,9 +98,9 @@
 
 证据：
 
-- run 模型：`apps/agent-api/src/anyagent_agent_api/storage/models.py:10`。
-- run 持久化：`apps/agent-api/src/anyagent_agent_api/storage/postgres.py:12`。
-- 幂等入口：`apps/agent-api/src/anyagent_agent_api/app.py:357`。
+- run 模型：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/models.py:10`。
+- run 持久化：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/postgres.py:12`。
+- 幂等入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:357`。
 
 ## 2.5 Turn（run 内推理迭代单元）
 
@@ -116,8 +117,8 @@
 
 证据：
 
-- 流式/非流式 loop：`apps/agent-api/src/anyagent_agent_api/app.py:885`、`apps/agent-api/src/anyagent_agent_api/app.py:1399`。
-- turn rollout 记录入口：`apps/agent-api/src/anyagent_agent_api/app.py:343`、`apps/agent-api/src/anyagent_agent_api/storage/rollout.py:156`。
+- 流式/非流式 loop：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:885`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1399`。
+- turn rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:343`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/rollout.py:156`。
 
 ## 2.6 Item（Turn 内最小内容单元）
 
@@ -135,9 +136,9 @@
 
 证据：
 
-- output item 解析：`apps/agent-api/src/anyagent_agent_api/app.py:156`。
-- 回灌 item 构造：`apps/agent-api/src/anyagent_agent_api/app.py:1339`。
-- item rollout 记录入口：`apps/agent-api/src/anyagent_agent_api/app.py:371`、`apps/agent-api/src/anyagent_agent_api/storage/rollout.py:210`。
+- output item 解析：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:156`。
+- 回灌 item 构造：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1339`。
+- item rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:371`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/rollout.py:210`。
 - output_item 事件语义：`requirements.md:356`。
 
 ## 2.7 Tool 与 Tool Call（能力面与执行面）
@@ -156,11 +157,11 @@
 
 证据：
 
-- manifest 拉取与注入：`apps/agent-api/src/anyagent_agent_api/app.py:471`、`apps/agent-api/src/anyagent_agent_api/app.py:513`。
+- manifest 拉取与注入：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:471`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:513`。
 - execute 协议字段：`packages/anyagent/src/anyagent/protocol/tool_runtime.py:86`。
-- execute 幂等键：`apps/tool-runtime/src/anyagent_tool_runtime/http/app.py:209`。
-- tool_call rollout 记录入口：`apps/agent-api/src/anyagent_agent_api/app.py:390`, `apps/agent-api/src/anyagent_agent_api/app.py:409`, `apps/agent-api/src/anyagent_agent_api/storage/rollout.py:240`。
-- system tool 执行：`apps/agent-api/src/anyagent_agent_api/app.py:595`。
+- execute 幂等键：`../anyagent-apps/apps/tool-runtime/src/anyagent_tool_runtime/http/app.py:209`。
+- tool_call rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:390`, `../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:409`, `../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/rollout.py:240`。
+- system tool 执行：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:595`。
 
 ## 2.8 Event（流式与重放）
 
@@ -176,16 +177,16 @@
 - `STORAGE_MODE=none` 时，事件与 run 快照会按 `session_partition_key` 追加到本地 `rollout.jsonl`（写入路径判重，append-only）。
 - `STORAGE_MODE=none` 支持 `rollout*.jsonl` 轮转（按大小/时间）与有界保留，replay 默认覆盖当前与归档文件。
 - 本地支持 rollout replay CLI，按 `session_partition_key/response_id` + `last_seq` 游标回放记录。
-- 已有 smoke 验收脚本覆盖 replay 与写入门控：`tests/acceptance/storage/acceptance_rollout_replay_smoke.py`。
+- 已有 smoke 验收脚本覆盖 replay 与写入门控：`../anyagent-apps/tests/acceptance/storage/acceptance_rollout_replay_smoke.py`。
 
 证据：
 
-- 事件模型：`apps/agent-api/src/anyagent_agent_api/storage/models.py:22`。
-- 事件写入递增：`apps/agent-api/src/anyagent_agent_api/storage/postgres.py:141`。
-- 内部补发/追尾：`apps/agent-api/src/anyagent_agent_api/internal/events.py:43`、`apps/agent-api/src/anyagent_agent_api/internal/events.py:99`。
-- 本地 rollout 写入器：`apps/agent-api/src/anyagent_agent_api/storage/rollout.py:52`。
-- 本地 rollout 回放工具：`apps/agent-api/src/anyagent_agent_api/storage/rollout_replay.py:1`。
-- 轮转/恢复 smoke：`tests/acceptance/storage/acceptance_rollout_rotation_smoke.py:1`、`tests/acceptance/agent_api/acceptance_session_resume_smoke.py:1`。
+- 事件模型：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/models.py:22`。
+- 事件写入递增：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/postgres.py:141`。
+- 内部补发/追尾：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/internal/events.py:43`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/internal/events.py:99`。
+- 本地 rollout 写入器：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/rollout.py:52`。
+- 本地 rollout 回放工具：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/rollout_replay.py:1`。
+- 轮转/恢复 smoke：`../anyagent-apps/tests/acceptance/storage/acceptance_rollout_rotation_smoke.py:1`、`../anyagent-apps/tests/acceptance/agent_api/acceptance_session_resume_smoke.py:1`。
 
 ## 3. 关键关联键（跨层串联）
 

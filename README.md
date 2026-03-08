@@ -1,6 +1,8 @@
-# anyagent（文档索引）
+# anyagent（SDK 仓库）
 
-本目录用于沉淀 anyagent 的需求与架构设计，目标是支撑“多业务项目复用 + 多 agent + 多套专业 skills”的长期演进。
+本仓库当前聚焦 `packages/anyagent`：沉淀 anyagent 的协议模型、Client SDK、共享运行时能力与相关设计文档。
+
+原先位于本仓库 `apps` 目录的可运行实践模板已迁到同级项目 `../anyagent-apps`，用于承载 `agent-api` / `tool-runtime` 场景集成、demo workspace、插件示例与集成验收。
 
 ## 文档
 
@@ -24,8 +26,6 @@
   - 架构决策记录（ADR）：接口策略、skills 策略、tool runtime 边界取舍
 - [docs/architecture/engineering/ci-pipeline.md](docs/architecture/engineering/ci-pipeline.md)
   - CI 分层质量门（docs guardrails + offline smokes + optional online smokes）
-- [docs/acceptance/acceptance-demo-customization.md](docs/acceptance/acceptance-demo-customization.md)
-  - Demo 应用级定制化实操：Agent Packs、skills、插件、凭证与最小验收闭环
 
 ## 工具
 
@@ -35,21 +35,23 @@
 - [tests/README.md](tests/README.md)
   - 测试/验收脚本索引（acceptance/smoke），按模块分层沉淀，避免平铺在 `scripts/`
 - [scripts/docs/check.py](scripts/docs/check.py)
-  - 检查 Markdown 断链与 `todo/*.md` 的 `Impl:` 证据引用是否漂移（用于降低文档熵）
+  - 检查 Markdown 断链与 `todo/*.md` 的 `Impl:` 证据引用是否漂移；可选 `--check-code-refs` 继续检查反引号里的 `path[:line]` 引用
 - [scripts/docs/pack.py](scripts/docs/pack.py)
   - 按 tags/kind/status 打包“最小文档上下文列表”，支持渐进式披露（避免一次性加载过多无关文档）
 - [scripts/docs/index.py](scripts/docs/index.py)
   - 生成 `docs/_manifest.txt`（纯文本 docs manifest），用于高效检索与按需加载（progressive disclosure）
 
-## 实现（Work In Progress）
+## 实现
 
-- [apps/agent-api/README.md](apps/agent-api/README.md)
-  - Python + uv：`POST /v1/responses`（含 `stream=true` SSE 透传）+ `/healthz`
-- [apps/tool-runtime/README.md](apps/tool-runtime/README.md)
-  - Python + uv：`/internal/tools/manifest|execute|cancel`
 - [packages/anyagent](packages/anyagent)
   - SDK/共享能力包：`anyagent.protocol.*`、`anyagent.agent_runtime.*`、`anyagent.skills.*`、`anyagent.tool_runtime.*`
   - Client SDK：`AnyAgent` 资源型命名空间入口（`client.responses.*` / `client.events.*` / `client.skills.*`）
+
+## 场景实践
+
+- 同级项目 `../anyagent-apps`
+  - 承载 `../anyagent-apps/apps/agent-api`、`../anyagent-apps/apps/tool-runtime`、`../anyagent-apps/examples/demo-workspace`、`../anyagent-apps/plugins/feishu` 与应用层验收脚本
+  - 默认通过本地 path 依赖消费本仓库的 SDK：`../anyagent/packages/anyagent`
 
 ## 关键约定（便于跨项目复用）
 

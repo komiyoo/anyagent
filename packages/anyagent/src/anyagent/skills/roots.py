@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
+from .discovery import dedupe_skills_by_name
 from .loader import SkillLoadError, load_skill_package
 from .models import SkillPackage, SkillScope
 
@@ -28,5 +29,6 @@ def load_skills_from_root(root: Path, *, scope: SkillScope) -> tuple[list[SkillP
             skills.append(load_skill_package(d, scope=scope))
         except SkillLoadError as e:
             errors.append((str(d), str(e)))
-    return skills, errors
-
+    unique_skills, duplicate_errors = dedupe_skills_by_name(skills)
+    errors.extend(duplicate_errors)
+    return unique_skills, errors

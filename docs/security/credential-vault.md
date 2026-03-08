@@ -393,6 +393,15 @@ credentials:
       usage: "core.web_search 工具的搜索引擎 API Key（如 Tavily / SerpAPI / Bing）"
     value_from_env: WEBSEARCH_API_KEY
 
+  - credential_id: cred_bocha_mcp
+    kind: bearer_token
+    scope: { level: global }
+    metadata:
+      display_name: "Bocha MCP Token"
+      provider: bocha
+      usage: "Agent Pack 中 `bocha-mcp` server 的 Authorization Bearer token"
+    value_from_env: CREDENTIAL__CRED_BOCHA_MCP
+
   - credential_id: cred_websearch_engine
     kind: config
     scope: { level: global }

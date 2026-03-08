@@ -27,30 +27,28 @@ req: ["requirements.md#req-9", "requirements.md#req-7"]
 - 防止 Markdown 断链、TODO 证据漂移。
 - 保持 TODO 进度可机械读取。
 
-### Gate 2：离线协议与存储 smoke（必须）
+### Gate 2：离线 SDK / MCP smoke（必须）
 
 建议最小集合：
 
+- `tests/acceptance/sdk/acceptance_anyagent_client_surface_smoke.py`
 - `tests/acceptance/sdk/acceptance_command_stage_derivation_smoke.py`
 - `tests/acceptance/mcp/acceptance_mcp_federation_smoke.py`
-- `tests/acceptance/storage/acceptance_rollout_replay_smoke.py`
-- `tests/acceptance/storage/acceptance_rollout_rotation_smoke.py`
-- `tests/acceptance/storage/acceptance_rollout_storage_consistency_smoke.py`
-- `tests/acceptance/agent_api/acceptance_session_resume_smoke.py`
 
 目的：
 
-- 覆盖协议稳定性、MCP 合并、rollout/replay、session runtime 绑定等关键链路。
+- 覆盖 SDK 协议稳定性、Client surface 与 MCP manifest 合并等关键链路。
 
-### Gate 3：在线兼容验收（可选，受密钥/环境约束）
+### Gate 3：应用层兼容验收（迁出到场景项目）
 
-- `tests/acceptance/agent_api/acceptance_responses_smoke.py`
-- `tests/acceptance/openai/acceptance_openai_sdk_smoke.py`
+- 同级项目：`../anyagent-apps`
+- 文档入口：`../anyagent-apps/docs/acceptance/`
+- 脚本入口：`../anyagent-apps/tests/acceptance/`
 
 说明：
 
-- 该层依赖 `OPENAI_API_KEY` 与运行中的服务，默认不阻塞普通 PR。
-- 可用于 nightly 或 release 分支门禁。
+- 该层依赖运行中的 `agent-api` / `tool-runtime` 服务以及外部密钥，已从当前 SDK 仓库剥离。
+- 如需为场景项目单独建立 CI，可在对应仓库内再配置 nightly / release 级门禁。
 
 ## GitHub Actions 编排（本次落地）
 
@@ -63,4 +61,4 @@ req: ["requirements.md#req-9", "requirements.md#req-7"]
 
 - Gate 1 失败：直接阻断合并（信息架构/证据链已失真）。
 - Gate 2 失败：阻断合并并要求补回归证据。
-- Gate 3 失败：标记为 `warning` 或仅在 release 分支阻断（按环境成熟度逐步收紧）。
+- Gate 3：由场景项目自行定义阻断策略，不再属于当前仓库 CI 范围。
