@@ -1,69 +1,227 @@
-# anyagent（SDK 仓库）
+# anyagent — 配置化 Agent Server 内核 + SDK
 
-本仓库当前聚焦 `packages/anyagent`：沉淀 anyagent 的协议模型、Client SDK、共享运行时能力与相关设计文档。
+anyagent 是一个**配置即服务**的 AI Agent 基础设施：通过 `AGENTS.md`、`agent.yaml`、`mcp.json` 等配置文件即可启动一个兼容 OpenAI Responses API 的 Agent Server，无需编写任何服务端代码。
 
-原先位于本仓库 `apps` 目录的可运行实践模板已迁到同级项目 `../anyagent-apps`，用于承载 `agent-api` / `tool-runtime` 场景集成、demo workspace、插件示例与集成验收。
+```bash
+cd my-workspace   # 包含 .agents/ 配置目录
+anyagent serve     # 一条命令启动 Agent Server
+```
+
+## 核心特性
+
+- **配置即服务**：通过 `.agents/` 目录定义 agent 行为、工具、技能、MCP server，零代码启动
+- **OpenAI 兼容**：`POST /v1/responses` + SSE streaming，任意 OpenAI SDK 直接接入
+- **细粒度观测**：anyagent SDK 提供 tool/command 级别的阶段性事件流（Stage Events）
+- **安全边界**：Agent 只能"看到"和"使用"资源，不能"访问"和"操作"资源——密钥、凭证、tool policy 由 server 代理管理
+- **零外部依赖启动**：内置 in-memory 存储 + 进程内 Tool Runtime，开箱即用
+- **可扩展至生产级**：通过 [anyagent-apps](../anyagent-apps) 扩展为 PG/Redis 持久化、独立 Tool Runtime、平台 Gateway 的分布式部署
+
+## 快速开始
+
+### 1. 创建 workspace 配置
+
+```text
+my-workspace/
+  .agents/
+    agents/
+      main/                      # agent_id = "main"
+        agent.yaml               # AgentSpec：工具、技能、多 agent 策略
+        AGENTS.md                # 行为指令（注入到 system prompt）
+        mcp.json                 # MCP server 连接配置（可选）
+    skills/                      # 共享技能目录（可选）
+```
+
+**agent.yaml 示例**：
+
+```yaml
+exposed: true
+tools:
+  requested_tool_names:
+    - core.web_fetch
+    - exec                         # 启用命令执行（路由到沙箱）
+skills:
+  default_selected: []
+sandbox:
+  mode: "opensandbox"              # opensandbox | external | local-unsafe | disabled
+multiagent:
+  spawn_allow_agent_ids: ["main"]
+```
+
+**mcp.json 示例**：
+
+```json
+{
+  "mcpServers": {
+    "bocha-mcp": {
+      "url": "https://mcp.bochaai.com/mcp",
+      "transport": "streamable_http",
+      "auth": {
+        "credential_id": "cred_bocha_mcp",
+        "ref_kind": "bearer_token",
+        "injection": "header:Authorization",
+        "format": "Bearer {value}"
+      }
+    }
+  }
+}
+```
+
+### 2. 启动服务
+
+```bash
+# 安装
+uv pip install anyagent
+
+# 启动（自动发现 .agents/ 配置）
+anyagent serve --workspace ./my-workspace --port 8787
+
+# 或使用环境变量
+OPENAI_API_KEY=sk-... anyagent serve
+
+# 使用外置存储（当前已支持 Session / Run / Event: PG 为主 + Redis 为热层）
+POSTGRES_DSN=postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent \
+REDIS_DSN=redis://127.0.0.1:6379/0 \
+REDIS_NAMESPACE=anyagent \
+POSTGRES_SCHEMA_POLICY=migrate \
+STORAGE_MODE=external \
+EVENT_STORE_BACKEND=external \
+RUN_STORE_BACKEND=external \
+SESSION_STORE_BACKEND=external \
+EVENT_STORE_RETENTION_S=7200 \
+RUN_STORE_RETENTION_S=7200 \
+SESSION_STORE_RETENTION_S=86400 \
+anyagent serve --session-lock-backend redis
+
+# 运维自检
+ADMIN_API_KEY=admin-key anyagent storage-health --admin-key admin-key
+
+# 应用 PostgreSQL schema migration
+POSTGRES_DSN=postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent \
+anyagent storage-migrate
+
+# 本地开发如需跳过显式 migration，可临时退回 runtime fallback
+POSTGRES_SCHEMA_POLICY=runtime_create anyagent serve
+```
+
+### 3. 调用
+
+```python
+from openai import OpenAI
+
+# 任何 OpenAI SDK 都可以直接连接
+client = OpenAI(base_url="http://127.0.0.1:8787/v1", api_key="your-key")
+response = client.responses.create(
+    model="gpt-4o",
+    input="帮我搜索一下最新的 AI Agent 框架",
+    stream=True,
+)
+for event in response:
+    print(event)
+```
+
+```python
+from anyagent import AnyAgent
+
+# anyagent SDK 提供细粒度观测
+client = AnyAgent(base_url="http://127.0.0.1:8787", api_key="your-key")
+
+# OpenAI 兼容面
+resp = client.openai.responses.create(model="gpt-4o", input="hello")
+
+# anyagent 超集面：细粒度阶段性事件
+async for event in client.events.stream_typed(resp.id):
+    match event.type:
+        case "anyagent.tool.planned":
+            print(f"即将调用工具: {event.tool_name}")
+        case "anyagent.tool.result":
+            print(f"工具执行完成: {event.tool_name} ({event.status})")
+```
+
+## 安全边界
+
+anyagent 的核心安全原则：**沙箱内自由，沙箱外隔离**。
+
+沙箱采用**策略-后端分离**架构（参考 Codex）：策略定义在 Protocol 层，后端可插拔（OpenSandbox / External / LocalUnsafe）。Agent 通过统一的 `exec` tool 执行命令，Tool Runtime 自动路由到配置指定的沙箱后端。同一 session 内的多次命令共享沙箱文件系统（per-session 隔离）。
+
+| Agent 可以 | Agent 不可以 |
+|---|---|
+| 通过 `exec` tool 执行任意命令（`curl`、`python`、`git`） | 读取宿主机文件系统 / 环境变量 / 凭证原值 |
+| 在沙箱中发起网络请求（访问外部网站、API） | 从沙箱访问 anyagent server / credential store |
+| 在沙箱中读写文件、安装依赖（同 session 内持续） | 修改 agent.yaml / AGENTS.md 配置 |
+| 看到可用 Skills / Tools / MCP Servers 列表 | 绕过 tool policy 执行未授权工具 |
+| 通过 server 中介使用 API Keys（server 注入，agent 不见原值） | 访问其他 agent 的 session / credential |
+
+## 项目结构
+
+```text
+anyagent/                            # 本仓库：Server Core + SDK
+  packages/anyagent/
+    src/anyagent/
+      protocol/                      # 协议 SSOT（Responses/Tool Runtime/SSE/Multi-Agent）
+        sandbox.py                   # Sandbox 策略模型（SandboxPolicy/NetworkSandboxPolicy/ResourceLimits）
+      agent_runtime/                 # Agent loop 运行时（model providers/tool loop/prompt 注入）
+      skills/                        # Skills 发现/加载/选择/权限
+      mcp/                           # MCP server 管理（auth/连接/工具发现）
+      gateway/                       # 会话映射/agent 路由/sequencer
+      tool_runtime/                  # 工具注册/client/plugin
+      server/                        # [内置] Agent Server（FastAPI + in-memory storage）
+        sandbox/                     # Sandbox 后端（SandboxManager + Backend 实现）
+        security/                    # Credential Vault / Tool Policy
+      agent_packs.py                 # Agent Packs 配置加载
+      agent_api_client.py            # Client SDK（AnyAgent 资源型命名空间）
+      cli.py                         # CLI 入口（anyagent serve / agents / tools）
+```
+
+## 两层 API 输出
+
+| 层级 | 协议 | 适用场景 |
+|---|---|---|
+| **OpenAI 兼容层** | `POST /v1/responses` + SSE | 任意 OpenAI SDK 直接接入；极简集成 |
+| **anyagent 精细层** | `GET /internal/events/stream` → StageEvent | tool/command 粒度的阶段性结果；UI 进度展示、调试、审计 |
+
+## 与 anyagent-apps 的关系
+
+```text
+anyagent (本仓库)           anyagent-apps (同级项目)
+┌──────────────────┐       ┌──────────────────────┐
+│ Server Core      │       │ 高级部署模式           │
+│ ├─ 内置 Agent API │◄──────│ ├─ PG/Redis 持久化     │
+│ ├─ 内置 Tool RT  │       │ ├─ 独立 Tool Runtime   │
+│ └─ in-memory 存储 │       │ └─ 分布式锁/keyed seq │
+│                  │       │                      │
+│ SDK + Protocol   │       │ 场景模板 & 示例        │
+│ ├─ AnyAgent      │       │ ├─ demo-workspace     │
+│ ├─ protocol.*    │       │ ├─ multi-agent-team   │
+│ └─ skills/mcp    │       │ └─ project-template   │
+│                  │       │                      │
+│ CLI (anyagent    │       │ 平台 Connectors       │
+│  serve)          │       │ ├─ plugins/feishu     │
+└──────────────────┘       │ └─ plugins/discord    │
+                           └──────────────────────┘
+```
+
+- **anyagent**：电池内置的 Agent Server 内核——一条命令启动，零外部依赖
+- **anyagent-apps**：生产级部署模板 + 场景示例 + 平台 connector
 
 ## 文档
 
-- [requirements.md](requirements.md)
-  - 对外：OpenAI Responses API 兼容面（`POST /v1/responses` + SSE）
-  - 对内：Tool Runtime 协议、Gateway 插件模型、Skills 动态披露、Multi-Agent（Codex 风格）
-- [todo/README.md](todo/README.md)
-  - 按模块拆分的工程 TODO（每条任务可追溯到 `requirements.md#req-*`）
-- [docs/README.md](docs/README.md)
-  - `docs/` 目录结构与文档分层约定（长期维护文档 vs 研发草案/笔记）
-- [docs/architecture/stateless-agent-service-architecture.md](docs/architecture/stateless-agent-service-architecture.md)
-  - 聚焦“服务侧并发与无状态部署”：keyed serialization、幂等、事件补发、慢消费者治理
-  - 附带 OpenClaw / pi-mono 的概念对照（用于校准理解）
-- [docs/architecture/storage-minimal-design.md](docs/architecture/storage-minimal-design.md)
-  - 聚焦“存储落地”：Session/Run/Event/Dedupe/Lock 的最小 schema、保留策略与一致性边界
-- [docs/architecture/responses-api-sdk-and-server.md](docs/architecture/responses-api-sdk-and-server.md)
-  - 聚焦“接入侧 SDK + 服务侧 Agent Server”统一对齐 OpenAI Responses API，并给出泳道视角与模块边界
-- [docs/architecture/apps-packages-boundary.md](docs/architecture/apps-packages-boundary.md)
-  - `apps/*`（服务编排/demo）与 `packages/*`（协议/SDK/共享能力）的职责边界与收敛策略
-- [docs/architecture/decisions/README.md](docs/architecture/decisions/README.md)
-  - 架构决策记录（ADR）：接口策略、skills 策略、tool runtime 边界取舍
-- [docs/architecture/engineering/ci-pipeline.md](docs/architecture/engineering/ci-pipeline.md)
-  - CI 分层质量门（docs guardrails + offline smokes + optional online smokes）
+- [requirements.md](requirements.md) — 系统需求文档
+- [docs/architecture/](docs/architecture/README.md) — 架构设计
+  - [apps-packages-boundary.md](docs/architecture/apps-packages-boundary.md) — anyagent vs anyagent-apps 职责边界
+  - [responses-api-sdk-and-server.md](docs/architecture/responses-api-sdk-and-server.md) — SDK + Server 泳道与模块边界
+  - [roadmap.md](docs/architecture/roadmap.md) — Phase 1-4 演进路线图
+  - [stateless-agent-service-architecture.md](docs/architecture/stateless-agent-service-architecture.md) — 无状态服务并发架构
+  - [storage-minimal-design.md](docs/architecture/storage-minimal-design.md) — 存储最小设计
+- [docs/security/](docs/security/README.md) — 安全设计
+  - [credential-vault.md](docs/security/credential-vault.md) — 凭证管理
+  - [sandbox-security.md](docs/security/sandbox-security.md) — Sandbox 安全边界
+  - [tool-policy.md](docs/security/tool-policy.md) — 工具执行策略
+- [todo/](todo/README.md) — 工程 TODO
 
-## 工具
+## 关键约定
 
-- [scripts/anyagent_progress.py](scripts/anyagent_progress.py)
-  - 默认只汇总 `todo/*.md` 进度：展示每个模块“下一条 TODO（第几条 + file:line）”，并提示已完成条目是否缺少 `Impl/Module` 证据字段
-  - 仅在需要时用 `--scan-impl` 扫描实现线索（可选）
-- [tests/README.md](tests/README.md)
-  - 测试/验收脚本索引（acceptance/smoke），按模块分层沉淀，避免平铺在 `scripts/`
-- [scripts/docs/check.py](scripts/docs/check.py)
-  - 检查 Markdown 断链与 `todo/*.md` 的 `Impl:` 证据引用是否漂移；可选 `--check-code-refs` 继续检查反引号里的 `path[:line]` 引用
-- [scripts/docs/pack.py](scripts/docs/pack.py)
-  - 按 tags/kind/status 打包“最小文档上下文列表”，支持渐进式披露（避免一次性加载过多无关文档）
-- [scripts/docs/index.py](scripts/docs/index.py)
-  - 生成 `docs/_manifest.txt`（纯文本 docs manifest），用于高效检索与按需加载（progressive disclosure）
-
-## 实现
-
-- [packages/anyagent](packages/anyagent)
-  - SDK/共享能力包：`anyagent.protocol.*`、`anyagent.agent_runtime.*`、`anyagent.skills.*`、`anyagent.tool_runtime.*`
-  - Client SDK：`AnyAgent` 资源型命名空间入口（`client.responses.*` / `client.events.*` / `client.skills.*`）
-
-## 场景实践
-
-- 同级项目 `../anyagent-apps`
-  - 承载 `../anyagent-apps/apps/agent-api`、`../anyagent-apps/apps/tool-runtime`、`../anyagent-apps/examples/demo-workspace`、`../anyagent-apps/plugins/feishu` 与应用层验收脚本
-  - 默认通过本地 path 依赖消费本仓库的 SDK：`../anyagent/packages/anyagent`
-
-## 关键约定（便于跨项目复用）
-
-- `agent_id`：同一套服务内不同 agent 的标识（persona/权限/skills/tool policy 组合）。
-- `session_key`：平台侧线程/会话标识（飞书 thread、Discord thread、TG topic 等）。
-- `session_partition_key`：并发分片键，建议固定为 `"{agent_id}::{session_key}"`。
-- `Agent Packs`（配置目录即行为包）：业务项目/工作区内约定使用 `.agents/agents/<agent_id>/`，每个 agent 目录包含：
-  - `agent.yaml`（结构化 AgentSpec：exposed/tools/skills/multiagent 等）
-  - `AGENTS.md`（行为指令，注入到该 agent 的 run 中）
-  - `skills/`（可选：该 agent 的私有技能）
-- OpenAI Responses 请求的 `metadata` 建议携带：
-  - `metadata.session_key`
-  - `metadata.agent_id`
-  - `metadata.skills`（JSON string 数组；仅当你希望显式指定 skills 时）
-- skills 目录约定：业务项目内使用 `.agents/skills`（仓库内配置优先于用户级/系统级）。
+- **Agent Packs**：`.agents/agents/<agent_id>/` 目录即行为包（`agent.yaml` + `AGENTS.md` + `mcp.json`）
+- **agent_id**：同一套服务内不同 agent 的标识（persona/权限/skills/tool policy 组合）
+- **session_key**：平台侧线程/会话标识
+- **session_partition_key**：并发分片键，固定为 `"{agent_id}::{session_key}"`
+- **Skills 目录**：`.agents/skills/`（跨 agent 共享技能）

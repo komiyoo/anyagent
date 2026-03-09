@@ -3,11 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+import uvicorn
 import yaml
 
 from anyagent.protocol.credential_vault import (
@@ -16,6 +16,8 @@ from anyagent.protocol.credential_vault import (
     AdminCredentialSetRequest,
     CredentialScope,
 )
+from anyagent.server import create_app
+from anyagent.server.migrations import apply_storage_migrations
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,12 +59,76 @@ class _AdminClient:
             raise ValueError("unexpected delete response (not an object)")
         return obj
 
+    def storage_health(self) -> dict[str, Any]:
+        r = httpx.get(
+            f"{self.url}/admin/storage/health",
+            headers=self._headers(),
+            timeout=15.0,
+        )
+        _raise_for_status(r)
+        obj = r.json()
+        if not isinstance(obj, dict):
+            raise ValueError("unexpected storage health response (not an object)")
+        return obj
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="anyagent")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    cred = sub.add_parser("credential", help="Manage credentials via Tool Runtime Admin API.")
+    serve = sub.add_parser("serve", help="Start the built-in anyagent server.")
+    serve.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8787)
+    serve.add_argument("--api-key", default=None, help="Bearer token for `/v1/*` and `/internal/*` APIs.")
+    serve.add_argument("--admin-key", default=None, help="Bearer token for `/admin/*` APIs.")
+    serve.add_argument("--sandbox-root", default=None, help="Optional root dir for local sandbox sessions.")
+    serve.add_argument(
+        "--storage-mode",
+        choices=["none", "external"],
+        default=None,
+        help="Unified server storage mode (default: $STORAGE_MODE or none).",
+    )
+    serve.add_argument(
+        "--event-store-backend",
+        choices=["inmemory", "external", "redis"],
+        default=None,
+        help="Event Store backend override (default resolved from storage mode).",
+    )
+    serve.add_argument(
+        "--run-store-backend",
+        choices=["inmemory", "external", "redis"],
+        default=None,
+        help="Run Store backend override (default resolved from storage mode).",
+    )
+    serve.add_argument(
+        "--session-store-backend",
+        choices=["inmemory", "external", "redis"],
+        default=None,
+        help="Session Store backend override (default resolved from storage mode).",
+    )
+    serve.add_argument(
+        "--session-lock-backend",
+        choices=["inmemory", "external", "redis"],
+        default=None,
+        help="Session lease backend (default: $SESSION_LOCK_BACKEND or inmemory).",
+    )
+    serve.add_argument(
+        "--session-lease-ttl-s",
+        type=float,
+        default=None,
+        help="Session lease TTL seconds (default: $SESSION_LEASE_TTL_S or 30).",
+    )
+
+    storage_health = sub.add_parser("storage-health", help="Check built-in server storage backends and connectivity.")
+    _add_common_admin_flags(storage_health)
+
+    migrate = sub.add_parser("storage-migrate", help="Apply PostgreSQL storage migrations.")
+    migrate.add_argument("--postgres-dsn", default=None, help="Override POSTGRES_DSN.")
+    migrate.add_argument("--postgres-schema", default=None, help="Override POSTGRES_SCHEMA.")
+    migrate.add_argument("--dry-run", action="store_true", help="Only print planned migrations.")
+
+    cred = sub.add_parser("credential", help="Manage credentials via built-in Admin API.")
     cred_sub = cred.add_subparsers(dest="cred_cmd", required=True)
 
     _add_common_admin_flags(cred)
@@ -95,6 +161,20 @@ def main(argv: list[str] | None = None) -> int:
     p_import.add_argument("--skip-missing", action="store_true", help="Skip items with empty resolved value.")
 
     args = parser.parse_args(argv)
+    if args.cmd == "serve":
+        return _cmd_serve(args)
+    if args.cmd == "storage-health":
+        client = _admin_client_from_args(args)
+        print(json.dumps(client.storage_health(), ensure_ascii=False))
+        return 0
+    if args.cmd == "storage-migrate":
+        result = apply_storage_migrations(
+            postgres_dsn=args.postgres_dsn,
+            postgres_schema=args.postgres_schema,
+            dry_run=bool(args.dry_run),
+        )
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
     if args.cmd != "credential":
         parser.error("unsupported command")
 
@@ -137,17 +217,36 @@ def main(argv: list[str] | None = None) -> int:
     parser.error("unsupported credential command")
 
 
+def _cmd_serve(args: argparse.Namespace) -> int:
+    api_key = args.api_key or os.getenv("ANYAGENT_API_KEY")
+    admin_key = args.admin_key or os.getenv("ADMIN_API_KEY")
+    app = create_app(
+        workspace_dir=args.workspace,
+        api_key=api_key,
+        admin_api_key=admin_key,
+        sandbox_root_dir=args.sandbox_root,
+        storage_mode=args.storage_mode,
+        event_store_backend=args.event_store_backend,
+        run_store_backend=args.run_store_backend,
+        session_store_backend=args.session_store_backend,
+        session_lock_backend=args.session_lock_backend,
+        session_lease_ttl_s=args.session_lease_ttl_s,
+    )
+    uvicorn.run(app, host=args.host, port=int(args.port), log_level="info")
+    return 0
+
+
 def _add_common_admin_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--admin-url",
         default=None,
-        help="Tool Runtime base URL (default: $ADMIN_URL or http://127.0.0.1:8788).",
+        help="Admin API base URL (default: $ADMIN_URL or http://127.0.0.1:8787).",
     )
     p.add_argument("--admin-key", default=None, help="Admin API key (default: $ADMIN_API_KEY).")
 
 
 def _admin_client_from_args(args: argparse.Namespace) -> _AdminClient:
-    url = args.admin_url or os.getenv("ADMIN_URL") or "http://127.0.0.1:8788"
+    url = args.admin_url or os.getenv("ADMIN_URL") or "http://127.0.0.1:8787"
     key = args.admin_key or os.getenv("ADMIN_API_KEY") or ""
     if not key.strip():
         raise SystemExit("ADMIN_API_KEY is required (use --admin-key or env var)")
@@ -266,8 +365,7 @@ def _cmd_import(client: _AdminClient, *, file_path: str, dry_run: bool, skip_mis
 def _import_resolve_value(raw: dict[str, Any], *, index: int) -> str:
     direct = raw.get("value")
     if direct is not None:
-        v = str(direct).strip()
-        return v
+        return str(direct).strip()
 
     env_name = raw.get("value_from_env")
     default_value = raw.get("default_value")
@@ -292,4 +390,3 @@ def _raise_for_status(r: httpx.Response) -> None:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -1,135 +1,130 @@
-# anyagent 需求文档（v0）
+# anyagent 需求文档
 
 ## 0. 背景与目标
 
-anyagent 是一个“可作为基础设施复用”的 Agent 服务体系，解决两个问题：
+anyagent 是一个**配置化、无服务化**的 AI Agent 基础设施，核心理念：
 
-1. 对外提供 **OpenAI SDK Responses API 兼容** 的服务端接口（`POST /v1/responses` + SSE streaming），使任意客户端可以用 OpenAI 官方 SDK 方式接入，并获得端到端 agent loop 体验（含工具调用）。
-2. 提供一个 **Gateway 组件**，用于接入飞书/Discord/Telegram 等平台机器人，把平台的可操作能力以“工具”注入到 agent loop 中（例如飞书：群联系人信息、云文档创建/修改等）。
+1. **配置即服务**：通过 `AGENTS.md` / `agent.yaml` / `mcp.json` 配置即可启动一个兼容 OpenAI Responses API 的 Agent Server，无需编写任何服务端代码
+2. **两层 API 输出**：极简版本兼容 OpenAI Responses API（任意 OpenAI SDK 直连），精细版本由 anyagent SDK/Client 提供 tool/command 级别的阶段性结果
+3. **安全边界**：Agent 可见资源但不可直接操作资源——密钥、凭证、tool policy 由 server 代理管理
+4. **可扩展**：从单进程零依赖启动，到 PG/Redis 分布式部署，同一套核心逻辑
 
-### 0.0.1 仓库边界说明（当前拆分）
-
-- 本文描述的是 **anyagent 整体系统**（SDK + Agent API + Tool Runtime + Gateway + Multi-Agent）的需求边界，而不只是当前仓库中的文件集合。
-- 当前仓库 `anyagent/` 主要承载 SDK、协议模型、共享运行时能力与架构文档。
-- 可运行参考实现、demo workspace 与应用层验收已迁到同级项目 `../anyagent-apps/`。
-- 因此：本文保留 Agent Server 语义是刻意设计；但在阅读实现证据时，需要区分“当前仓库代码”与“同级参考实现”。
-
-### 0.1 交付形态（面向多项目复用的“SDK 优先”）
-
-你的诉求是“多个业务项目复用同一套基础设施”，并且：
-
-- 会长期维护多套专业领域技能（skills packs）
-- 单个业务项目里可能需要同时运行多个 agent（不同 persona/权限/技能组合），并对外提供服务
-
-因此，本项目不建议做成“强绑定某个业务”的一体化应用，而是建议按下面的方式交付：
-
-- `Core SDKs`（可被任意业务项目依赖）
-  - `anyagent`：单一 Python SDK 包（v0 强制“命名干净”，不拆 `*-sdk`）
-    - `anyagent.agent_runtime`：Agent loop（模型流式、工具调用、回灌、重试/中断语义等）
-    - `anyagent.skills`：skills 目录规范、加载/解析、动态披露（Dynamic Disclosure）机制
-    - `anyagent.gateway`：平台插件/connector 相关契约与辅助（连接器生命周期、平台上下文抽象、事件回推）
-    - `anyagent.protocol`：统一协议模型（Responses / Tool Runtime / Multi-Agent / common types）
-    - `anyagent.tool_runtime`：Tool Runtime 侧工具注册与插件宿主（tool registry、`registerTool(...)`、路由注册、schema 校验）
-- `Reference Implementation`（可运行的参考部署）
-  - 把 `Agent API + Gateway + Tool Runtime + Sandbox` 以“可读、可替换”的方式编排起来
-  - 参考 OpenClaw 的做法：既提供 `/v1/responses` 兼容入口（anyagent 的 Agent API），也可提供 `/tools/invoke` 这类工具直调入口（anyagent 的 Tool Runtime，可选）
-- `Project Template`（业务项目脚手架）
-  - 提供一键拉起的部署样例（Docker/Compose/Helm 任选其一），但不要把业务规则写进模板
-  - 业务项目只需要：
-    - 放入自己的 `.agents/agents/<agent_id>/`（每个 agent 一个目录；包含 `agent.yaml` + `AGENTS.md` + `skills/`）
-    - （可选）放入共享 skills packs：`.agents/skills/`（跨 agent 复用）
-    - 挂载平台 connector（飞书/Discord/TG 等）
-
-建议的仓库结构（示意，不绑定语言；当前实现已按 SDK 仓库 + 场景实践仓库拆分）：
+### 0.1 仓库边界
 
 ```text
-anyagent/                        # 当前仓库：SDK / protocol / shared runtime / docs
-  packages/
-    anyagent/                    # 单一 SDK 包：agent_runtime/protocol/gateway/skills/tool_runtime
-anyagent-apps/                   # 同级项目：reference implementation / demo / acceptance
+anyagent/                        # Server Core + SDK（本仓库）
+  packages/anyagent/             # 单一 Python 包
+    src/anyagent/
+      protocol/                  # 协议 SSOT
+      agent_runtime/             # Agent loop 运行时
+      skills/                    # Skills 系统
+      mcp/                       # MCP server 管理
+      gateway/                   # 会话/路由
+      tool_runtime/              # 工具注册
+      server/                    # 内置 Agent Server
+        security/                # Credential Vault / Tool Policy / Sandbox
+      agent_packs.py             # Agent Packs 配置加载
+      agent_api_client.py        # Client SDK
+      cli.py                     # CLI (anyagent serve)
+
+anyagent-apps/                   # 高级部署 + 场景（同级项目）
   apps/
-    agent-api/                   # Reference: /v1/responses hosting（Ingress 无状态 + Worker 执行）
-    gateway/                     # Reference: feishu/discord/tg connectors + platform message rendering
-    tool-runtime/                # Reference: Tool Runtime service (router + executors)
-    sandbox-executor/            # Reference: sandbox executor（可选；v0 默认内置于 tool-runtime，后续如需隔离/扩缩容可独立拆分）
-  templates/
-    project-template/            # 业务项目脚手架（配置 + skills + 轻量扩展）
+    agent-api/                   # 分布式 Agent API (PG/Redis)
+    tool-runtime/                # 独立 Tool Runtime 服务
+  plugins/                       # 平台 Connectors (飞书/Discord/TG)
+  examples/                      # 场景模板
+  templates/                     # 业务项目脚手架
 ```
 
-这个拆分的直接收益：
+### 0.2 交付形态（配置即服务）
 
-- 多业务共享底座时，核心契约（Responses API、工具协议、skills 结构、并发/幂等等）能保持稳定演进
-- 业务项目只承担“配置 + skills + 少量工具扩展”，而不是 fork 整个服务
-- 多 agent 能以配置/注册的方式扩展，而不需要复制一套服务进程
+anyagent 的核心交付形态是**一条命令启动 Agent Server**：
 
-协议治理建议（v0 约束）：
+```bash
+cd my-workspace && anyagent serve
+```
 
-- Wire 协议（HTTP JSON body、SSE event data、内部 RPC payload）必须有“单一真源”（OpenAPI/JSON Schema 任一即可）。
-- TS/Python 的类型定义与校验尽量从 spec 生成或由 spec 驱动，避免 `Agent API`、`Gateway`、`Sandbox` 各自手写导致漂移。
+业务项目只需要：
+
+- 放入 `.agents/agents/<agent_id>/` 配置（`agent.yaml` + `AGENTS.md` + `mcp.json`）
+- （可选）放入共享技能 `.agents/skills/`
+- 设置环境变量（模型 API Key、工具凭证等）
+
+无需 fork 代码，无需编写服务端逻辑，无需部署基础设施（零外部依赖）。
+
+需要生产级部署时，使用 `anyagent-apps` 扩展为 PG/Redis 持久化、独立 Tool Runtime、平台 Connector 的分布式部署。
+
+### 0.3 协议治理
+
+- Wire 协议（HTTP JSON body、SSE event data）必须有单一真源：`anyagent.protocol.*`
+- Python 类型定义由 protocol 模块驱动，禁止各处手写 dict shape
 
 ## 1. 范围定义
 
-### 1.1 In Scope（必须做到）
+### 1.1 In Scope
 
-- Agent API（API 层无状态，执行层有状态——见下方说明）
-  - OpenAI Responses API 兼容：`POST /v1/responses`
-  - 支持 SSE streaming（增量事件 + `[DONE]` 结束符）
-  - 在服务端完成完整 agent loop：模型流式输出、tool calls、tool execution、tool results 回灌、继续推理直到完成
-  - 支持“Agent Packs”配置化：按 `agent_id` 选择该 agent 的行为/工具/skills/多智能体策略（见 2.1/2.2）
-  - 支持幂等（Idempotency），支持断线重连的事件补发（至少在我们自有 client/gateway 路径上可用）
+- **内置 Agent Server**（`anyagent serve`）
+  - OpenAI Responses API 兼容：`POST /v1/responses` + SSE streaming
+  - 服务端完整 agent loop：模型流式输出 → tool calls → tool execution → tool results 回灌 → 继续推理
+  - Agent Packs 配置化：按 `agent_id` 选择行为/工具/skills/多智能体策略
+  - 进程内 Tool Runtime（manifest + execute）
+  - MCP server 连接与工具集成
+  - Sandbox 执行环境：策略-后端分离架构，默认集成 [OpenSandbox](https://github.com/alibaba/OpenSandbox)，Agent 可在沙箱中执行命令、发起网络请求、读写文件
+  - In-memory Session/Run/Event Store（零外部依赖）
+  - Credential Vault：密钥对 Agent 不可见，server 代理注入
+  - 安全边界：沙箱内自由（命令/网络/文件），沙箱外隔离（不挂载凭证、egress 阻止内部访问）
+  - 统一命令入口：`exec` tool（core 类别），沙箱作为执行策略而非工具类型
+  - 会话隔离沙箱：per-session sandbox，同 session 内多次命令共享文件系统
 
-> **Stateless 的精确含义**：Agent API 的 HTTP 入口层（Ingress）是无状态的——任意实例可处理任意请求，不在进程内长期持有会话状态。但 Worker 在执行 agent loop 期间是**有状态的**（持有 lease lock、维护 turn 上下文、保持与 LLM 的流式连接）。状态通过外置存储（Session Store / Event Store / Run Store）持久化，使得 Worker 实例可替换、可恢复。详见 `docs/architecture/stateless-agent-service-architecture.md`。
+- **Client SDK（AnyAgent）**
+  - OpenAI 兼容面：`client.openai.responses.create()`
+  - anyagent 精细面：`client.events.stream_typed()` → tool/command 级 Stage Events
+  - 断线续传（`last_seq`）
 
-- Gateway（长连接、可多实例）
-  - 接入平台机器人：v0（Phase 1）先打通一个平台 connector（推荐飞书）；Discord/Telegram 作为 Phase 2+ 扩展
-  - 做好会话映射（platform thread/channel -> anyagent session key）
-  - 注入平台能力（capabilities -> context + tool visibility hints），并把平台消息/回调可靠地转发给 Agent API
-  - 输出到平台（含平台支持的“流式效果”：打字/编辑消息/卡片更新等）
-- Tool Runtime（独立服务、可横向扩展）
-  - 承载工具执行：core/app/sandbox/channel tools 的路由、执行、取消、幂等、审计
-  - 提供工具清单/可见性计算（manifest），供 Agent API 在 `/v1/responses` 中披露 tools
+- **分布式部署模式**（anyagent-apps）
+  - PG/Redis 持久化 + 分布式锁
+  - 独立 Tool Runtime 服务
+  - 平台 Gateway connector
 
-### 1.2 Out of Scope（本阶段明确不做）
+### 1.2 Out of Scope（本阶段不做）
 
-- 端侧 UI（WebChat/桌面端）不是本阶段目标
-- OpenAI ChatCompletions 兼容（`/v1/chat/completions`）不做
-- OpenClaw 的全部能力（nodes/canvas/daemon/本地技能管理等）不做，但会借鉴其架构思想
+- 端侧 UI（WebChat/桌面端）
+- OpenAI ChatCompletions 兼容（`/v1/chat/completions`）
 
-### 1.3 v0 核心 vs 未来扩展（强分界，避免“文档耦合过大”）
+### 1.3 Phase 分界
 
-为便于落地与减少返工，本文约定：**v0 首发范围 = Phase 1（见第 10 节）**。文档会提前定义部分 Phase 2+ 能力的契约与边界，但默认不阻塞 v0 交付。
+详见 `docs/architecture/roadmap.md`。
 
-v0（Phase 1）核心链路（必须交付）：
+- **Phase 1**：极简 `anyagent serve`（内核收敛，零依赖启动）
+- **Phase 2**：Client SDK 细粒度结果 + 安全加固
+- **Phase 3**：多 Agent 编排 + 生态
+- **Phase 4**：平台化 + 企业级
 
-1. `POST /v1/responses`（`stream=true` 同步 SSE）+ 服务端 agent loop（含工具调用闭环）
-2. `Agent Packs`：基于配置目录定义可对外服务的 agents（行为/工具/skills/多智能体约束），并在路由时强校验
-3. `Tool Runtime`：`manifest + execute` 契约稳定（**单进程/单服务即可**；不要求远程 executors / 控制面 / 分钟级热更新）
-4. `Platform Gateway`：一个平台 connector + 最小会话映射（platform thread -> `session_key`）
-5. 最小存储：Session/Run/Event + Dedupe + Lock（见 `docs/architecture/storage-minimal-design.md`）
-
-Phase 2+ 扩展（Future，不应阻塞 v0）：
-
-- 多平台 connectors（Discord/TG 等）
-- skills 动态披露的完整链路（`/internal/skills/list`、依赖推导、UI/审计联动等）
-- Multi-Agent 编排（spawn/send/wait/close/resume + AgentControl + 资源配额治理）
-- Tool Runtime Federation 的演进形态（remote executors、控制面、分钟级热更新）
+Phase 2+ 的能力会提前定义契约与边界，但不阻塞 Phase 1 交付。
 
 ## 2. 核心概念与术语
 
-- `Agent API`：对外的 HTTP API，对接 OpenAI SDK Responses API，并负责执行 agent loop。Agent API 的 HTTP 入口层（Ingress）无状态，执行层（Worker）在 run 期间持有 lease 与 turn 上下文，状态外置到存储。
-- `Gateway`（又称 `Platform Gateway`）：长连接服务，连接外部平台（飞书/Discord/TG），负责收消息/回消息、线程绑定、平台回调处理等”连接器职责”。**注意与并发架构文档中的 `Ingress`（HTTP 入口层）区分**——Ingress 是 Agent API 内部的无状态 HTTP 接入层（鉴权、限流、SSE 推送），Gateway 是面向外部平台的连接器服务。
-- `AgentId / AgentSpec`：用于区分“同一套服务里不同的 agent”。
-  - `agent_id`：稳定标识（比如 `main`、`legal`、`sales`、`ops`）
-  - `AgentSpec`：该 agent 的配置集合（系统提示、默认 skills allowlist、tool policy profile、模型策略、平台能力注入策略等）
-- `Tool`：可被模型调用的函数型工具（function tool），例如 `feishu.doc.create`。
-- `Tool Runtime`：工具执行服务（独立模块/服务）。Agent API 在 loop 中调用它执行工具。
+- `Agent Server`：anyagent 内置的 HTTP 服务，对外暴露 `POST /v1/responses`，在服务端执行完整 agent loop。通过 `anyagent serve` 启动。
+- `Agent Packs`：`.agents/agents/<agent_id>/` 配置目录，定义 agent 的行为、工具、技能、MCP 连接。
+- `AgentId / AgentSpec`：区分同一套服务里不同 agent 的标识与配置集合。
+  - `agent_id`：稳定标识（如 `main`、`legal`、`sales`）
+  - `AgentSpec`：该 agent 的配置（`agent.yaml` 解析产物）
+- `Tool Runtime`：工具执行引擎。内置模式为进程内执行，分布式模式为独立服务。
+- `Sandbox`：沙箱执行环境，采用策略-后端分离架构（参考 Codex）。策略定义在 `anyagent.protocol.sandbox`（SandboxPolicy / NetworkSandboxPolicy / ResourceLimits），后端可插拔（OpenSandboxBackend / ExternalSandboxBackend / LocalUnsafeBackend）。Agent 可在沙箱中自由执行命令、发起网络请求、读写文件，但沙箱与宿主环境严格隔离。per-session 隔离，同 session 内命令共享文件系统。
+- `MCP Server`：通过 `mcp.json` 配置的远程 MCP 工具服务，由 server 管理连接池。
+- `Credential Vault`：凭证管理系统。Agent 只见 `credential_id`，server 负责 resolve 和注入。
 - `Session`：会话上下文（消息历史、策略、工具可见性等）。会话内串行，跨会话并行。
-- `Run/Response`：一次 `POST /v1/responses` 的执行实例，对应一个 `response_id`，产生事件流与最终输出。
-- `Thread / thread_id`：Multi-Agent 编排里的运行时线程标识（child thread id）。`agent_id` 是配置级 persona/权限/skills 组合标识，`thread_id` 是运行时 thread 标识；二者不要混用。
+- `Run/Response`：一次 `POST /v1/responses` 的执行实例，对应一个 `response_id`。
+- `Stage Events`：anyagent 精细层事件（tool/command 级阶段性结果），通过 `client.events.stream_typed()` 消费。
+- `Tool`：可被模型调用的函数型工具（function tool）。
+- `session_key`：外部平台线程/会话键。
+- `session_partition_key`：并发分片键，固定为 `”{agent_id}::{session_key}”`。
+- `Gateway`（Platform Gateway）：连接外部平台（飞书/Discord/TG）的长连接服务。仅在 anyagent-apps 中实现。
+- `Thread / thread_id`：Multi-Agent 编排里的运行时线程标识。与 `agent_id`（配置级）不混用。
 
 租户字段预留：
 
-- 所有持久化实体预留 `tenant_id` 字段（v0 默认单租户，可为空或固定值）。
+- 所有持久化实体预留 `tenant_id` 字段（Phase 1 默认单租户）。
 
 <a id="req-2-1"></a>
 
@@ -614,9 +609,10 @@ v0 强制：
 2. `app` 业务工具（业务项目自定义）
    - 例：`app.crm.lookup_customer`、`app.kb.search`
    - 特性：与业务系统/数据强相关，通常需要项目侧实现与部署；必须纳入 Tool Runtime 的 policy/审计/幂等/取消语义
-3. `sandbox` 类工具（隔离执行）
-   - 例：`sandbox.exec`、`sandbox.python`（通过沙盒执行代码/命令）
-   - 特性：高风险、高资源占用，需要强隔离（容器/VM/受限网络/文件系统策略）
+3. `sandbox` 类工具（沙箱管理，保留）
+   - 例：`sandbox.snapshot`、`sandbox.reset`（未来可能的沙箱管理操作）
+   - 特性：沙箱管理能力，非命令执行入口
+   - 注意：命令执行统一通过 `exec` tool（core 类别），沙箱作为执行策略而非工具类型
 4. `channel` 平台工具（由平台插件提供，并在 Tool Runtime 侧注册为 tools）
    - 例：`feishu.doc.create`、`feishu.directory.get_chat_members`
    - 特性：依赖平台 token、目录缓存、权限边界，适合放在 Tool Runtime 的 channel executor（独立扩缩容；Gateway 仅做连接器与消息回传）
@@ -638,14 +634,16 @@ v0 强制落地（降低复杂度，先把契约跑通）：
 
 推荐的路由规则（v0 最小可用）：
 
-- 先做“精确命中路由表”（用于系统保留工具名，例如 multi-agent 的 `spawn_agent` 等），再做前缀路由：
-  - exact-match table（reserved names）
+- 先做”精确命中路由表”（用于系统保留工具名，例如 multi-agent 的 `spawn_agent` 和命令执行的 `exec`），再做前缀路由：
+  - exact-match table（reserved names：`spawn_agent`, `exec`, ...）
   - prefix routes（`core.*` / `app.*` / `sandbox.*` / `<channel>.*`）
 - 前缀路由以 `tool_name` 前缀路由，例如：
   - `core.*` -> core-executor
   - `app.*` -> app-executor
-  - `sandbox.*` -> sandbox-executor
+  - `sandbox.*` -> sandbox-executor（沙箱管理工具，非命令执行）
   - `feishu.*` / `discord.*` / `telegram.*` -> channel-executor（Tool Runtime）
+- 精确命中路由，例如：
+  - `exec` -> ExecHandler（内置 SandboxManager 路由到沙箱后端）
 
 优点：
 
@@ -688,10 +686,12 @@ anyagent v0 的执行语义建议对齐它们的交集（实现上可逐步增�
 
 <a id="req-5-5"></a>
 
-### 5.5 Sandbox 工具（code execute / exec）的最小安全要求
+### 5.5 Sandbox 与命令执行（exec tool）的最小安全要求
 
-因为 `sandbox.exec` 这类工具会执行任意代码/命令，v0 也必须明确最低安全线：
+因为 `exec` tool 会在沙箱中执行任意代码/命令，v0 也必须明确最低安全线：
 
+- 策略-后端分离：沙箱策略定义在 Protocol 层（`SandboxPolicy`），后端可插拔（OpenSandbox / External / LocalUnsafe）
+- 会话隔离：per-session sandbox，同 session 内命令共享文件系统
 - 默认隔离执行：容器/VM/受限用户，限制网络访问与文件系统访问（策略化 allowlist）
 - 输出限额：stdout/stderr 最大字节数，避免 OOM
 - 超时：硬超时 kill
@@ -713,10 +713,10 @@ anyagent v0 的执行语义建议对齐它们的交集（实现上可逐步增�
 - 名称一旦发布不可重命名（否则会影响模型 tool_choice、审计与回放）
 - 必须声明工具归属类别（core/app/sandbox/channel），用于路由与默认 deny
 
-保留名例外（v0 允许，用于 Codex 风格 multi-agent 工具）：
+保留名例外（v0 允许，用于 Codex 风格 multi-agent 工具和统一命令执行）：
 
-- 允许少量 snake_case 的系统保留工具名：`spawn_agent`, `send_input`, `wait`, `close_agent`, `resume_agent`
-- Tool Runtime Router 必须对保留名走“精确命中路由表”，不得使用前缀模糊匹配
+- 允许少量 snake_case / 单词的系统保留工具名：`spawn_agent`, `send_input`, `wait`, `close_agent`, `resume_agent`, `exec`
+- Tool Runtime Router 必须对保留名走”精确命中路由表”，不得使用前缀模糊匹配
 
 推荐命名：
 
@@ -726,9 +726,12 @@ anyagent v0 的执行语义建议对齐它们的交集（实现上可逐步增�
 - app（业务项目自定义）：
   - `app.crm.lookup_customer`
   - `app.kb.search`
-- sandbox：
-  - `sandbox.exec`（通用命令执行）
-  - `sandbox.python`（可选：受限 python 运行）
+- 保留名（core 类别）：
+  - `exec`（统一命令执行入口，路由到沙箱）
+  - `spawn_agent` / `send_input` / `wait` / `close_agent` / `resume_agent`
+- sandbox（保留，用于未来沙箱管理）：
+  - `sandbox.snapshot`（沙箱快照，v2+）
+  - `sandbox.reset`（沙箱重置，v2+）
 - channel（平台前缀即命名空间）：
   - `feishu.directory.get_chat_members`
   - `feishu.doc.create`
@@ -860,7 +863,7 @@ v0 标准结构（建议）：
 	},
 	"policy": {
 		"allow_tools": ["feishu.*", "core.*"],
-		"deny_tools": ["sandbox.*"]
+		"deny_tools": ["sandbox.*", "exec"]
 	},
 	"locale": {
 		"timezone": "Asia/Shanghai",
@@ -891,7 +894,7 @@ openclaw 在 `/tools/invoke` 里会做一套 tool policy/allowlist pipeline，�
 
 anyagent v0 也必须具备最小策略线：
 
-- 默认 deny：`sandbox.*`（除非显式开启）
+- 默认 deny：`exec`（命令执行，除非 `sandbox.mode != disabled` 且 agent.yaml 显式请求）
 - 默认 allow：`core.web_search/core.web_fetch`（也应可被关闭）
 - channel tools 的 allow/deny 由 Tool Runtime 的策略与工具元数据决定（并在具体 executor 侧做 defense-in-depth 校验）
 
@@ -1201,7 +1204,7 @@ anyagent v0 建议保留兼容形态，并映射到我们在第 5 节定义的 T
 
 - `transport = "core"`：映射到 `core.*` 工具集合
 - `transport = "app"`：映射到 `app.*` 工具集合（业务项目自定义工具）
-- `transport = "sandbox"`：映射到 `sandbox.*` 工具集合
+- `transport = "sandbox"`：映射到 `exec` tool（命令执行，路由到沙箱后端）
 - `transport = "channel"`：映射到 channel tools（例如 `feishu.*`），由 Tool Runtime 的 channel executor 承载
 - `transport = "mcp"`：映射到 `mcp.<server_label>.*` 命名空间（server 生命周期与连接配置由 Agent Pack `mcp.json` 决定）
 
@@ -1215,7 +1218,7 @@ anyagent v0 的要求：
 
 - skills 可以声明权限档案（至少网络与文件系统读写）
 - 当 skill 被选中时：
-  - 允许它扩大或收缩 `sandbox.*` 工具的权限边界（例如允许写某些目录）
+  - 允许它扩大或收缩 `exec` tool 的沙箱权限边界（例如允许写某些目录）
   - 但必须遵守“更高层策略”的上限（tenant/global deny 优先生效）
 
 换句话说：

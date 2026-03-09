@@ -1,97 +1,179 @@
-# apps / packages 边界与收敛策略（v0）
+<!--
+---
+doc_kind: architecture
+status: stable
+tags: ["boundary", "anyagent", "anyagent-apps", "server-core", "security"]
+summary: anyagent (Server Core + SDK) 与 anyagent-apps (高级部署 + 场景) 的职责边界与安全模型。
+---
+-->
 
-对应需求：`requirements.md#req-4`、`requirements.md#req-5`、`requirements.md#req-12`
+# anyagent / anyagent-apps 职责边界
 
-说明：当前仓库只保留 `packages/anyagent`；本文中的 `apps/*` 指同级参考实现项目 `../anyagent-apps/apps/*`。
+## 1. 总体定位
 
-## 1. 目标
+```text
+┌─────────────────────────────────────────────────────────┐
+│                anyagent (Server Core + SDK)              │
+│                                                          │
+│  "配置即服务"的 Agent Server 内核                         │
+│  一条命令启动，零外部依赖                                  │
+│                                                          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐  │
+│  │protocol.*│ │agent_    │ │ skills.* │ │   mcp.*   │  │
+│  │(协议SSOT)│ │runtime.* │ │(发现/选择)│ │(MCP管理)  │  │
+│  └──────────┘ └──────────┘ └──────────┘ └───────────┘  │
+│  ┌──────────┐ ┌──────────┐ ┌───────────────────────┐   │
+│  │gateway.* │ │tool_     │ │  server/ (内置)        │   │
+│  │(会话/路由)│ │runtime.* │ │  ├─ Agent API         │   │
+│  └──────────┘ │(工具注册)│ │  ├─ Tool Runtime      │   │
+│               └──────────┘ │  ├─ in-memory store   │   │
+│  ┌──────────────────────┐  │  └─ security/         │   │
+│  │ AnyAgent Client SDK  │  └───────────────────────┘   │
+│  └──────────────────────┘                               │
+└─────────────────────────────────────────────────────────┘
 
-本文件用于收敛 anyagent 仓库中的模块职责，避免“服务实现”和“共享 SDK/协议”重复演化，确保：
+┌─────────────────────────────────────────────────────────┐
+│            anyagent-apps (高级部署 + 场景)                │
+│                                                          │
+│  消费 anyagent Server Core，扩展为生产级分布式部署         │
+│                                                          │
+│  ┌───────────────────────────────────────────────┐      │
+│  │ 高级部署模式                                    │      │
+│  │ ├─ 分离式 Agent API (PG/Redis 持久化)           │      │
+│  │ ├─ 独立 Tool Runtime (可横向扩缩容)             │      │
+│  │ ├─ 分布式锁 / keyed serialization              │      │
+│  │ └─ 事件补发 / rollout replay                   │      │
+│  └───────────────────────────────────────────────┘      │
+│  ┌───────────────────┐  ┌────────────────────────┐      │
+│  │ 场景模板 & 示例    │  │ 平台 Connectors        │      │
+│  │ ├─ demo-workspace │  │ ├─ plugins/feishu      │      │
+│  │ ├─ multi-agent    │  │ ├─ plugins/discord     │      │
+│  │ └─ project-tpl    │  │ └─ plugins/slack       │      │
+│  └───────────────────┘  └────────────────────────┘      │
+└─────────────────────────────────────────────────────────┘
+```
 
-- 对外协议与内部协议均有单一真源（SSOT）
-- `apps/*` 作为 demo/部署入口，突出编排与定制能力
-- `packages/anyagent/*` 作为可复用能力层，减少跨服务重复代码
+## 2. 职责划分
 
-## 2. 职责边界（必须遵守）
+### anyagent — Server Core + SDK
 
-### `packages/anyagent/*`（共享能力层）
+**拥有（Owns）**：
 
-- 协议模型（`anyagent.protocol.*`）
-- 共享运行时 primitives（tool registry/client、session key、skills 选择与注入）
-- Client SDK：`AnyAgent` 资源型命名空间入口（`responses` / `events` / `skills` 子命名空间，见 `docs/architecture/decisions/openai-first-api-surface.md`）
+| 模块 | 职责 | 路径 |
+|---|---|---|
+| `protocol.*` | Wire-level 协议 SSOT（Responses/Tool Runtime/SSE/Multi-Agent/Stage Events） | `packages/anyagent/src/anyagent/protocol/` |
+| `agent_runtime.*` | Agent loop 运行时（model providers、tool loop、prompt 注入、session runtime） | `packages/anyagent/src/anyagent/agent_runtime/` |
+| `skills.*` | Skills 发现/加载/选择/权限/注入 | `packages/anyagent/src/anyagent/skills/` |
+| `mcp.*` | MCP server 管理（auth、连接池、工具发现） | `packages/anyagent/src/anyagent/mcp/` |
+| `gateway.*` | 会话映射、agent 路由、sequencer | `packages/anyagent/src/anyagent/gateway/` |
+| `tool_runtime.*` | 工具注册、client、plugin 模型 | `packages/anyagent/src/anyagent/tool_runtime/` |
+| `agent_packs` | Agent Packs 配置加载与校验 | `packages/anyagent/src/anyagent/agent_packs.py` |
+| `server/` | **内置 Agent Server**（FastAPI + in-memory store + 进程内 tool 执行） | `packages/anyagent/src/anyagent/server/` |
+| `AnyAgent` SDK | Client SDK 资源型命名空间（openai/responses/events/skills） | `packages/anyagent/src/anyagent/agent_api_client.py` |
+| CLI | `anyagent serve` / `anyagent agents list` / `anyagent tools list` | `packages/anyagent/src/anyagent/cli.py` |
+| Security | Credential Vault / Tool Policy / Agent Sandbox 策略定义 | `packages/anyagent/src/anyagent/server/security/` |
 
-示例：
+**不做**：
 
-- Tool Runtime 协议模型：`packages/anyagent/src/anyagent/protocol/tool_runtime.py`
-- SSE 协议工具：`packages/anyagent/src/anyagent/protocol/sse.py`
-- Skills 选择与权限：`packages/anyagent/src/anyagent/skills/*`
+- 不做 PG/Redis 持久化适配
+- 不做分布式锁/跨实例 lease
+- 不做平台 Gateway connector
+- 不做 K8s/Helm 部署编排
 
-### `apps/*`（服务编排层 / demo 应用层）
+### anyagent-apps — 高级部署 + 场景
 
-- HTTP 路由与鉴权
-- 存储、并发控制、可观测事件写入
-- 将 Agent Packs / Skills / Tool Runtime / Model Provider 编排成完整业务流程
+**拥有（Owns）**：
 
-示例：
+| 模块 | 职责 | 路径 |
+|---|---|---|
+| 分布式 Agent API | PG/Redis 存储、分布式锁、事件补发、rollout replay | `apps/agent-api/` |
+| 独立 Tool Runtime | 独立服务进程、HTTP manifest/execute、审计日志 | `apps/tool-runtime/` |
+| 平台 Connectors | 飞书/Discord/TG 等平台消息桥接 | `plugins/` |
+| 场景模板 | demo-workspace、multi-agent-team、project-template | `examples/` / `templates/` |
+| 运维工具 | 数据迁移、保留策略、rollout replay CLI | `apps/*/storage/` |
+| 应用层验收 | 在线 smoke / acceptance 脚本 | `tests/acceptance/` |
 
-- Agent API 对外接口与会话编排：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py`
-- Tool Runtime 执行路由与审计：`../anyagent-apps/apps/tool-runtime/src/anyagent_tool_runtime/http/app.py`
+**不做**：
+
+- 不重复实现协议模型（必须复用 `anyagent.protocol.*`）
+- 不重复实现 agent loop 核心（必须复用 `anyagent.agent_runtime.*`）
+- 不自定义 SDK client（必须使用 `AnyAgent`）
 
 ## 3. 收敛策略（Protocol-First）
 
-新增或修改任一可消费协议（HTTP payload / SSE event / internal model）时：
+1. 新增/修改任何协议（HTTP payload / SSE event / internal model）→ 先更新 `anyagent.protocol.*`
+2. `anyagent.server/` 是内置 server 的参考实现，`anyagent-apps` 的分布式 server 消费相同的核心逻辑
+3. 编排层差异（存储适配、分布式锁、平台 connector）属于"编排层特化"，不是重复实现
 
-1. 先更新 `anyagent.protocol.*` 模型（SSOT）。
-2. `apps/*` 仅复用该模型，不重复定义同构结构。
-3. 若历史路径已被 app 内部引用，允许保留“兼容 re-export 模块”，但禁止再引入新字段分叉。
+## 4. Agent 安全边界
 
-## 4. 当前已收敛项（2026-03-05）
+anyagent 的核心安全原则：**沙箱内自由，沙箱外隔离**。
 
-- Tool Runtime HTTP 入参/出参模型由 app 本地定义收敛为复用协议模型：
-  - `../anyagent-apps/apps/tool-runtime/src/anyagent_tool_runtime/http/api_models.py`
-  - SSOT：`packages/anyagent/src/anyagent/protocol/tool_runtime.py`
-- Agent API -> Tool Runtime 的 manifest/execute 请求体构造改为 shared typed model（减少手写 payload 分叉）：
-  - `../anyagent-apps/apps/agent-api/src/anyagent_agent_api/clients/tool_runtime_client.py`
-- OpenAI Responses tool-loop 公共 helper（`tool_choice` 校验、`function_call` 提取、arguments 解析）下沉到 protocol 层复用：
-  - `packages/anyagent/src/anyagent/protocol/openai_responses.py`
-  - 消费方：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
-- Tool-loop follow-up payload 构造与工具名白名单提取下沉到 `agent_runtime`：
-  - `packages/anyagent/src/anyagent/agent_runtime/tool_loop_payloads.py`
-  - 消费方：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
-- 工具执行结果标准化（错误结构、`function_call_output` 序列化）下沉到 `agent_runtime`：
-  - `packages/anyagent/src/anyagent/agent_runtime/tool_results.py`
-  - 消费方：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py`、`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py`
-- `response.completed` 事件 payload 解码收敛到 protocol helper，避免 app 内重复定义：
-  - `packages/anyagent/src/anyagent/protocol/openai_responses.py`
-  - 消费方：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py`
+沙箱采用**策略-后端分离**架构（参考 Codex）：策略定义在 `anyagent.protocol.sandbox`，后端实现可插拔（OpenSandbox / External / LocalUnsafe）。命令执行通过统一的 `exec` tool 路由到沙箱，对 agent loop 完全透明。
 
-## 5. 允许的“非重复”差异
+```text
+┌────────────────── Agent Runtime ──────────────────────────┐
+│                                                            │
+│  Agent CAN DO (沙箱内自由, 通过 exec tool):                 │
+│  ├─ 执行任意命令 (curl/wget/git/pip/python/node...)        │
+│  ├─ 发起网络请求 (访问外部网站、调用外部 API)                │
+│  ├─ 读写沙箱内文件 (创建/修改/删除)                         │
+│  ├─ 安装依赖 (pip install / npm install / apt-get)         │
+│  └─ 运行代码 (Python/JS/Shell 等)                          │
+│  注: 同一 session 内多次 exec 共享沙箱 (会话隔离)           │
+│                                                            │
+│  Agent CAN SEE (只读可见):                                  │
+│  ├─ 可用 Skills 列表 (name, description, schema)           │
+│  ├─ 可用 MCP Servers 列表 (name, tools[])                  │
+│  ├─ 可用 Tools 列表 (name, schema, kind)                   │
+│  ├─ API Keys 别名 (credential_id, 不暴露实际值)             │
+│  └─ Agent 自身的 AgentSpec (persona, constraints)          │
+│                                                            │
+│  Agent CAN USE (通过 server 中介):                           │
+│  ├─ 调用 Tools → server 代为执行，自动注入 credential       │
+│  ├─ 调用 MCP Tools → server 管理连接，agent 不持有连接       │
+│  └─ 使用 API Keys → server 注入 header，agent 不见原值     │
+│                                                            │
+│  沙箱隔离边界 (CANNOT escape):                              │
+│  ├─ 沙箱不挂载宿主机环境变量 / 凭证文件                     │
+│  ├─ 沙箱 egress 策略拒绝访问内部服务 (anyagent/PG/Redis)    │
+│  ├─ 沙箱间相互隔离 (不可跨沙箱访问, per-session 隔离)       │
+│  └─ 沙箱有资源限制 (CPU/内存/磁盘/超时/TTL)                │
+│                                                            │
+│  Server 中介层负责:                                         │
+│  ├─ Credential Vault：密钥只有 set 没有 get                │
+│  ├─ Tool Policy：deny 优先于 allow                         │
+│  ├─ Context 隔离：_credentials 不回传给 Agent              │
+│  ├─ Sandbox 策略-后端分离：                                 │
+│  │   ├─ Protocol 层: SandboxPolicy (策略声明)              │
+│  │   ├─ Backend 层: OpenSandbox / External / LocalUnsafe   │
+│  │   └─ SandboxManager: per-session 生命周期管理            │
+│  └─ Audit：所有工具调用结构化留痕 (不含敏感值)              │
+└────────────────────────────────────────────────────────────┘
+```
 
-以下差异属于“编排层特化”，不是重复实现：
+详细设计见 `docs/security/sandbox-security.md`。
 
-- Agent API 的 session snapshot / replay / multi-agent system tool 编排
-- Tool Runtime 的执行器、凭证注入、审计日志策略
-- 与部署形态绑定的设置项与服务级异常映射
+## 5. 部署模式对比
 
-这类能力可以保留在 `apps/*`，但其输入/输出协议模型仍必须复用 `packages`。
+| 维度 | anyagent serve (内置) | anyagent-apps (分布式) |
+|---|---|---|
+| 启动 | `anyagent serve` | `docker-compose up` |
+| 存储 | in-memory（可选 SQLite） | PostgreSQL + Redis |
+| Tool Runtime | 进程内执行 | 独立服务（可多实例） |
+| 并发 | 单进程 keyed serialization | 分布式 lease lock |
+| 事件补发 | 内存 event buffer | Event Store + `last_seq` 补发 |
+| 适用 | 开发/原型/小团队 | 企业级生产 |
+| 沙箱后端 | OpenSandboxBackend / LocalUnsafe | ExternalSandboxBackend (Pod 即沙箱) |
+| 凭证管理 | EnvBackend（环境变量） | FileBackend / DatabaseBackend / VaultBackend |
 
-## 6. 设计模式与文件层级建议
+## 6. 依赖方向（单向）
 
-### 分层模式（推荐）
+```text
+anyagent-apps ──depends-on──▶ anyagent
 
-- `protocol/*`：Wire-level contract（请求/响应/SSE/字段校验/轻量 payload helper）
-- `agent_runtime/*`：运行时编排 primitives（manifest/tool-loop/session runtime/prompt 组装）
-- `apps/*`：HTTP orchestration（鉴权、存储、并发控制、落库与审计）
+anyagent-apps 的 pyproject.toml:
+  anyagent = { path = "../../../anyagent/packages/anyagent", editable = true }
+```
 
-### 文件层级收敛准则
-
-- 协议形态相关工具（例如 `tool_choice` 校验、`function_call` 提取、body 注入）优先放在 `anyagent.protocol.openai_responses`。
-- 与会话状态绑定的纯函数（runtime config merge、session snapshot build/resume）放在 `anyagent.agent_runtime.session_runtime`。
-- 业务提示拼接类逻辑（Agent Pack 注入文本）放在 `anyagent.agent_runtime.prompt_injection`，避免塞进 `app.py`。
-- 工具执行结果归一化（`status/error/output` 与 `function_call_output` 组装）放在 `anyagent.agent_runtime.tool_results`，应用层只做编排与审计。
-
-### 模式收益
-
-- 减少“同一规则在 app + sdk + runtime 三处重复实现”的漂移风险。
-- `app.py` 保持 orchestration 角色，方便后续拆分 controller/flow。
-- 未来做多服务/多 SDK 时，复用路径与责任边界更稳定。
+禁止反向依赖：`anyagent` 不得 import `anyagent-apps` 的任何模块。

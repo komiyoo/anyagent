@@ -3,6 +3,7 @@ __all__ = [
     "openai_responses",
     "multi_agent",
     "sse",
+    "sandbox",
     "agent_api_internal",
     "stage_events",
     "command_derivation",

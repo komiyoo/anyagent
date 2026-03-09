@@ -16,6 +16,8 @@ RESERVED_NAMES = {
     "wait",
     "close_agent",
     "resume_agent",
+    # 统一命令执行入口（沙箱路由，core 类别）
+    "exec",
 }
 
 TOOL_NAME_RE = re.compile(r"^[a-z0-9_.-]+$")

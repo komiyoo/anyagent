@@ -96,11 +96,13 @@ def extract_command_planned_fields(
     workdir_out = workdir.strip() if isinstance(workdir, str) and workdir.strip() else None
 
     timeout_ms = arguments_json.get("timeout_ms")
+    timeout_is_seconds = False
     if timeout_ms is None:
         timeout_ms = arguments_json.get("timeout")
+        timeout_is_seconds = timeout_ms is not None
     timeout_out: int | None = None
     if isinstance(timeout_ms, int):
-        timeout_out = max(0, int(timeout_ms))
+        timeout_out = max(0, int(timeout_ms) * (1000 if timeout_is_seconds else 1))
 
     return CommandPlannedFields(command=cmd, workdir=workdir_out, timeout_ms=timeout_out)
 

@@ -22,6 +22,7 @@ from openai.types.responses.response_output_text import ResponseOutputText
 from openai.types.responses.response_stream_event import ResponseStreamEvent
 
 from .base import (
+    BufferedLiveResponseStream,
     ModelProvider,
     ModelProviderInvalidRequestError,
     ModelProviderTransportError,
@@ -99,6 +100,20 @@ class AnthropicMessagesModelProvider(ModelProvider):
         created = ResponseCreatedEvent(type="response.created", sequence_number=0, response=resp)
         completed = ResponseCompletedEvent(type="response.completed", sequence_number=1, response=resp)
         return [created, completed], resp
+
+    async def create_response_stream_live(
+        self,
+        *,
+        body: dict[str, Any],
+        idempotency_key: str | None = None,
+        timeout_s: float | None = None,
+    ) -> BufferedLiveResponseStream:
+        events, completed = await self.create_response_stream_buffered(
+            body=body,
+            idempotency_key=idempotency_key,
+            timeout_s=timeout_s,
+        )
+        return BufferedLiveResponseStream(events=events, completed=completed)
 
     async def _create_response_impl(self, *, body: dict[str, Any], timeout_s: float) -> Response:
         model = body.get("model")
@@ -383,4 +398,3 @@ def _cached_default_provider(base_url: str, api_key: str, anthropic_version: str
         ANYAGENT_ANTHROPIC_STATE_MAX=state_max_entries,
     )
     return create_anthropic_messages_model_provider(settings=settings)
-

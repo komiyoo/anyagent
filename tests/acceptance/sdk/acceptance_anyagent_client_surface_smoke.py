@@ -6,7 +6,8 @@ import asyncio
 from unittest.mock import patch
 
 from anyagent import AnyAgent
-from anyagent.agent_api_client import Responses
+from anyagent.agent_api_client import Admin, Responses
+from anyagent.protocol.admin_storage import StorageHealthResponse
 from anyagent.protocol.openai_responses import build_minimal_openai_response_json
 
 
@@ -54,6 +55,27 @@ def main() -> int:
     with patch.object(Responses, "retrieve", _fake_retrieve_invalid):
         typed_none = asyncio.run(client.responses.retrieve_typed("resp_typed_bad"))
         _assert(typed_none is None, "`retrieve_typed` should return None for invalid payload")
+
+    async def _fake_storage_health(self: Admin) -> StorageHealthResponse:
+        return StorageHealthResponse.model_validate({
+            "ok": True,
+            "storage_mode": "external",
+            "backends": {
+                "event_store": "external",
+                "run_store": "external",
+                "session_store": "external",
+                "session_lock": "redis",
+            },
+            "retention_s": {"events": 7200, "runs": 7200, "sessions": 86400},
+            "stores": {"session_store": {"type": "CachedSessionStore", "layers": ["PostgresSessionStore", "RedisSessionStore"]}},
+            "postgres": {"configured": True, "reachable": True, "schema": "public"},
+            "redis": {"configured": True, "reachable": True, "namespace": "anyagent"},
+        })
+
+    with patch.object(Admin, "storage_health", _fake_storage_health):
+        health = asyncio.run(client.admin.storage_health())
+        _assert(health.ok is True, "`client.admin.storage_health()` should parse typed payload")
+        _assert(health.backends.session_lock == "redis", "storage health backend parsing mismatch")
 
     print("ok: acceptance_anyagent_client_surface_smoke")
     return 0

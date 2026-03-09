@@ -9,8 +9,12 @@ dependencies = [
   "jsonschema>=4.23",
   "httpx>=0.28",
   "pyyaml>=6.0",
+  "fastapi>=0.116",
   "openai>=2.24.0",
   "mcp>=1.0.0",
+  "psycopg[binary]>=3.2",
+  "redis>=5.0",
+  "uvicorn>=0.35",
 ]
 
 [project.scripts]

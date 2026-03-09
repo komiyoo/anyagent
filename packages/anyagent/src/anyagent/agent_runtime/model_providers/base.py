@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -31,6 +32,42 @@ class ModelProviderUpstreamError(ModelProviderError):
     raw: bytes | None = None
     request_id: str | None = None
     message: str | None = None
+
+
+class ModelProviderLiveResponseStream(Protocol):
+    async def __aenter__(self) -> "ModelProviderLiveResponseStream":
+        raise NotImplementedError
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+        raise NotImplementedError
+
+    def __aiter__(self) -> AsyncIterator["openai.types.responses.response_stream_event.ResponseStreamEvent"]:
+        raise NotImplementedError
+
+    async def wait_completed(self) -> "openai.types.responses.response.Response":
+        raise NotImplementedError
+
+
+@dataclass(slots=True)
+class BufferedLiveResponseStream:
+    events: list["openai.types.responses.response_stream_event.ResponseStreamEvent"]
+    completed: "openai.types.responses.response.Response"
+
+    async def __aenter__(self) -> "BufferedLiveResponseStream":
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+        return None
+
+    def __aiter__(self) -> AsyncIterator["openai.types.responses.response_stream_event.ResponseStreamEvent"]:
+        return self._iter()
+
+    async def _iter(self) -> AsyncIterator["openai.types.responses.response_stream_event.ResponseStreamEvent"]:
+        for ev in self.events:
+            yield ev
+
+    async def wait_completed(self) -> "openai.types.responses.response.Response":
+        return self.completed
 
 
 class ModelProvider(Protocol):
@@ -68,4 +105,13 @@ class ModelProvider(Protocol):
 
         Returns (events, completed_response).
         """
+        raise NotImplementedError
+
+    async def create_response_stream_live(
+        self,
+        *,
+        body: dict[str, Any],
+        idempotency_key: str | None = None,
+        timeout_s: float | None = None,
+    ) -> ModelProviderLiveResponseStream:
         raise NotImplementedError

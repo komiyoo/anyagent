@@ -9,6 +9,7 @@ anyagent Client SDK — 资源型命名空间入口。
 - ``client.responses`` — AnyAgent 补充的 `/v1/responses/{id}` async helpers
 - ``client.events``    — 内部观测 / replay（/internal/events/*）
 - ``client.skills``    — 技能发现（/internal/skills/list）
+- ``client.admin``     — 管理面 helpers（如 `/admin/storage/health`）
 
 设计决策：docs/architecture/decisions/openai-first-api-surface.md
 """
@@ -25,6 +26,7 @@ from anyagent.protocol.agent_api_internal import (
     InternalEventsListResponse,
     InternalSkillsListResponse,
 )
+from anyagent.protocol.admin_storage import StorageHealthResponse
 from anyagent.protocol.sse import SSEBlock, SSEBlockDecoder
 from anyagent.protocol.stage_events import (
     AnyAgentDoneEvent,
@@ -261,6 +263,14 @@ class Skills(_Namespace):
         return InternalSkillsListResponse.model_validate(data)
 
 
+class Admin(_Namespace):
+    """Admin helpers (`/admin/*`)."""
+
+    async def storage_health(self) -> StorageHealthResponse:
+        data = await self._get("/admin/storage/health")
+        return StorageHealthResponse.model_validate(data)
+
+
 # ---------------------------------------------------------------------------
 # AnyAgent — SDK 入口
 # ---------------------------------------------------------------------------
@@ -308,6 +318,7 @@ class AnyAgent:
         self.responses = Responses(**shared)
         self.events = Events(**shared)
         self.skills = Skills(**shared)
+        self.admin = Admin(**shared)
 
     def _openai_base_url(self) -> str:
         """Return normalized OpenAI SDK base URL for this AnyAgent server."""

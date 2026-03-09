@@ -55,8 +55,10 @@ class ToolRuntimeClient:
                 r = await client.post(url, headers=self._headers(), json=req.model_dump(exclude_none=True))
         else:
             r = await self._http.post(url, headers=self._headers(), json=req.model_dump(exclude_none=True), timeout=60.0)
-        r.raise_for_status()
         data: Any = r.json()
+        if r.status_code == 409:
+            return ExecuteResponse.model_validate(data)
+        r.raise_for_status()
         return ExecuteResponse.model_validate(data)
 
     async def cancel(self, req: CancelRequest) -> CancelResponse:
@@ -69,4 +71,3 @@ class ToolRuntimeClient:
         r.raise_for_status()
         data: Any = r.json()
         return CancelResponse.model_validate(data)
-

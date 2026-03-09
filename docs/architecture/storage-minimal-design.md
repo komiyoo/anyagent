@@ -54,6 +54,30 @@ req: ["requirements.md#req-3-1"]
 - Postgres 负责“可查询、可审计、可保留”的持久数据（run/event/session）。
 - Redis 负责“高频、低延迟、可过期”的状态（锁与事件广播），不把可靠性押在内存里。
 
+### 3.1.1 读写顺序（PG 为主，Redis 为热层）
+
+当同时启用 PostgreSQL 与 Redis 时，推荐固定为以下语义：
+
+1. **写入**：先写 PostgreSQL（真源），再 best-effort 刷新 Redis（热层）。
+2. **读取**：先查 Redis；若 miss，则查 PostgreSQL，并把结果回填到 Redis。
+3. **过期**：Redis TTL 仅表示热数据失效；**不得**把 Redis 过期理解为业务数据删除。
+4. **一致性边界**：
+   - CAS / 唯一约束以 PostgreSQL 为准
+   - Redis 写失败不应导致主事务回滚
+   - Redis 可以重建，PostgreSQL 不能丢
+
+这意味着：
+
+- `Session Store` 的 `snapshot_version` 以 PostgreSQL 里的版本为真源；
+- `Run Store` 的 `idempotency_key` 唯一性以 PostgreSQL 为真源；
+- `Event Store` 的补发可以优先命中 Redis 热数据，miss 后回退 PostgreSQL。
+
+当前落地顺序建议：
+
+1. `Session Store` 先切到 PG 主 + Redis 热层（恢复语义最核心）
+2. `Run Store` 再切到 PG 主 + Redis 热层（幂等与终态查询）
+3. `Event Store` 最后切到 PG 主 + Redis 热层（事件体量最大，适合在前两者稳定后收口）
+
 ### 3.2 允许（开发/单机）：SQLite（受限）+ 进程内实现
 
 仅用于本地开发或单机 demo：

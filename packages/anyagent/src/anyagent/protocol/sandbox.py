@@ -1,0 +1,43 @@
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+SandboxMode = Literal["opensandbox", "external", "local-unsafe", "disabled"]
+
+
+class ResourceLimits(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    cpu_cores: float | None = Field(default=None, gt=0)
+    memory_mb: int | None = Field(default=None, ge=1)
+    disk_mb: int | None = Field(default=None, ge=1)
+
+
+class NetworkSandboxPolicy(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    allow_hosts: list[str] | None = None
+    deny_hosts: list[str] | None = None
+
+
+class SandboxPolicy(BaseModel):
+    """
+    Sandbox policy SSOT used by AgentSpec and server runtime.
+
+    v0 仅收敛最小字段：
+    - mode：后端选择
+    - network：网络策略占位
+    - resource_limits：资源上限占位
+    - ttl_seconds：会话级沙箱生命周期
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    mode: SandboxMode = "disabled"
+    network: NetworkSandboxPolicy | None = None
+    resource_limits: ResourceLimits | None = None
+    ttl_seconds: int | None = Field(default=1800, ge=1)

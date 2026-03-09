@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from .mcp import MCPConfig
+from .protocol.sandbox import SandboxPolicy
 
 
 class AgentPackError(Exception):
@@ -65,6 +66,7 @@ class AgentSpec(BaseModel):
     exposed: bool
     tools: AgentToolsSpec
     skills: AgentSkillsSpec = Field(default_factory=AgentSkillsSpec)
+    sandbox: SandboxPolicy = Field(default_factory=SandboxPolicy)
     multiagent: MultiAgentSpec = Field(default_factory=MultiAgentSpec)
 
 

@@ -48,10 +48,20 @@
 - 即使 Agent 拥有 `admin.credential_set` 工具（个人级场景），也**无法通过任何路径回读已存储的凭证**
 - `_credentials` 字段仅在 Tool Runtime 进程内存中短暂存在（handler 调用期间），不回传给上游
 
-### 1.5 Plugins / Sandbox（高风险边界）
+### 1.5 Sandbox（隔离执行环境，策略-后端分离）
 
-- Plugins：视为“半可信代码”，必须被隔离在明确的 policy/审计框架下
-- Sandbox：执行任意代码/命令属于高风险，需要最小权限隔离（详见 `requirements.md#req-5-5`）
+- Sandbox 采用**策略-后端分离**架构（参考 Codex 的 `SandboxPolicy` + `SandboxManager::transform()` 分层）
+- **策略层**（`anyagent.protocol.sandbox`）：`SandboxPolicy` / `NetworkSandboxPolicy` / `ResourceLimits`，与平台无关
+- **后端层**（`anyagent.server.sandbox`）：可插拔后端
+  - `OpenSandboxBackend`：默认后端，通过 [OpenSandbox](https://github.com/alibaba/OpenSandbox) SDK 提供容器级隔离
+  - `ExternalSandboxBackend`：K8s Pod / Docker 即沙箱，跳过内部沙箱机制（对应 Codex 的 `SandboxPolicy::ExternalSandbox`）
+  - `LocalUnsafeBackend`：开发模式，本地直接执行，无隔离（明确标记风险）
+- **沙箱内自由**：Agent 可通过 `exec` tool 执行任意命令、发起网络请求、读写文件、安装依赖
+- **沙箱外隔离**：容器不挂载宿主凭证，egress 策略阻止访问内部服务，沙箱间相互隔离
+- **会话隔离**：per-session sandbox，同 session 内命令共享文件系统
+- **运行时无感**：agent loop 不感知沙箱后端，`exec` tool handler 由 SandboxManager 路由
+- 隔离等级（OpenSandbox 模式）：Docker (runc) / gVisor / Kata / Firecracker，生产推荐 gVisor
+- 安全基线详见 `sandbox-security.md`
 
 ## 2. 外部输入面清单（Input Surfaces）
 
@@ -146,9 +156,10 @@
 
 | 威胁路径 | 风险等级 | 缓解措施 |
 |---|---|---|
-| Agent 通过 sandbox 工具执行 `env`/`printenv` 读取环境变量 | 高 | sandbox 隔离容器不挂载凭证环境变量；`ALLOW_SANDBOX` 默认关闭 |
+| Agent 通过 exec tool 执行 `env`/`printenv` 读取环境变量 | 高 | sandbox 容器不挂载宿主凭证环境变量；per-session 隔离环境独立 |
+| Agent 从 sandbox 中访问 anyagent server / credential store | 高 | egress 策略拒绝内部网络访问（NetworkSandboxPolicy deny_ranges）；ExternalSandbox 模式由 K8s NetworkPolicy 承担 |
 | Agent 构造 HTTP 请求调用 Admin API | 高 | SSRF 防护拒绝 127.x/localhost；Admin API 使用独立 `ADMIN_API_KEY` |
-| Agent 指示工具将凭证写入工具输出（如 `echo $TOKEN`） | 中 | 输出截断 + 审计；sandbox 隔离环境不含凭证 |
+| Agent 指示 exec tool 将凭证写入工具输出（如 `echo $TOKEN`） | 中 | 输出截断 + 审计；sandbox 隔离环境不含凭证 |
 | 插件代码 bug 将 token 泄漏到工具输出 | 中 | 输出审计 + 插件代码审查流程（v2） |
 | 凭证文件被未授权进程读取 | 中 | FileBackend 文件权限 `chmod 600`；容器最小权限用户 |
 | Admin API 请求被中间人截获 | 中 | 生产环境强制 HTTPS；内网部署可用 mTLS |
