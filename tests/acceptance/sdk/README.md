@@ -6,10 +6,20 @@
 
 - `acceptance_anyagent_client_surface_smoke.py`
 - `acceptance_command_stage_derivation_smoke.py`
+- `acceptance_stage_event_trace_id_smoke.py`
+- `acceptance_events_replay_done_persisted_smoke.py`
+- `acceptance_tool_credential_injection_smoke.py`
+- `acceptance_exec_output_truncation_smoke.py`
+- `acceptance_credential_audit_smoke.py`
 
 ## 运行
 
 ```bash
 uv run --project packages/anyagent python tests/acceptance/sdk/acceptance_anyagent_client_surface_smoke.py
 uv run --project packages/anyagent python tests/acceptance/sdk/acceptance_command_stage_derivation_smoke.py
+uv run --project packages/anyagent python tests/acceptance/sdk/acceptance_stage_event_trace_id_smoke.py
+uv run --project packages/anyagent python tests/acceptance/sdk/acceptance_events_replay_done_persisted_smoke.py
+uv run --project packages/anyagent python tests/acceptance/sdk/acceptance_tool_credential_injection_smoke.py
+uv run --project packages/anyagent python tests/acceptance/sdk/acceptance_exec_output_truncation_smoke.py
+uv run --project packages/anyagent python tests/acceptance/sdk/acceptance_credential_audit_smoke.py
 ```

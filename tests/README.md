@@ -1,17 +1,37 @@
 # tests（测试脚本索引）
 
-本仓库当前仅保留面向 `packages/anyagent` 的可执行测试/验收脚本（以 acceptance/smoke 为主），避免把测试脚本平铺在 `scripts/` 下导致检索噪音与结构熵增加。
+本仓库当前保留两类测试：
+
+- `tests/unit/`：面向 `packages/anyagent` 的模块级快速回归
+- `tests/contract/`：面向 SSE / Responses / Stage Events 的协议契约回归
+- `tests/integration/`：面向 in-process 模块边界的集成验证
+- `tests/acceptance/`：面向 SDK、MCP、内置 server 主路径的 acceptance/smoke
 
 ## 目录
 
 - [acceptance/README.md](acceptance/README.md)
-  - 面向 SDK 协议解析、Client surface 与 MCP federation 的离线 smoke
+  - 面向 SDK 协议解析、Client surface、MCP federation 与内置 server 的 acceptance/smoke
+- [unit/README.md](unit/README.md)
+  - 面向纯逻辑与小状态机的快速回归
+- [contract/README.md](contract/README.md)
+  - 面向协议形状与 typed 解码语义的回归
+- [integration/README.md](integration/README.md)
+  - 面向 in-process 模块边界的集成验证
 
 ## 运行方式
 
 大多数脚本都可以从仓库根目录直接运行（优先 `uv run --project ...`）：
 
 ```bash
+# unit
+uv run --with pytest --project packages/anyagent pytest tests/unit -q
+
+# contract
+uv run --with pytest --project packages/anyagent pytest tests/contract -q
+
+# integration
+uv run --with pytest --project packages/anyagent pytest tests/integration -q
+
 # 离线 smoke（CI 同款）
 bash scripts/ci/run_offline_smokes.sh
 ```

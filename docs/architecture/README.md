@@ -17,5 +17,6 @@
 6) [skills-tool-runtime-interaction.md](skills-tool-runtime-interaction.md)：Skills 与 Tool Runtime 交互合约
 7) [agent-server-runtime-entities.md](agent-server-runtime-entities.md)：运行时实体分层
 8) [agent-api-client-stage-events.md](agent-api-client-stage-events.md)：Client Stage Events 设计
-9) [decisions/README.md](decisions/README.md)：架构决策记录
-10) [engineering/README.md](engineering/README.md)：工程流程
+9) [testing-strategy.md](testing-strategy.md)：测试分层策略与补齐顺序
+10) [decisions/README.md](decisions/README.md)：架构决策记录
+11) [engineering/README.md](engineering/README.md)：工程流程

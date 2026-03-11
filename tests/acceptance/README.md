@@ -3,7 +3,8 @@
 本目录当前仅保留面向 `packages/anyagent` 的 acceptance/smoke 脚本，覆盖：
 
 - MCP federation（离线 fake server）
-- SDK 强类型事件解析、Client surface 等协议一致性
+- SDK 强类型事件解析、Client surface、事件回放与安全主路径
+- 内置 server 主路径与存储/并发相关验收
 
 ## 目录
 

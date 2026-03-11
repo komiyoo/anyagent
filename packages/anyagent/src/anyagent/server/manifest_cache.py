@@ -66,9 +66,11 @@ def build_manifest_cache_key(
         tenant_id=tenant_id.strip() if isinstance(tenant_id, str) and tenant_id.strip() else None,
         agent_id=agent_id,
         session_key=session_key.strip() if isinstance(session_key, str) and session_key.strip() else None,
-        enabled_skills_hash=_stable_hash(sorted([s for s in (enabled_skills or []) if isinstance(s, str) and s.strip()])),
+        enabled_skills_hash=_stable_hash(
+            sorted({s.strip() for s in (enabled_skills or []) if isinstance(s, str) and s.strip()})
+        ),
         requested_tool_names_hash=_stable_hash(
-            sorted([s for s in (requested_tool_names or []) if isinstance(s, str) and s.strip()])
+            sorted({s.strip() for s in (requested_tool_names or []) if isinstance(s, str) and s.strip()})
         ),
         context_hash=_stable_hash(context if isinstance(context, dict) else {}),
     )

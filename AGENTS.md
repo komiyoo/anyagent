@@ -63,6 +63,32 @@ packages/anyagent/src/anyagent/
 - 先搜后读：优先 `rg`/`git grep` 定位入口
 - 避免上下文污染：用摘要 + `path:line` + 可复现命令替代大段内容
 
+### 1.5 Agent Loop 与生态工具设计原则
+
+以下原则适用于：
+
+- `agent_runtime/` 中的 agent loop、tool loop、session runtime
+- `tool_runtime/`、`skills/`、`mcp/`、`server/` 的对外可见能力面
+- `AnyAgent` SDK、Stage Events、help/explain、docs/acceptance 与调试入口
+
+#### Everything Reach-able
+
+- 任何 agent 可见能力都必须能从入口追到事实来源：能力描述 -> tool manifest / protocol model / handler / docs / acceptance。
+- 任何底层实体也必须可反查上层语义：raw tool、event type、tool_call、credential/policy、handler 不能脱离所属能力独立漂浮。
+- 设计新抽象时，必须明确“如何发现、如何定位、如何验证、如何回放”。
+
+#### Gradual Disclosure
+
+- 默认先暴露最小可行动信息：能力分类、稳定名称、下一步入口。
+- 参数 schema、内部扩展字段、调试细节、底层 raw tool 列表按需展开，不在主路径一次性全部暴露。
+- SDK、docs、help、manifest 的主路径应保持低噪声，但必须提供继续深入的可达路径。
+
+#### Cite Bidirectional Linking
+
+- 高层抽象必须能 cite 到低层事实：能力名 -> tool 名、event.type、协议模型、实现路径、验收脚本。
+- 低层实体必须能反向链接回高层语义：raw tool / event / handler -> 所属能力、帮助入口、使用场景、相关文档。
+- 事件与调试输出优先保留稳定锚点：`agent_id`、`response_id`、`tool_call_id`、`trace_id`、`seq`、`credential_id`、`path:line`。
+
 ---
 
 ## 2) 验证闭环（Agentic Validation）
@@ -122,7 +148,14 @@ packages/anyagent/src/anyagent/
 - 允许破坏性调整，不做兼容层
 - `pydantic` 模型优先
 
-### 4.3 安全默认
+### 4.3 Agent Loop / Tool Ecosystem 具体约束
+
+- `agent loop` 的高层语义必须能落到可追踪事件与稳定标识，不做“看起来工作了但无法解释”的黑箱流程。
+- tool manifest / skill registry / MCP discovery 的设计应优先表达能力边界与归属关系，而不是仅暴露原始实现细节。
+- help / explain / docs / acceptance 输出要支持从“能力 -> 实现”与“实现 -> 能力”双向跳转。
+- 新增生态工具或扩展字段时，优先考虑是否能被 SDK、文档、验收和调试链路稳定引用；不能引用的字段要谨慎暴露。
+
+### 4.4 安全默认
 
 - 外部输入校验；敏感输出脱敏限长
 - 不泄露 secrets
