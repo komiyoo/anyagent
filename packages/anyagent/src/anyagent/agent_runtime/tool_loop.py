@@ -130,6 +130,7 @@ async def _emit_tool_planned(
     *,
     sink: StageEventSink | None,
     response_id: str,
+    trace_id: str | None,
     tool_call_id: str,
     tool_name: str,
     tool_kind: str | None,
@@ -140,6 +141,7 @@ async def _emit_tool_planned(
     ts_ms = int(time.time() * 1000)
     event = AnyAgentToolPlannedEvent(
         response_id=response_id,
+        trace_id=trace_id,
         tool_call_id=tool_call_id,
         tool_name=tool_name,
         arguments=summarize_payload(arguments_json),
@@ -152,6 +154,7 @@ async def _emit_tool_planned(
     await sink(
         AnyAgentCommandPlannedEvent(
             response_id=response_id,
+            trace_id=trace_id,
             command=summarize_command(planned.command),
             workdir=planned.workdir,
             timeout_ms=planned.timeout_ms,
@@ -166,6 +169,7 @@ async def _emit_tool_result(
     *,
     sink: StageEventSink | None,
     response_id: str,
+    trace_id: str | None,
     tool_call_id: str,
     tool_name: str,
     tool_kind: str | None,
@@ -181,6 +185,7 @@ async def _emit_tool_result(
     ts_ms = int(time.time() * 1000)
     event = AnyAgentToolResultEvent(
         response_id=response_id,
+        trace_id=trace_id,
         tool_call_id=tool_call_id,
         tool_name=tool_name,
         status=status,
@@ -200,6 +205,7 @@ async def _emit_tool_result(
     await sink(
         AnyAgentCommandResultEvent(
             response_id=response_id,
+            trace_id=trace_id,
             exit_code=command.exit_code,
             stdout=summarize_payload(command.stdout) if command.stdout is not None else None,
             stderr=summarize_payload(command.stderr) if command.stderr is not None else None,
@@ -233,6 +239,7 @@ async def _execute_one_tool(
         return None, manifest_tools, toolset_version
 
     tool_kind = tool_kind_for_tool_name(manifest_tools, tool_name)
+    trace_id = tool_context.trace.trace_id if tool_context.trace is not None else None
     parsed_args = arguments
     if isinstance(arguments, str):
         try:
@@ -243,6 +250,7 @@ async def _execute_one_tool(
     await _emit_tool_planned(
         sink=stage_event_sink,
         response_id=response_id,
+        trace_id=trace_id,
         tool_call_id=call_id,
         tool_name=tool_name,
         tool_kind=tool_kind,
@@ -315,6 +323,7 @@ async def _execute_one_tool(
         await _emit_tool_result(
             sink=stage_event_sink,
             response_id=response_id,
+            trace_id=trace_id,
             tool_call_id=call_id,
             tool_name=tool_name,
             tool_kind=tool_kind,
@@ -335,6 +344,7 @@ async def _execute_one_tool(
         await _emit_tool_result(
             sink=stage_event_sink,
             response_id=response_id,
+            trace_id=trace_id,
             tool_call_id=call_id,
             tool_name=tool_name,
             tool_kind=tool_kind,
@@ -345,6 +355,7 @@ async def _execute_one_tool(
         await _emit_tool_result(
             sink=stage_event_sink,
             response_id=response_id,
+            trace_id=trace_id,
             tool_call_id=call_id,
             tool_name=tool_name,
             tool_kind=tool_kind,

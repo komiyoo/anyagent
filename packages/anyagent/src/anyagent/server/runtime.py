@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import hashlib
+import json
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +20,7 @@ from anyagent.protocol.agent_api_internal import (
 from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
 from anyagent.protocol.sandbox import SandboxPolicy
 from anyagent.protocol.tool_runtime import (
+    AuthRef,
     CancelRequest,
     CancelResponse,
     ExecuteMeta,
@@ -32,6 +36,8 @@ from anyagent.protocol.tool_runtime import (
     ToolContext,
     ToolError,
 )
+from anyagent.gateway.session import session_partition_key
+from anyagent.mcp.auth import CredentialResolver
 from anyagent.server.sandbox import EXEC_TOOL, SandboxManager, build_exec_handler
 from anyagent.skills import (
     SkillEnablement,
@@ -44,6 +50,66 @@ from anyagent.skills.discovery import SkillRoot
 from anyagent.skills.models import SkillPackage
 from anyagent.tool_runtime.registry import ToolRegistry
 
+logger = logging.getLogger("anyagent.tool_runtime")
+
+
+def _build_audit_ref(*, response_id: str, tool_call_id: str) -> str:
+    digest = hashlib.sha256(f"{response_id}:{tool_call_id}".encode("utf-8", errors="replace")).hexdigest()[:24]
+    return f"aud_{digest}"
+
+
+def _tool_execute_log_fields(
+    *,
+    req: ExecuteRequest,
+    audit_ref: str,
+    status: str,
+    duration_ms: int,
+    output_truncated: bool,
+) -> dict[str, Any]:
+    return {
+        "trace_id": req.context.trace.trace_id if req.context.trace is not None else None,
+        "tenant_id": req.tenant_id,
+        "agent_id": req.agent_id,
+        "session_key": req.session_key,
+        "session_partition_key": session_partition_key(agent_id=req.agent_id, session_key=req.session_key),
+        "response_id": req.response_id,
+        "tool_call_id": req.tool_call_id,
+        "tool_name": req.tool_name,
+        "status": status,
+        "duration_ms": int(duration_ms),
+        "output_truncated": bool(output_truncated),
+        "audit_ref": audit_ref,
+    }
+
+
+def _log_tool_execute(
+    event_name: str,
+    *,
+    req: ExecuteRequest,
+    audit_ref: str,
+    status: str,
+    duration_ms: int = 0,
+    output_truncated: bool = False,
+) -> None:
+    payload = _tool_execute_log_fields(
+        req=req,
+        audit_ref=audit_ref,
+        status=status,
+        duration_ms=duration_ms,
+        output_truncated=output_truncated,
+    )
+    logger.info("%s %s", event_name, json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+
+
+def _extract_output_truncated(output: str) -> bool:
+    if not isinstance(output, str) or not output.strip().startswith("{"):
+        return False
+    try:
+        payload = json.loads(output)
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(payload.get("output_truncated")) if isinstance(payload, dict) else False
+
 
 class InProcessToolRuntimeService:
     def __init__(
@@ -52,10 +118,12 @@ class InProcessToolRuntimeService:
         workspace_dir: str,
         catalog: AgentCatalog,
         sandbox_manager: SandboxManager,
+        credential_store: CredentialResolver | None = None,
     ) -> None:
         self._workspace_dir = workspace_dir
         self._catalog = catalog
         self._sandbox_manager = sandbox_manager
+        self._credential_store = credential_store
         self._registry = ToolRegistry()
         self._active_calls: dict[tuple[str, str], _ActiveToolCall] = {}
         self._active_calls_lock = asyncio.Lock()
@@ -132,8 +200,18 @@ class InProcessToolRuntimeService:
         )
 
     async def execute(self, req: ExecuteRequest) -> ExecuteResponse:
+        audit_ref = _build_audit_ref(response_id=req.response_id, tool_call_id=req.tool_call_id)
+
+        def _meta(*, duration_ms: int = 0, output_truncated: bool = False) -> ExecuteMeta:
+            return ExecuteMeta(
+                duration_ms=duration_ms,
+                output_truncated=output_truncated,
+                audit_ref=audit_ref,
+            )
+
+        _log_tool_execute("tool_execute.begin", req=req, audit_ref=audit_ref, status="started")
         if req.toolset_version is not None and req.toolset_version != self._registry.toolset_version:
-            return ExecuteResponseError(
+            result = ExecuteResponseError(
                 status="error",
                 error=ToolError(
                     type="conflict_error",
@@ -143,8 +221,10 @@ class InProcessToolRuntimeService:
                     ),
                     retryable=True,
                 ),
-                meta=ExecuteMeta(),
+                meta=_meta(),
             )
+            _log_tool_execute("tool_execute.done", req=req, audit_ref=audit_ref, status=result.status)
+            return result
         pack = self.require_pack(req.agent_id)
         visible = {tool.name for tool in self._allowed_tools_for_request(pack=pack, req=ManifestRequest(
             agent_id=req.agent_id,
@@ -153,18 +233,22 @@ class InProcessToolRuntimeService:
             context=req.context,
         ))}
         if req.tool_name not in visible:
-            return ExecuteResponseError(
+            result = ExecuteResponseError(
                 status="error",
                 error=ToolError(type="permission_error", code="tool_not_allowed", message=f"tool not allowed: {req.tool_name}"),
-                meta=ExecuteMeta(),
+                meta=_meta(),
             )
+            _log_tool_execute("tool_execute.done", req=req, audit_ref=audit_ref, status=result.status)
+            return result
         registered = self._registry.get_tool(req.tool_name)
         if registered is None:
-            return ExecuteResponseError(
+            result = ExecuteResponseError(
                 status="error",
                 error=ToolError(type="not_found_error", code="tool_not_found", message=f"unknown tool: {req.tool_name}"),
-                meta=ExecuteMeta(),
+                meta=_meta(),
             )
+            _log_tool_execute("tool_execute.done", req=req, audit_ref=audit_ref, status=result.status)
+            return result
 
         arguments = req.arguments_json
         if isinstance(arguments, str):
@@ -172,19 +256,39 @@ class InProcessToolRuntimeService:
 
             arguments = json.loads(arguments)
         if not isinstance(arguments, dict):
-            return ExecuteResponseError(
+            result = ExecuteResponseError(
                 status="error",
                 error=ToolError(type="invalid_request_error", code="invalid_arguments", message="tool arguments must be object"),
-                meta=ExecuteMeta(),
+                meta=_meta(),
             )
+            _log_tool_execute("tool_execute.done", req=req, audit_ref=audit_ref, status=result.status)
+            return result
         try:
             jsonschema.validate(arguments, registered.definition.parameters)
         except Exception as e:  # noqa: BLE001
-            return ExecuteResponseError(
+            result = ExecuteResponseError(
                 status="error",
                 error=ToolError(type="invalid_request_error", code="schema_validation_error", message=str(e)),
-                meta=ExecuteMeta(),
+                meta=_meta(),
             )
+            _log_tool_execute("tool_execute.done", req=req, audit_ref=audit_ref, status=result.status)
+            return result
+
+        resolved_credentials_or_error = await self._resolve_tool_credentials(
+            req=req,
+            audit_ref=audit_ref,
+            registered=registered,
+            meta_factory=_meta,
+        )
+        if isinstance(resolved_credentials_or_error, ExecuteResponseError):
+            _log_tool_execute(
+                "tool_execute.done",
+                req=req,
+                audit_ref=audit_ref,
+                status=resolved_credentials_or_error.status,
+            )
+            return resolved_credentials_or_error
+        resolved_credentials = resolved_credentials_or_error
 
         started = time.monotonic()
         idem_key = (req.response_id, req.tool_call_id)
@@ -197,11 +301,12 @@ class InProcessToolRuntimeService:
                     "response_id": req.response_id,
                     "tool_call_id": req.tool_call_id,
                     "context": req.context.model_dump(exclude_none=True) if isinstance(req.context, ToolContext) else {},
+                    "_credentials": resolved_credentials,
                 },
             ),
             name=f"tool-exec:{req.response_id}:{req.tool_call_id}",
         )
-        existing = await self._register_or_reuse_active_call(req=req, task=handler_task)
+        existing = await self._register_or_reuse_active_call(req=req, task=handler_task, audit_ref=audit_ref)
         if existing is not None:
             handler_task.cancel()
             return existing
@@ -216,25 +321,100 @@ class InProcessToolRuntimeService:
                     code="tool_cancelled",
                     message=f"tool cancelled: {req.tool_name}",
                 ),
-                meta=ExecuteMeta(duration_ms=duration_ms),
+                meta=_meta(duration_ms=duration_ms),
             )
             await self._cache_result(idem_key=idem_key, result=result)
+            _log_tool_execute("tool_execute.done", req=req, audit_ref=audit_ref, status=result.status, duration_ms=duration_ms)
             return result
         except Exception as e:  # noqa: BLE001
             duration_ms = int((time.monotonic() - started) * 1000)
             result = ExecuteResponseError(
                 status="error",
                 error=ToolError(type="tool_execution_error", code="tool_failed", message=str(e)),
-                meta=ExecuteMeta(duration_ms=duration_ms),
+                meta=_meta(duration_ms=duration_ms),
             )
             await self._cache_result(idem_key=idem_key, result=result)
+            _log_tool_execute("tool_execute.done", req=req, audit_ref=audit_ref, status=result.status, duration_ms=duration_ms)
             return result
         finally:
             await self._unregister_active_call(response_id=req.response_id, tool_call_id=req.tool_call_id)
         duration_ms = int((time.monotonic() - started) * 1000)
-        result = ExecuteResponseCompleted(status="completed", output=output, meta=ExecuteMeta(duration_ms=duration_ms))
+        output_truncated = _extract_output_truncated(output)
+        result = ExecuteResponseCompleted(
+            status="completed",
+            output=output,
+            meta=_meta(duration_ms=duration_ms, output_truncated=output_truncated),
+        )
         await self._cache_result(idem_key=idem_key, result=result)
+        _log_tool_execute(
+            "tool_execute.done",
+            req=req,
+            audit_ref=audit_ref,
+            status=result.status,
+            duration_ms=duration_ms,
+            output_truncated=output_truncated,
+        )
         return result
+
+    async def _resolve_tool_credentials(
+        self,
+        *,
+        req: ExecuteRequest,
+        audit_ref: str,
+        registered: Any,
+        meta_factory: Any,
+    ) -> dict[str, str] | ExecuteResponseError:
+        specs = list(getattr(registered.definition, "credentials", []) or [])
+        if not specs:
+            return {}
+
+        if self._credential_store is None:
+            return ExecuteResponseError(
+                status="error",
+                error=ToolError(
+                    type="tool_authorization_error",
+                    code="credential_store_unconfigured",
+                    message="credential store is not configured",
+                ),
+                meta=meta_factory(),
+            )
+
+        auth_ref = req.context.auth_ref if isinstance(req.context, ToolContext) else None
+        credential_ref = (auth_ref.ref or "").strip() if auth_ref is not None and isinstance(auth_ref.ref, str) else ""
+        auth_kind = (auth_ref.kind or "").strip() if auth_ref is not None and isinstance(auth_ref.kind, str) else ""
+        resolved: dict[str, str] = {}
+        for cred_spec in specs:
+            if auth_kind and auth_kind != cred_spec.ref_kind:
+                if cred_spec.required:
+                    return ExecuteResponseError(
+                        status="error",
+                        error=ToolError(
+                            type="tool_authorization_error",
+                            code="credential_not_found",
+                            message=f"required credential kind={cred_spec.ref_kind} not configured",
+                        ),
+                        meta=meta_factory(),
+                    )
+                continue
+            ref = AuthRef(kind=cred_spec.ref_kind, ref=credential_ref)
+            value = await self._credential_store.resolve(
+                ref,
+                scope_context={"agent_id": req.agent_id},
+            )
+            if value is None:
+                if cred_spec.required:
+                    return ExecuteResponseError(
+                        status="error",
+                        error=ToolError(
+                            type="tool_authorization_error",
+                            code="credential_not_found",
+                            message=f"required credential kind={cred_spec.ref_kind} not configured",
+                        ),
+                        meta=meta_factory(),
+                    )
+                continue
+            resolved[cred_spec.injection_target] = cred_spec.format.replace("{value}", value)
+        return resolved
 
     async def cancel(self, req: CancelRequest) -> CancelResponse:
         ok = await self._cancel_active_call(response_id=req.response_id, tool_call_id=req.tool_call_id)
@@ -247,14 +427,29 @@ class InProcessToolRuntimeService:
             task.cancel()
         return bool(to_cancel)
 
-    async def _register_or_reuse_active_call(self, *, req: ExecuteRequest, task: asyncio.Task[str]) -> ExecuteResponse | None:
+    async def _register_or_reuse_active_call(
+        self,
+        *,
+        req: ExecuteRequest,
+        task: asyncio.Task[str],
+        audit_ref: str,
+    ) -> ExecuteResponse | None:
         async with self._active_calls_lock:
             idem_key = (req.response_id, req.tool_call_id)
             cached = self._idempotent_results.get(idem_key)
             if cached is not None:
-                return type(cached).model_validate(cached.model_dump(exclude_none=True))
+                cloned = type(cached).model_validate(cached.model_dump(exclude_none=True))
+                _log_tool_execute(
+                    "tool_execute.cache_hit",
+                    req=req,
+                    audit_ref=cloned.meta.audit_ref or audit_ref,
+                    status=cloned.status,
+                    duration_ms=cloned.meta.duration_ms,
+                    output_truncated=cloned.meta.output_truncated,
+                )
+                return cloned
             if idem_key in self._active_calls:
-                return ExecuteResponseError(
+                result = ExecuteResponseError(
                     status="error",
                     error=ToolError(
                         type="conflict_error",
@@ -262,8 +457,10 @@ class InProcessToolRuntimeService:
                         message=f"tool execution already in progress: {req.tool_call_id}",
                         retryable=True,
                     ),
-                    meta=ExecuteMeta(),
+                    meta=ExecuteMeta(audit_ref=audit_ref),
                 )
+                _log_tool_execute("tool_execute.done", req=req, audit_ref=audit_ref, status=result.status)
+                return result
             self._active_calls[(req.response_id, req.tool_call_id)] = _ActiveToolCall(
                 response_id=req.response_id,
                 tool_call_id=req.tool_call_id,

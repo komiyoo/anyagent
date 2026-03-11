@@ -138,18 +138,20 @@ def create_app(
         )
 
     sandbox_manager = SandboxManager(root_dir=sandbox_root_dir)
+    credential_store = InMemoryCredentialStore()
     state = AnyAgentServerApp(
         workspace_dir=workspace,
         catalog=catalog,
         resolved_storage=resolved_storage,
         storage_settings=StorageSettings(),
         events=build_event_store(backend=resolved_storage.event_store_backend),
-        credentials=InMemoryCredentialStore(),
+        credentials=credential_store,
         sandbox_manager=sandbox_manager,
         runtime=InProcessToolRuntimeService(
             workspace_dir=str(workspace),
             catalog=catalog,
             sandbox_manager=sandbox_manager,
+            credential_store=credential_store,
         ),
         mcp_managers=MCPManagerRegistry(),
         runs=RunRegistry(),
@@ -267,9 +269,6 @@ def create_app(
         async def _iter() -> AsyncIterator[bytes]:
             async for item in state.events.stream_events(response_id=response_id, last_seq=last_seq):
                 yield encode_sse_block(event=item.event, data=item.data, id=str(item.seq))
-            resp = await state.events.list_events(response_id=response_id, last_seq=0, limit=1)
-            done_id = resp.next_last_seq + 1 if resp.next_last_seq >= 0 else 1
-            yield encode_sse_block(event=None, data="[DONE]", id=str(done_id))
 
         return StreamingResponse(_iter(), media_type="text/event-stream")
 
@@ -569,6 +568,7 @@ def create_app(
                                 status="cancelled",
                                 model=str(prepared.effective_body.get("model") or "unknown"),
                             )
+                            await _append_done_sentinel(state=state, response_id=response_id)
                             await state.events.mark_final(
                                 response_id=response_id,
                                 run_status="aborted",
@@ -602,6 +602,7 @@ def create_app(
                                 model=str(prepared.effective_body.get("model") or "unknown"),
                             )
                             payload["error"] = {"type": "server_error", "message": str(e)}
+                            await _append_done_sentinel(state=state, response_id=response_id)
                             await state.events.mark_final(
                                 response_id=response_id,
                                 run_status="errored",
@@ -638,6 +639,7 @@ def create_app(
                             event="response.completed",
                             data=json.dumps(payload, ensure_ascii=False),
                         )
+                        await _append_done_sentinel(state=state, response_id=response_id)
                         await state.events.mark_final(
                             response_id=response_id,
                             run_status=_internal_run_status_from_effective(str(payload.get("status") or "completed")),
@@ -840,6 +842,10 @@ def _build_completed_sse_block(payload: dict[str, Any]) -> bytes:
     return encode_sse_block(event="response.completed", data=json.dumps(wrapper, ensure_ascii=False), id=None)
 
 
+async def _append_done_sentinel(*, state: AnyAgentServerApp, response_id: str) -> None:
+    await state.events.append(response_id=response_id, event=None, data="[DONE]")
+
+
 def _strip_response_created_blocks(blocks: list[bytes]) -> list[bytes]:
     out: list[bytes] = []
     for block in blocks:
@@ -853,6 +859,9 @@ def _strip_response_created_blocks(blocks: list[bytes]) -> list[bytes]:
 def _build_external_response_stream(*, state: AnyAgentServerApp, response_id: str) -> StreamingResponse:
     async def _iter() -> AsyncIterator[bytes]:
         async for item in state.events.stream_events(response_id=response_id, last_seq=0):
+            if item.event is None and item.data.strip() == "[DONE]":
+                yield encode_sse_block(event=None, data=item.data, id=str(item.seq))
+                continue
             if item.event is None:
                 continue
             if item.event.startswith("anyagent."):
@@ -860,9 +869,6 @@ def _build_external_response_stream(*, state: AnyAgentServerApp, response_id: st
             if not (item.event.startswith("response.") or item.event == "error"):
                 continue
             yield encode_sse_block(event=item.event, data=item.data, id=str(item.seq))
-        resp = await state.events.list_events(response_id=response_id, last_seq=0, limit=1)
-        done_id = resp.next_last_seq + 1 if resp.next_last_seq >= 0 else 1
-        yield encode_sse_block(event=None, data="[DONE]", id=str(done_id))
 
     return StreamingResponse(_iter(), media_type="text/event-stream")
 
@@ -927,6 +933,7 @@ async def _handle_sse_block(
                 status="completed",
                 model=str(fallback_model or "unknown"),
             )
+        await _append_done_sentinel(state=state, response_id=response_id)
         await state.events.mark_final(
             response_id=response_id,
             run_status=_internal_run_status_from_effective(str(maybe.get("status") or "completed")),
@@ -1016,6 +1023,7 @@ async def _persist_sse_run(
             status="completed",
             model=str(fallback_model or "unknown"),
         )
+    await _append_done_sentinel(state=state, response_id=response_id)
     effective = str(response_json.get("status") or "completed")
     await state.events.mark_final(
         response_id=response_id,

@@ -563,8 +563,12 @@ async def _run_internal_tool_execute_idempotent_after_completion(*, tmp_path: Pa
         resp2 = await client.post("/internal/tools/execute", headers={"Authorization": "Bearer admin-key"}, json=req_json)
         assert resp1.status_code == 200, resp1.text
         assert resp2.status_code == 200, resp2.text
-        assert resp1.json() == resp2.json()
-        assert resp1.json()["status"] == "completed"
+        payload1 = resp1.json()
+        payload2 = resp2.json()
+        assert payload1 == payload2
+        assert payload1["status"] == "completed"
+        assert payload1["meta"]["audit_ref"].startswith("aud_"), payload1
+        assert payload1["meta"]["audit_ref"] == payload2["meta"]["audit_ref"], (payload1, payload2)
 
 
 def test_internal_tool_execute_idempotent_while_running(tmp_path: Path, monkeypatch) -> None:

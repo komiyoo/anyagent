@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 SandboxMode = Literal["opensandbox", "external", "local-unsafe", "disabled"]
@@ -14,6 +14,7 @@ class ResourceLimits(BaseModel):
     cpu_cores: float | None = Field(default=None, gt=0)
     memory_mb: int | None = Field(default=None, ge=1)
     disk_mb: int | None = Field(default=None, ge=1)
+    output_max_bytes: int | None = Field(default=None, ge=0)
 
 
 class NetworkSandboxPolicy(BaseModel):
@@ -39,5 +40,8 @@ class SandboxPolicy(BaseModel):
 
     mode: SandboxMode = "disabled"
     network: NetworkSandboxPolicy | None = None
-    resource_limits: ResourceLimits | None = None
+    resource_limits: ResourceLimits | None = Field(
+        default=None,
+        validation_alias=AliasChoices("resource_limits", "resources"),
+    )
     ttl_seconds: int | None = Field(default=1800, ge=1)

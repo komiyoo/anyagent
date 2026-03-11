@@ -60,17 +60,37 @@ def build_exec_handler(
             workdir=workdir_value,
             timeout_seconds=timeout_seconds,
         )
+        output_max_bytes = None
+        if policy.resource_limits is not None and isinstance(policy.resource_limits.output_max_bytes, int):
+            output_max_bytes = max(policy.resource_limits.output_max_bytes, 0)
+        stdout_value = result.stdout
+        stderr_value = result.stderr
+        output_truncated = False
+        if output_max_bytes is not None:
+            stdout_value, remaining_bytes, stdout_truncated = _truncate_text_utf8(stdout_value, output_max_bytes)
+            stderr_value, _remaining_bytes, stderr_truncated = _truncate_text_utf8(stderr_value, remaining_bytes)
+            output_truncated = stdout_truncated or stderr_truncated
         return json.dumps(
             {
                 "command": result.command,
                 "workdir": result.cwd,
                 "exit_code": result.exit_code,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
+                "stdout": stdout_value,
+                "stderr": stderr_value,
                 "duration_ms": result.duration_ms,
                 "timed_out": result.timed_out,
+                "output_truncated": output_truncated,
             },
             ensure_ascii=False,
         )
 
     return _handler
+
+
+def _truncate_text_utf8(text: str, max_bytes: int) -> tuple[str, int, bool]:
+    raw = text.encode("utf-8", errors="replace")
+    budget = max(int(max_bytes), 0)
+    if len(raw) <= budget:
+        return text, budget - len(raw), False
+    truncated = raw[:budget].decode("utf-8", errors="ignore")
+    return truncated, 0, True
