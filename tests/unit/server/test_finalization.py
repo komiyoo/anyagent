@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from anyagent.server.finalization import (
+    build_nonstream_response_finalizer,
     finalize_nonstream_response,
     internal_run_status_from_effective,
     persist_run_final_and_session,
@@ -281,5 +282,152 @@ def test_persist_run_final_and_session_updates_session_when_no_atomic_path() -> 
         latest = session_store.records["main::sess"]
         assert latest.snapshot_version == 1
         assert latest.snapshot_json["resume_cursor"]["last_response_id"] == "resp_3"
+
+    asyncio.run(_run())
+
+
+def test_build_session_snapshot_advancer_updates_snapshot() -> None:
+    async def _run() -> None:
+        from anyagent.server.finalization import build_session_snapshot_advancer
+
+        session_store = _SessionStore()
+        warnings: list[str] = []
+        advance = build_session_snapshot_advancer(
+            session_store=session_store,
+            session_partition_key="main::sess",
+            agent_id="main",
+            session_key="sess",
+            previous_snapshot={"resume_cursor": {"last_response_id": None, "fallback_transcript_items": []}},
+            previous_snapshot_version=0,
+            runtime_config={"model": "gpt-4.1-mini"},
+            request_transcript_items=[{"role": "user", "content": "hello"}],
+            warn=warnings.append,
+        )
+        await advance(
+            type(
+                "State",
+                (),
+                {
+                    "response_id": "resp_adv",
+                    "effective_status": "completed",
+                    "response_json": {"id": "resp_adv", "object": "response", "status": "completed"},
+                    "last_event_seq": 3,
+                    "resume_last_response_id": "resp_adv",
+                },
+            )()
+        )
+
+        record = session_store.records["main::sess"]
+        assert record.snapshot_json["resume_cursor"]["last_response_id"] == "resp_adv"
+        assert record.snapshot_json["last_run"]["last_event_seq"] == 3
+        assert warnings == []
+
+    asyncio.run(_run())
+
+
+def test_build_session_snapshot_advancer_warns_on_cas_conflict() -> None:
+    async def _run() -> None:
+        from anyagent.server.finalization import build_session_snapshot_advancer
+
+        session_store = _SessionStore()
+        session_store.records["main::sess"] = _SessionRecord(
+            session_partition_key="main::sess",
+            agent_id="main",
+            session_key="sess",
+            snapshot_json={},
+            snapshot_version=9,
+        )
+        warnings: list[str] = []
+        advance = build_session_snapshot_advancer(
+            session_store=session_store,
+            session_partition_key="main::sess",
+            agent_id="main",
+            session_key="sess",
+            previous_snapshot={"resume_cursor": {"last_response_id": None, "fallback_transcript_items": []}},
+            previous_snapshot_version=0,
+            runtime_config={"model": "gpt-4.1-mini"},
+            request_transcript_items=[],
+            warn=warnings.append,
+        )
+        await advance(
+            type(
+                "State",
+                (),
+                {
+                    "response_id": "resp_adv",
+                    "effective_status": "completed",
+                    "response_json": {"id": "resp_adv", "object": "response", "status": "completed"},
+                    "last_event_seq": 3,
+                    "resume_last_response_id": "resp_adv",
+                },
+            )()
+        )
+
+        assert warnings
+        assert warnings[0].startswith("persist session snapshot failed (cas):")
+
+    asyncio.run(_run())
+
+
+def test_build_run_final_and_session_persister_updates_run_and_session() -> None:
+    async def _run() -> None:
+        from anyagent.server.finalization import build_run_final_and_session_persister
+
+        run_store = _SimpleRunStore()
+        session_store = _SessionStore()
+        warnings: list[str] = []
+        persist = build_run_final_and_session_persister(
+            run_store=run_store,
+            session_store=session_store,
+            session_partition_key="main::sess",
+            agent_id="main",
+            session_key="sess",
+            previous_snapshot={"resume_cursor": {"last_response_id": None, "fallback_transcript_items": []}},
+            previous_snapshot_version=0,
+            runtime_config={"model": "gpt-4.1-mini"},
+            request_transcript_items=[],
+            warn=warnings.append,
+        )
+        await persist(
+            type(
+                "State",
+                (),
+                {
+                    "response_id": "resp_persist",
+                    "effective_status": "completed",
+                    "response_json": {"id": "resp_persist", "object": "response", "status": "completed"},
+                    "error_json": None,
+                    "resume_last_response_id": "resp_persist",
+                    "last_event_seq": 4,
+                },
+            )()
+        )
+
+        assert run_store.final_calls[0]["response_id"] == "resp_persist"
+        assert session_store.records["main::sess"].snapshot_json["resume_cursor"]["last_response_id"] == "resp_persist"
+        assert warnings == []
+
+    asyncio.run(_run())
+
+
+def test_build_nonstream_response_finalizer_binds_defaults_and_overrides() -> None:
+    async def _run() -> None:
+        rec = _Recorder()
+        finalizer = build_nonstream_response_finalizer(
+            response_id="resp_bound",
+            append_event=rec.append,
+            append_completed_event=False,
+            append_done_sentinel=False,
+            resume_last_response_id="resp_resume",
+        )
+        state = await finalizer(
+            response_json={"id": "resp_bound", "object": "response", "status": "completed"},
+            append_completed_event_override=True,
+            append_done_sentinel_override=True,
+        )
+        assert state.response_id == "resp_bound"
+        assert state.resume_last_response_id == "resp_resume"
+        assert rec.events[0][0] == "response.completed"
+        assert rec.events[1] == (None, "[DONE]")
 
     asyncio.run(_run())

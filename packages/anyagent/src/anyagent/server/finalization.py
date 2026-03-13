@@ -23,6 +23,157 @@ class NonStreamFinalizationState:
 
 NonStreamEventAppender = Callable[[str | None, str], Awaitable[int | None]]
 NonStreamFinalizationHook = Callable[[NonStreamFinalizationState], Awaitable[None]]
+FinalizationStateValueResolver = Callable[[NonStreamFinalizationState], str | None]
+FinalizationWarningHook = Callable[[str], None]
+NonStreamResponseFinalizer = Callable[..., Awaitable[NonStreamFinalizationState]]
+
+_UNSET = object()
+
+
+def build_session_snapshot_advancer(
+    *,
+    session_store: Any,
+    session_partition_key: str,
+    agent_id: str,
+    session_key: str,
+    previous_snapshot: dict[str, Any] | None,
+    previous_snapshot_version: int | None,
+    runtime_config: dict[str, Any],
+    request_transcript_items: list[dict[str, Any]] | None,
+    response_id_resolver: FinalizationStateValueResolver | None = None,
+    warn: FinalizationWarningHook | None = None,
+) -> NonStreamFinalizationHook:
+    async def _advance(final_state: NonStreamFinalizationState) -> None:
+        response_id = response_id_resolver(final_state) if response_id_resolver is not None else final_state.response_id
+        if not isinstance(response_id, str) or not response_id.strip():
+            return
+        try:
+            ok, latest = await persist_session_snapshot(
+                session_store=session_store,
+                session_partition_key=session_partition_key,
+                agent_id=agent_id,
+                session_key=session_key,
+                previous_snapshot=previous_snapshot,
+                previous_snapshot_version=previous_snapshot_version,
+                runtime_config=runtime_config,
+                request_transcript_items=request_transcript_items,
+                response_id=response_id,
+                effective_status=final_state.effective_status,
+                response_json=final_state.response_json,
+                last_event_seq=final_state.last_event_seq,
+                resume_last_response_id=final_state.resume_last_response_id,
+            )
+            if not ok and warn is not None:
+                latest_version = getattr(latest, "snapshot_version", None) if latest is not None else None
+                warn(
+                    "persist session snapshot failed (cas): "
+                    f"expected_snapshot_version={previous_snapshot_version} "
+                    f"latest_snapshot_version={latest_version}"
+                )
+        except Exception as exc:  # noqa: BLE001
+            if warn is None:
+                raise
+            warn(f"persist session snapshot failed: {exc}")
+
+    return _advance
+
+
+def build_run_final_and_session_persister(
+    *,
+    run_store: Any,
+    session_store: Any,
+    session_partition_key: str,
+    agent_id: str,
+    session_key: str,
+    previous_snapshot: dict[str, Any] | None,
+    previous_snapshot_version: int | None,
+    runtime_config: dict[str, Any],
+    request_transcript_items: list[dict[str, Any]] | None,
+    response_id_resolver: FinalizationStateValueResolver | None = None,
+    warn: FinalizationWarningHook | None = None,
+) -> NonStreamFinalizationHook:
+    async def _persist(final_state: NonStreamFinalizationState) -> None:
+        response_id = response_id_resolver(final_state) if response_id_resolver is not None else final_state.response_id
+        if not isinstance(response_id, str) or not response_id.strip():
+            return
+        try:
+            await persist_run_final_and_session(
+                run_store=run_store,
+                session_store=session_store,
+                response_id=response_id,
+                effective_status=final_state.effective_status,
+                final_response_json=final_state.response_json,
+                error_json=final_state.error_json,
+                session_partition_key=session_partition_key,
+                agent_id=agent_id,
+                session_key=session_key,
+                previous_snapshot=previous_snapshot,
+                previous_snapshot_version=previous_snapshot_version,
+                runtime_config=runtime_config,
+                request_transcript_items=request_transcript_items,
+                resume_last_response_id=final_state.resume_last_response_id,
+                last_event_seq=final_state.last_event_seq,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if warn is None:
+                raise
+            warn(f"persist run final+session failed: {exc}")
+
+    return _persist
+
+
+def build_nonstream_response_finalizer(
+    *,
+    response_id: str | None,
+    append_event: NonStreamEventAppender | None = None,
+    mark_event_final: NonStreamFinalizationHook | None = None,
+    persist_run_final: NonStreamFinalizationHook | None = None,
+    advance_session: NonStreamFinalizationHook | None = None,
+    append_completed_event: bool | None = None,
+    append_done_sentinel: bool | None = None,
+    resume_last_response_id: str | None = None,
+) -> NonStreamResponseFinalizer:
+    async def _finalize(
+        *,
+        response_json: dict[str, Any] | None,
+        effective_status: str | None = None,
+        error_json: dict[str, Any] | None = None,
+        error_event_data: str | None = None,
+        resume_last_response_id_override: object = _UNSET,
+        append_completed_event_override: object = _UNSET,
+        append_done_sentinel_override: object = _UNSET,
+    ) -> NonStreamFinalizationState:
+        resolved_resume_last_response_id = (
+            resume_last_response_id
+            if resume_last_response_id_override is _UNSET
+            else resume_last_response_id_override
+        )
+        resolved_append_completed_event = (
+            append_completed_event
+            if append_completed_event_override is _UNSET
+            else append_completed_event_override
+        )
+        resolved_append_done_sentinel = (
+            append_done_sentinel
+            if append_done_sentinel_override is _UNSET
+            else append_done_sentinel_override
+        )
+        return await finalize_nonstream_response(
+            response_id=response_id,
+            response_json=response_json,
+            effective_status=effective_status,
+            error_json=error_json,
+            error_event_data=error_event_data,
+            append_event=append_event,
+            mark_event_final=mark_event_final,
+            persist_run_final=persist_run_final,
+            advance_session=advance_session,
+            append_completed_event=resolved_append_completed_event,
+            append_done_sentinel=resolved_append_done_sentinel,
+            resume_last_response_id=resolved_resume_last_response_id,
+        )
+
+    return _finalize
 
 
 def internal_run_status_from_effective(status: str) -> str:

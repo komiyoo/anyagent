@@ -22,6 +22,10 @@ PersistFinal = Callable[[Any], Awaitable[None]]
 MarkEventFinal = Callable[[Any], Awaitable[None]]
 AdvanceSession = Callable[[Any], Awaitable[None]]
 PersistBlock = Callable[[str | None, str], Awaitable[None]]
+ResponseEventWriter = Callable[[str, str | None, str], Awaitable[int | None]]
+ResponseEventSeqObserver = Callable[[str, int], Awaitable[None]]
+StreamingWarningHook = Callable[[str], None]
+ResponseIdResolver = Callable[[], str]
 
 
 def build_external_response_stream_response(
@@ -53,6 +57,63 @@ async def append_sse_chunk(
     for line in text.splitlines():
         for blk in decoder.feed_line(line):
             await persist_block(blk.event, blk.data)
+
+
+def build_response_event_appender(
+    *,
+    response_id: str | None = None,
+    response_id_resolver: ResponseIdResolver | None = None,
+    writer: ResponseEventWriter,
+    after_append: ResponseEventSeqObserver | None = None,
+    warn: StreamingWarningHook | None = None,
+) -> AppendEvent:
+    async def _append(event: str | None, data: str) -> int | None:
+        resolved_response_id = response_id_resolver() if response_id_resolver is not None else response_id
+        if not isinstance(resolved_response_id, str) or not resolved_response_id.strip():
+            return None
+        try:
+            seq = await writer(resolved_response_id, event, data)
+        except Exception as exc:  # noqa: BLE001
+            if warn is None:
+                raise
+            warn(f"append event failed: {exc}")
+            return None
+        if after_append is not None and isinstance(seq, int):
+            try:
+                await after_append(resolved_response_id, int(seq))
+            except Exception as exc:  # noqa: BLE001
+                if warn is None:
+                    raise
+                warn(f"after append failed: {exc}")
+        return int(seq) if isinstance(seq, int) else None
+
+    return _append
+
+
+def build_persisted_sse_block_handler(
+    *,
+    response_id: str,
+    fallback_model: Any,
+    append_event: AppendEvent,
+    persist_run_final: PersistFinal,
+    mark_event_final: MarkEventFinal | None = None,
+    advance_session: AdvanceSession | None = None,
+    persist_non_terminal_events: bool = True,
+) -> PersistBlock:
+    async def _persist_block(event: str | None, data: str) -> None:
+        await handle_persisted_sse_block(
+            response_id=response_id,
+            event=event,
+            data=data,
+            fallback_model=fallback_model,
+            append_event=append_event,
+            persist_run_final=persist_run_final,
+            mark_event_final=mark_event_final,
+            advance_session=advance_session,
+            persist_non_terminal_events=persist_non_terminal_events,
+        )
+
+    return _persist_block
 
 
 async def handle_persisted_sse_block(

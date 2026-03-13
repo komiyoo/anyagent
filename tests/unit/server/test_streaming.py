@@ -5,6 +5,8 @@ import asyncio
 from anyagent.protocol.sse import SSEBlockDecoder
 from anyagent.server.streaming import (
     append_sse_chunk,
+    build_persisted_sse_block_handler,
+    build_response_event_appender,
     handle_persisted_sse_block,
     normalize_forward_stream_block,
 )
@@ -63,6 +65,60 @@ def test_handle_persisted_sse_block_finalizes_completed_event() -> None:
         assert rec.events[0][0] == "response.completed"
         assert rec.events[-1] == (None, "[DONE]")
         assert rec.persisted == [("resp_1", "completed", {"id": "resp_1", "object": "response", "status": "completed"})]
+
+    asyncio.run(_run())
+
+
+def test_build_response_event_appender_supports_dynamic_response_id() -> None:
+    async def _run() -> None:
+        writes: list[tuple[str, str | None, str]] = []
+        seen_after: list[tuple[str, int]] = []
+        response_id_box = ["resp_1"]
+
+        async def _write(response_id: str, event: str | None, data: str) -> int:
+            writes.append((response_id, event, data))
+            return len(writes)
+
+        async def _after(response_id: str, seq: int) -> None:
+            seen_after.append((response_id, seq))
+
+        append_event = build_response_event_appender(
+            response_id_resolver=lambda: response_id_box[0],
+            writer=_write,
+            after_append=_after,
+        )
+        assert await append_event("response.completed", '{"id":"resp_1"}') == 1
+        response_id_box[0] = "resp_2"
+        assert await append_event(None, "[DONE]") == 2
+        assert writes == [
+            ("resp_1", "response.completed", '{"id":"resp_1"}'),
+            ("resp_2", None, "[DONE]"),
+        ]
+        assert seen_after == [("resp_1", 1), ("resp_2", 2)]
+
+    asyncio.run(_run())
+
+
+def test_build_persisted_sse_block_handler_binds_context() -> None:
+    async def _run() -> None:
+        rec = _Recorder()
+        append_event = build_response_event_appender(
+            response_id="resp_bound",
+            writer=lambda response_id, event, data: rec.append(event, data),
+        )
+        persist_block = build_persisted_sse_block_handler(
+            response_id="resp_bound",
+            fallback_model="gpt-4.1-mini",
+            append_event=append_event,
+            persist_run_final=rec.persist,
+        )
+        await persist_block(
+            "response.completed",
+            '{"type":"response.completed","response":{"id":"resp_bound","object":"response","status":"completed"}}',
+        )
+        assert rec.events[0][0] == "response.completed"
+        assert rec.events[-1] == (None, "[DONE]")
+        assert rec.persisted == [("resp_bound", "completed", {"id": "resp_bound", "object": "response", "status": "completed"})]
 
     asyncio.run(_run())
 

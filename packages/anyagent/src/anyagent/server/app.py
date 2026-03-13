@@ -25,16 +25,23 @@ from anyagent.protocol.openai_responses import (
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.protocol.sse import SSEBlockDecoder, encode_sse_block
 from anyagent.protocol.tool_runtime import PolicyHint, ToolContext
-from anyagent.server.finalization import finalize_nonstream_response
+from anyagent.server.finalization import build_nonstream_response_finalizer
 from anyagent.server.idempotency import begin_or_replay_response_run
 from anyagent.server.lock_service import SessionLockService, build_session_lock_service, hold_session_lease
 from anyagent.server.manifest_cache import ManifestCache, build_manifest_cache_key, extract_requested_tool_names
+from anyagent.server.request_validation import (
+    ResponsesRequestValidationError,
+    ensure_metadata_object,
+    ensure_request_body_object,
+    parse_function_tools,
+)
 from anyagent.server.responses_optional import optional_response_payload_from_run
 from anyagent.server.session_context import build_developer_prompt_body, prepare_response_session_context
 from anyagent.server.streaming import (
     append_sse_chunk as append_streaming_sse_chunk,
+    build_persisted_sse_block_handler,
+    build_response_event_appender,
     build_external_response_stream_response,
-    handle_persisted_sse_block,
     persist_sse_run as persist_streaming_sse_run,
 )
 from anyagent.server.runs import RunRegistry
@@ -276,9 +283,21 @@ def create_app(
     @app.post("/v1/responses", response_model=None)
     async def create_response(req: Request, authorization: str | None = Header(default=None), x_agent_id: str | None = Header(default=None)):
         _require_user_auth(state, authorization)
-        body = await req.json()
-        if not isinstance(body, dict):
-            raise HTTPException(status_code=400, detail="request body must be an object")
+        try:
+            body_raw = await req.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="invalid JSON body") from exc
+
+        try:
+            body = ensure_request_body_object(body_raw, message="request body must be an object")
+            metadata = ensure_metadata_object(body, message="metadata must be an object")
+            request_tools = parse_function_tools(body.get("tools"))
+        except ResponsesRequestValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        if request_tools is not None:
+            body = dict(body)
+            body["tools"] = [tool.model_dump(exclude_none=True) for tool in request_tools]
 
         idempotency_key = req.headers.get("idempotency-key")
         agent_id = _resolve_agent_id(body=body, x_agent_id=x_agent_id)
@@ -349,7 +368,7 @@ def create_app(
                 mcp_manager=mcp_manager,
                 agent_id=agent_id,
                 session_key=session_key,
-                metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else None,
+                metadata=metadata,
                 request_tools=body.get("tools"),
                 tool_context=tool_context,
                 enabled_skills=enabled_skill_ids or None,
@@ -563,8 +582,10 @@ def create_app(
                             effective_status: str | None = None,
                             error_json: dict[str, Any] | None = None,
                         ) -> tuple[int, Any]:
-                            async def _append_event(event: str | None, data: str) -> int | None:
-                                return await state.events.append(response_id=response_id, event=event, data=data)
+                            append_event = build_response_event_appender(
+                                response_id=response_id,
+                                writer=lambda rid, event, data: state.events.append(response_id=rid, event=event, data=data),
+                            )
 
                             async def _mark_event_final(final_state) -> None:
                                 err_model = None
@@ -605,15 +626,17 @@ def create_app(
                                     response_json=final_state.response_json,
                                 )
 
-                            final_state = await finalize_nonstream_response(
+                            finalize_terminal = build_nonstream_response_finalizer(
                                 response_id=response_id,
-                                response_json=payload,
-                                effective_status=effective_status,
-                                error_json=error_json,
-                                append_event=_append_event,
+                                append_event=append_event,
                                 mark_event_final=_mark_event_final,
                                 persist_run_final=_persist_run_final,
                                 advance_session=_advance_session,
+                            )
+                            final_state = await finalize_terminal(
+                                response_json=payload,
+                                effective_status=effective_status,
+                                error_json=error_json,
                             )
                             return response_status_code, final_state.response_json if final_state.response_json is not None else payload
                         try:
@@ -869,46 +892,10 @@ async def _append_sse_chunk(
     runtime_config: dict[str, Any] | None = None,
     request_transcript_items: list[dict[str, Any]] | None = None,
 ) -> None:
-    async def _persist_block(event: str | None, data: str) -> None:
-        await _handle_sse_block(
-            state=state,
-            response_id=response_id,
-            event=event,
-            data=data,
-            fallback_model=fallback_model,
-            session_partition_key_value=session_partition_key_value,
-            agent_id=agent_id,
-            session_key=session_key,
-            previous_snapshot=previous_snapshot,
-            previous_snapshot_version=previous_snapshot_version,
-            runtime_config=runtime_config,
-            request_transcript_items=request_transcript_items,
-        )
-
-    await append_streaming_sse_chunk(
-        chunk=chunk,
-        decoder=decoder,
-        persist_block=_persist_block,
+    append_event = build_response_event_appender(
+        response_id=response_id,
+        writer=lambda rid, event, data: state.events.append(response_id=rid, event=event, data=data),
     )
-
-
-async def _handle_sse_block(
-    *,
-    state: AnyAgentServerApp,
-    response_id: str,
-    event: str | None,
-    data: str,
-    fallback_model: Any,
-    session_partition_key_value: str | None = None,
-    agent_id: str | None = None,
-    session_key: str | None = None,
-    previous_snapshot: dict[str, Any] | None = None,
-    previous_snapshot_version: int | None = None,
-    runtime_config: dict[str, Any] | None = None,
-    request_transcript_items: list[dict[str, Any]] | None = None,
-) -> None:
-    async def _append_event(ev: str | None, payload: str) -> int | None:
-        return await state.events.append(response_id=response_id, event=ev, data=payload)
 
     async def _mark_event_final(final_state) -> None:
         await state.events.mark_final(
@@ -948,15 +935,19 @@ async def _handle_sse_block(
                 response_json=final_state.response_json,
             )
 
-    await handle_persisted_sse_block(
+    persist_block = build_persisted_sse_block_handler(
         response_id=response_id,
-        event=event,
-        data=data,
         fallback_model=fallback_model,
-        append_event=_append_event,
-        mark_event_final=_mark_event_final,
+        append_event=append_event,
         persist_run_final=_persist_run_final,
+        mark_event_final=_mark_event_final,
         advance_session=_advance_session,
+    )
+
+    await append_streaming_sse_chunk(
+        chunk=chunk,
+        decoder=decoder,
+        persist_block=persist_block,
     )
 
 
@@ -973,10 +964,11 @@ async def _persist_sse_run(
     runtime_config: dict[str, Any] | None = None,
     request_transcript_items: list[dict[str, Any]] | None = None,
 ) -> tuple[str, dict[str, Any] | None]:
-    async def _append_event(ev: str | None, payload: str) -> int | None:
-        return await state.events.append(response_id=response_id_box[0], event=ev, data=payload)
-
     response_id_box = ["resp_anyagent"]
+    append_event = build_response_event_appender(
+        response_id_resolver=lambda: response_id_box[0],
+        writer=lambda rid, event, data: state.events.append(response_id=rid, event=event, data=data),
+    )
 
     async def _persist_run_final(final_state) -> None:
         await state.run_store.mark_final(
@@ -1018,7 +1010,7 @@ async def _persist_sse_run(
 
     response_id, response_json = await persist_streaming_sse_run(
         chunks=chunks,
-        append_event=_append_event,
+        append_event=append_event,
         persist_run_final=_persist_run_final,
         fallback_model=fallback_model,
         response_id_hint=response_id_box[0],
