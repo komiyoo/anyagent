@@ -119,3 +119,26 @@ def test_serialize_completed_response_event_data_wraps_and_normalizes_response()
     payload = json.loads(data)
     assert payload["type"] == "response.completed"
     assert payload["response"]["id"] == "resp_new"
+
+
+def test_normalize_completed_response_event_data_wraps_bare_response_payload() -> None:
+    completed, data = normalize_completed_response_event_data(
+        '{"id":"resp_old","object":"response","status":"completed","output":[]}',
+        canonical_response_id="resp_new",
+    ) or (None, None)
+
+    assert completed == {"id": "resp_new", "object": "response", "status": "completed", "output": []}
+    payload = json.loads(data)
+    assert payload == {"id": "resp_new", "object": "response", "status": "completed", "output": []}
+
+
+def test_extract_completed_response_ignores_non_completed_events() -> None:
+    completed = extract_completed_response(
+        [
+            ("response.created", '{"type":"response.created","response":{"id":"resp_1"}}'),
+            ("error", '{"error":{"message":"boom"}}'),
+            ("response.completed", '{"type":"response.completed","response":{"id":"resp_1","object":"response","status":"completed"}}'),
+        ]
+    )
+
+    assert completed == {"id": "resp_1", "object": "response", "status": "completed"}

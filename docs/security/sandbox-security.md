@@ -25,7 +25,7 @@ anyagent 的 Agent 安全模型不是"全面禁止"，而是**沙箱内给予充
 
 ## 2. 架构：策略-后端分离
 
-参考 [Codex](../../codex) 的成熟沙箱架构（策略层 `SandboxPolicy` + 平台后端层 `SandboxManager::transform()`），anyagent 采用**策略-后端分离**设计：
+参考 Codex 的成熟沙箱架构（策略层 `SandboxPolicy` + 平台后端层 `SandboxManager::transform()`），anyagent 采用**策略-后端分离**设计：
 
 - **策略层（Protocol）**：定义沙箱策略模型，与平台/后端无关，放在 `anyagent.protocol.sandbox`
 - **后端层（Server）**：可插拔的沙箱后端实现，放在 `anyagent.server.sandbox`

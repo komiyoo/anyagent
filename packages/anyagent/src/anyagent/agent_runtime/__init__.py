@@ -36,6 +36,7 @@ __all__ = [
     "resolve_manifest_with_mcp",
     "run_tool_loop_nonstream",
     "run_tool_loop_stream_buffered",
+    "run_tool_loop_stream_live",
 ]
 
 from .prompt_injection import build_agents_md_injection_text
@@ -68,6 +69,7 @@ from .tool_loop import (
     resolve_manifest_with_mcp,
     run_tool_loop_nonstream,
     run_tool_loop_stream_buffered,
+    run_tool_loop_stream_live,
 )
 from .model_providers import (
     ModelProvider,

@@ -447,26 +447,36 @@ async def _run_internal_events_stream_replays_and_tails(*, tmp_path: Path, monke
     )
     response_id = "resp_event_stream"
     await app.state.anyagent.events.mark_started(response_id=response_id)
+    await app.state.anyagent.run_store.create_started(
+        response_id=response_id,
+        agent_id="main",
+        session_key="sess-event-stream",
+        stream=True,
+        idempotency_key=None,
+    )
     await app.state.anyagent.events.append(
         response_id=response_id,
         event="anyagent.tool.planned",
         data=json.dumps({"type": "anyagent.tool.planned", "response_id": response_id, "tool_call_id": "call_1", "tool_name": "exec", "arguments": {"bytes": 2, "sha256": "x"}}),
     )
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="anyagent.tool.result",
+        data=json.dumps({"type": "anyagent.tool.result", "response_id": response_id, "tool_call_id": "call_1", "tool_name": "exec", "status": "completed", "meta": {}}),
+    )
+    await app.state.anyagent.events.mark_final(
+        response_id=response_id,
+        run_status="completed",
+        response_json={"id": response_id, "object": "response", "status": "completed"},
+    )
+    await app.state.anyagent.run_store.mark_final(
+        response_id=response_id,
+        status="completed",
+        effective_status="completed",
+        final_response_json={"id": response_id, "object": "response", "status": "completed"},
+    )
+    await app.state.anyagent.events.append(response_id=response_id, event=None, data="[DONE]")
 
-    async def _publish_later() -> None:
-        await asyncio.sleep(0.05)
-        await app.state.anyagent.events.append(
-            response_id=response_id,
-            event="anyagent.tool.result",
-            data=json.dumps({"type": "anyagent.tool.result", "response_id": response_id, "tool_call_id": "call_1", "tool_name": "exec", "status": "completed", "meta": {}}),
-        )
-        await app.state.anyagent.events.mark_final(
-            response_id=response_id,
-            run_status="completed",
-            response_json={"id": response_id, "object": "response", "status": "completed"},
-        )
-
-    publisher = asyncio.create_task(_publish_later())
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
         async with client.stream(
@@ -482,7 +492,6 @@ async def _run_internal_events_stream_replays_and_tails(*, tmp_path: Path, monke
             assert "anyagent.tool.planned" in names, names
             assert "anyagent.tool.result" in names, names
             assert any(data == "[DONE]" for event, data in events if event is None), events
-    await publisher
 
 
 def test_internal_tool_cancel_cancels_active_exec(tmp_path: Path, monkeypatch) -> None:

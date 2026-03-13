@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import json
 import uuid
@@ -13,7 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from anyagent.agent_packs import AgentCatalog, AgentPack, load_agent_catalog
 from anyagent.agent_runtime.prompt_injection import build_agents_md_injection_text
-from anyagent.agent_runtime import PreparedSessionRequest, persist_session_snapshot, prepare_session_request
+from anyagent.agent_runtime import persist_session_snapshot
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp, run_tool_loop_nonstream, run_tool_loop_stream_live
 from anyagent.agent_runtime.model_providers import get_default_model_provider
 from anyagent.gateway.sequencer import KeyedSequencer
@@ -22,25 +20,23 @@ from anyagent.mcp.manager import MCPManagerRegistry
 from anyagent.protocol.credential_vault import AdminCredentialSetRequest
 from anyagent.protocol.openai_responses import (
     build_minimal_openai_response_json,
-    ensure_completed_response_event_data,
-    inject_text_into_responses_body,
-    normalize_completed_response_event_data,
     serialize_completed_response_event_data,
 )
 from anyagent.protocol.responses_optional import AnyAgentResponseError
-from anyagent.protocol.sandbox import SandboxPolicy
 from anyagent.protocol.sse import SSEBlockDecoder, encode_sse_block
-from anyagent.protocol.stage_events import (
-    AnyAgentCommandPlannedEvent,
-    AnyAgentCommandResultEvent,
-    AnyAgentToolPlannedEvent,
-    AnyAgentToolResultEvent,
-)
 from anyagent.protocol.tool_runtime import PolicyHint, ToolContext
-from anyagent.server.finalization import internal_run_status_from_effective
+from anyagent.server.finalization import finalize_nonstream_response
+from anyagent.server.idempotency import begin_or_replay_response_run
 from anyagent.server.lock_service import SessionLockService, build_session_lock_service, hold_session_lease
 from anyagent.server.manifest_cache import ManifestCache, build_manifest_cache_key, extract_requested_tool_names
 from anyagent.server.responses_optional import optional_response_payload_from_run
+from anyagent.server.session_context import build_developer_prompt_body, prepare_response_session_context
+from anyagent.server.streaming import (
+    append_sse_chunk as append_streaming_sse_chunk,
+    build_external_response_stream_response,
+    handle_persisted_sse_block,
+    persist_sse_run as persist_streaming_sse_run,
+)
 from anyagent.server.runs import RunRegistry
 from anyagent.server.runtime import InProcessToolRuntimeService
 from anyagent.server.sandbox import SandboxManager
@@ -53,7 +49,7 @@ from anyagent.server.storage_backends import (
     SessionStore,
     build_server_storage_bundle,
 )
-from anyagent.storage import build_storage_capability_matrix, resolve_nonstream_replay_payload, stream_external_response_blocks
+from anyagent.storage import build_storage_capability_matrix, resolve_nonstream_replay_payload
 from anyagent.storage.settings import StorageSettings
 from anyagent.skills import (
     SkillEnablement,
@@ -289,31 +285,39 @@ def create_app(
         pack = state.require_pack(agent_id, external=True)
         session_key = _resolve_session_key(body=body)
         session_partition_key_value = session_partition_key(agent_id=agent_id, session_key=session_key)
-        if isinstance(idempotency_key, str) and idempotency_key.strip():
-            existing = await state.run_store.get_by_idempotency_key(idempotency_key.strip())
-            if existing is not None:
-                if bool(body.get("stream")):
-                    return _build_external_response_stream(state=state, response_id=existing.response_id)
-                payload = await resolve_nonstream_replay_payload(
-                    run_store=state.run_store,
-                    run=existing,
-                    response_id=existing.response_id,
-                    fallback_payload_factory=lambda run: build_minimal_openai_response_json(
-                        response_id=run.response_id,
-                        status=run.effective_status,  # type: ignore[arg-type]
-                        model=str(body.get("model") or "unknown"),
-                    ),
-                )
-                return JSONResponse(payload)
-        response_id = f"resp_{uuid.uuid4().hex}"
-        await state.events.mark_started(response_id=response_id)
-        await state.run_store.create_started(
-            response_id=response_id,
-            agent_id=agent_id,
-            session_key=session_key,
+        async def _create_started_run(response_id_value: str, idem_value: str | None):
+            await state.events.mark_started(response_id=response_id_value)
+            return await state.run_store.create_started(
+                response_id=response_id_value,
+                agent_id=agent_id,
+                session_key=session_key,
+                stream=bool(body.get("stream")),
+                idempotency_key=idem_value,
+            )
+
+        gate = await begin_or_replay_response_run(
+            idempotency_key=idempotency_key,
             stream=bool(body.get("stream")),
-            idempotency_key=idempotency_key.strip() if isinstance(idempotency_key, str) and idempotency_key.strip() else None,
+            new_response_id_factory=lambda: f"resp_{uuid.uuid4().hex}",
+            lookup_existing_run=state.run_store.get_by_idempotency_key,
+            create_started_run=_create_started_run,
+            build_stream_replay_response=lambda replay_response_id: _build_external_response_stream(state=state, response_id=replay_response_id),
+            build_nonstream_replay_response=lambda run, replay_response_id: resolve_nonstream_replay_payload(
+                run_store=state.run_store,
+                run=run,
+                response_id=replay_response_id,
+                fallback_payload_factory=lambda replay_run: build_minimal_openai_response_json(
+                    response_id=replay_run.response_id,
+                    status=replay_run.effective_status,  # type: ignore[arg-type]
+                    model=str(body.get("model") or "unknown"),
+                ),
+            ),
         )
+        if gate.response is not None:
+            if bool(body.get("stream")):
+                return gate.response
+            return JSONResponse(gate.response)
+        response_id = gate.response_id
         selected_skills = await _select_skills(state, pack=pack, body=body)
         tool_context = _build_server_tool_context(pack=pack, body=body, selected_skills=selected_skills)
         agents_md_text = build_agents_md_injection_text(pack)
@@ -392,18 +396,14 @@ def create_app(
                             owner_id=f"run:{response_id}",
                             ttl_s=state.session_lease_ttl_s,
                         ):
-                            prepared = await _prepare_session_request(
-                                state=state,
-                                session_partition_key_value=session_partition_key_value,
+                            session_ctx = await prepare_response_session_context(
+                                session_store=state.session_store,
+                                session_partition_key=session_partition_key_value,
                                 agent_id=agent_id,
                                 session_key=session_key,
                                 body=body,
                             )
-                            body2 = inject_text_into_responses_body(
-                                body=prepared.effective_body,
-                                text=agents_md_text,
-                                role="developer",
-                            )
+                            body2 = build_developer_prompt_body(body=session_ctx.effective_body, developer_text=agents_md_text)
                             decoder = SSEBlockDecoder()
                             try:
                                 async for chunk in run_tool_loop_stream_live(
@@ -426,21 +426,21 @@ def create_app(
                                         response_id=response_id,
                                         chunk=chunk,
                                         decoder=decoder,
-                                        fallback_model=prepared.effective_body.get("model"),
+                                        fallback_model=session_ctx.effective_body.get("model"),
                                         session_partition_key_value=session_partition_key_value,
                                         agent_id=agent_id,
                                         session_key=session_key,
-                                        previous_snapshot=prepared.previous_snapshot,
-                                        previous_snapshot_version=prepared.previous_snapshot_version,
-                                        runtime_config=prepared.effective_runtime_config,
-                                        request_transcript_items=prepared.request_transcript_items,
+                                        previous_snapshot=session_ctx.previous_snapshot,
+                                        previous_snapshot_version=session_ctx.previous_snapshot_version,
+                                        runtime_config=session_ctx.effective_runtime_config,
+                                        request_transcript_items=session_ctx.request_transcript_items,
                                     )
                                     await queue.put(chunk)
                             except asyncio.CancelledError:
                                 payload = build_minimal_openai_response_json(
                                     response_id=response_id,
                                     status="cancelled",
-                                    model=str(prepared.effective_body.get("model") or "unknown"),
+                                    model=str(session_ctx.effective_body.get("model") or "unknown"),
                                 )
                                 completed_block = _build_completed_sse_block(payload)
                                 done_block = encode_sse_block(event=None, data="[DONE]", id=None)
@@ -449,28 +449,28 @@ def create_app(
                                     response_id=response_id,
                                     chunk=completed_block,
                                     decoder=decoder,
-                                    fallback_model=prepared.effective_body.get("model"),
+                                    fallback_model=session_ctx.effective_body.get("model"),
                                     session_partition_key_value=session_partition_key_value,
                                     agent_id=agent_id,
                                     session_key=session_key,
-                                    previous_snapshot=prepared.previous_snapshot,
-                                    previous_snapshot_version=prepared.previous_snapshot_version,
-                                    runtime_config=prepared.effective_runtime_config,
-                                    request_transcript_items=prepared.request_transcript_items,
+                                    previous_snapshot=session_ctx.previous_snapshot,
+                                    previous_snapshot_version=session_ctx.previous_snapshot_version,
+                                    runtime_config=session_ctx.effective_runtime_config,
+                                    request_transcript_items=session_ctx.request_transcript_items,
                                 )
                                 await _append_sse_chunk(
                                     state,
                                     response_id=response_id,
                                     chunk=done_block,
                                     decoder=decoder,
-                                    fallback_model=prepared.effective_body.get("model"),
+                                    fallback_model=session_ctx.effective_body.get("model"),
                                     session_partition_key_value=session_partition_key_value,
                                     agent_id=agent_id,
                                     session_key=session_key,
-                                    previous_snapshot=prepared.previous_snapshot,
-                                    previous_snapshot_version=prepared.previous_snapshot_version,
-                                    runtime_config=prepared.effective_runtime_config,
-                                    request_transcript_items=prepared.request_transcript_items,
+                                    previous_snapshot=session_ctx.previous_snapshot,
+                                    previous_snapshot_version=session_ctx.previous_snapshot_version,
+                                    runtime_config=session_ctx.effective_runtime_config,
+                                    request_transcript_items=session_ctx.request_transcript_items,
                                 )
                                 await queue.put(completed_block)
                                 await queue.put(done_block)
@@ -479,7 +479,7 @@ def create_app(
                                 payload = build_minimal_openai_response_json(
                                     response_id=response_id,
                                     status="failed",
-                                    model=str(prepared.effective_body.get("model") or "unknown"),
+                                    model=str(session_ctx.effective_body.get("model") or "unknown"),
                                 )
                                 payload["error"] = {"type": "server_error", "message": str(e)}
                                 completed_block = _build_completed_sse_block(payload)
@@ -489,28 +489,28 @@ def create_app(
                                     response_id=response_id,
                                     chunk=completed_block,
                                     decoder=decoder,
-                                    fallback_model=prepared.effective_body.get("model"),
+                                    fallback_model=session_ctx.effective_body.get("model"),
                                     session_partition_key_value=session_partition_key_value,
                                     agent_id=agent_id,
                                     session_key=session_key,
-                                    previous_snapshot=prepared.previous_snapshot,
-                                    previous_snapshot_version=prepared.previous_snapshot_version,
-                                    runtime_config=prepared.effective_runtime_config,
-                                    request_transcript_items=prepared.request_transcript_items,
+                                    previous_snapshot=session_ctx.previous_snapshot,
+                                    previous_snapshot_version=session_ctx.previous_snapshot_version,
+                                    runtime_config=session_ctx.effective_runtime_config,
+                                    request_transcript_items=session_ctx.request_transcript_items,
                                 )
                                 await _append_sse_chunk(
                                     state,
                                     response_id=response_id,
                                     chunk=done_block,
                                     decoder=decoder,
-                                    fallback_model=prepared.effective_body.get("model"),
+                                    fallback_model=session_ctx.effective_body.get("model"),
                                     session_partition_key_value=session_partition_key_value,
                                     agent_id=agent_id,
                                     session_key=session_key,
-                                    previous_snapshot=prepared.previous_snapshot,
-                                    previous_snapshot_version=prepared.previous_snapshot_version,
-                                    runtime_config=prepared.effective_runtime_config,
-                                    request_transcript_items=prepared.request_transcript_items,
+                                    previous_snapshot=session_ctx.previous_snapshot,
+                                    previous_snapshot_version=session_ctx.previous_snapshot_version,
+                                    runtime_config=session_ctx.effective_runtime_config,
+                                    request_transcript_items=session_ctx.request_transcript_items,
                                 )
                                 await queue.put(completed_block)
                                 await queue.put(done_block)
@@ -548,18 +548,74 @@ def create_app(
                         owner_id=f"run:{response_id}",
                         ttl_s=state.session_lease_ttl_s,
                     ):
-                        prepared = await _prepare_session_request(
-                            state=state,
-                            session_partition_key_value=session_partition_key_value,
+                        session_ctx = await prepare_response_session_context(
+                            session_store=state.session_store,
+                            session_partition_key=session_partition_key_value,
                             agent_id=agent_id,
                             session_key=session_key,
                             body=body,
                         )
-                        body2 = inject_text_into_responses_body(
-                            body=prepared.effective_body,
-                            text=agents_md_text,
-                            role="developer",
-                        )
+                        body2 = build_developer_prompt_body(body=session_ctx.effective_body, developer_text=agents_md_text)
+                        async def _finalize_nonstream_terminal(
+                            *,
+                            payload: dict[str, Any],
+                            response_status_code: int,
+                            effective_status: str | None = None,
+                            error_json: dict[str, Any] | None = None,
+                        ) -> tuple[int, Any]:
+                            async def _append_event(event: str | None, data: str) -> int | None:
+                                return await state.events.append(response_id=response_id, event=event, data=data)
+
+                            async def _mark_event_final(final_state) -> None:
+                                err_model = None
+                                if isinstance(final_state.error_json, dict):
+                                    try:
+                                        err_model = AnyAgentResponseError.model_validate(final_state.error_json)
+                                    except Exception:  # noqa: BLE001
+                                        err_model = None
+                                await state.events.mark_final(
+                                    response_id=response_id,
+                                    run_status=final_state.run_status,
+                                    effective_run_status=final_state.effective_status,
+                                    response_json=final_state.response_json,
+                                    error=err_model,
+                                )
+
+                            async def _persist_run_final(final_state) -> None:
+                                await state.run_store.mark_final(
+                                    response_id=response_id,
+                                    status=final_state.run_status,
+                                    effective_status=final_state.effective_status,
+                                    final_response_json=final_state.response_json,
+                                    error_json=final_state.error_json,
+                                )
+
+                            async def _advance_session(final_state) -> None:
+                                await _update_session_snapshot(
+                                    state=state,
+                                    session_partition_key_value=session_partition_key_value,
+                                    agent_id=agent_id,
+                                    session_key=session_key,
+                                    previous_snapshot=session_ctx.previous_snapshot,
+                                    previous_snapshot_version=session_ctx.previous_snapshot_version,
+                                    runtime_config=session_ctx.effective_runtime_config,
+                                    request_transcript_items=session_ctx.request_transcript_items,
+                                    response_id=final_state.response_id or response_id,
+                                    effective_status=final_state.effective_status,
+                                    response_json=final_state.response_json,
+                                )
+
+                            final_state = await finalize_nonstream_response(
+                                response_id=response_id,
+                                response_json=payload,
+                                effective_status=effective_status,
+                                error_json=error_json,
+                                append_event=_append_event,
+                                mark_event_final=_mark_event_final,
+                                persist_run_final=_persist_run_final,
+                                advance_session=_advance_session,
+                            )
+                            return response_status_code, final_state.response_json if final_state.response_json is not None else payload
                         try:
                             status_code, payload = await run_tool_loop_nonstream(
                                 model_provider=model_provider,
@@ -580,106 +636,33 @@ def create_app(
                             payload = build_minimal_openai_response_json(
                                 response_id=response_id,
                                 status="cancelled",
-                                model=str(prepared.effective_body.get("model") or "unknown"),
+                                model=str(session_ctx.effective_body.get("model") or "unknown"),
                             )
-                            await _append_done_sentinel(state=state, response_id=response_id)
-                            await state.events.mark_final(
-                                response_id=response_id,
-                                run_status="aborted",
-                                effective_run_status="cancelled",
-                                response_json=payload,
-                            )
-                            await state.run_store.mark_final(
-                                response_id=response_id,
-                                status="aborted",
+                            return await _finalize_nonstream_terminal(
+                                payload=payload,
+                                response_status_code=200,
                                 effective_status="cancelled",
-                                final_response_json=payload,
                             )
-                            await _update_session_snapshot(
-                                state=state,
-                                session_partition_key_value=session_partition_key_value,
-                                agent_id=agent_id,
-                                session_key=session_key,
-                                previous_snapshot=prepared.previous_snapshot,
-                                previous_snapshot_version=prepared.previous_snapshot_version,
-                                runtime_config=prepared.effective_runtime_config,
-                                request_transcript_items=prepared.request_transcript_items,
-                                response_id=response_id,
-                                effective_status="cancelled",
-                                response_json=payload,
-                            )
-                            return 200, payload
                         except Exception as e:  # noqa: BLE001
                             payload = build_minimal_openai_response_json(
                                 response_id=response_id,
                                 status="failed",
-                                model=str(prepared.effective_body.get("model") or "unknown"),
+                                model=str(session_ctx.effective_body.get("model") or "unknown"),
                             )
                             payload["error"] = {"type": "server_error", "message": str(e)}
-                            await _append_done_sentinel(state=state, response_id=response_id)
-                            await state.events.mark_final(
-                                response_id=response_id,
-                                run_status="errored",
-                                effective_run_status="failed",
-                                response_json=payload,
-                                error=AnyAgentResponseError(type="server_error", message=str(e)),
-                            )
-                            await state.run_store.mark_final(
-                                response_id=response_id,
-                                status="errored",
+                            return await _finalize_nonstream_terminal(
+                                payload=payload,
+                                response_status_code=500,
                                 effective_status="failed",
-                                final_response_json=payload,
                                 error_json={"type": "server_error", "message": str(e)},
                             )
-                            await _update_session_snapshot(
-                                state=state,
-                                session_partition_key_value=session_partition_key_value,
-                                agent_id=agent_id,
-                                session_key=session_key,
-                                previous_snapshot=prepared.previous_snapshot,
-                                previous_snapshot_version=prepared.previous_snapshot_version,
-                                runtime_config=prepared.effective_runtime_config,
-                                request_transcript_items=prepared.request_transcript_items,
-                                response_id=response_id,
-                                effective_status="failed",
-                                response_json=payload,
-                            )
-                            return 500, payload
 
                         if status_code >= 400 or not isinstance(payload, dict) or not isinstance(payload.get("id"), str):
                             return status_code, payload
-                        await state.events.append(
-                            response_id=response_id,
-                            event="response.completed",
-                            data=json.dumps(payload, ensure_ascii=False),
+                        return await _finalize_nonstream_terminal(
+                            payload=payload,
+                            response_status_code=status_code,
                         )
-                        await _append_done_sentinel(state=state, response_id=response_id)
-                        await state.events.mark_final(
-                            response_id=response_id,
-                            run_status=internal_run_status_from_effective(str(payload.get("status") or "completed")),
-                            effective_run_status=str(payload.get("status") or "completed"),
-                            response_json=payload,
-                        )
-                        await state.run_store.mark_final(
-                            response_id=response_id,
-                            status=internal_run_status_from_effective(str(payload.get("status") or "completed")),
-                            effective_status=str(payload.get("status") or "completed"),
-                            final_response_json=payload,
-                        )
-                        await _update_session_snapshot(
-                            state=state,
-                            session_partition_key_value=session_partition_key_value,
-                            agent_id=agent_id,
-                            session_key=session_key,
-                            previous_snapshot=prepared.previous_snapshot,
-                            previous_snapshot_version=prepared.previous_snapshot_version,
-                            runtime_config=prepared.effective_runtime_config,
-                            request_transcript_items=prepared.request_transcript_items,
-                            response_id=response_id,
-                            effective_status=str(payload.get("status") or "completed"),
-                            response_json=payload,
-                        )
-                        return status_code, payload
 
                 status_code, payload = await state.session_sequencer.run(
                     session_partition_key_value,
@@ -863,14 +846,11 @@ def _strip_response_created_blocks(blocks: list[bytes]) -> list[bytes]:
 
 
 def _build_external_response_stream(*, state: AnyAgentServerApp, response_id: str) -> StreamingResponse:
-    return StreamingResponse(
-        stream_external_response_blocks(
-            run_store=state.run_store,
-            event_store=state.events,
-            response_id=response_id,
-            event_filter=lambda event: event is None or event == "error" or (isinstance(event, str) and event.startswith("response.")),
-        ),
-        media_type="text/event-stream",
+    return build_external_response_stream_response(
+        run_store=state.run_store,
+        event_store=state.events,
+        response_id=response_id,
+        event_filter=lambda event: event is None or event == "error" or (isinstance(event, str) and event.startswith("response.")),
     )
 
 
@@ -889,23 +869,27 @@ async def _append_sse_chunk(
     runtime_config: dict[str, Any] | None = None,
     request_transcript_items: list[dict[str, Any]] | None = None,
 ) -> None:
-    text = chunk.decode("utf-8", errors="replace")
-    for line in text.splitlines():
-        for blk in decoder.feed_line(line):
-            await _handle_sse_block(
-                state=state,
-                response_id=response_id,
-                event=blk.event,
-                data=blk.data,
-                fallback_model=fallback_model,
-                session_partition_key_value=session_partition_key_value,
-                agent_id=agent_id,
-                session_key=session_key,
-                previous_snapshot=previous_snapshot,
-                previous_snapshot_version=previous_snapshot_version,
-                runtime_config=runtime_config,
-                request_transcript_items=request_transcript_items,
-            )
+    async def _persist_block(event: str | None, data: str) -> None:
+        await _handle_sse_block(
+            state=state,
+            response_id=response_id,
+            event=event,
+            data=data,
+            fallback_model=fallback_model,
+            session_partition_key_value=session_partition_key_value,
+            agent_id=agent_id,
+            session_key=session_key,
+            previous_snapshot=previous_snapshot,
+            previous_snapshot_version=previous_snapshot_version,
+            runtime_config=runtime_config,
+            request_transcript_items=request_transcript_items,
+        )
+
+    await append_streaming_sse_chunk(
+        chunk=chunk,
+        decoder=decoder,
+        persist_block=_persist_block,
+    )
 
 
 async def _handle_sse_block(
@@ -923,29 +907,27 @@ async def _handle_sse_block(
     runtime_config: dict[str, Any] | None = None,
     request_transcript_items: list[dict[str, Any]] | None = None,
 ) -> None:
-    if event is None and data.strip() == "[DONE]":
-        return
-    if event == "response.completed":
-        maybe, data = ensure_completed_response_event_data(
-            data,
-            response_id=response_id,
-            fallback_model=str(fallback_model or "unknown"),
-        )
-    await state.events.append(response_id=response_id, event=event, data=data)
-    if event == "response.completed":
-        await _append_done_sentinel(state=state, response_id=response_id)
+    async def _append_event(ev: str | None, payload: str) -> int | None:
+        return await state.events.append(response_id=response_id, event=ev, data=payload)
+
+    async def _mark_event_final(final_state) -> None:
         await state.events.mark_final(
             response_id=response_id,
-            run_status=internal_run_status_from_effective(str(maybe.get("status") or "completed")),
-            effective_run_status=str(maybe.get("status") or "completed"),
-            response_json=maybe,
+            run_status=final_state.run_status,
+            effective_run_status=final_state.effective_status,
+            response_json=final_state.response_json,
         )
+
+    async def _persist_run_final(final_state) -> None:
         await state.run_store.mark_final(
             response_id=response_id,
-            status=internal_run_status_from_effective(str(maybe.get("status") or "completed")),
-            effective_status=str(maybe.get("status") or "completed"),
-            final_response_json=maybe,
+            status=final_state.run_status,
+            effective_status=final_state.effective_status,
+            final_response_json=final_state.response_json,
+            error_json=final_state.error_json,
         )
+
+    async def _advance_session(final_state) -> None:
         if (
             isinstance(session_partition_key_value, str)
             and isinstance(agent_id, str)
@@ -961,10 +943,21 @@ async def _handle_sse_block(
                 previous_snapshot_version=previous_snapshot_version,
                 runtime_config=runtime_config,
                 request_transcript_items=request_transcript_items,
-                response_id=response_id,
-                effective_status=str(maybe.get("status") or "completed"),
-                response_json=maybe,
+                response_id=final_state.response_id or response_id,
+                effective_status=final_state.effective_status,
+                response_json=final_state.response_json,
             )
+
+    await handle_persisted_sse_block(
+        response_id=response_id,
+        event=event,
+        data=data,
+        fallback_model=fallback_model,
+        append_event=_append_event,
+        mark_event_final=_mark_event_final,
+        persist_run_final=_persist_run_final,
+        advance_session=_advance_session,
+    )
 
 
 async def _persist_sse_run(
@@ -980,86 +973,61 @@ async def _persist_sse_run(
     runtime_config: dict[str, Any] | None = None,
     request_transcript_items: list[dict[str, Any]] | None = None,
 ) -> tuple[str, dict[str, Any] | None]:
-    decoder = SSEBlockDecoder()
-    response_id = "resp_anyagent"
-    response_json: dict[str, Any] | None = None
-    for chunk in chunks:
-        text = chunk.decode("utf-8", errors="replace")
-        for line in text.splitlines():
-            for blk in decoder.feed_line(line):
-                if blk.event is None and blk.data.strip() == "[DONE]":
-                    continue
-                if isinstance(blk.data, str) and blk.data.strip().startswith("{"):
-                    try:
-                        payload = json.loads(blk.data)
-                    except Exception:
-                        payload = None
-                    if isinstance(payload, dict):
-                        if isinstance(payload.get("response_id"), str) and payload["response_id"].strip():
-                            response_id = payload["response_id"].strip()
-                        resp = payload.get("response")
-                        if isinstance(resp, dict) and isinstance(resp.get("id"), str) and resp["id"].strip():
-                            response_id = resp["id"].strip()
-                        if isinstance(payload.get("id"), str) and payload.get("object") == "response":
-                            response_id = payload["id"].strip()
-                if blk.event == "response.completed":
-                    normalized = normalize_completed_response_event_data(blk.data)
-                    if normalized is not None:
-                        maybe, data2 = normalized
-                        if isinstance(maybe.get("id"), str):
-                            response_id = maybe["id"]
-                            response_json = maybe
-                        blk = type(blk)(id=blk.id, event=blk.event, data=data2)
-                seq = await state.events.append(
-                    response_id=response_id,
-                    event=blk.event,
-                    data=blk.data,
-                )
-                _ = seq
-    for blk in decoder.flush():
-        if blk.event is not None or blk.data.strip() != "[DONE]":
-            await state.events.append(response_id=response_id, event=blk.event, data=blk.data)
+    async def _append_event(ev: str | None, payload: str) -> int | None:
+        return await state.events.append(response_id=response_id_box[0], event=ev, data=payload)
 
-    if response_json is None:
-        response_json = build_minimal_openai_response_json(
-            response_id=response_id,
-            status="completed",
-            model=str(fallback_model or "unknown"),
+    response_id_box = ["resp_anyagent"]
+
+    async def _persist_run_final(final_state) -> None:
+        await state.run_store.mark_final(
+            response_id=final_state.response_id or response_id_box[0],
+            status=final_state.run_status,
+            effective_status=final_state.effective_status,
+            final_response_json=final_state.response_json,
+            error_json=final_state.error_json,
         )
-    await _append_done_sentinel(state=state, response_id=response_id)
-    effective = str(response_json.get("status") or "completed")
-    await state.events.mark_final(
-        response_id=response_id,
-        run_status=internal_run_status_from_effective(effective),
-        effective_run_status=effective,
-        response_json=response_json,
-    )
-    await state.run_store.mark_final(
-        response_id=response_id,
-        status=internal_run_status_from_effective(effective),
-        effective_status=effective,
-        final_response_json=response_json,
-    )
-    if (
-        isinstance(session_partition_key_value, str)
-        and isinstance(agent_id, str)
-        and isinstance(session_key, str)
-        and isinstance(runtime_config, dict)
-    ):
-        await _update_session_snapshot(
-            state=state,
-            session_partition_key_value=session_partition_key_value,
-            agent_id=agent_id,
-            session_key=session_key,
-            previous_snapshot=previous_snapshot,
-            previous_snapshot_version=previous_snapshot_version,
-            runtime_config=runtime_config,
-            request_transcript_items=request_transcript_items,
-            response_id=response_id,
-            effective_status=effective,
-            response_json=response_json,
+
+    async def _mark_event_final(final_state) -> None:
+        await state.events.mark_final(
+            response_id=final_state.response_id or response_id_box[0],
+            run_status=final_state.run_status,
+            effective_run_status=final_state.effective_status,
+            response_json=final_state.response_json,
         )
+
+    async def _advance_session(final_state) -> None:
+        if (
+            isinstance(session_partition_key_value, str)
+            and isinstance(agent_id, str)
+            and isinstance(session_key, str)
+            and isinstance(runtime_config, dict)
+        ):
+            await _update_session_snapshot(
+                state=state,
+                session_partition_key_value=session_partition_key_value,
+                agent_id=agent_id,
+                session_key=session_key,
+                previous_snapshot=previous_snapshot,
+                previous_snapshot_version=previous_snapshot_version,
+                runtime_config=runtime_config,
+                request_transcript_items=request_transcript_items,
+                response_id=final_state.response_id or response_id_box[0],
+                effective_status=final_state.effective_status,
+                response_json=final_state.response_json,
+            )
+
+    response_id, response_json = await persist_streaming_sse_run(
+        chunks=chunks,
+        append_event=_append_event,
+        persist_run_final=_persist_run_final,
+        fallback_model=fallback_model,
+        response_id_hint=response_id_box[0],
+        mark_event_final=_mark_event_final,
+        advance_session=_advance_session,
+    )
+    response_id_box[0] = response_id
     return response_id, response_json
+
 async def _build_storage_health_payload(state: AnyAgentServerApp) -> dict[str, Any]:
     uses_postgres = _uses_backend(state.events, "Postgres") or _uses_backend(state.run_store, "Postgres") or _uses_backend(state.session_store, "Postgres")
     uses_redis = (
@@ -1167,23 +1135,6 @@ async def _check_redis_connection(redis_dsn: str) -> bool:
             await client.aclose()
     except Exception:
         return False
-
-
-async def _prepare_session_request(
-    *,
-    state: AnyAgentServerApp,
-    session_partition_key_value: str,
-    agent_id: str,
-    session_key: str,
-    body: dict[str, Any],
-) -> PreparedSessionRequest:
-    return await prepare_session_request(
-        session_store=state.session_store,
-        session_partition_key=session_partition_key_value,
-        agent_id=agent_id,
-        session_key=session_key,
-        body=body,
-    )
 
 
 async def _update_session_snapshot(
