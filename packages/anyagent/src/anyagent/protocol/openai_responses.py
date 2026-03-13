@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, TypeAdapter
 
+from .sse import normalize_response_id
 from .sse import SSEEvent
 
 # Re-export a few OpenAI SDK param models so callers can validate request shapes
@@ -118,6 +119,67 @@ def decode_completed_response_payload(data: str) -> dict[str, Any] | None:
     if isinstance(payload.get("id"), str):
         return payload
     return None
+
+
+def normalize_completed_response_event_data(
+    data: str,
+    *,
+    canonical_response_id: str | None = None,
+) -> tuple[dict[str, Any], str] | None:
+    completed = decode_completed_response_payload(data)
+    if completed is None:
+        return None
+
+    try:
+        payload = json.loads(data)
+    except Exception:  # noqa: BLE001
+        payload = {"type": "response.completed", "response": completed}
+    if not isinstance(payload, dict):
+        payload = {"type": "response.completed", "response": completed}
+
+    if isinstance(canonical_response_id, str) and canonical_response_id.strip():
+        canonical = canonical_response_id.strip()
+        normalize_response_id(payload, canonical)
+        normalize_response_id(completed, canonical)
+
+    return completed, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def ensure_completed_response_event_data(
+    data: str,
+    *,
+    response_id: str,
+    fallback_model: str = "unknown",
+    canonical_response_id: str | None = None,
+) -> tuple[dict[str, Any], str]:
+    normalized = normalize_completed_response_event_data(
+        data,
+        canonical_response_id=canonical_response_id,
+    )
+    if normalized is not None:
+        return normalized
+
+    completed = build_minimal_openai_response_json(
+        response_id=canonical_response_id.strip() if isinstance(canonical_response_id, str) and canonical_response_id.strip() else response_id,
+        status="completed",
+        model=fallback_model,
+    )
+    payload = {"type": "response.completed", "response": completed}
+    return completed, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def serialize_completed_response_event_data(
+    response_json: dict[str, Any],
+    *,
+    canonical_response_id: str | None = None,
+) -> tuple[dict[str, Any], str]:
+    payload = json.loads(json.dumps({"type": "response.completed", "response": response_json}, ensure_ascii=False))
+    response_copy = payload["response"]
+    if isinstance(canonical_response_id, str) and canonical_response_id.strip():
+        canonical = canonical_response_id.strip()
+        normalize_response_id(payload, canonical)
+        normalize_response_id(response_copy, canonical)
+    return response_copy, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 OpenAIResponseStatus: TypeAlias = Literal["completed", "failed", "in_progress", "cancelled", "queued", "incomplete"]

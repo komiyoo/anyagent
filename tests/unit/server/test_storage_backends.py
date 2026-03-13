@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+import os
+
+from anyagent.server.storage_backends import build_server_storage_bundle
+from anyagent.storage.external import MySQLEventStore, MySQLRunStore, MySQLSessionStore
+
+
+def test_build_server_storage_bundle_prefers_postgres_by_default_when_both_sql_backends_exist() -> None:
+    old = {key: os.environ.get(key) for key in ("POSTGRES_DSN", "MYSQL_DSN", "REDIS_DSN", "SQL_BACKEND_DIALECT")}
+    os.environ["POSTGRES_DSN"] = "postgresql://user:pass@127.0.0.1:5432/anyagent"
+    os.environ["MYSQL_DSN"] = "mysql+asyncmy://user:pass@127.0.0.1:3306/anyagent"
+    os.environ["REDIS_DSN"] = "redis://127.0.0.1:6379/0"
+    os.environ.pop("SQL_BACKEND_DIALECT", None)
+    try:
+        bundle = build_server_storage_bundle(
+            event_store_backend="external",
+            run_store_backend="external",
+            session_store_backend="external",
+        )
+        assert bundle.event_store.__class__.__name__ != "MySQLEventStore"
+        assert bundle.run_store.__class__.__name__ != "MySQLRunStore"
+        assert bundle.session_store.__class__.__name__ != "MySQLSessionStore"
+    finally:
+        for key, value in old.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def test_build_server_storage_bundle_uses_mysql_when_explicitly_selected() -> None:
+    old = {key: os.environ.get(key) for key in ("POSTGRES_DSN", "MYSQL_DSN", "REDIS_DSN", "SQL_BACKEND_DIALECT")}
+    os.environ["POSTGRES_DSN"] = "postgresql://user:pass@127.0.0.1:5432/anyagent"
+    os.environ["MYSQL_DSN"] = "mysql+asyncmy://user:pass@127.0.0.1:3306/anyagent"
+    os.environ["REDIS_DSN"] = "redis://127.0.0.1:6379/0"
+    os.environ["SQL_BACKEND_DIALECT"] = "mysql"
+    try:
+        bundle = build_server_storage_bundle(
+            event_store_backend="external",
+            run_store_backend="external",
+            session_store_backend="external",
+        )
+        assert isinstance(bundle.event_store, MySQLEventStore)
+        assert isinstance(bundle.run_store, MySQLRunStore)
+        assert isinstance(bundle.session_store, MySQLSessionStore)
+        assert len(bundle.resources) == 1
+    finally:
+        for key, value in old.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value

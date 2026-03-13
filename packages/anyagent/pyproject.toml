@@ -13,7 +13,11 @@ dependencies = [
   "openai>=2.24.0",
   "mcp>=1.0.0",
   "psycopg[binary]>=3.2",
+  "psycopg-pool>=3.2",
   "redis>=5.0",
+  "sqlalchemy>=2.0",
+  "greenlet>=3.0",
+  "asyncmy>=0.2",
   "uvicorn>=0.35",
 ]
 

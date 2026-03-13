@@ -6,11 +6,16 @@ __all__ = [
     "MANAGED_RUNTIME_FIELDS",
     "apply_runtime_config_to_body",
     "apply_session_resume_to_body",
+    "build_persisted_session_snapshot",
     "build_initial_session_snapshot",
     "build_next_session_snapshot",
+    "PreparedSessionRequest",
     "dedupe_strs",
     "extract_runtime_updates_from_request",
     "merge_runtime_config",
+    "persist_session_snapshot",
+    "prepare_session_request",
+    "read_resume_last_response_id",
     "build_tool_loop_followup_body",
     "extract_allowed_function_tool_names",
     "build_completed_tool_result",
@@ -36,13 +41,18 @@ __all__ = [
 from .prompt_injection import build_agents_md_injection_text
 from .session_runtime import (
     MANAGED_RUNTIME_FIELDS,
+    PreparedSessionRequest,
     apply_runtime_config_to_body,
     apply_session_resume_to_body,
+    build_persisted_session_snapshot,
     build_initial_session_snapshot,
     build_next_session_snapshot,
     dedupe_strs,
     extract_runtime_updates_from_request,
     merge_runtime_config,
+    persist_session_snapshot,
+    prepare_session_request,
+    read_resume_last_response_id,
 )
 from .skills_injection import SkillInjectionWarning, build_skills_injection_text, inject_skills_into_responses_body
 from .tool_loop_payloads import build_tool_loop_followup_body, extract_allowed_function_tool_names

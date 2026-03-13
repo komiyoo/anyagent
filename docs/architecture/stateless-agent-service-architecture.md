@@ -11,6 +11,12 @@ summary: 定义会话分片串行、幂等、事件补发与慢消费者治理�
 
 本文聚焦“服务侧”：在多实例部署下，提供端到端 `agent chat`（流式输出、工具调用、可中断/可恢复），并支持较高并发。
 
+当前口径补充：
+
+- 本文描述的是 `anyagent` Core 应拥有的无状态服务语义，而不只是某个应用层 demo 的局部实现。
+- 当前不少 production-grade 实现仍在 `../anyagent-apps/apps/agent-api`，这是“实现位置”，不是长期边界。
+- 后续应逐步把 replay / resume / session-run-event orchestration 等共享服务层收敛回 `anyagent`，而把 PG/Redis backend、分布式 service shell 与部署 wiring 保留在 `anyagent-apps`。
+
 ## 1. 核心概念：为什么“会话内串行”不会阻塞全系统
 
 很多人会把“会话内串行”误解成“全局串行”。
@@ -78,6 +84,19 @@ summary: 定义会话分片串行、幂等、事件补发与慢消费者治理�
 
 存储落地（选型、schema、TTL/保留策略、一致性边界）见：[storage-minimal-design.md](storage-minimal-design.md)。
 
+### 3.2.1 组件归属
+
+建议按“语义 vs backend”分层理解：
+
+- `anyagent` Core 应拥有：
+  - keyed serialization / idempotency / replay / resume / cancellation 的服务语义
+  - request normalization / response assembly / event emission 的共享 orchestration
+  - built-in server 可复用的 reference service layer
+- `anyagent-apps` 应拥有：
+  - PostgreSQL / Redis / Event Bus 的 production 实现
+  - 分布式 Ingress / Worker / deployment wiring
+  - 应用层运维与 rollout/replay 工具
+
 ### 3.3 执行语义
 
 本架构支持两种请求处理路径（对外行为统一，由 Ingress 根据请求类型选择）：
@@ -98,6 +117,8 @@ summary: 定义会话分片串行、幂等、事件补发与慢消费者治理�
 7. Run 结束后 Worker 写入终态，Ingress 发送 `[DONE]` 并关闭连接。
 
 > 这条路径是 OpenAI SDK `.responses.create({ stream: true })` 的强预期：请求发出后立即开始收到 SSE 事件。
+
+> 这类路径语义本身应归属于 Core；而“如何在多实例上把它跑稳”则属于 apps 层实现问题。
 
 #### 路径 B：异步模式（内部调用 / Platform Gateway）
 

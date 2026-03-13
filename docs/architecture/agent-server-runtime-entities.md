@@ -7,6 +7,7 @@
 - 本文优先描述“参考实现真实行为”（as-is），并引用需求锚点说明“规范期望”（to-be）。
 - 当前运行型参考实现已迁到同级项目 `../anyagent-apps/`；文中的 `../anyagent-apps/apps/...` 与 `../anyagent-apps/tests/...` 路径即对应证据位置。
 - 需求定义基线：`requirements.md#req-2`、`requirements.md#req-4-3`、`requirements.md#req-4-4`、`requirements.md#req-4-5`、`requirements.md#req-5-8`、`requirements.md#req-5-13`。
+- 这些实体语义的长期真源应逐步回收到 `anyagent` Core；当前引用 `../anyagent-apps/apps/agent-api/...` 主要是为了说明现状实现位置，而不是宣告这些语义长期归属 apps 层。
 
 ## 1. 总览：anyagent 与 Codex 的层级映射
 
@@ -21,6 +22,16 @@
 | 事件层 | Event Stream           | Event                                     | 是                 | `response_id + seq`                        |
 
 ## 2. 实体定义与代码落点
+
+在阅读下文时，建议同时区分两层：
+
+- `语义归属`：未来应由谁拥有这套概念、契约与共享服务层
+- `当前实现`：今天这套行为主要在哪个仓库/模块落地
+
+当前推荐边界：
+
+- `Session / Run / Event / replay / resume / idempotency` 的语义归属：`anyagent`
+- `PG/Redis` backend、distributed service shell、ops tooling 的实现归属：`anyagent-apps`
 
 ## 2.1 Connection（传输连接）
 
@@ -212,6 +223,7 @@
 2. Turn 与 Item 均为逻辑层/协议层概念，尚未成为一等持久化实体。
 3. Multi-Agent Thread 与 Session 是两条正交维度：前者是协作拓扑，后者是并发分片键；不能混用。
 4. Tool Runtime execute 幂等键当前包含 `tool_name`（比需求最小键更严格）。
+5. 本文提到的 Session / Run / Event 语义虽然当前大量实现在 `../anyagent-apps/apps/agent-api/`，但长期不应把这层共享语义继续留作 apps-only 资产。
 
 ## 5. 参考 Codex 后的优化建议
 
@@ -221,6 +233,7 @@
 2. 短期做（可观测增强）：给 turn 增加显式序号（如 `turn_index`）并写入结构化日志，降低排障成本；不必先落库。
 3. 中期做（重放精度增强）：定义内部 `Item` 规范化事件（至少 message/function_call/function_call_output 三类），让 replay 能按 Item 级别重建，而不只依赖原始 SSE 块；写入路径采用“写前门控一次判重”，不走“先写后校验”。
 4. 中长期做（跨实例协作一致性）：若 Multi-Agent 进入生产多实例，需把 `ThreadRecord/SubmissionRecord` 从内存迁移到外置存储，并补 lease/幂等语义。
+5. 中长期做（服务层收敛）：把 Session / Run / Event / replay / resume 的共享 orchestration 从 `apps/agent-api` 提炼回 `anyagent.server/` 或相邻 Core 模块，让 built-in server 与 distributed agent-api 共享同一层服务逻辑。
 
 ### 5.1 本轮新增约束（to-be）
 

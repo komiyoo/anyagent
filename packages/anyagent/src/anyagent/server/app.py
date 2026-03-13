@@ -4,7 +4,7 @@ import asyncio
 import json
 import uuid
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -13,16 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from anyagent.agent_packs import AgentCatalog, AgentPack, load_agent_catalog
 from anyagent.agent_runtime.prompt_injection import build_agents_md_injection_text
-from anyagent.agent_runtime.session_runtime import (
-    apply_runtime_config_to_body,
-    apply_session_resume_to_body,
-    build_fallback_transcript_items,
-    build_initial_session_snapshot,
-    build_next_session_snapshot,
-    extract_runtime_updates_from_request,
-    input_to_transcript_items,
-    merge_runtime_config,
-)
+from anyagent.agent_runtime import PreparedSessionRequest, persist_session_snapshot, prepare_session_request
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp, run_tool_loop_nonstream, run_tool_loop_stream_live
 from anyagent.agent_runtime.model_providers import get_default_model_provider
 from anyagent.gateway.sequencer import KeyedSequencer
@@ -31,8 +22,10 @@ from anyagent.mcp.manager import MCPManagerRegistry
 from anyagent.protocol.credential_vault import AdminCredentialSetRequest
 from anyagent.protocol.openai_responses import (
     build_minimal_openai_response_json,
-    decode_completed_response_payload,
+    ensure_completed_response_event_data,
     inject_text_into_responses_body,
+    normalize_completed_response_event_data,
+    serialize_completed_response_event_data,
 )
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.protocol.sandbox import SandboxPolicy
@@ -44,14 +37,23 @@ from anyagent.protocol.stage_events import (
     AnyAgentToolResultEvent,
 )
 from anyagent.protocol.tool_runtime import PolicyHint, ToolContext
+from anyagent.server.finalization import internal_run_status_from_effective
 from anyagent.server.lock_service import SessionLockService, build_session_lock_service, hold_session_lease
 from anyagent.server.manifest_cache import ManifestCache, build_manifest_cache_key, extract_requested_tool_names
+from anyagent.server.responses_optional import optional_response_payload_from_run
 from anyagent.server.runs import RunRegistry
 from anyagent.server.runtime import InProcessToolRuntimeService
 from anyagent.server.sandbox import SandboxManager
 from anyagent.server.security import InMemoryCredentialStore
 from anyagent.server.settings import ResolvedServerStorageSettings, ServerSettings
-from anyagent.server.storage_backends import EventStore, RunStore, SessionStore, build_event_store, build_run_store, build_session_store
+from anyagent.server.storage_backends import (
+    EventStore,
+    RunStore,
+    ServerStorageBundle,
+    SessionStore,
+    build_server_storage_bundle,
+)
+from anyagent.storage import build_storage_capability_matrix, resolve_nonstream_replay_payload, stream_external_response_blocks
 from anyagent.storage.settings import StorageSettings
 from anyagent.skills import (
     SkillEnablement,
@@ -80,6 +82,7 @@ class AnyAgentServerApp:
     session_sequencer: KeyedSequencer
     session_lock_service: SessionLockService
     session_lease_ttl_s: float
+    storage_resources: list[object] = field(default_factory=list)
     api_key: str | None = None
     admin_api_key: str | None = None
 
@@ -90,16 +93,6 @@ class AnyAgentServerApp:
         if external and not pack.spec.exposed:
             raise HTTPException(status_code=403, detail=f"agent is not exposed: {agent_id}")
         return pack
-
-
-@dataclass(slots=True, frozen=True)
-class PreparedSessionRequest:
-    previous_snapshot: dict[str, Any]
-    previous_snapshot_version: int | None
-    effective_runtime_config: dict[str, Any]
-    request_transcript_items: list[dict[str, Any]]
-    effective_body: dict[str, Any]
-
 
 def create_app(
     *,
@@ -139,12 +132,17 @@ def create_app(
 
     sandbox_manager = SandboxManager(root_dir=sandbox_root_dir)
     credential_store = InMemoryCredentialStore()
+    storage_bundle: ServerStorageBundle = build_server_storage_bundle(
+        event_store_backend=resolved_storage.event_store_backend,
+        run_store_backend=resolved_storage.run_store_backend,
+        session_store_backend=resolved_storage.session_store_backend,
+    )
     state = AnyAgentServerApp(
         workspace_dir=workspace,
         catalog=catalog,
         resolved_storage=resolved_storage,
         storage_settings=StorageSettings(),
-        events=build_event_store(backend=resolved_storage.event_store_backend),
+        events=storage_bundle.event_store,
         credentials=credential_store,
         sandbox_manager=sandbox_manager,
         runtime=InProcessToolRuntimeService(
@@ -156,13 +154,14 @@ def create_app(
         mcp_managers=MCPManagerRegistry(),
         runs=RunRegistry(),
         manifest_cache=ManifestCache(ttl_seconds=2.0),
-        run_store=build_run_store(backend=resolved_storage.run_store_backend),
-        session_store=build_session_store(backend=resolved_storage.session_store_backend),
+        run_store=storage_bundle.run_store,
+        session_store=storage_bundle.session_store,
         session_sequencer=KeyedSequencer(),
         session_lock_service=build_session_lock_service(
             backend=resolved_storage.session_lock_backend,
         ),
         session_lease_ttl_s=resolved_storage.session_lease_ttl_s,
+        storage_resources=storage_bundle.resources,
         api_key=api_key.strip() if isinstance(api_key, str) and api_key.strip() else None,
         admin_api_key=admin_api_key.strip() if isinstance(admin_api_key, str) and admin_api_key.strip() else None,
     )
@@ -173,6 +172,12 @@ def create_app(
             yield
         finally:
             await state.mcp_managers.cleanup_all()
+            for resource in state.storage_resources:
+                closer = getattr(resource, "dispose", None) or getattr(resource, "aclose", None) or getattr(resource, "close", None)
+                if callable(closer):
+                    result = closer()
+                    if asyncio.iscoroutine(result):
+                        await result
 
     app = FastAPI(title="anyagent", version="0.1.0", lifespan=_lifespan)
     app.state.anyagent = state
@@ -289,10 +294,15 @@ def create_app(
             if existing is not None:
                 if bool(body.get("stream")):
                     return _build_external_response_stream(state=state, response_id=existing.response_id)
-                payload = existing.final_response_json or build_minimal_openai_response_json(
+                payload = await resolve_nonstream_replay_payload(
+                    run_store=state.run_store,
+                    run=existing,
                     response_id=existing.response_id,
-                    status=existing.effective_status,  # type: ignore[arg-type]
-                    model=str(body.get("model") or "unknown"),
+                    fallback_payload_factory=lambda run: build_minimal_openai_response_json(
+                        response_id=run.response_id,
+                        status=run.effective_status,  # type: ignore[arg-type]
+                        model=str(body.get("model") or "unknown"),
+                    ),
                 )
                 return JSONResponse(payload)
         response_id = f"resp_{uuid.uuid4().hex}"
@@ -385,6 +395,8 @@ def create_app(
                             prepared = await _prepare_session_request(
                                 state=state,
                                 session_partition_key_value=session_partition_key_value,
+                                agent_id=agent_id,
+                                session_key=session_key,
                                 body=body,
                             )
                             body2 = inject_text_into_responses_body(
@@ -539,6 +551,8 @@ def create_app(
                         prepared = await _prepare_session_request(
                             state=state,
                             session_partition_key_value=session_partition_key_value,
+                            agent_id=agent_id,
+                            session_key=session_key,
                             body=body,
                         )
                         body2 = inject_text_into_responses_body(
@@ -642,13 +656,13 @@ def create_app(
                         await _append_done_sentinel(state=state, response_id=response_id)
                         await state.events.mark_final(
                             response_id=response_id,
-                            run_status=_internal_run_status_from_effective(str(payload.get("status") or "completed")),
+                            run_status=internal_run_status_from_effective(str(payload.get("status") or "completed")),
                             effective_run_status=str(payload.get("status") or "completed"),
                             response_json=payload,
                         )
                         await state.run_store.mark_final(
                             response_id=response_id,
-                            status=_internal_run_status_from_effective(str(payload.get("status") or "completed")),
+                            status=internal_run_status_from_effective(str(payload.get("status") or "completed")),
                             effective_status=str(payload.get("status") or "completed"),
                             final_response_json=payload,
                         )
@@ -689,34 +703,26 @@ def create_app(
     @app.get("/v1/responses/{response_id}")
     async def retrieve_response(response_id: str, authorization: str | None = Header(default=None)) -> JSONResponse:
         _require_user_auth(state, authorization)
-        payload = await state.events.get_response(response_id)
-        if payload is not None:
-            return JSONResponse(payload)
-        status, error = await state.events.get_status(response_id)
-        if status is None:
+        run = await state.run_store.get(response_id)
+        if run is None:
             raise HTTPException(status_code=404, detail=f"unknown response_id: {response_id}")
-        return JSONResponse(
-            build_minimal_openai_response_json(
-                response_id=response_id,
-                status=status,  # type: ignore[arg-type]
-            )
-        )
+        return JSONResponse(optional_response_payload_from_run(run, response_id=response_id))
 
     @app.post("/v1/responses/{response_id}/cancel")
     async def cancel_response(response_id: str, authorization: str | None = Header(default=None)) -> JSONResponse:
         _require_user_auth(state, authorization)
+        run = await state.run_store.get(response_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"unknown response_id: {response_id}")
         await state.runtime.cancel_active_for_response(response_id)
         cancelled = await state.runs.cancel(response_id)
         if cancelled:
             await state.events.mark_cancel_requested(response_id=response_id)
             await state.run_store.mark_cancel_requested(response_id)
-        status, error = await state.events.get_status(response_id)
-        if status is None:
-            raise HTTPException(status_code=404, detail=f"unknown response_id: {response_id}")
-        payload = build_minimal_openai_response_json(response_id=response_id, status=status)  # type: ignore[arg-type]
-        if error is not None:
-            payload["error"] = error.model_dump(exclude_none=True)
-        return JSONResponse(payload)
+        latest_run = await state.run_store.get(response_id)
+        if latest_run is None:
+            latest_run = run
+        return JSONResponse(optional_response_payload_from_run(latest_run, response_id=response_id))
 
     return app
 
@@ -838,8 +844,8 @@ def _build_created_sse_block(*, response_id: str, body: dict[str, Any]) -> bytes
 
 
 def _build_completed_sse_block(payload: dict[str, Any]) -> bytes:
-    wrapper = {"type": "response.completed", "response": payload}
-    return encode_sse_block(event="response.completed", data=json.dumps(wrapper, ensure_ascii=False), id=None)
+    _response_json, data = serialize_completed_response_event_data(payload)
+    return encode_sse_block(event="response.completed", data=data, id=None)
 
 
 async def _append_done_sentinel(*, state: AnyAgentServerApp, response_id: str) -> None:
@@ -857,20 +863,15 @@ def _strip_response_created_blocks(blocks: list[bytes]) -> list[bytes]:
 
 
 def _build_external_response_stream(*, state: AnyAgentServerApp, response_id: str) -> StreamingResponse:
-    async def _iter() -> AsyncIterator[bytes]:
-        async for item in state.events.stream_events(response_id=response_id, last_seq=0):
-            if item.event is None and item.data.strip() == "[DONE]":
-                yield encode_sse_block(event=None, data=item.data, id=str(item.seq))
-                continue
-            if item.event is None:
-                continue
-            if item.event.startswith("anyagent."):
-                continue
-            if not (item.event.startswith("response.") or item.event == "error"):
-                continue
-            yield encode_sse_block(event=item.event, data=item.data, id=str(item.seq))
-
-    return StreamingResponse(_iter(), media_type="text/event-stream")
+    return StreamingResponse(
+        stream_external_response_blocks(
+            run_store=state.run_store,
+            event_store=state.events,
+            response_id=response_id,
+            event_filter=lambda event: event is None or event == "error" or (isinstance(event, str) and event.startswith("response.")),
+        ),
+        media_type="text/event-stream",
+    )
 
 
 async def _append_sse_chunk(
@@ -924,25 +925,24 @@ async def _handle_sse_block(
 ) -> None:
     if event is None and data.strip() == "[DONE]":
         return
+    if event == "response.completed":
+        maybe, data = ensure_completed_response_event_data(
+            data,
+            response_id=response_id,
+            fallback_model=str(fallback_model or "unknown"),
+        )
     await state.events.append(response_id=response_id, event=event, data=data)
     if event == "response.completed":
-        maybe = decode_completed_response_payload(data)
-        if maybe is None:
-            maybe = build_minimal_openai_response_json(
-                response_id=response_id,
-                status="completed",
-                model=str(fallback_model or "unknown"),
-            )
         await _append_done_sentinel(state=state, response_id=response_id)
         await state.events.mark_final(
             response_id=response_id,
-            run_status=_internal_run_status_from_effective(str(maybe.get("status") or "completed")),
+            run_status=internal_run_status_from_effective(str(maybe.get("status") or "completed")),
             effective_run_status=str(maybe.get("status") or "completed"),
             response_json=maybe,
         )
         await state.run_store.mark_final(
             response_id=response_id,
-            status=_internal_run_status_from_effective(str(maybe.get("status") or "completed")),
+            status=internal_run_status_from_effective(str(maybe.get("status") or "completed")),
             effective_status=str(maybe.get("status") or "completed"),
             final_response_json=maybe,
         )
@@ -1003,10 +1003,13 @@ async def _persist_sse_run(
                         if isinstance(payload.get("id"), str) and payload.get("object") == "response":
                             response_id = payload["id"].strip()
                 if blk.event == "response.completed":
-                    maybe = decode_completed_response_payload(blk.data)
-                    if isinstance(maybe, dict) and isinstance(maybe.get("id"), str):
-                        response_id = maybe["id"]
-                        response_json = maybe
+                    normalized = normalize_completed_response_event_data(blk.data)
+                    if normalized is not None:
+                        maybe, data2 = normalized
+                        if isinstance(maybe.get("id"), str):
+                            response_id = maybe["id"]
+                            response_json = maybe
+                        blk = type(blk)(id=blk.id, event=blk.event, data=data2)
                 seq = await state.events.append(
                     response_id=response_id,
                     event=blk.event,
@@ -1027,13 +1030,13 @@ async def _persist_sse_run(
     effective = str(response_json.get("status") or "completed")
     await state.events.mark_final(
         response_id=response_id,
-        run_status=_internal_run_status_from_effective(effective),
+        run_status=internal_run_status_from_effective(effective),
         effective_run_status=effective,
         response_json=response_json,
     )
     await state.run_store.mark_final(
         response_id=response_id,
-        status=_internal_run_status_from_effective(effective),
+        status=internal_run_status_from_effective(effective),
         effective_status=effective,
         final_response_json=response_json,
     )
@@ -1057,18 +1060,6 @@ async def _persist_sse_run(
             response_json=response_json,
         )
     return response_id, response_json
-
-
-def _internal_run_status_from_effective(status: str) -> str:
-    if status == "cancelled":
-        return "aborted"
-    if status == "failed":
-        return "errored"
-    if status == "in_progress":
-        return "started"
-    return status
-
-
 async def _build_storage_health_payload(state: AnyAgentServerApp) -> dict[str, Any]:
     uses_postgres = _uses_backend(state.events, "Postgres") or _uses_backend(state.run_store, "Postgres") or _uses_backend(state.session_store, "Postgres")
     uses_redis = (
@@ -1109,6 +1100,12 @@ async def _build_storage_health_payload(state: AnyAgentServerApp) -> dict[str, A
             "sessions": state.storage_settings.session_store_retention_s,
         },
         "stores": stores,
+        "capabilities": build_storage_capability_matrix(
+            event_store=state.events,
+            run_store=state.run_store,
+            session_store=state.session_store,
+            session_lock_service=state.session_lock_service,
+        ),
         "postgres": {
             "configured": state.storage_settings.postgres_dsn is not None,
             "schema": state.storage_settings.postgres_schema,
@@ -1176,39 +1173,16 @@ async def _prepare_session_request(
     *,
     state: AnyAgentServerApp,
     session_partition_key_value: str,
+    agent_id: str,
+    session_key: str,
     body: dict[str, Any],
 ) -> PreparedSessionRequest:
-    session_record = await state.session_store.get(session_partition_key=session_partition_key_value)
-    previous_snapshot = (
-        dict(session_record.snapshot_json)
-        if session_record is not None and isinstance(session_record.snapshot_json, dict)
-        else None
-    )
-    previous_snapshot_version = session_record.snapshot_version if session_record is not None else None
-    base_runtime_config = (
-        previous_snapshot.get("runtime_config")
-        if isinstance(previous_snapshot, dict) and isinstance(previous_snapshot.get("runtime_config"), dict)
-        else {}
-    )
-    explicit_runtime_updates = extract_runtime_updates_from_request(body)
-    effective_runtime_config = merge_runtime_config(
-        base_runtime_config=base_runtime_config if isinstance(base_runtime_config, dict) else {},
-        explicit_updates=explicit_runtime_updates,
-    )
-    if previous_snapshot is None:
-        previous_snapshot = build_initial_session_snapshot(runtime_config=effective_runtime_config)
-    effective_body = apply_runtime_config_to_body(body=body, runtime_config=effective_runtime_config)
-    request_transcript_items = input_to_transcript_items(effective_body.get("input"))
-    effective_body, _resume_previous_response_id = apply_session_resume_to_body(
-        body=effective_body,
-        session_snapshot=previous_snapshot,
-    )
-    return PreparedSessionRequest(
-        previous_snapshot=previous_snapshot,
-        previous_snapshot_version=previous_snapshot_version,
-        effective_runtime_config=effective_runtime_config,
-        request_transcript_items=request_transcript_items,
-        effective_body=effective_body,
+    return await prepare_session_request(
+        session_store=state.session_store,
+        session_partition_key=session_partition_key_value,
+        agent_id=agent_id,
+        session_key=session_key,
+        body=body,
     )
 
 
@@ -1227,37 +1201,17 @@ async def _update_session_snapshot(
     response_json: dict[str, Any] | None = None,
 ) -> None:
     latest_seq = await state.events.latest_seq(response_id)
-    previous = dict(previous_snapshot) if isinstance(previous_snapshot, dict) else build_initial_session_snapshot(runtime_config={})
-    resume_last_response_id = response_id if effective_status == "completed" else _read_resume_last_response_id(previous)
-    fallback_transcript_items = None
-    if effective_status == "completed":
-        fallback_transcript_items = build_fallback_transcript_items(
-            previous_snapshot=previous,
-            request_input=request_transcript_items if isinstance(request_transcript_items, list) else [],
-            response_json=response_json,
-        )
-    next_snapshot = build_next_session_snapshot(
-        previous_snapshot=previous,
-        runtime_config=runtime_config,
-        resume_last_response_id=resume_last_response_id,
-        fallback_transcript_items=fallback_transcript_items,
-        run_response_id=response_id,
-        last_event_seq=latest_seq,
-    )
-    await state.session_store.upsert(
+    await persist_session_snapshot(
+        session_store=state.session_store,
         session_partition_key=session_partition_key_value,
         agent_id=agent_id,
         session_key=session_key,
-        snapshot_json=next_snapshot,
-        expected_snapshot_version=previous_snapshot_version,
+        previous_snapshot=previous_snapshot,
+        previous_snapshot_version=previous_snapshot_version,
+        runtime_config=runtime_config,
+        request_transcript_items=request_transcript_items,
+        response_id=response_id,
+        effective_status=effective_status,
+        response_json=response_json,
+        last_event_seq=latest_seq,
     )
-
-
-def _read_resume_last_response_id(snapshot: dict[str, Any]) -> str | None:
-    resume = snapshot.get("resume_cursor")
-    if not isinstance(resume, dict):
-        return None
-    value = resume.get("last_response_id")
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return None

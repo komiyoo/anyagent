@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import json
 
+from anyagent.protocol.openai_responses import (
+    ensure_completed_response_event_data,
+    normalize_completed_response_event_data,
+    serialize_completed_response_event_data,
+)
 from anyagent.protocol.sse import (
     SSEBlockDecoder,
     encode_sse_block,
@@ -79,3 +84,38 @@ def test_normalize_response_id_rewrites_nested_response_shapes() -> None:
     assert payload["response_id"] == "resp_new"
     assert payload["response"]["id"] == "resp_new"
     assert payload["response"]["output"][1]["response_id"] == "resp_new"
+
+
+def test_normalize_completed_response_event_data_rewrites_canonical_id() -> None:
+    completed, data = normalize_completed_response_event_data(
+        '{"type":"response.completed","response":{"id":"resp_old","object":"response","status":"completed"}}',
+        canonical_response_id="resp_new",
+    ) or (None, None)
+
+    assert completed == {"id": "resp_new", "object": "response", "status": "completed"}
+    assert json.loads(data)["response"]["id"] == "resp_new"
+
+
+def test_ensure_completed_response_event_data_falls_back_to_minimal_response() -> None:
+    completed, data = ensure_completed_response_event_data(
+        "not-json",
+        response_id="resp_fallback",
+        fallback_model="gpt-4.1-mini",
+    )
+
+    assert completed["id"] == "resp_fallback"
+    assert completed["status"] == "completed"
+    assert completed["model"] == "gpt-4.1-mini"
+    assert json.loads(data)["response"]["id"] == "resp_fallback"
+
+
+def test_serialize_completed_response_event_data_wraps_and_normalizes_response() -> None:
+    response_json, data = serialize_completed_response_event_data(
+        {"id": "resp_old", "object": "response", "status": "completed"},
+        canonical_response_id="resp_new",
+    )
+
+    assert response_json["id"] == "resp_new"
+    payload = json.loads(data)
+    assert payload["type"] == "response.completed"
+    assert payload["response"]["id"] == "resp_new"

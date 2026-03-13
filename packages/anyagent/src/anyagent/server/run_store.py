@@ -6,7 +6,10 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from anyagent.server.postgres_schema import PostgresSchemaPolicy, ensure_postgres_schema_objects
+from anyagent.gateway.session import session_partition_key as build_session_partition_key
+from anyagent.storage.external import PostgresRunStore as ExternalPostgresRunStore
+from anyagent.storage.external import create_external_sql_engine, resolve_external_sql_backend_config
+from anyagent.server.postgres_schema import PostgresSchemaPolicy
 from anyagent.storage.settings import StorageSettings
 
 
@@ -110,201 +113,6 @@ class RedisRunStoreAdapter:
     async def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any: ...
     async def pexpire(self, key: str, time_ms: int) -> Any: ...
 
-
-class PostgresRunStore:
-    def __init__(
-        self,
-        *,
-        postgres_dsn: str,
-        postgres_schema: str = "public",
-        schema_policy: PostgresSchemaPolicy = "migrate",
-    ) -> None:
-        self._postgres_dsn = postgres_dsn
-        self._postgres_schema = postgres_schema.strip() or "public"
-        self._schema_policy = schema_policy
-        self._init_lock = asyncio.Lock()
-        self._initialized = False
-
-    async def get(self, response_id: str) -> RunRecord | None:
-        await self._ensure_table()
-        from psycopg import AsyncConnection
-        from psycopg.rows import dict_row
-
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            conn.row_factory = dict_row
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    SELECT response_id, agent_id, session_key, stream, idempotency_key, status,
-                           effective_status, created_at_ms, updated_at_ms, ended_at_ms,
-                           final_response_json, error_json
-                      FROM {self._qualified_table()}
-                     WHERE response_id = %s
-                     LIMIT 1
-                    """,
-                    (response_id,),
-                )
-                row = await cur.fetchone()
-        return None if not row else _row_to_run_record(row)
-
-    async def get_by_idempotency_key(self, idempotency_key: str) -> RunRecord | None:
-        await self._ensure_table()
-        from psycopg import AsyncConnection
-        from psycopg.rows import dict_row
-
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            conn.row_factory = dict_row
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    SELECT response_id, agent_id, session_key, stream, idempotency_key, status,
-                           effective_status, created_at_ms, updated_at_ms, ended_at_ms,
-                           final_response_json, error_json
-                      FROM {self._qualified_table()}
-                     WHERE idempotency_key = %s
-                     LIMIT 1
-                    """,
-                    (idempotency_key,),
-                )
-                row = await cur.fetchone()
-        return None if not row else _row_to_run_record(row)
-
-    async def create_started(
-        self,
-        *,
-        response_id: str,
-        agent_id: str,
-        session_key: str,
-        stream: bool,
-        idempotency_key: str | None,
-    ) -> RunRecord:
-        await self._ensure_table()
-        from psycopg import AsyncConnection
-
-        now_ms = int(time.time() * 1000)
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    INSERT INTO {self._qualified_table()}(
-                        response_id, agent_id, session_key, stream, idempotency_key,
-                        status, effective_status, created_at_ms, updated_at_ms, ended_at_ms,
-                        final_response_json, error_json
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, NULL, NULL)
-                    ON CONFLICT (response_id) DO UPDATE
-                    SET updated_at_ms = EXCLUDED.updated_at_ms
-                    """,
-                    (
-                        response_id,
-                        agent_id,
-                        session_key,
-                        bool(stream),
-                        idempotency_key,
-                        "started",
-                        "in_progress",
-                        now_ms,
-                        now_ms,
-                    ),
-                )
-            await conn.commit()
-        existing = await self.get(response_id)
-        if existing is None:
-            raise RuntimeError("failed to create started run record")
-        return existing
-
-    async def mark_cancel_requested(self, response_id: str) -> None:
-        await self._ensure_table()
-        from psycopg import AsyncConnection
-
-        now_ms = int(time.time() * 1000)
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    UPDATE {self._qualified_table()}
-                       SET status = %s,
-                           effective_status = %s,
-                           updated_at_ms = %s
-                     WHERE response_id = %s
-                       AND ended_at_ms IS NULL
-                    """,
-                    ("aborted", "cancelled", now_ms, response_id),
-                )
-            await conn.commit()
-
-    async def mark_final(
-        self,
-        *,
-        response_id: str,
-        status: str,
-        effective_status: str,
-        final_response_json: dict[str, Any] | None,
-        error_json: dict[str, Any] | None = None,
-    ) -> None:
-        await self._ensure_table()
-        from psycopg import AsyncConnection
-
-        now_ms = int(time.time() * 1000)
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    UPDATE {self._qualified_table()}
-                       SET status = %s,
-                           effective_status = %s,
-                           updated_at_ms = %s,
-                           ended_at_ms = %s,
-                           final_response_json = %s::jsonb,
-                           error_json = %s::jsonb
-                     WHERE response_id = %s
-                    """,
-                    (
-                        status,
-                        effective_status,
-                        now_ms,
-                        now_ms,
-                        json.dumps(final_response_json, ensure_ascii=False) if final_response_json is not None else None,
-                        json.dumps(error_json, ensure_ascii=False) if error_json is not None else None,
-                        response_id,
-                    ),
-                )
-            await conn.commit()
-
-    async def _ensure_table(self) -> None:
-        if self._initialized:
-            return
-        async with self._init_lock:
-            if self._initialized:
-                return
-            await ensure_postgres_schema_objects(
-                postgres_dsn=self._postgres_dsn,
-                postgres_schema=self._postgres_schema,
-                required_tables=["runs"],
-                create_statements=[
-                    f"""
-                    CREATE TABLE IF NOT EXISTS {self._qualified_table()} (
-                      response_id TEXT PRIMARY KEY,
-                      agent_id TEXT NOT NULL,
-                      session_key TEXT NOT NULL,
-                      stream BOOLEAN NOT NULL,
-                      idempotency_key TEXT NULL UNIQUE,
-                      status TEXT NOT NULL,
-                      effective_status TEXT NOT NULL,
-                      created_at_ms BIGINT NOT NULL,
-                      updated_at_ms BIGINT NOT NULL,
-                      ended_at_ms BIGINT NULL,
-                      final_response_json JSONB NULL,
-                      error_json JSONB NULL
-                    )
-                    """
-                ],
-                policy=self._schema_policy,
-            )
-            self._initialized = True
-
-    def _qualified_table(self) -> str:
-        return f"{self._postgres_schema}.runs"
 
 
 class RedisRunStore:
@@ -679,6 +487,72 @@ class CachedRunStore:
             await self._cache.write_record(record)
 
 
+class PostgresRunStore:
+    def __init__(
+        self,
+        *,
+        postgres_dsn: str,
+        postgres_schema: str = "public",
+        schema_policy: PostgresSchemaPolicy = "migrate",
+    ) -> None:
+        _ = schema_policy
+        config = resolve_external_sql_backend_config(
+            postgres_dsn=postgres_dsn,
+            mysql_dsn=None,
+            redis_dsn=None,
+            schema_name=postgres_schema,
+            namespace="anyagent",
+            dialect="postgresql",
+        )
+        self._engine = create_external_sql_engine(config)
+        self._store = ExternalPostgresRunStore(engine=self._engine, schema_name=postgres_schema)
+
+    async def get(self, response_id: str) -> RunRecord | None:
+        record = await self._store.get(response_id)
+        return None if record is None else _local_run_record(record)
+
+    async def get_by_idempotency_key(self, idempotency_key: str) -> RunRecord | None:
+        record = await self._store.get_by_idempotency_key(idempotency_key)
+        return None if record is None else _local_run_record(record)
+
+    async def create_started(
+        self,
+        *,
+        response_id: str,
+        agent_id: str,
+        session_key: str,
+        stream: bool,
+        idempotency_key: str | None,
+    ) -> RunRecord:
+        record = await self._store.create_started(
+            response_id=response_id,
+            session_partition_key=build_session_partition_key(agent_id=agent_id, session_key=session_key),
+            stream=stream,
+            idempotency_key=idempotency_key,
+        )
+        return _local_run_record(record, agent_id=agent_id, session_key=session_key)
+
+    async def mark_cancel_requested(self, response_id: str) -> None:
+        await self._store.mark_cancel_requested(response_id)
+
+    async def mark_final(
+        self,
+        *,
+        response_id: str,
+        status: str,
+        effective_status: str,
+        final_response_json: dict[str, Any] | None,
+        error_json: dict[str, Any] | None = None,
+    ) -> None:
+        _ = effective_status
+        await self._store.set_final(
+            response_id=response_id,
+            status=status,
+            final_response_json=final_response_json,
+            error_json=error_json,
+        )
+
+
 def build_postgres_run_store(*, postgres_dsn: str | None = None, postgres_schema: str | None = None) -> PostgresRunStore:
     settings = StorageSettings()
     effective_dsn = postgres_dsn or (str(settings.postgres_dsn) if settings.postgres_dsn is not None else None)
@@ -707,3 +581,39 @@ def build_redis_run_store_key(*, namespace: str, response_id: str) -> str:
 def build_redis_run_store_idempotency_key(*, namespace: str, idempotency_key: str) -> str:
     ns = namespace.strip() or "anyagent"
     return f"{ns}:run-idem:{idempotency_key}"
+
+
+def _local_run_record(record: Any, *, agent_id: str | None = None, session_key: str | None = None) -> RunRecord:
+    partition = str(getattr(record, "session_partition_key", "") or "")
+    agent, session = _split_session_partition_key(partition)
+    status = str(getattr(record, "status", "") or "")
+    error_json = getattr(record, "error_json", None) if isinstance(getattr(record, "error_json", None), dict) else None
+    return RunRecord(
+        response_id=str(getattr(record, "response_id", "") or ""),
+        agent_id=agent_id or agent,
+        session_key=session_key or session,
+        stream=bool(getattr(record, "stream", False)),
+        idempotency_key=getattr(record, "idempotency_key", None),
+        status=status,
+        effective_status=_effective_status_from_status(status=status, error_json=error_json),
+        created_at_ms=int(float(getattr(record, "created_at_s", 0.0) or 0.0) * 1000),
+        updated_at_ms=int(time.time() * 1000),
+        final_response_json=getattr(record, "final_response_json", None),
+        error_json=error_json,
+    )
+
+
+def _split_session_partition_key(value: str) -> tuple[str, str]:
+    if "::" not in value:
+        return "", value
+    return value.split("::", 1)
+
+
+def _effective_status_from_status(*, status: str, error_json: dict[str, Any] | None) -> str:
+    if status == "started":
+        return "in_progress"
+    if status == "aborted":
+        return "cancelled"
+    if status == "errored" and isinstance(error_json, dict) and str(error_json.get("code") or "").strip() == "response_cancelled":
+        return "cancelled"
+    return status

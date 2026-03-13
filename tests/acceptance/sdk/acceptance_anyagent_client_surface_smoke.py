@@ -68,6 +68,17 @@ def main() -> int:
             },
             "retention_s": {"events": 7200, "runs": 7200, "sessions": 86400},
             "stores": {"session_store": {"type": "CachedSessionStore", "layers": ["PostgresSessionStore", "RedisSessionStore"]}},
+            "capabilities": {
+                "session_store": {
+                    "tier": "external",
+                    "long_term_owner": "anyagent-apps",
+                    "source_of_truth": "postgres+redis",
+                    "requires_services": ["postgres", "redis"],
+                    "restart_recovery": True,
+                    "cross_instance": True,
+                    "supports_snapshot_cas": True,
+                }
+            },
             "postgres": {"configured": True, "reachable": True, "schema": "public"},
             "redis": {"configured": True, "reachable": True, "namespace": "anyagent"},
         })
@@ -76,6 +87,7 @@ def main() -> int:
         health = asyncio.run(client.admin.storage_health())
         _assert(health.ok is True, "`client.admin.storage_health()` should parse typed payload")
         _assert(health.backends.session_lock == "redis", "storage health backend parsing mismatch")
+        _assert(health.capabilities["session_store"].tier == "external", "storage capability parsing mismatch")
 
     print("ok: acceptance_anyagent_client_surface_smoke")
     return 0

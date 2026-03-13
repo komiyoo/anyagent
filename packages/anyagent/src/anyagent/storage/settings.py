@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, PostgresDsn, RedisDsn
+from pydantic import AnyUrl, Field, PostgresDsn, RedisDsn, UrlConstraints
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+MySQLDsn = Annotated[AnyUrl, UrlConstraints(allowed_schemes=["mysql", "mysql+asyncmy", "mysql+aiomysql", "mysql+pymysql"])]
 
 
 class StorageSettings(BaseSettings):
@@ -18,7 +21,9 @@ class StorageSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, extra="ignore")
 
     postgres_dsn: PostgresDsn | None = Field(default=None, alias="POSTGRES_DSN")
+    mysql_dsn: MySQLDsn | None = Field(default=None, alias="MYSQL_DSN")
     redis_dsn: RedisDsn | None = Field(default=None, alias="REDIS_DSN")
+    sql_backend_dialect: Literal["auto", "postgresql", "mysql"] = Field(default="auto", alias="SQL_BACKEND_DIALECT")
 
     # Namespacing to avoid cross-app collisions when sharing a Redis instance.
     redis_namespace: str = Field(default="anyagent", alias="REDIS_NAMESPACE")

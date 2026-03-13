@@ -5,7 +5,9 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from anyagent.server.postgres_schema import PostgresSchemaPolicy, ensure_postgres_schema_objects
+from anyagent.storage.external import PostgresSessionStore as ExternalPostgresSessionStore
+from anyagent.storage.external import create_external_sql_engine, resolve_external_sql_backend_config
+from anyagent.server.postgres_schema import PostgresSchemaPolicy
 from anyagent.storage.settings import StorageSettings
 
 
@@ -85,153 +87,6 @@ class RedisSessionStoreAdapter:
     async def pexpire(self, key: str, time_ms: int) -> Any: ...
 
 
-class PostgresSessionStore:
-    def __init__(
-        self,
-        *,
-        postgres_dsn: str,
-        postgres_schema: str = "public",
-        schema_policy: PostgresSchemaPolicy = "migrate",
-    ) -> None:
-        self._postgres_dsn = postgres_dsn
-        self._postgres_schema = postgres_schema.strip() or "public"
-        self._schema_policy = schema_policy
-        self._init_lock = asyncio.Lock()
-        self._initialized = False
-
-    async def get(self, *, session_partition_key: str) -> SessionRecord | None:
-        await self._ensure_table()
-        from psycopg import AsyncConnection
-        from psycopg.rows import dict_row
-
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            conn.row_factory = dict_row
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    SELECT session_partition_key, agent_id, session_key, snapshot_json, snapshot_version
-                      FROM {self._qualified_table()}
-                     WHERE session_partition_key = %s
-                     LIMIT 1
-                    """,
-                    (session_partition_key,),
-                )
-                row = await cur.fetchone()
-        if not row:
-            return None
-        return SessionRecord(
-            session_partition_key=str(row["session_partition_key"]),
-            agent_id=str(row["agent_id"]),
-            session_key=str(row["session_key"]),
-            snapshot_json=row.get("snapshot_json") if isinstance(row.get("snapshot_json"), dict) else {},
-            snapshot_version=int(row.get("snapshot_version") or 0),
-        )
-
-    async def upsert(
-        self,
-        *,
-        session_partition_key: str,
-        agent_id: str,
-        session_key: str,
-        snapshot_json: dict[str, Any],
-        expected_snapshot_version: int | None,
-    ) -> SessionRecord:
-        await self._ensure_table()
-        from psycopg import AsyncConnection
-        from psycopg.rows import dict_row
-
-        payload = json.dumps(snapshot_json, ensure_ascii=False)
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            conn.row_factory = dict_row
-            async with conn.cursor() as cur:
-                if expected_snapshot_version is None:
-                    await cur.execute(
-                        f"""
-                        INSERT INTO {self._qualified_table()}(
-                            session_partition_key, agent_id, session_key, snapshot_json, snapshot_version
-                        )
-                        VALUES (%s, %s, %s, %s::jsonb, 0)
-                        ON CONFLICT (session_partition_key) DO NOTHING
-                        RETURNING session_partition_key, agent_id, session_key, snapshot_json, snapshot_version
-                        """,
-                        (session_partition_key, agent_id, session_key, payload),
-                    )
-                    row = await cur.fetchone()
-                    await conn.commit()
-                    if row:
-                        return SessionRecord(
-                            session_partition_key=str(row["session_partition_key"]),
-                            agent_id=str(row["agent_id"]),
-                            session_key=str(row["session_key"]),
-                            snapshot_json=row.get("snapshot_json") if isinstance(row.get("snapshot_json"), dict) else {},
-                            snapshot_version=int(row.get("snapshot_version") or 0),
-                        )
-                    current = await self.get(session_partition_key=session_partition_key)
-                    raise SessionSnapshotVersionConflict(
-                        session_partition_key=session_partition_key,
-                        expected_snapshot_version=None,
-                        actual_snapshot_version=None if current is None else current.snapshot_version,
-                    )
-
-                await cur.execute(
-                    f"""
-                    UPDATE {self._qualified_table()}
-                       SET snapshot_json = %s::jsonb,
-                           snapshot_version = snapshot_version + 1,
-                           updated_at = now()
-                     WHERE session_partition_key = %s
-                       AND snapshot_version = %s
-                 RETURNING session_partition_key, agent_id, session_key, snapshot_json, snapshot_version
-                    """,
-                    (payload, session_partition_key, int(expected_snapshot_version)),
-                )
-                row = await cur.fetchone()
-                await conn.commit()
-                if row:
-                    return SessionRecord(
-                        session_partition_key=str(row["session_partition_key"]),
-                        agent_id=str(row["agent_id"]),
-                        session_key=str(row["session_key"]),
-                        snapshot_json=row.get("snapshot_json") if isinstance(row.get("snapshot_json"), dict) else {},
-                        snapshot_version=int(row.get("snapshot_version") or 0),
-                    )
-
-        current = await self.get(session_partition_key=session_partition_key)
-        raise SessionSnapshotVersionConflict(
-            session_partition_key=session_partition_key,
-            expected_snapshot_version=expected_snapshot_version,
-            actual_snapshot_version=None if current is None else current.snapshot_version,
-        )
-
-    async def _ensure_table(self) -> None:
-        if self._initialized:
-            return
-        async with self._init_lock:
-            if self._initialized:
-                return
-            await ensure_postgres_schema_objects(
-                postgres_dsn=self._postgres_dsn,
-                postgres_schema=self._postgres_schema,
-                required_tables=["sessions"],
-                create_statements=[
-                    f"""
-                    CREATE TABLE IF NOT EXISTS {self._qualified_table()} (
-                      session_partition_key TEXT PRIMARY KEY,
-                      agent_id TEXT NOT NULL,
-                      session_key TEXT NOT NULL,
-                      snapshot_json JSONB NOT NULL,
-                      snapshot_version BIGINT NOT NULL DEFAULT 0,
-                      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                    )
-                    """
-                ],
-                policy=self._schema_policy,
-            )
-            self._initialized = True
-
-    def _qualified_table(self) -> str:
-        return f"{self._postgres_schema}.sessions"
 
 
 class RedisSessionStore:
@@ -419,6 +274,66 @@ class CachedSessionStore:
         return record
 
 
+class PostgresSessionStore:
+    def __init__(
+        self,
+        *,
+        postgres_dsn: str,
+        postgres_schema: str = "public",
+        schema_policy: PostgresSchemaPolicy = "migrate",
+    ) -> None:
+        _ = schema_policy
+        config = resolve_external_sql_backend_config(
+            postgres_dsn=postgres_dsn,
+            mysql_dsn=None,
+            redis_dsn=None,
+            schema_name=postgres_schema,
+            namespace="anyagent",
+            dialect="postgresql",
+        )
+        self._engine = create_external_sql_engine(config)
+        self._store = ExternalPostgresSessionStore(engine=self._engine, schema_name=postgres_schema)
+
+    async def get(self, *, session_partition_key: str) -> SessionRecord | None:
+        record = await self._store.get(session_partition_key=session_partition_key)
+        return None if record is None else _local_session_record(record)
+
+    async def upsert(
+        self,
+        *,
+        session_partition_key: str,
+        agent_id: str,
+        session_key: str,
+        snapshot_json: dict[str, Any],
+        expected_snapshot_version: int | None,
+    ) -> SessionRecord:
+        if expected_snapshot_version is None:
+            record = await self._store.create_if_absent(
+                session_partition_key=session_partition_key,
+                agent_id=agent_id,
+                session_key=session_key,
+                snapshot_json=snapshot_json,
+            )
+            return _local_session_record(record)
+
+        ok, latest = await self._store.update_snapshot_cas(
+            session_partition_key=session_partition_key,
+            expected_snapshot_version=expected_snapshot_version,
+            snapshot_json=snapshot_json,
+            agent_id=agent_id,
+            session_key=session_key,
+        )
+        if not ok:
+            raise SessionSnapshotVersionConflict(
+                session_partition_key=session_partition_key,
+                expected_snapshot_version=expected_snapshot_version,
+                actual_snapshot_version=None if latest is None else latest.snapshot_version,
+            )
+        if latest is None:
+            raise RuntimeError("postgres session store CAS update returned no record")
+        return _local_session_record(latest)
+
+
 def _clone_record(record: SessionRecord) -> SessionRecord:
     return SessionRecord(
         session_partition_key=record.session_partition_key,
@@ -469,3 +384,13 @@ def build_cached_session_store() -> CachedSessionStore:
 def build_redis_session_store_key(*, namespace: str, session_partition_key: str) -> str:
     ns = namespace.strip() or "anyagent"
     return f"{ns}:session:{session_partition_key}"
+
+
+def _local_session_record(record: Any) -> SessionRecord:
+    return SessionRecord(
+        session_partition_key=str(getattr(record, "session_partition_key", "") or ""),
+        agent_id=str(getattr(record, "agent_id", "") or ""),
+        session_key=str(getattr(record, "session_key", "") or ""),
+        snapshot_json=getattr(record, "snapshot_json", {}) if isinstance(getattr(record, "snapshot_json", None), dict) else {},
+        snapshot_version=int(getattr(record, "snapshot_version", 0) or 0),
+    )

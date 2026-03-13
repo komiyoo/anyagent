@@ -14,7 +14,8 @@ anyagent serve     # 一条命令启动 Agent Server
 - **细粒度观测**：anyagent SDK 提供 tool/command 级别的阶段性事件流（Stage Events）
 - **安全边界**：Agent 只能"看到"和"使用"资源，不能"访问"和"操作"资源——密钥、凭证、tool policy 由 server 代理管理
 - **零外部依赖启动**：内置 in-memory 存储 + 进程内 Tool Runtime，开箱即用
-- **可扩展至生产级**：通过 [anyagent-apps](../anyagent-apps) 扩展为 PG/Redis 持久化、独立 Tool Runtime、平台 Gateway 的分布式部署
+- **可扩展至生产级**：通过同级项目 `anyagent-apps` 扩展为 PG/Redis backend、独立 Tool Runtime、平台 Gateway 的分布式部署
+- **共享服务层收敛**：Session / Run / Event / replay / resume 等共享语义应逐步回收到 Core，而不是长期散落在应用层
 
 ## 快速开始
 
@@ -200,8 +201,8 @@ anyagent (本仓库)           anyagent-apps (同级项目)
                            └──────────────────────┘
 ```
 
-- **anyagent**：电池内置的 Agent Server 内核——一条命令启动，零外部依赖
-- **anyagent-apps**：生产级部署模板 + 场景示例 + 平台 connector
+- **anyagent**：电池内置的 Agent Server 内核 + 共享服务语义层
+- **anyagent-apps**：生产级 backend/adapters + 分布式部署壳子 + 场景示例 + 平台 connector
 
 ## 文档
 

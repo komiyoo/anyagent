@@ -12,6 +12,18 @@ req: ["requirements.md#req-3-1"]
 
 本文补齐 anyagent 在“无状态入口 + 可恢复执行”模式下所需的最小存储设计：技术选型、关键实体 schema、生命周期与一致性边界。它是 `requirements.md#req-3-1` 与 [stateless-agent-service-architecture.md](stateless-agent-service-architecture.md) 的落地补充。
 
+当前口径补充：
+
+- 本文描述的 `Session/Run/Event/Dedupe/Lock` 语义属于 `anyagent` Core 的长期边界。
+- `PostgreSQL + Redis` 的 runtime adapter 当前已开始迁入 `packages/anyagent/src/anyagent/storage/external/`；deployment wiring 与 migration/retention/replay CLI 仍主要落在 `anyagent-apps/apps/agent-api`。
+- 后续收敛方向不是把整套 production backend 搬进 Core，而是把 store interfaces、状态模型与一致性语义回收到 Core，再让 `anyagent-apps` 继续承载 production adapters。
+- 当前已落地的共享抽象位于 `packages/anyagent/src/anyagent/storage/`，`apps/agent-api` 已开始直接消费这些 records / contracts / runtime bundle。
+- `/internal/events/*` 的 replay/list/stream helper 也已开始收敛到 `packages/anyagent/src/anyagent/storage/replay.py`。
+- 会话准备与 snapshot 写回相关的共享编排 helper 已开始收敛到 `packages/anyagent/src/anyagent/agent_runtime/session_runtime.py`。
+- 当前 `anyagent` 也已通过 `packages/anyagent/src/anyagent/storage/capabilities.py` 与 `/admin/storage/health` 暴露 reference/external backend capability matrix，用来明确 Core reference backend 边界与长期归属。
+- MySQL 当前已先作为 typed contract (`MySQLDsn` / `ExternalSqlBackendConfig`) 进入 Core，为后续多 SQL backend 接入预留协议位。
+- 共享 schema apply helper 当前已开始进入 `packages/anyagent/src/anyagent/storage/external/migrations.py`；但 migration / retention / rollout replay CLI 入口仍保留在 `anyagent-apps`。
+
 ## 1. 目标（Why）
 
 - **支撑无状态 Ingress**：任意 Agent API 实例可接入请求、推流，不依赖本地内存状态。
@@ -35,6 +47,19 @@ req: ["requirements.md#req-3-1"]
 - `Lock Service`：按 `session_partition_key` 的租约锁（TTL + 续租），保证会话内串行。
 - （可选）`Event Bus`：发布订阅，把 Worker 产出的事件推给 Ingress/Platform Gateway（用于低延迟推流）。
 
+### 2.1 归属边界
+
+建议固定以下边界：
+
+- 属于 `anyagent` Core 的部分：
+  - `Session Store` / `Run Store` / `Event Store` / `Dedupe Store` / `Lock Service` 的抽象接口
+  - `snapshot_version` / CAS / idempotency / replay cursor / `[DONE]` 等一致性语义
+  - `STORAGE_MODE=none` 对应的 reference 行为
+- 属于 `anyagent-apps` 的部分：
+  - PostgreSQL / Redis backend 实现
+  - 生产部署下的 lease / event bus / hot cache wiring
+  - migration / retention / rollout replay 等运维命令
+
 ## 3. 推荐技术选型（How）
 
 ### 3.1 推荐（生产默认）：PostgreSQL + Redis
@@ -48,6 +73,11 @@ req: ["requirements.md#req-3-1"]
 
 - `PostgreSQL`：作为**持久化单一真源**（Session/Run/Event/Dedupe）。
 - `Redis`：作为**低延迟的临时能力层**（Lease Lock、Event Bus PubSub、可选的 Dedupe 热缓存）。
+
+说明：
+
+- 这里的 “推荐生产默认” 指的是工作区当前的应用层部署选择，不代表 `anyagent` Core 必须内建一套 PG/Redis production backend。
+- Core 应冻结这些后端所需的抽象与一致性语义；production adapters 继续可以由 `anyagent-apps` 提供。
 
 为什么是这个组合：
 

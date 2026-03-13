@@ -8,8 +8,11 @@ from typing import Any
 
 from anyagent.protocol.agent_api_internal import InternalEventItem, InternalEventsListResponse
 from anyagent.protocol.responses_optional import AnyAgentResponseError
+from anyagent.storage.external import PostgresEventStore as ExternalPostgresEventStore
+from anyagent.storage.external import create_external_sql_engine, resolve_external_sql_backend_config
 from anyagent.server.postgres_schema import PostgresSchemaPolicy, ensure_postgres_schema_objects
 from anyagent.storage.settings import StorageSettings
+from sqlalchemy import BOOLEAN, JSON, TEXT, Column, MetaData, Table, insert, select, update
 
 
 @dataclass(slots=True)
@@ -148,289 +151,6 @@ class RedisEventStoreAdapter:
     async def pexpire(self, key: str, time_ms: int) -> Any: ...
 
 
-class PostgresEventStore:
-    def __init__(
-        self,
-        *,
-        postgres_dsn: str,
-        postgres_schema: str = "public",
-        poll_interval_s: float = 0.05,
-        schema_policy: PostgresSchemaPolicy = "migrate",
-    ) -> None:
-        self._postgres_dsn = postgres_dsn
-        self._postgres_schema = postgres_schema.strip() or "public"
-        self._poll_interval_s = max(poll_interval_s, 0.01)
-        self._schema_policy = schema_policy
-        self._init_lock = asyncio.Lock()
-        self._initialized = False
-
-    async def append(self, *, response_id: str, event: str | None, data: str) -> int:
-        await self._ensure_tables()
-        from psycopg import AsyncConnection
-        from psycopg.rows import dict_row
-
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            conn.row_factory = dict_row
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    INSERT INTO {self._meta_table()}(response_id, next_seq, done)
-                    VALUES (%s, 0, false)
-                    ON CONFLICT (response_id) DO NOTHING
-                    """,
-                    (response_id,),
-                )
-                await cur.execute(
-                    f"""
-                    UPDATE {self._meta_table()}
-                       SET next_seq = next_seq + 1
-                     WHERE response_id = %s
-                 RETURNING next_seq
-                    """,
-                    (response_id,),
-                )
-                row = await cur.fetchone()
-                if row is None:
-                    raise RuntimeError("failed to allocate event seq")
-                seq = int(row["next_seq"])
-                await cur.execute(
-                    f"""
-                    INSERT INTO {self._events_table()}(response_id, seq, event_type, payload_json)
-                    VALUES (%s, %s, %s, %s::jsonb)
-                    """,
-                    (response_id, seq, event, json.dumps({"seq": seq, "event": event, "data": data}, ensure_ascii=False)),
-                )
-            await conn.commit()
-        return seq
-
-    async def mark_started(self, *, response_id: str) -> None:
-        await self._ensure_tables()
-        from psycopg import AsyncConnection
-
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    INSERT INTO {self._meta_table()}(response_id, next_seq, done, run_status, effective_run_status)
-                    VALUES (%s, 0, false, 'started', 'in_progress')
-                    ON CONFLICT (response_id) DO UPDATE
-                       SET done = false,
-                           run_status = EXCLUDED.run_status,
-                           effective_run_status = EXCLUDED.effective_run_status
-                    """,
-                    (response_id,),
-                )
-            await conn.commit()
-
-    async def mark_cancel_requested(self, *, response_id: str) -> None:
-        await self._ensure_tables()
-        from psycopg import AsyncConnection
-
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    UPDATE {self._meta_table()}
-                       SET run_status = 'aborted',
-                           effective_run_status = 'cancelled'
-                     WHERE response_id = %s
-                       AND done = false
-                    """,
-                    (response_id,),
-                )
-            await conn.commit()
-
-    async def mark_final(
-        self,
-        *,
-        response_id: str,
-        run_status: str,
-        effective_run_status: str | None = None,
-        response_json: dict[str, Any] | None = None,
-        error: AnyAgentResponseError | None = None,
-    ) -> None:
-        await self._ensure_tables()
-        from psycopg import AsyncConnection
-
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    INSERT INTO {self._meta_table()}(response_id, next_seq, done, run_status, effective_run_status, response_json, error_json)
-                    VALUES (%s, 0, true, %s, %s, %s::jsonb, %s::jsonb)
-                    ON CONFLICT (response_id) DO UPDATE
-                       SET done = true,
-                           run_status = EXCLUDED.run_status,
-                           effective_run_status = EXCLUDED.effective_run_status,
-                           response_json = EXCLUDED.response_json,
-                           error_json = EXCLUDED.error_json
-                    """,
-                    (
-                        response_id,
-                        run_status,
-                        effective_run_status or run_status,
-                        json.dumps(response_json, ensure_ascii=False) if response_json is not None else None,
-                        error.model_dump_json(exclude_none=True) if error is not None else None,
-                    ),
-                )
-            await conn.commit()
-
-    async def get_response(self, response_id: str) -> dict[str, Any] | None:
-        meta = await self._get_meta_row(response_id)
-        return _loads_json_dict(meta.get("response_json")) if meta else None
-
-    async def get_status(self, response_id: str) -> tuple[str | None, AnyAgentResponseError | None]:
-        meta = await self._get_meta_row(response_id)
-        if not meta:
-            return None, None
-        error = None
-        error_raw = meta.get("error_json")
-        if isinstance(error_raw, str) and error_raw.strip():
-            try:
-                error = AnyAgentResponseError.model_validate_json(error_raw)
-            except Exception:  # noqa: BLE001
-                error = None
-        return str(meta.get("effective_run_status") or "") or None, error
-
-    async def list_events(self, *, response_id: str, last_seq: int = 0, limit: int = 200) -> InternalEventsListResponse:
-        await self._ensure_tables()
-        from psycopg import AsyncConnection
-        from psycopg.rows import dict_row
-
-        meta = await self._get_meta_row(response_id)
-        items: list[InternalEventItem] = []
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            conn.row_factory = dict_row
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    SELECT seq, event_type, payload_json
-                      FROM {self._events_table()}
-                     WHERE response_id = %s
-                       AND seq > %s
-                     ORDER BY seq ASC
-                     LIMIT %s
-                    """,
-                    (response_id, max(last_seq, 0), max(limit, 0)),
-                )
-                rows = await cur.fetchall()
-        for row in rows or []:
-            payload = row.get("payload_json")
-            if isinstance(payload, dict):
-                try:
-                    items.append(InternalEventItem.model_validate(payload))
-                    continue
-                except Exception:  # noqa: BLE001
-                    pass
-            items.append(
-                InternalEventItem(
-                    seq=int(row.get("seq") or 0),
-                    event=row.get("event_type"),
-                    data=json.dumps(payload, ensure_ascii=False) if isinstance(payload, dict) else "",
-                )
-            )
-        latest = await self.latest_seq(response_id)
-        next_last_seq = last_seq
-        if items:
-            next_last_seq = items[-1].seq
-        elif latest > 0:
-            next_last_seq = latest
-        return InternalEventsListResponse(
-            response_id=response_id,
-            requested_last_seq=max(last_seq, 0),
-            next_last_seq=max(next_last_seq, 0),
-            events=items,
-            done=bool(meta and meta.get("done")),
-            run_status=None if meta is None else meta.get("run_status"),
-            effective_run_status=None if meta is None else meta.get("effective_run_status"),
-        )
-
-    async def latest_seq(self, response_id: str) -> int:
-        await self._ensure_tables()
-        from psycopg import AsyncConnection
-
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"SELECT COALESCE(MAX(seq), 0) FROM {self._events_table()} WHERE response_id = %s",
-                    (response_id,),
-                )
-                row = await cur.fetchone()
-        return int(row[0] if row else 0)
-
-    async def stream_events(self, *, response_id: str, last_seq: int = 0) -> AsyncIterator[InternalEventItem]:
-        next_seq = max(last_seq, 0)
-        while True:
-            resp = await self.list_events(response_id=response_id, last_seq=next_seq, limit=200)
-            for item in resp.events:
-                if item.seq <= next_seq:
-                    continue
-                yield item
-                next_seq = item.seq
-            if resp.done:
-                return
-            await asyncio.sleep(self._poll_interval_s)
-
-    async def _get_meta_row(self, response_id: str) -> dict[str, Any] | None:
-        await self._ensure_tables()
-        from psycopg import AsyncConnection
-        from psycopg.rows import dict_row
-
-        async with await AsyncConnection.connect(self._postgres_dsn) as conn:
-            conn.row_factory = dict_row
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    SELECT response_id, next_seq, done, run_status, effective_run_status, response_json, error_json
-                      FROM {self._meta_table()}
-                     WHERE response_id = %s
-                     LIMIT 1
-                    """,
-                    (response_id,),
-                )
-                return await cur.fetchone()
-
-    async def _ensure_tables(self) -> None:
-        if self._initialized:
-            return
-        async with self._init_lock:
-            if self._initialized:
-                return
-            await ensure_postgres_schema_objects(
-                postgres_dsn=self._postgres_dsn,
-                postgres_schema=self._postgres_schema,
-                required_tables=["event_runs", "events"],
-                create_statements=[
-                    f"""
-                    CREATE TABLE IF NOT EXISTS {self._meta_table()} (
-                      response_id TEXT PRIMARY KEY,
-                      next_seq BIGINT NOT NULL DEFAULT 0,
-                      done BOOLEAN NOT NULL DEFAULT FALSE,
-                      run_status TEXT NULL,
-                      effective_run_status TEXT NULL,
-                      response_json JSONB NULL,
-                      error_json JSONB NULL
-                    )
-                    """,
-                    f"""
-                    CREATE TABLE IF NOT EXISTS {self._events_table()} (
-                      response_id TEXT NOT NULL,
-                      seq BIGINT NOT NULL,
-                      event_type TEXT NULL,
-                      payload_json JSONB NOT NULL,
-                      PRIMARY KEY (response_id, seq)
-                    )
-                    """,
-                ],
-                policy=self._schema_policy,
-            )
-            self._initialized = True
-
-    def _meta_table(self) -> str:
-        return f"{self._postgres_schema}.event_runs"
-
-    def _events_table(self) -> str:
-        return f"{self._postgres_schema}.events"
 
 
 class RedisEventStore:
@@ -791,6 +511,196 @@ class CachedEventStore:
             response_json=payload,
             error=error,
         )
+
+
+class PostgresEventStore:
+    def __init__(
+        self,
+        *,
+        postgres_dsn: str,
+        postgres_schema: str = "public",
+        poll_interval_s: float = 0.05,
+        schema_policy: PostgresSchemaPolicy = "migrate",
+    ) -> None:
+        self._poll_interval_s = max(poll_interval_s, 0.01)
+        self._schema_policy = schema_policy
+        self._postgres_dsn = postgres_dsn
+        self._postgres_schema = postgres_schema.strip() or "public"
+        self._init_lock = asyncio.Lock()
+        self._initialized = False
+        config = resolve_external_sql_backend_config(
+            postgres_dsn=postgres_dsn,
+            mysql_dsn=None,
+            redis_dsn=None,
+            schema_name=self._postgres_schema,
+            namespace="anyagent",
+            dialect="postgresql",
+        )
+        self._engine = create_external_sql_engine(config)
+        self._events = ExternalPostgresEventStore(engine=self._engine, schema_name=self._postgres_schema)
+        meta = MetaData()
+        self._meta_table = Table(
+            "event_runs",
+            meta,
+            Column("response_id", TEXT, primary_key=True),
+            Column("done", BOOLEAN, nullable=False, default=False),
+            Column("run_status", TEXT, nullable=True),
+            Column("effective_run_status", TEXT, nullable=True),
+            Column("response_json", JSON, nullable=True),
+            Column("error_json", JSON, nullable=True),
+            schema=self._postgres_schema,
+        )
+
+    async def append(self, *, response_id: str, event: str | None, data: str) -> int:
+        await self._ensure_tables()
+        return await self._events.append(response_id=response_id, session_partition_key="", event=event, data=data)
+
+    async def mark_started(self, *, response_id: str) -> None:
+        await self._ensure_tables()
+        async with self._engine.begin() as conn:
+            existing = (await conn.execute(select(self._meta_table.c.response_id).where(self._meta_table.c.response_id == response_id))).first()
+            if existing is None:
+                await conn.execute(
+                    insert(self._meta_table).values(
+                        response_id=response_id,
+                        done=False,
+                        run_status="started",
+                        effective_run_status="in_progress",
+                    )
+                )
+            await conn.execute(
+                update(self._meta_table)
+                .where(self._meta_table.c.response_id == response_id)
+                .values(done=False, run_status="started", effective_run_status="in_progress")
+            )
+
+    async def mark_cancel_requested(self, *, response_id: str) -> None:
+        await self._ensure_tables()
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                update(self._meta_table)
+                .where(self._meta_table.c.response_id == response_id)
+                .where(self._meta_table.c.done.is_(False))
+                .values(run_status="aborted", effective_run_status="cancelled")
+            )
+
+    async def mark_final(
+        self,
+        *,
+        response_id: str,
+        run_status: str,
+        effective_run_status: str | None = None,
+        response_json: dict[str, Any] | None = None,
+        error: AnyAgentResponseError | None = None,
+    ) -> None:
+        await self._ensure_tables()
+        async with self._engine.begin() as conn:
+            existing = (await conn.execute(select(self._meta_table.c.response_id).where(self._meta_table.c.response_id == response_id))).first()
+            if existing is None:
+                await conn.execute(
+                    insert(self._meta_table).values(
+                        response_id=response_id,
+                        done=True,
+                        run_status=run_status,
+                        effective_run_status=effective_run_status or run_status,
+                        response_json=response_json,
+                        error_json=error.model_dump(exclude_none=True) if error is not None else None,
+                    )
+                )
+            await conn.execute(
+                update(self._meta_table)
+                .where(self._meta_table.c.response_id == response_id)
+                .values(
+                    done=True,
+                    run_status=run_status,
+                    effective_run_status=effective_run_status or run_status,
+                    response_json=response_json,
+                    error_json=error.model_dump(exclude_none=True) if error is not None else None,
+                )
+            )
+
+    async def get_response(self, response_id: str) -> dict[str, Any] | None:
+        row = await self._get_meta_row(response_id)
+        value = None if row is None else row.get("response_json")
+        return value if isinstance(value, dict) else None
+
+    async def get_status(self, response_id: str) -> tuple[str | None, AnyAgentResponseError | None]:
+        row = await self._get_meta_row(response_id)
+        if row is None:
+            return None, None
+        error_json = row.get("error_json")
+        error = None
+        if isinstance(error_json, dict):
+            try:
+                error = AnyAgentResponseError.model_validate(error_json)
+            except Exception:  # noqa: BLE001
+                error = None
+        return row.get("effective_run_status"), error
+
+    async def list_events(self, *, response_id: str, last_seq: int = 0, limit: int = 200) -> InternalEventsListResponse:
+        await self._ensure_tables()
+        meta = await self._get_meta_row(response_id)
+        rows = await self._events.list(response_id=response_id, after_seq=last_seq, limit=limit)
+        items = [InternalEventItem(seq=int(row.seq), event=row.event, data=row.data) for row in rows]
+        latest = await self.latest_seq(response_id)
+        next_last_seq = max(last_seq, items[-1].seq if items else latest if latest > 0 else last_seq)
+        return InternalEventsListResponse(
+            response_id=response_id,
+            requested_last_seq=max(last_seq, 0),
+            next_last_seq=max(next_last_seq, 0),
+            events=items,
+            done=bool(meta and meta.get("done")),
+            run_status=None if meta is None else meta.get("run_status"),
+            effective_run_status=None if meta is None else meta.get("effective_run_status"),
+        )
+
+    async def latest_seq(self, response_id: str) -> int:
+        await self._ensure_tables()
+        return await self._events.tail_seq(response_id=response_id)
+
+    async def stream_events(self, *, response_id: str, last_seq: int = 0) -> AsyncIterator[InternalEventItem]:
+        next_seq = max(last_seq, 0)
+        while True:
+            resp = await self.list_events(response_id=response_id, last_seq=next_seq, limit=200)
+            for item in resp.events:
+                if item.seq <= next_seq:
+                    continue
+                yield item
+                next_seq = item.seq
+            if resp.done:
+                return
+            await asyncio.sleep(self._poll_interval_s)
+
+    async def _get_meta_row(self, response_id: str) -> dict[str, Any] | None:
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(select(self._meta_table).where(self._meta_table.c.response_id == response_id).limit(1))).mappings().first()
+        return None if row is None else dict(row)
+
+    async def _ensure_tables(self) -> None:
+        if self._initialized:
+            return
+        async with self._init_lock:
+            if self._initialized:
+                return
+            await ensure_postgres_schema_objects(
+                postgres_dsn=self._postgres_dsn,
+                postgres_schema=self._postgres_schema,
+                required_tables=["event_runs", "events"],
+                create_statements=[
+                    f"""
+                    CREATE TABLE IF NOT EXISTS {self._postgres_schema}.event_runs (
+                      response_id TEXT PRIMARY KEY,
+                      done BOOLEAN NOT NULL DEFAULT FALSE,
+                      run_status TEXT NULL,
+                      effective_run_status TEXT NULL,
+                      response_json JSONB NULL,
+                      error_json JSONB NULL
+                    )
+                    """,
+                ],
+                policy=self._schema_policy,
+            )
+            self._initialized = True
 
 
 def build_postgres_event_store(*, postgres_dsn: str | None = None, postgres_schema: str | None = None) -> PostgresEventStore:

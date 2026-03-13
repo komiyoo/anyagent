@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 from time import time
 from typing import Any
@@ -13,6 +14,15 @@ MANAGED_RUNTIME_FIELDS: tuple[str, ...] = (
     "presence_penalty",
     "reasoning",
 )
+
+
+@dataclass(slots=True, frozen=True)
+class PreparedSessionRequest:
+    previous_snapshot: dict[str, Any]
+    previous_snapshot_version: int | None
+    effective_runtime_config: dict[str, Any]
+    request_transcript_items: list[dict[str, Any]]
+    effective_body: dict[str, Any]
 
 
 def dedupe_strs(values: list[str]) -> list[str]:
@@ -103,6 +113,46 @@ def build_initial_session_snapshot(*, runtime_config: dict[str, Any]) -> dict[st
     }
 
 
+async def prepare_session_request(
+    *,
+    session_store: Any,
+    session_partition_key: str,
+    agent_id: str,
+    session_key: str,
+    body: dict[str, Any],
+) -> PreparedSessionRequest:
+    session_record = await session_store.get(session_partition_key=session_partition_key)
+    if session_record is None:
+        init_runtime = extract_runtime_updates_from_request(body)
+        init_snapshot = build_initial_session_snapshot(runtime_config=init_runtime)
+        session_record = await _create_initial_session_record(
+            session_store=session_store,
+            session_partition_key=session_partition_key,
+            agent_id=agent_id,
+            session_key=session_key,
+            snapshot_json=init_snapshot,
+        )
+
+    previous_snapshot = session_record.snapshot_json if isinstance(getattr(session_record, "snapshot_json", None), dict) else {}
+    previous_snapshot_version = int(getattr(session_record, "snapshot_version", 0) or 0)
+    explicit_runtime_updates = extract_runtime_updates_from_request(body)
+    base_runtime_config = previous_snapshot.get("runtime_config") if isinstance(previous_snapshot.get("runtime_config"), dict) else {}
+    effective_runtime_config = merge_runtime_config(
+        base_runtime_config=base_runtime_config if isinstance(base_runtime_config, dict) else {},
+        explicit_updates=explicit_runtime_updates,
+    )
+    effective_body = apply_runtime_config_to_body(body=body, runtime_config=effective_runtime_config)
+    request_transcript_items = input_to_transcript_items(effective_body.get("input"))
+    effective_body, _ = apply_session_resume_to_body(body=effective_body, session_snapshot=previous_snapshot)
+    return PreparedSessionRequest(
+        previous_snapshot=previous_snapshot,
+        previous_snapshot_version=previous_snapshot_version,
+        effective_runtime_config=effective_runtime_config,
+        request_transcript_items=request_transcript_items,
+        effective_body=effective_body,
+    )
+
+
 def apply_session_resume_to_body(*, body: dict[str, Any], session_snapshot: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
     """Fill `previous_response_id` from session snapshot when caller does not provide it."""
 
@@ -137,6 +187,88 @@ def build_fallback_transcript_items(
     request_items = input_to_transcript_items(request_input)
     assistant_items = response_to_transcript_items(response_json)
     return [*previous_items, *request_items, *assistant_items]
+
+
+def read_resume_last_response_id(snapshot: dict[str, Any]) -> str | None:
+    resume_cursor = snapshot.get("resume_cursor")
+    if not isinstance(resume_cursor, dict):
+        return None
+    value = resume_cursor.get("last_response_id")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+async def persist_session_snapshot(
+    *,
+    session_store: Any,
+    session_partition_key: str,
+    agent_id: str,
+    session_key: str,
+    previous_snapshot: dict[str, Any] | None,
+    previous_snapshot_version: int | None,
+    runtime_config: dict[str, Any],
+    request_transcript_items: list[dict[str, Any]] | None,
+    response_id: str | None,
+    effective_status: str,
+    response_json: dict[str, Any] | None,
+    last_event_seq: int | None,
+    resume_last_response_id: str | None = None,
+) -> tuple[bool, Any | None]:
+    next_snapshot = build_persisted_session_snapshot(
+        previous_snapshot=previous_snapshot,
+        runtime_config=runtime_config,
+        request_transcript_items=request_transcript_items,
+        response_id=response_id,
+        effective_status=effective_status,
+        response_json=response_json,
+        last_event_seq=last_event_seq,
+        resume_last_response_id=resume_last_response_id,
+    )
+    return await _update_session_snapshot(
+        session_store=session_store,
+        session_partition_key=session_partition_key,
+        agent_id=agent_id,
+        session_key=session_key,
+        snapshot_json=next_snapshot,
+        expected_snapshot_version=previous_snapshot_version,
+    )
+
+
+def build_persisted_session_snapshot(
+    *,
+    previous_snapshot: dict[str, Any] | None,
+    runtime_config: dict[str, Any],
+    request_transcript_items: list[dict[str, Any]] | None,
+    response_id: str | None,
+    effective_status: str,
+    response_json: dict[str, Any] | None,
+    last_event_seq: int | None,
+    resume_last_response_id: str | None = None,
+) -> dict[str, Any]:
+    previous = dict(previous_snapshot) if isinstance(previous_snapshot, dict) else build_initial_session_snapshot(runtime_config={})
+    effective_resume_last_response_id = resume_last_response_id
+    if effective_resume_last_response_id is None:
+        effective_resume_last_response_id = (
+            response_id if effective_status == "completed" and isinstance(response_id, str) and response_id.strip() else read_resume_last_response_id(previous)
+        )
+
+    fallback_transcript_items = None
+    if effective_status == "completed":
+        fallback_transcript_items = build_fallback_transcript_items(
+            previous_snapshot=previous,
+            request_input=request_transcript_items if isinstance(request_transcript_items, list) else [],
+            response_json=response_json,
+        )
+
+    return build_next_session_snapshot(
+        previous_snapshot=previous,
+        runtime_config=runtime_config,
+        resume_last_response_id=effective_resume_last_response_id,
+        fallback_transcript_items=fallback_transcript_items,
+        run_response_id=response_id,
+        last_event_seq=last_event_seq,
+    )
 
 
 def build_next_session_snapshot(
@@ -182,6 +314,61 @@ def read_fallback_transcript_items(snapshot: dict[str, Any]) -> list[dict[str, A
     if not isinstance(resume_cursor, dict):
         return []
     return input_to_transcript_items(resume_cursor.get("fallback_transcript_items"))
+
+
+async def _create_initial_session_record(
+    *,
+    session_store: Any,
+    session_partition_key: str,
+    agent_id: str,
+    session_key: str,
+    snapshot_json: dict[str, Any],
+) -> Any:
+    if hasattr(session_store, "create_if_absent"):
+        return await session_store.create_if_absent(
+            session_partition_key=session_partition_key,
+            agent_id=agent_id,
+            session_key=session_key,
+            snapshot_json=snapshot_json,
+        )
+    if hasattr(session_store, "upsert"):
+        return await session_store.upsert(
+            session_partition_key=session_partition_key,
+            agent_id=agent_id,
+            session_key=session_key,
+            snapshot_json=snapshot_json,
+            expected_snapshot_version=None,
+        )
+    raise TypeError("session_store must support create_if_absent() or upsert()")
+
+
+async def _update_session_snapshot(
+    *,
+    session_store: Any,
+    session_partition_key: str,
+    agent_id: str,
+    session_key: str,
+    snapshot_json: dict[str, Any],
+    expected_snapshot_version: int | None,
+) -> tuple[bool, Any | None]:
+    if hasattr(session_store, "update_snapshot_cas"):
+        return await session_store.update_snapshot_cas(
+            session_partition_key=session_partition_key,
+            expected_snapshot_version=int(expected_snapshot_version or 0),
+            snapshot_json=snapshot_json,
+            agent_id=agent_id,
+            session_key=session_key,
+        )
+    if hasattr(session_store, "upsert"):
+        record = await session_store.upsert(
+            session_partition_key=session_partition_key,
+            agent_id=agent_id,
+            session_key=session_key,
+            snapshot_json=snapshot_json,
+            expected_snapshot_version=expected_snapshot_version,
+        )
+        return True, record
+    raise TypeError("session_store must support update_snapshot_cas() or upsert()")
 
 
 def response_to_transcript_items(response_json: dict[str, Any] | None) -> list[dict[str, Any]]:
