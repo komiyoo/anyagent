@@ -14,9 +14,10 @@
 3) [responses-api-sdk-and-server.md](responses-api-sdk-and-server.md)：SDK + 内置 Server 泳道与模块边界
 4) [stateless-agent-service-architecture.md](stateless-agent-service-architecture.md)：无状态服务语义（并发分片、幂等、事件补发）
 5) [storage-minimal-design.md](storage-minimal-design.md)：存储最小设计
-6) [skills-tool-runtime-interaction.md](skills-tool-runtime-interaction.md)：Skills 与 Tool Runtime 交互合约
-7) [agent-server-runtime-entities.md](agent-server-runtime-entities.md)：运行时实体分层
-8) [agent-api-client-stage-events.md](agent-api-client-stage-events.md)：Client Stage Events 设计
-9) [testing-strategy.md](testing-strategy.md)：测试分层策略与补齐顺序
-10) [decisions/README.md](decisions/README.md)：架构决策记录
-11) [engineering/README.md](engineering/README.md)：工程流程
+6) [sandbox-session-filesystem-design.md](sandbox-session-filesystem-design.md)：服务化沙箱会话文件系统设计（热冷分层、跨实例恢复、安全与数据治理）
+7) [skills-tool-runtime-interaction.md](skills-tool-runtime-interaction.md)：Skills 与 Tool Runtime 交互合约
+8) [agent-server-runtime-entities.md](agent-server-runtime-entities.md)：运行时实体分层
+9) [agent-api-client-stage-events.md](agent-api-client-stage-events.md)：Client Stage Events 设计
+10) [testing-strategy.md](testing-strategy.md)：测试分层策略与补齐顺序
+11) [decisions/README.md](decisions/README.md)：架构决策记录
+12) [engineering/README.md](engineering/README.md)：工程流程

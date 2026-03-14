@@ -59,6 +59,10 @@ def build_exec_handler(
             cmd=cmd.strip(),
             workdir=workdir_value,
             timeout_seconds=timeout_seconds,
+            response_id=context.get("response_id") if isinstance(context.get("response_id"), str) else None,
+            tool_call_id=context.get("tool_call_id") if isinstance(context.get("tool_call_id"), str) else None,
+            trace_id=context.get("_trace_id") if isinstance(context.get("_trace_id"), str) else None,
+            audit_ref=context.get("_audit_ref") if isinstance(context.get("_audit_ref"), str) else None,
         )
         output_max_bytes = None
         if policy.resource_limits is not None and isinstance(policy.resource_limits.output_max_bytes, int):

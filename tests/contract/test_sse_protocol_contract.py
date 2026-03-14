@@ -2,6 +2,18 @@ from __future__ import annotations
 
 import json
 
+from openai.types.responses.response import Response
+from openai.types.responses.response_completed_event import ResponseCompletedEvent
+from openai.types.responses.response_created_event import ResponseCreatedEvent
+from openai.types.responses.response_error_event import ResponseErrorEvent
+from openai.types.responses.response_failed_event import ResponseFailedEvent
+from openai.types.responses.response_output_item_added_event import ResponseOutputItemAddedEvent
+from openai.types.responses.response_output_item_done_event import ResponseOutputItemDoneEvent
+from openai.types.responses.response_output_message import ResponseOutputMessage
+from openai.types.responses.response_output_text import ResponseOutputText
+from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
+from openai.types.responses.response_text_done_event import ResponseTextDoneEvent
+
 from anyagent.protocol.openai_responses import (
     ensure_completed_response_event_data,
     normalize_completed_response_event_data,
@@ -14,6 +26,16 @@ from anyagent.protocol.sse import (
     normalize_response_id,
     parse_sse_events,
 )
+
+
+def _message_output_item() -> dict:
+    return ResponseOutputMessage(
+        id="msg_fixture_1",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[ResponseOutputText(type="output_text", text="hello", annotations=[])],
+    ).model_dump(exclude_none=True, by_alias=True)
 
 
 def test_encode_and_parse_sse_multiline_contract() -> None:
@@ -142,3 +164,129 @@ def test_extract_completed_response_ignores_non_completed_events() -> None:
     )
 
     assert completed == {"id": "resp_1", "object": "response", "status": "completed"}
+
+
+def test_response_created_and_completed_payloads_validate_against_openai_sdk_models() -> None:
+    response = Response.model_validate(
+        {
+            "id": "resp_fixture_1",
+            "object": "response",
+            "created_at": 123,
+            "model": "gpt-4o-mini",
+            "output": [],
+            "tool_choice": "auto",
+            "parallel_tool_calls": False,
+            "tools": [],
+            "status": "completed",
+        }
+    )
+
+    created = ResponseCreatedEvent.model_validate(
+        {
+            "type": "response.created",
+            "sequence_number": 0,
+            "response": response.model_dump(exclude_none=True, by_alias=True),
+        }
+    )
+    completed = ResponseCompletedEvent.model_validate(
+        {
+            "type": "response.completed",
+            "sequence_number": 1,
+            "response": response.model_dump(exclude_none=True, by_alias=True),
+        }
+    )
+
+    assert created.type == "response.created"
+    assert created.response.id == "resp_fixture_1"
+    assert completed.type == "response.completed"
+    assert completed.response.status == "completed"
+
+
+def test_response_delta_output_item_and_error_payloads_validate_against_openai_sdk_models() -> None:
+    item = _message_output_item()
+
+    delta = ResponseTextDeltaEvent.model_validate(
+        {
+            "type": "response.output_text.delta",
+            "sequence_number": 2,
+            "item_id": item["id"],
+            "output_index": 0,
+            "content_index": 0,
+            "delta": "hel",
+            "logprobs": [],
+        }
+    )
+    done = ResponseTextDoneEvent.model_validate(
+        {
+            "type": "response.output_text.done",
+            "sequence_number": 3,
+            "item_id": item["id"],
+            "output_index": 0,
+            "content_index": 0,
+            "text": "hello",
+            "logprobs": [],
+        }
+    )
+    added = ResponseOutputItemAddedEvent.model_validate(
+        {
+            "type": "response.output_item.added",
+            "sequence_number": 4,
+            "output_index": 0,
+            "item": item,
+        }
+    )
+    finished = ResponseOutputItemDoneEvent.model_validate(
+        {
+            "type": "response.output_item.done",
+            "sequence_number": 5,
+            "output_index": 0,
+            "item": item,
+        }
+    )
+    error = ResponseErrorEvent.model_validate(
+        {
+            "type": "error",
+            "sequence_number": 6,
+            "code": "server_error",
+            "message": "boom",
+            "param": "input",
+        }
+    )
+
+    assert delta.delta == "hel"
+    assert done.text == "hello"
+    assert added.item.id == item["id"]
+    assert finished.item.content[0].text == "hello"
+    assert error.message == "boom"
+
+
+def test_response_failed_payload_validates_against_openai_sdk_model() -> None:
+    response = Response.model_validate(
+        {
+            "id": "resp_failed_1",
+            "object": "response",
+            "created_at": 456,
+            "model": "gpt-4o-mini",
+            "output": [],
+            "tool_choice": "auto",
+            "parallel_tool_calls": False,
+            "tools": [],
+            "status": "failed",
+            "error": {
+                "code": "server_error",
+                "message": "provider exploded",
+            },
+        }
+    )
+    failed = ResponseFailedEvent.model_validate(
+        {
+            "type": "response.failed",
+            "sequence_number": 7,
+            "response": response.model_dump(exclude_none=True, by_alias=True),
+        }
+    )
+
+    assert failed.type == "response.failed"
+    assert failed.response.status == "failed"
+    assert failed.response.error is not None
+    assert failed.response.error.message == "provider exploded"

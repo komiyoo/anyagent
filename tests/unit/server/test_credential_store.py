@@ -80,3 +80,28 @@ def test_delete_removes_resolved_value() -> None:
         assert deleted_missing == {"ok": True, "deleted": False, "credential_id": "cred_api"}
 
     asyncio.run(_run())
+
+
+def test_resolve_does_not_leak_agent_scoped_credential_to_other_agent() -> None:
+    async def _run() -> None:
+        store = InMemoryCredentialStore()
+        await store.set(
+            AdminCredentialSetRequest(
+                credential_id="cred_agent_only",
+                kind="bearer_token",
+                value="agent-only-secret",
+                scope=CredentialScope(level="agent", agent_id="agent-a"),
+                metadata={},
+            )
+        )
+
+        wrong_agent = await store.resolve(
+            AuthRef(kind="bearer_token", ref="cred_agent_only"),
+            scope_context={"agent_id": "agent-b"},
+        )
+        missing_scope = await store.resolve(AuthRef(kind="bearer_token", ref="cred_agent_only"))
+
+        assert wrong_agent is None
+        assert missing_scope is None
+
+    asyncio.run(_run())

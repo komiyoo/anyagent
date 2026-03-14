@@ -10,6 +10,7 @@ from .contracts import (
     RunStoreWithLastEventSeq,
     RunStoreWithSessionSnapshot,
     SessionStore,
+    SessionWorkspaceStore,
 )
 from .external import (
     ExternalSqlBackendConfig,
@@ -20,7 +21,7 @@ from .external import (
     RedisLeaseLock,
     SqlBackendDialect,
 )
-from .models import EventRecord, LeaseLockHandle, RunRecord, RunStatus, SessionRecord
+from .models import EventRecord, LeaseLockHandle, RunRecord, RunStatus, SessionRecord, SessionWorkspaceRecord, WorkspaceState
 from .replay import (
     InternalEventsCursorOutOfRange,
     InternalEventsRunNotFound,
@@ -61,7 +62,10 @@ __all__ = [
     "RunStoreWithSessionSnapshot",
     "SessionRecord",
     "SessionStore",
+    "SessionWorkspaceRecord",
+    "SessionWorkspaceStore",
     "StorageRuntime",
+    "WorkspaceState",
     "effective_run_status",
     "internal_events_tail_seq",
     "list_internal_events",

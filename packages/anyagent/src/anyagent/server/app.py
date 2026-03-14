@@ -1096,6 +1096,7 @@ async def _build_storage_health_payload(state: AnyAgentServerApp) -> dict[str, A
             run_store=state.run_store,
             session_store=state.session_store,
             session_lock_service=state.session_lock_service,
+            workspace_store=state.sandbox_manager.workspace_service,
         ),
         "postgres": {
             "configured": state.storage_settings.postgres_dsn is not None,

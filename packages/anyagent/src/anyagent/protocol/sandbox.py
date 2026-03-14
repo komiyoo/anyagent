@@ -6,6 +6,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 SandboxMode = Literal["opensandbox", "external", "local-unsafe", "disabled"]
+FileSystemPersistenceMode = Literal["ephemeral", "session_hot_cold"]
 
 
 class ResourceLimits(BaseModel):
@@ -25,6 +26,16 @@ class NetworkSandboxPolicy(BaseModel):
     deny_hosts: list[str] | None = None
 
 
+class FileSystemSandboxPolicy(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    persistence_mode: FileSystemPersistenceMode = "ephemeral"
+    workspace_root: str = Field(default="/workspace", min_length=1)
+    hot_idle_ttl_s: int | None = Field(default=None, ge=0)
+    cold_retention_s: int | None = Field(default=None, ge=1)
+    max_snapshot_bytes: int | None = Field(default=None, ge=1)
+
+
 class SandboxPolicy(BaseModel):
     """
     Sandbox policy SSOT used by AgentSpec and server runtime.
@@ -34,12 +45,14 @@ class SandboxPolicy(BaseModel):
     - network：网络策略占位
     - resource_limits：资源上限占位
     - ttl_seconds：会话级沙箱生命周期
+    - filesystem：工作区持久化策略占位
     """
 
     model_config = ConfigDict(extra="ignore")
 
     mode: SandboxMode = "disabled"
     network: NetworkSandboxPolicy | None = None
+    filesystem: FileSystemSandboxPolicy | None = None
     resource_limits: ResourceLimits | None = Field(
         default=None,
         validation_alias=AliasChoices("resource_limits", "resources"),

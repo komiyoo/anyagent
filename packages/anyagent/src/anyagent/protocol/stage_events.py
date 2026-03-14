@@ -17,6 +17,7 @@ import time
 from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from anyagent.protocol.admin_storage import AdminSandboxRuntimeDiagnostics
 from anyagent.protocol.prompt_context import (
     PromptContextAudit,
     PromptFragmentSummary,
@@ -253,6 +254,31 @@ class AnyAgentPromptContextEvent(StageEventBase, PromptContextAudit):
     type: Literal["anyagent.prompt.context"] = "anyagent.prompt.context"
 
 
+class AnyAgentWorkspaceLifecycleEvent(StageEventBase):
+    """Workspace lifecycle event for sandbox session filesystem."""
+
+    type: Literal[
+        "anyagent.sandbox.workspace.restoring",
+        "anyagent.sandbox.workspace.restored",
+        "anyagent.sandbox.workspace.checkpointing",
+        "anyagent.sandbox.workspace.checkpointed",
+        "anyagent.sandbox.workspace.hibernated",
+        "anyagent.sandbox.workspace.restore_failed",
+        "anyagent.sandbox.workspace.checkpoint_failed",
+    ]
+    session_partition_key: str
+    workspace_id: str
+    generation: int | None = Field(default=None, ge=0)
+    sandbox_id: str | None = None
+    snapshot_uri: str | None = None
+    snapshot_bytes: int | None = Field(default=None, ge=0)
+    duration_ms: int | None = Field(default=None, ge=0)
+    audit_ref: str | None = None
+    failure_code: str | None = None
+    failure_message: str | None = None
+    runtime_diagnostics: AdminSandboxRuntimeDiagnostics | None = None
+
+
 StageEvent: TypeAlias = Annotated[
     AnyAgentModelStreamEvent
     | AnyAgentToolPlannedEvent
@@ -260,6 +286,7 @@ StageEvent: TypeAlias = Annotated[
     | AnyAgentCommandPlannedEvent
     | AnyAgentCommandResultEvent
     | AnyAgentPromptContextEvent
+    | AnyAgentWorkspaceLifecycleEvent
     | AnyAgentDoneEvent,
     Field(discriminator="type"),
 ]

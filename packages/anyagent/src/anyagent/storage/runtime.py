@@ -4,7 +4,7 @@ import inspect
 from dataclasses import dataclass
 from typing import Any
 
-from .contracts import EventStore, LeaseLock, RunStore, SessionStore
+from .contracts import EventStore, LeaseLock, RunStore, SessionStore, SessionWorkspaceStore
 
 
 async def _maybe_close(resource: Any) -> None:
@@ -27,6 +27,7 @@ class StorageRuntime:
     event_store: EventStore
     lease_lock: LeaseLock
     session_store: SessionStore
+    workspace_store: SessionWorkspaceStore | None = None
     rollout_writer: Any | None = None
     sql_engine: Any | None = None
     pg_pool: Any | None = None

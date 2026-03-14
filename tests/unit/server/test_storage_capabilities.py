@@ -6,6 +6,7 @@ from anyagent.server.events import InMemoryEventStore
 from anyagent.server.lock_service import InMemorySessionLockService
 from anyagent.server.run_store import InMemoryRunStore
 from anyagent.server.session_store import InMemorySessionStore
+from anyagent.server.sandbox.workspace import LocalSessionWorkspaceService
 from anyagent.server.storage_backends import build_event_store, build_run_store, build_session_store
 
 
@@ -15,6 +16,7 @@ def test_build_storage_capability_matrix_reports_reference_inmemory_components()
         run_store=InMemoryRunStore(),
         session_store=InMemorySessionStore(),
         session_lock_service=InMemorySessionLockService(),
+        workspace_store=LocalSessionWorkspaceService(root_dir="/tmp/anyagent-test-workspaces"),
     )
 
     assert matrix["event_store"]["tier"] == "reference"
@@ -23,6 +25,8 @@ def test_build_storage_capability_matrix_reports_reference_inmemory_components()
     assert matrix["run_store"]["supports_idempotency"] is True
     assert matrix["session_store"]["supports_snapshot_cas"] is True
     assert matrix["session_lock"]["supports_keyed_serialization"] is True
+    assert matrix["workspace_store"]["supports_workspace_sessions"] is True
+    assert matrix["workspace_store"]["supports_hibernation"] is True
 
 
 def test_build_storage_capability_matrix_reports_external_cached_components() -> None:

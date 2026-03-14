@@ -31,9 +31,16 @@ class LocalUnsafeBackend:
         self._root_dir = base.expanduser().resolve()
         self._root_dir.mkdir(parents=True, exist_ok=True)
 
-    def create_or_get(self, session_partition_key: str) -> SandboxHandle:
-        safe = session_partition_key.replace("/", "_").replace(":", "_")
-        root_dir = (self._root_dir / safe).resolve()
+    @property
+    def root_dir(self) -> Path:
+        return self._root_dir
+
+    def create_or_get(self, session_partition_key: str, root_dir: str | Path | None = None) -> SandboxHandle:
+        if root_dir is not None:
+            root_dir = Path(root_dir).expanduser().resolve()
+        else:
+            safe = session_partition_key.replace("/", "_").replace(":", "_")
+            root_dir = (self._root_dir / safe).resolve()
         root_dir.mkdir(parents=True, exist_ok=True)
         return SandboxHandle(session_partition_key=session_partition_key, root_dir=root_dir)
 

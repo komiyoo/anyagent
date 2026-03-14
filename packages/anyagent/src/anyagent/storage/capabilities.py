@@ -9,13 +9,17 @@ def build_storage_capability_matrix(
     run_store: Any,
     session_store: Any,
     session_lock_service: Any,
+    workspace_store: Any | None = None,
 ) -> dict[str, dict[str, Any]]:
-    return {
+    matrix = {
         "event_store": _event_store_capabilities(event_store),
         "run_store": _run_store_capabilities(run_store),
         "session_store": _session_store_capabilities(session_store),
         "session_lock": _session_lock_capabilities(session_lock_service),
     }
+    if workspace_store is not None:
+        matrix["workspace_store"] = _workspace_store_capabilities(workspace_store)
+    return matrix
 
 
 def _base_capabilities(component: Any) -> dict[str, Any]:
@@ -80,6 +84,13 @@ def _session_store_capabilities(component: Any) -> dict[str, Any]:
 def _session_lock_capabilities(component: Any) -> dict[str, Any]:
     out = _base_capabilities(component)
     out["supports_keyed_serialization"] = True
+    return out
+
+
+def _workspace_store_capabilities(component: Any) -> dict[str, Any]:
+    out = _base_capabilities(component)
+    out["supports_workspace_sessions"] = True
+    out["supports_hibernation"] = True
     return out
 
 

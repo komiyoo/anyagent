@@ -44,7 +44,9 @@ class RedisLeaseLock:
     async def renew(self, *, key: str, owner: str, ttl_ms: int) -> bool:
         k = self._k(key)
         try:
-            r = await self._redis.eval(_RENEW_LUA, numkeys=1, keys=[k], args=[owner, str(ttl_ms)])
+            # `redis-py` 的 `eval()` 需要用位置参数传 `numkeys + keys + args`，
+            # 不能用 `keys=` / `args=` 关键字，否则会抛异常并导致 lease 无法续约。
+            r = await self._redis.eval(_RENEW_LUA, 1, k, owner, str(ttl_ms))
         except Exception:  # noqa: BLE001
             return False
         return bool(r)
@@ -52,7 +54,9 @@ class RedisLeaseLock:
     async def release(self, *, key: str, owner: str) -> bool:
         k = self._k(key)
         try:
-            r = await self._redis.eval(_RELEASE_LUA, numkeys=1, keys=[k], args=[owner])
+            # release 同样必须走 `eval(script, numkeys, *keys_and_args)` 位置参数约定，
+            # 否则 Redis 中会残留 lease key，后续控制面操作会一直超时。
+            r = await self._redis.eval(_RELEASE_LUA, 1, k, owner)
         except Exception:  # noqa: BLE001
             return False
         return bool(r)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .models import EventRecord, LeaseLockHandle, RunRecord, SessionRecord
+from .models import EventRecord, LeaseLockHandle, RunRecord, SessionRecord, SessionWorkspaceRecord
 
 
 class LeaseLock(Protocol):
@@ -102,3 +102,11 @@ class SessionStore(Protocol):
         agent_id: str,
         session_key: str,
     ) -> tuple[bool, SessionRecord | None]: ...
+
+
+class SessionWorkspaceStore(Protocol):
+    async def get(self, *, session_partition_key: str) -> SessionWorkspaceRecord | None: ...
+
+    async def upsert(self, *, record: SessionWorkspaceRecord) -> SessionWorkspaceRecord: ...
+
+    async def delete(self, *, session_partition_key: str) -> bool: ...
