@@ -136,6 +136,33 @@ async for event in client.events.stream_typed(resp.id):
             print(f"即将调用工具: {event.tool_name}")
         case "anyagent.tool.result":
             print(f"工具执行完成: {event.tool_name} ({event.status})")
+
+# anyagent explain/debug 面
+preview = await client.prompts.preview(
+    {
+        "model": "gpt-5",
+        "input": "hello",
+        "stream": False,
+        "metadata": {"session_key": "sess_preview"},
+    }
+)
+
+# 纯本地示例：不依赖真实服务端数据
+example_bundle = client.prompts.example_run_bundle()
+print(example_bundle.stage_events[0].type)
+
+# 可切换不同 explain 模板场景
+retry_bundle = client.prompts.example_run_bundle(scenario="toolset_retry")
+research_bundle = client.prompts.example_run_bundle(scenario="multi_skill_research")
+
+# 也可以先列出内置模板，再用 options 覆写局部特征
+for item in client.prompts.example_scenarios():
+    print(item.scenario, item.label)
+
+custom_bundle = client.prompts.example_run_bundle(
+    scenario="multi_skill_research",
+    options={"include_mcp": False, "skill_count": 1, "sandbox_mode": "disabled"},
+)
 ```
 
 ## 安全边界

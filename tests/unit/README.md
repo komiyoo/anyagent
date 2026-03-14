@@ -9,6 +9,7 @@
 当前优先覆盖：
 
 - `agent_runtime/session_runtime.py`
+- `agent_api_client.py` 中的本地 explain / example helpers
 - `server/manifest_cache.py`
 - `server/security/credential_store.py`
 - `server/sandbox/exec_handler.py`

@@ -17,6 +17,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
+from anyagent.protocol.prompt_context import PromptContextAudit, RenderedPromptFragment
+from anyagent.protocol.sandbox import SandboxMode
 from anyagent.protocol.stage_events import AnyAgentPromptContextEvent, StageEvent, decode_stage_event
 
 
@@ -142,3 +145,107 @@ class InternalSkillsListResponse(BaseModel):
     disabled_paths: list[str] = Field(default_factory=list)
     load_errors: list[InternalSkillLoadError] = Field(default_factory=list)
     skills: list[InternalSkillListItem] = Field(default_factory=list)
+
+
+class InternalPromptBundlePreviewResponse(BaseModel):
+    """Debug response model for one fully assembled prompt bundle preview."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    session_key: str
+    model: str | None = None
+    prompt_cache_key: str | None = None
+    instruction_role: Literal["developer", "system"]
+    selected_skill_ids: list[str] = Field(default_factory=list)
+    manifest_tools: list[AnyAgentFunctionToolParam] = Field(default_factory=list)
+    manifest_tool_names: list[str] = Field(default_factory=list)
+    mcp_servers: list[str] = Field(default_factory=list)
+    tool_context: dict[str, Any] = Field(default_factory=dict)
+    prompt_context: PromptContextAudit
+    rendered_fragments: list[RenderedPromptFragment] = Field(default_factory=list)
+    effective_body: dict[str, Any] = Field(default_factory=dict)
+    applied_body: dict[str, Any] = Field(default_factory=dict)
+
+
+class PromptRunBundleToolLoopItem(BaseModel):
+    """One illustrative tool-loop item included in local run bundle examples."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    phase: Literal["model_function_call", "tool_output_to_model", "assistant_message"]
+    item: dict[str, Any] = Field(default_factory=dict)
+
+
+PromptRunBundleScenario = Literal["sandbox_file_write", "multi_skill_research", "toolset_retry"]
+
+
+class PromptRunBundleExampleOptions(BaseModel):
+    """Options for locally synthesizing one example run bundle."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skill_count: int | None = Field(default=None, ge=0, le=8)
+    include_mcp: bool | None = None
+    sandbox_mode: SandboxMode | None = None
+    user_input: str | None = None
+
+
+class PromptRunBundleScenarioDescriptor(BaseModel):
+    """Catalog item describing one available local example scenario."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    scenario: PromptRunBundleScenario
+    label: str
+    summary: str
+    supports_mcp_toggle: bool = True
+    supports_skill_count: bool = True
+    supports_sandbox_override: bool = True
+    default_options: PromptRunBundleExampleOptions = Field(default_factory=PromptRunBundleExampleOptions)
+
+
+class PromptRunBundleExplanationStep(BaseModel):
+    """One human-readable step for explaining an illustrative run bundle."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    detail: str
+    cites: list[str] = Field(default_factory=list)
+
+
+class PromptRunBundleExplanation(BaseModel):
+    """Human-readable explanation attached to a local illustrative run bundle."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str
+    why_this_shape: str
+    key_takeaways: list[str] = Field(default_factory=list)
+    steps: list[PromptRunBundleExplanationStep] = Field(default_factory=list)
+
+
+class PromptRunBundleExampleResponse(BaseModel):
+    """
+    Pure local SDK example for a fully assembled run bundle.
+
+    说明：
+    - 不依赖真实服务端、event store 或实际工具执行
+    - 用内部构造的 typed 示例数据展示 prompt bundle、tool loop 中间态和最终模型回复
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    session_key: str
+    response_id: str
+    model: str
+    scenario: PromptRunBundleScenario
+    scenario_label: str
+    options: PromptRunBundleExampleOptions = Field(default_factory=PromptRunBundleExampleOptions)
+    prompt_bundle: InternalPromptBundlePreviewResponse
+    tool_loop_items: list[PromptRunBundleToolLoopItem] = Field(default_factory=list)
+    stage_events: list[StageEvent] = Field(default_factory=list)
+    model_response: dict[str, Any] = Field(default_factory=dict)
+    explanation: PromptRunBundleExplanation

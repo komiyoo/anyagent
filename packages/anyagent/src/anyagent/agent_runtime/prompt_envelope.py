@@ -7,9 +7,16 @@ import os
 from pathlib import Path
 
 from anyagent.agent_packs import AgentPack
+from anyagent.mcp.models import MCPServerConfig
 from anyagent.protocol.context_fragments import ContextFragment, ContextFragmentRole, render_context_fragment
 from anyagent.protocol.openai_responses import inject_text_into_responses_body
-from anyagent.protocol.prompt_context import PromptContextAudit, PromptEnvelope, PromptFragmentSummary, build_prompt_context_audit
+from anyagent.protocol.prompt_context import (
+    PromptContextAudit,
+    PromptEnvelope,
+    PromptFragmentSummary,
+    RenderedPromptFragment,
+    build_prompt_context_audit,
+)
 from anyagent.protocol.tool_runtime import ToolContext
 from anyagent.skills import requested_tool_names_for_skill
 from anyagent.skills.models import SkillPackage
@@ -91,6 +98,79 @@ def build_environment_context_fragment(*, values: dict[str, object], role: Conte
     )
 
 
+def build_mcp_server_ref_fragments(pack: AgentPack, *, role: ContextFragmentRole = "developer") -> list[ContextFragment]:
+    if pack.mcp_config is None:
+        return []
+    out: list[ContextFragment] = []
+    for label, server_cfg in sorted(pack.mcp_config.mcpServers.items()):
+        out.append(build_mcp_server_ref_fragment(label=label, server_cfg=server_cfg, role=role))
+    return out
+
+
+def build_mcp_server_ref_fragment(
+    *,
+    label: str,
+    server_cfg: MCPServerConfig,
+    role: ContextFragmentRole = "developer",
+) -> ContextFragment:
+    transport = server_cfg.infer_transport().value
+    lines = [
+        "<mcp_server_ref>",
+        f"<label>{label}</label>",
+        f"<transport>{transport}</transport>",
+    ]
+    if isinstance(server_cfg.url, str) and server_cfg.url.strip():
+        lines.append(f"<url>{server_cfg.url.strip()}</url>")
+    if isinstance(server_cfg.command, str) and server_cfg.command.strip():
+        lines.append(f"<command>{server_cfg.command.strip()}</command>")
+    lines.append("</mcp_server_ref>")
+    metadata = {"label": label, "transport": transport}
+    return ContextFragment(
+        kind="mcp_server_ref",
+        role=role,
+        cache_class="stable_prefix",
+        label=label,
+        stable_id=f"mcp://{label}",
+        scope="agent-pack",
+        body="\n".join(lines),
+        metadata=metadata,
+    )
+
+
+def build_sandbox_guidance_fragment(pack: AgentPack, *, role: ContextFragmentRole = "developer") -> ContextFragment | None:
+    if not _sandbox_exec_enabled(pack):
+        return None
+    filesystem = pack.spec.sandbox.filesystem
+    workspace_root = filesystem.workspace_root if filesystem is not None else "/workspace"
+    persistence_mode = filesystem.persistence_mode if filesystem is not None else "ephemeral"
+    lines = [
+        "<sandbox_guidance>",
+        f"<mode>{pack.spec.sandbox.mode}</mode>",
+        f"<workspace_root>{workspace_root}</workspace_root>",
+        f"<persistence_mode>{persistence_mode}</persistence_mode>",
+        "<exec_tool>exec</exec_tool>",
+        "Use the exec tool to run shell commands inside the sandbox.",
+        f"Write files under {workspace_root} when you want the session workspace to retain them.",
+        "The sandbox does not expose host credentials, private internal services, or raw secret values.",
+        "</sandbox_guidance>",
+    ]
+    return ContextFragment(
+        kind="sandbox_guidance",
+        role=role,
+        cache_class="stable_prefix",
+        label="sandbox",
+        stable_id=f"sandbox://{pack.agent_id}",
+        scope="agent-pack",
+        body="\n".join(lines),
+        metadata={
+            "mode": pack.spec.sandbox.mode,
+            "workspace_root": workspace_root,
+            "persistence_mode": persistence_mode,
+            "tool": "exec",
+        },
+    )
+
+
 def build_default_environment_context_values(*, cwd: Path | str | None, sandbox_mode: str | None) -> dict[str, object]:
     shell_value = os.environ.get("SHELL") or ""
     shell_name = Path(shell_value).name if shell_value else None
@@ -121,6 +201,10 @@ def build_prompt_envelope(
     if workspace_fragment is not None:
         fragments.append(workspace_fragment)
     fragments.append(build_agents_md_fragment(pack, role=instruction_role))
+    fragments.extend(build_mcp_server_ref_fragments(pack, role=instruction_role))
+    sandbox_fragment = build_sandbox_guidance_fragment(pack, role=instruction_role)
+    if sandbox_fragment is not None:
+        fragments.append(sandbox_fragment)
     for skill in selected_skills or []:
         fragments.append(build_skill_fragment(skill, role=instruction_role))
     if environment_values:
@@ -216,3 +300,28 @@ def build_prompt_audit_metadata(*, envelope: PromptEnvelope) -> PromptContextAud
             for fragment in envelope.fragments
         ],
     )
+
+
+def render_prompt_envelope_fragments(*, envelope: PromptEnvelope) -> list[RenderedPromptFragment]:
+    return [
+        RenderedPromptFragment(
+            kind=fragment.kind,
+            role=fragment.role,
+            cache_class=fragment.cache_class,
+            label=fragment.label,
+            stable_id=fragment.stable_id,
+            source_path=fragment.source_path,
+            source_hash=fragment.source_hash,
+            scope=fragment.scope,
+            metadata=dict(fragment.metadata),
+            rendered_text=render_context_fragment(fragment),
+        )
+        for fragment in envelope.fragments
+    ]
+
+
+def _sandbox_exec_enabled(pack: AgentPack) -> bool:
+    if pack.spec.sandbox.mode == "disabled":
+        return False
+    requested = pack.spec.tools.requested_tool_names or []
+    return any(isinstance(item, str) and item.strip() == "exec" for item in requested)

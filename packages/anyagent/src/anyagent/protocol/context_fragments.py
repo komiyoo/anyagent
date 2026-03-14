@@ -6,7 +6,14 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-ContextFragmentKind = Literal["agents_instructions", "skill", "environment_context", "mcp_server_ref", "tool_catalog_delta"]
+ContextFragmentKind = Literal[
+    "agents_instructions",
+    "skill",
+    "environment_context",
+    "mcp_server_ref",
+    "tool_catalog_delta",
+    "sandbox_guidance",
+]
 ContextFragmentCacheClass = Literal["stable_prefix", "contextual", "dynamic"]
 ContextFragmentRole = Literal["developer", "system"]
 _AGENTS_PREFIX = "# AGENTS.md instructions for "
@@ -14,6 +21,10 @@ _SKILL_OPEN_TAG = "<skill>"
 _SKILL_CLOSE_TAG = "</skill>"
 _ENVIRONMENT_OPEN_TAG = "<environment_context>"
 _ENVIRONMENT_CLOSE_TAG = "</environment_context>"
+_MCP_REF_OPEN_TAG = "<mcp_server_ref>"
+_MCP_REF_CLOSE_TAG = "</mcp_server_ref>"
+_SANDBOX_GUIDANCE_OPEN_TAG = "<sandbox_guidance>"
+_SANDBOX_GUIDANCE_CLOSE_TAG = "</sandbox_guidance>"
 
 
 class ContextFragment(BaseModel):
@@ -54,6 +65,8 @@ def is_context_fragment_text(text: str) -> bool:
         stripped.startswith(_AGENTS_PREFIX)
         or (stripped.startswith(_SKILL_OPEN_TAG) and stripped.endswith(_SKILL_CLOSE_TAG))
         or (stripped.startswith(_ENVIRONMENT_OPEN_TAG) and stripped.endswith(_ENVIRONMENT_CLOSE_TAG))
+        or (stripped.startswith(_MCP_REF_OPEN_TAG) and stripped.endswith(_MCP_REF_CLOSE_TAG))
+        or (stripped.startswith(_SANDBOX_GUIDANCE_OPEN_TAG) and stripped.endswith(_SANDBOX_GUIDANCE_CLOSE_TAG))
     )
 
 

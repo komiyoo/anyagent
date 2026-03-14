@@ -9,6 +9,7 @@ from anyagent.agent_runtime.tool_loop_payloads import build_tool_loop_followup_b
 from anyagent.agent_runtime.skills_injection import build_skills_injection_text
 from anyagent.protocol.context_fragments import is_context_fragment_text
 from anyagent.protocol.sandbox import SandboxPolicy
+from anyagent.mcp.models import MCPConfig, MCPServerConfig
 from anyagent.skills.models import SkillFrontMatter, SkillPackage
 
 
@@ -154,6 +155,43 @@ def test_prompt_envelope_includes_environment_context_without_changing_stable_ke
         for item in body["input"]
         if isinstance(item, dict)
     )
+
+
+def test_prompt_envelope_includes_sandbox_guidance_and_mcp_refs_when_available(tmp_path: Path) -> None:
+    pack = _build_pack(tmp_path)
+    pack = AgentPack(
+        agent_id=pack.agent_id,
+        root_dir=pack.root_dir,
+        spec=AgentSpec(
+            exposed=True,
+            tools=AgentToolsSpec(requested_tool_names=["exec"]),
+            skills=pack.spec.skills,
+            sandbox=SandboxPolicy(mode="local-unsafe"),
+            multiagent=pack.spec.multiagent,
+        ),
+        agents_md_path=pack.agents_md_path,
+        agents_md_text=pack.agents_md_text,
+        agents_md_sha256=pack.agents_md_sha256,
+        workspace_agents_md_path=pack.workspace_agents_md_path,
+        workspace_agents_md_text=pack.workspace_agents_md_text,
+        workspace_agents_md_sha256=pack.workspace_agents_md_sha256,
+        mcp_config=MCPConfig(
+            mcpServers={
+                "github": MCPServerConfig(url="https://mcp.example.test"),
+            }
+        ),
+    )
+
+    envelope = build_prompt_envelope(pack=pack, selected_skills=[], model="gpt-5")
+    rendered = envelope.rendered_fragments()
+
+    assert any(fragment.kind == "mcp_server_ref" for fragment in envelope.fragments)
+    assert any(fragment.kind == "sandbox_guidance" for fragment in envelope.fragments)
+    assert any("<mcp_server_ref>" in fragment.rendered_text for fragment in rendered)
+    assert any("<sandbox_guidance>" in fragment.rendered_text for fragment in rendered)
+    assert any("exec" in fragment.rendered_text for fragment in rendered if fragment.kind == "sandbox_guidance")
+    assert any(fragment.kind == "mcp_server_ref" for fragment in rendered)
+    assert any(fragment.kind == "sandbox_guidance" for fragment in rendered)
 
 
 def test_context_fragment_detection_recognizes_agents_skill_and_environment_texts(tmp_path: Path) -> None:

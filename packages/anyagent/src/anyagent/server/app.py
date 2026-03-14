@@ -17,7 +17,9 @@ from anyagent.gateway.sequencer import KeyedSequencer
 from anyagent.gateway.session import session_partition_key
 from anyagent.mcp.manager import MCPManagerRegistry
 from anyagent.protocol.credential_vault import AdminCredentialSetRequest
+from anyagent.protocol.agent_api_internal import InternalPromptBundlePreviewResponse
 from anyagent.protocol.openai_responses import (
+    AnyAgentFunctionToolParam,
     build_minimal_openai_response_json,
     serialize_completed_response_event_data,
 )
@@ -280,6 +282,91 @@ def create_app(
                 yield encode_sse_block(event=item.event, data=item.data, id=str(item.seq))
 
         return StreamingResponse(_iter(), media_type="text/event-stream")
+
+    @app.post("/internal/prompt/bundle")
+    async def internal_prompt_bundle_preview(
+        req: Request,
+        authorization: str | None = Header(default=None),
+        x_agent_id: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        try:
+            body_raw = await req.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="invalid JSON body") from exc
+
+        try:
+            body = ensure_request_body_object(body_raw, message="request body must be an object")
+            metadata = ensure_metadata_object(body, message="metadata must be an object")
+            request_tools = parse_function_tools(body.get("tools"))
+        except ResponsesRequestValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        if request_tools is not None:
+            body = dict(body)
+            body["tools"] = [tool.model_dump(exclude_none=True) for tool in request_tools]
+
+        agent_id = _resolve_agent_id(body=body, x_agent_id=x_agent_id)
+        pack = state.require_pack(agent_id, external=True)
+        session_key = _resolve_session_key(body=body)
+        selected_skills = await _select_skills(state, pack=pack, body=body)
+        tool_context = _build_server_tool_context(pack=pack, body=body, selected_skills=selected_skills)
+        mcp_manager = None
+        if pack.mcp_config is not None:
+            mcp_manager = await state.mcp_managers.get_manager(
+                agent_id=pack.agent_id,
+                mcp_config=pack.mcp_config,
+                credential_store=state.credentials,
+            )
+        manifest_tools, _toolset_version = await resolve_manifest_with_mcp(
+            tool_runtime=state.runtime,
+            mcp_manager=mcp_manager,
+            agent_id=agent_id,
+            session_key=session_key,
+            metadata=metadata,
+            request_tools=body.get("tools"),
+            tool_context=tool_context,
+            enabled_skills=[skill.stable_id for skill in selected_skills] or None,
+        )
+        prompt_envelope = build_prompt_envelope(
+            pack=pack,
+            selected_skills=selected_skills,
+            tool_context=tool_context,
+            model=body.get("model") if isinstance(body.get("model"), str) else None,
+            environment_values=_build_prompt_environment_values(state=state, pack=pack),
+        )
+        session_ctx = await prepare_response_session_context(
+            session_store=state.session_store,
+            session_partition_key=session_partition_key(agent_id=agent_id, session_key=session_key),
+            agent_id=agent_id,
+            session_key=session_key,
+            body=body,
+        )
+        effective_body = session_ctx.effective_body
+        applied_body = prompt_envelope.apply_to_body(body=effective_body)
+        payload = InternalPromptBundlePreviewResponse(
+            agent_id=agent_id,
+            session_key=session_key,
+            model=body.get("model") if isinstance(body.get("model"), str) else None,
+            prompt_cache_key=prompt_envelope.prompt_cache_key,
+            instruction_role="developer",
+            selected_skill_ids=[skill.stable_id for skill in selected_skills],
+            manifest_tools=[AnyAgentFunctionToolParam.model_validate(item) for item in manifest_tools if isinstance(item, dict)],
+            manifest_tool_names=sorted(
+                [
+                    item["name"]
+                    for item in manifest_tools
+                    if isinstance(item, dict) and isinstance(item.get("name"), str) and item["name"].strip()
+                ]
+            ),
+            mcp_servers=sorted(pack.mcp_config.mcpServers) if pack.mcp_config is not None else [],
+            tool_context=tool_context.model_dump(exclude_none=True),
+            prompt_context=prompt_envelope.audit_metadata(),
+            rendered_fragments=prompt_envelope.rendered_fragments(),
+            effective_body=effective_body,
+            applied_body=applied_body,
+        )
+        return JSONResponse(payload.model_dump(exclude_none=True))
 
     @app.post("/v1/responses", response_model=None)
     async def create_response(req: Request, authorization: str | None = Header(default=None), x_agent_id: str | None = Header(default=None)):

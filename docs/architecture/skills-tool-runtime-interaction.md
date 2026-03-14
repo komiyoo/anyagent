@@ -31,10 +31,13 @@
    - `PromptEnvelope` / `PromptContextAudit` / session snapshot prompt context 的类型真源位于 `anyagent.protocol.prompt_context` 与 `anyagent.protocol.session_snapshot`
    - 稳定层至少包括：
      - `AGENTS.md` 结构化片段
+     - `mcp_server_ref` catalog 片段
+     - 启用 sandbox 时的 `sandbox_guidance` 片段
      - 已选 skills 的结构化片段
      - 稳定 `prompt_cache_key`
    - contextual 层至少可包括：`<environment_context>` 等运行时上下文片段
    - 高波动层（当前 user 输入、tool output、resume 恢复内容）不进入稳定前缀
+   - built-in server 同时提供 preview 视图，可返回 rendered fragments、manifest tools、tool context 与 `applied_body`
 
 1) Skills 选择
    - `selected_skills` 由 Skills 子系统按优先级决定（详见 `requirements.md#req-12-6-1`）
@@ -126,3 +129,20 @@ Agent API 在内存里做短 TTL 缓存，减少同参数重复请求的 manifes
   - `interface`（用于 UI/agent 默认提示与 catalog 渐进式披露）
   - `enabled`（基于 AgentSpec `disabled_paths` 中的 skill name 解析后计算）
   - `requested_tool_names`（来自 skill `dependencies.tools` 映射）
+
+## 6. Prompt Bundle Preview：`POST /internal/prompt/bundle`
+
+该端点用于把一次请求在真正调用模型前的上下文工程产物完整渲染出来，便于 explain / debug：
+
+- 输入：与 `/v1/responses` 同形的 request body
+- 输出至少包含：
+  - rendered prompt fragments
+  - `prompt_cache_key`
+  - selected skills
+  - manifest tool names
+  - MCP server labels
+  - tool context
+  - `effective_body`
+  - `applied_body`
+
+该端点是控制面调试视图，不替代正式 replay API。

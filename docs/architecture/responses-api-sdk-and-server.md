@@ -127,6 +127,8 @@ sequenceDiagram
 - `AGENTS.md` 与 skills 正文不再视为自由文本块，而应视为带 `path` / `sha256` / `stable_id` 的结构化 contextual fragments
 - 若 provider 支持 prompt/prefix cache，稳定前缀应通过 `prompt_cache_key` 暴露
 - `environment_context` 应作为独立 fragment 接入请求体，而不是混入自由文本说明；如需进入缓存，应明确区分其稳定字段与高波动字段
+- 当 agent 启用 sandbox 且 `exec` 真正可见时，运行时应自动注入 `sandbox_guidance` fragment，而不是只把 `sandbox_mode` 混入环境字段
+- built-in server 应提供一个 internal prompt bundle preview 入口，用于把 rendered fragments、manifest tools、tool context、`effective_body` 与 `applied_body` 一次性展示出来
 
 ### 3.3 内置 Server 层（`anyagent.server/`）
 
@@ -158,13 +160,28 @@ prompt_context = await client.events.latest_prompt_context(resp.id)
 replay_summary = await client.events.replay_summary(resp.id)
 
 skills = await client.skills.list(agent_id="main")
+preview = await client.prompts.preview({"model": "gpt-5", "input": "hello"})
+example_bundle = client.prompts.example_run_bundle()
+retry_bundle = client.prompts.example_run_bundle(scenario="toolset_retry")
+catalog = client.prompts.example_scenarios()
+custom_bundle = client.prompts.example_run_bundle(
+    scenario="multi_skill_research",
+    options={"include_mcp": False, "skill_count": 1, "sandbox_mode": "disabled"},
+)
 ```
 
 设计要点：
 - `client.openai` / `client.async_openai` 是主入口，承载 OpenAI 兼容面
 - `client.events.*` / `client.skills.*` 承载 anyagent 超集面；其中 replay/debug 主路径应优先使用 typed helpers，而不是让上层手写 SSE block 解析
+- `client.prompts.preview()` 用于查看某一次请求会如何被上下文工程与 manifest 组装
+- `client.prompts.example_run_bundle()` 用于返回一份纯本地、与真实运行时无关的完整 run bundle 示例，适合 explain / onboarding / UI 开发
+- `client.prompts.example_run_bundle(scenario=...)` 现支持多种场景模板，例如 `sandbox_file_write`、`multi_skill_research`、`toolset_retry`
+- `client.prompts.example_scenarios()` 可列出当前内置模板目录与默认选项
+- `client.prompts.example_run_bundle(..., options=...)` 可按需覆盖 skill 数量、是否带 MCP、sandbox 模式或 user input
+- 该本地示例还会返回 explanation steps，可直接用于 UI 文案或 onboarding 引导
 - `prompt_context` 的 replay/debug 结果应直接返回压缩后的审计摘要，包括 fragments 去重后的 retained 列表与基础计数
 - `client.responses.*` 只保留 anyagent 自己补充的 async helper（`retrieve/cancel`）
+- 服务端 explain/debug 新增 `POST /internal/prompt/bundle`，用于预览一次请求会如何被 `PromptEnvelope`、manifest 与 tool context 组装
 
 ## 4. Stage Events（精细层事件）
 

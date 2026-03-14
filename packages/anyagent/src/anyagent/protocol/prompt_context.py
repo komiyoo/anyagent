@@ -54,6 +54,28 @@ class PromptEnvelope(BaseModel):
 
         return build_prompt_audit_metadata(envelope=self)
 
+    def rendered_fragments(self) -> list["RenderedPromptFragment"]:
+        from anyagent.agent_runtime.prompt_envelope import render_prompt_envelope_fragments
+
+        return render_prompt_envelope_fragments(envelope=self)
+
+
+class RenderedPromptFragment(BaseModel):
+    """One fully rendered prompt fragment for debug / preview surfaces."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    role: str
+    cache_class: str
+    label: str | None = None
+    stable_id: str | None = None
+    source_path: str | None = None
+    source_hash: str | None = None
+    scope: str | None = None
+    metadata: dict[str, str] = Field(default_factory=dict)
+    rendered_text: str
+
 
 def compact_prompt_fragments(
     fragments: list[PromptFragmentSummary | dict[str, Any]],
