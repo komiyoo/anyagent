@@ -114,9 +114,19 @@ sequenceDiagram
 
 - Model Providers（OpenAI Responses / Anthropic / Gemini）
 - Tool loop（tool call 提取 → execute → 回灌 → 继续推理）
-- Prompt 注入（AGENTS.md → system message）
+- PromptEnvelope / ContextFragments（稳定前缀 + 结构化上下文片段）
+- Prompt 注入（AGENTS.md / selected skills -> structured fragments -> provider role mapping）
 - Skills 注入（selected skills → instructions + tool names）
 - Session runtime（config merge / snapshot / resume）
+
+补充约束：
+
+- `PromptEnvelope`、`PromptContextAudit`、`PersistedSessionSnapshot` 等上下文编排相关数据模型应以 `anyagent.protocol.prompt_context`、`anyagent.protocol.session_snapshot` 为真源
+- 运行时应优先构建统一的 `PromptEnvelope`，再由 provider adapter 决定映射到 `developer` / `system`
+- AGENTS stack 在 v0 先收敛为 `workspace + agent-pack` 两层，更多 roots 延后再扩展
+- `AGENTS.md` 与 skills 正文不再视为自由文本块，而应视为带 `path` / `sha256` / `stable_id` 的结构化 contextual fragments
+- 若 provider 支持 prompt/prefix cache，稳定前缀应通过 `prompt_cache_key` 暴露
+- `environment_context` 应作为独立 fragment 接入请求体，而不是混入自由文本说明；如需进入缓存，应明确区分其稳定字段与高波动字段
 
 ### 3.3 内置 Server 层（`anyagent.server/`）
 
@@ -143,12 +153,17 @@ async for ev in client.events.stream_typed(resp.id):
     # StageEvent union: model / tool.planned / tool.result / command.planned / command.result
     ...
 
+events = await client.events.list_typed(resp.id, include_model_events=False)
+prompt_context = await client.events.latest_prompt_context(resp.id)
+replay_summary = await client.events.replay_summary(resp.id)
+
 skills = await client.skills.list(agent_id="main")
 ```
 
 设计要点：
 - `client.openai` / `client.async_openai` 是主入口，承载 OpenAI 兼容面
-- `client.events.*` / `client.skills.*` 承载 anyagent 超集面
+- `client.events.*` / `client.skills.*` 承载 anyagent 超集面；其中 replay/debug 主路径应优先使用 typed helpers，而不是让上层手写 SSE block 解析
+- `prompt_context` 的 replay/debug 结果应直接返回压缩后的审计摘要，包括 fragments 去重后的 retained 列表与基础计数
 - `client.responses.*` 只保留 anyagent 自己补充的 async helper（`retrieve/cancel`）
 
 ## 4. Stage Events（精细层事件）
@@ -157,6 +172,7 @@ v0 事件类型最小集合：
 
 | 事件类型 | 产生时机 | 关键字段 |
 |---|---|---|
+| `anyagent.prompt.context` | run 真正调用模型前 | `prompt_cache_key`, `fragments[]` |
 | `anyagent.model.stream_event` | 模型 SSE 增量 | `payload` (OpenAI ResponseStreamEvent JSON) |
 | `anyagent.tool.planned` | 调用 Tool Runtime execute 之前 | `tool_call_id`, `tool_name`, `arguments` (摘要) |
 | `anyagent.tool.result` | Tool Runtime 返回后 | `tool_call_id`, `tool_name`, `status`, `meta`, `output` (摘要) |

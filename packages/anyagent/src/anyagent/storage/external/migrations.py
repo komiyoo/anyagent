@@ -66,7 +66,7 @@ def _apply_postgres_migrations(*, config: ExternalSqlBackendConfig) -> None:
             for version, sql in migrations:
                 if version in applied:
                     continue
-                cur.execute(sql)
+                cur.execute(_render_postgres_migration_sql(sql=sql, schema_name=schema_name))
                 cur.execute("INSERT INTO schema_migrations(version) VALUES (%s)", (version,))
 
         conn.commit()
@@ -101,3 +101,7 @@ def _load_sql_files(migrations_dir: Path) -> list[tuple[str, str]]:
         version = path.name.split(".", 1)[0]
         out.append((version, path.read_text(encoding="utf-8")))
     return out
+
+
+def _render_postgres_migration_sql(*, sql: str, schema_name: str) -> str:
+    return sql.replace("{{schema}}", f'"{schema_name}"')

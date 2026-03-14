@@ -7,6 +7,7 @@ from typing import Any
 
 from anyagent.agent_runtime.session_runtime import build_persisted_session_snapshot, persist_session_snapshot
 from anyagent.protocol.openai_responses import serialize_completed_response_event_data
+from anyagent.protocol.prompt_context import PromptContextAudit
 from anyagent.protocol.sse import normalize_response_id
 
 
@@ -40,6 +41,7 @@ def build_session_snapshot_advancer(
     previous_snapshot_version: int | None,
     runtime_config: dict[str, Any],
     request_transcript_items: list[dict[str, Any]] | None,
+    prompt_audit: PromptContextAudit | dict[str, Any] | None = None,
     response_id_resolver: FinalizationStateValueResolver | None = None,
     warn: FinalizationWarningHook | None = None,
 ) -> NonStreamFinalizationHook:
@@ -62,6 +64,7 @@ def build_session_snapshot_advancer(
                 response_json=final_state.response_json,
                 last_event_seq=final_state.last_event_seq,
                 resume_last_response_id=final_state.resume_last_response_id,
+                prompt_audit=prompt_audit,
             )
             if not ok and warn is not None:
                 latest_version = getattr(latest, "snapshot_version", None) if latest is not None else None
@@ -89,6 +92,7 @@ def build_run_final_and_session_persister(
     previous_snapshot_version: int | None,
     runtime_config: dict[str, Any],
     request_transcript_items: list[dict[str, Any]] | None,
+    prompt_audit: PromptContextAudit | dict[str, Any] | None = None,
     response_id_resolver: FinalizationStateValueResolver | None = None,
     warn: FinalizationWarningHook | None = None,
 ) -> NonStreamFinalizationHook:
@@ -111,6 +115,7 @@ def build_run_final_and_session_persister(
                 previous_snapshot_version=previous_snapshot_version,
                 runtime_config=runtime_config,
                 request_transcript_items=request_transcript_items,
+                prompt_audit=prompt_audit,
                 resume_last_response_id=final_state.resume_last_response_id,
                 last_event_seq=final_state.last_event_seq,
             )
@@ -327,6 +332,7 @@ async def persist_run_final_and_session(
     previous_snapshot_version: int | None,
     runtime_config: dict[str, Any],
     request_transcript_items: list[dict[str, Any]] | None,
+    prompt_audit: PromptContextAudit | dict[str, Any] | None = None,
     resume_last_response_id: str | None,
     last_event_seq: int | None,
 ) -> None:
@@ -344,6 +350,7 @@ async def persist_run_final_and_session(
         response_json=final_response_json,
         last_event_seq=last_event_seq,
         resume_last_response_id=resume_last_response_id,
+        prompt_audit=prompt_audit,
     )
 
     if hasattr(run_store, "set_final_with_session_snapshot"):
@@ -388,4 +395,5 @@ async def persist_run_final_and_session(
         response_json=final_response_json,
         last_event_seq=last_event_seq,
         resume_last_response_id=resume_last_response_id,
+        prompt_audit=prompt_audit,
     )

@@ -10,8 +10,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from anyagent.agent_packs import AgentCatalog, AgentPack, load_agent_catalog
-from anyagent.agent_runtime.prompt_injection import build_agents_md_injection_text
-from anyagent.agent_runtime import persist_session_snapshot
+from anyagent.agent_runtime import build_default_environment_context_values, build_prompt_envelope, persist_session_snapshot
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp, run_tool_loop_nonstream, run_tool_loop_stream_live
 from anyagent.agent_runtime.model_providers import get_default_model_provider
 from anyagent.gateway.sequencer import KeyedSequencer
@@ -22,8 +21,10 @@ from anyagent.protocol.openai_responses import (
     build_minimal_openai_response_json,
     serialize_completed_response_event_data,
 )
+from anyagent.protocol.prompt_context import PromptContextAudit
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.protocol.sse import SSEBlockDecoder, encode_sse_block
+from anyagent.protocol.stage_events import AnyAgentPromptContextEvent
 from anyagent.protocol.tool_runtime import PolicyHint, ToolContext
 from anyagent.server.finalization import build_nonstream_response_finalizer
 from anyagent.server.idempotency import begin_or_replay_response_run
@@ -36,7 +37,7 @@ from anyagent.server.request_validation import (
     parse_function_tools,
 )
 from anyagent.server.responses_optional import optional_response_payload_from_run
-from anyagent.server.session_context import build_developer_prompt_body, prepare_response_session_context
+from anyagent.server.session_context import prepare_response_session_context
 from anyagent.server.streaming import (
     append_sse_chunk as append_streaming_sse_chunk,
     build_persisted_sse_block_handler,
@@ -339,7 +340,14 @@ def create_app(
         response_id = gate.response_id
         selected_skills = await _select_skills(state, pack=pack, body=body)
         tool_context = _build_server_tool_context(pack=pack, body=body, selected_skills=selected_skills)
-        agents_md_text = build_agents_md_injection_text(pack)
+        prompt_envelope = build_prompt_envelope(
+            pack=pack,
+            selected_skills=selected_skills,
+            tool_context=tool_context,
+            model=body.get("model") if isinstance(body.get("model"), str) else None,
+            environment_values=_build_prompt_environment_values(state=state, pack=pack),
+        )
+        prompt_audit = prompt_envelope.audit_metadata()
         mcp_manager = None
         if pack.mcp_config is not None:
             mcp_manager = await state.mcp_managers.get_manager(
@@ -387,6 +395,15 @@ def create_app(
                 data=event.model_dump_json(exclude_none=True, by_alias=True),
             )
 
+        prompt_context_event = AnyAgentPromptContextEvent.model_validate(
+            {
+                "response_id": response_id,
+                "type": "anyagent.prompt.context",
+                **prompt_audit.model_dump(exclude_none=True),
+            }
+        )
+        await _stage_sink(prompt_context_event)
+
         if bool(body.get("stream")):
             created_block = _build_created_sse_block(response_id=response_id, body=body)
             created_payload = {
@@ -422,7 +439,7 @@ def create_app(
                                 session_key=session_key,
                                 body=body,
                             )
-                            body2 = build_developer_prompt_body(body=session_ctx.effective_body, developer_text=agents_md_text)
+                            body2 = prompt_envelope.apply_to_body(body=session_ctx.effective_body)
                             decoder = SSEBlockDecoder()
                             try:
                                 async for chunk in run_tool_loop_stream_live(
@@ -439,6 +456,7 @@ def create_app(
                                     manifest_force_refresh=_refresh_manifest_cached,
                                     mcp_manager=mcp_manager,
                                     stage_event_sink=_stage_sink,
+                                    prompt_envelope_applied=True,
                                 ):
                                     await _append_sse_chunk(
                                         state,
@@ -453,6 +471,7 @@ def create_app(
                                         previous_snapshot_version=session_ctx.previous_snapshot_version,
                                         runtime_config=session_ctx.effective_runtime_config,
                                         request_transcript_items=session_ctx.request_transcript_items,
+                                        prompt_audit=prompt_audit,
                                     )
                                     await queue.put(chunk)
                             except asyncio.CancelledError:
@@ -476,6 +495,7 @@ def create_app(
                                     previous_snapshot_version=session_ctx.previous_snapshot_version,
                                     runtime_config=session_ctx.effective_runtime_config,
                                     request_transcript_items=session_ctx.request_transcript_items,
+                                    prompt_audit=prompt_audit,
                                 )
                                 await _append_sse_chunk(
                                     state,
@@ -490,6 +510,7 @@ def create_app(
                                     previous_snapshot_version=session_ctx.previous_snapshot_version,
                                     runtime_config=session_ctx.effective_runtime_config,
                                     request_transcript_items=session_ctx.request_transcript_items,
+                                    prompt_audit=prompt_audit,
                                 )
                                 await queue.put(completed_block)
                                 await queue.put(done_block)
@@ -516,6 +537,7 @@ def create_app(
                                     previous_snapshot_version=session_ctx.previous_snapshot_version,
                                     runtime_config=session_ctx.effective_runtime_config,
                                     request_transcript_items=session_ctx.request_transcript_items,
+                                    prompt_audit=prompt_audit,
                                 )
                                 await _append_sse_chunk(
                                     state,
@@ -574,7 +596,7 @@ def create_app(
                             session_key=session_key,
                             body=body,
                         )
-                        body2 = build_developer_prompt_body(body=session_ctx.effective_body, developer_text=agents_md_text)
+                        body2 = prompt_envelope.apply_to_body(body=session_ctx.effective_body)
                         async def _finalize_nonstream_terminal(
                             *,
                             payload: dict[str, Any],
@@ -624,6 +646,7 @@ def create_app(
                                     response_id=final_state.response_id or response_id,
                                     effective_status=final_state.effective_status,
                                     response_json=final_state.response_json,
+                                    prompt_audit=prompt_audit,
                                 )
 
                             finalize_terminal = build_nonstream_response_finalizer(
@@ -654,6 +677,7 @@ def create_app(
                                 manifest_force_refresh=_refresh_manifest_cached,
                                 mcp_manager=mcp_manager,
                                 stage_event_sink=_stage_sink,
+                                prompt_envelope_applied=True,
                             )
                         except asyncio.CancelledError:
                             payload = build_minimal_openai_response_json(
@@ -847,6 +871,13 @@ def _build_created_sse_block(*, response_id: str, body: dict[str, Any]) -> bytes
         ),
     }
     return encode_sse_block(event="response.created", data=json.dumps(payload, ensure_ascii=False), id=None)
+
+
+def _build_prompt_environment_values(*, state: AnyAgentServerApp, pack: AgentPack) -> dict[str, object]:
+    return build_default_environment_context_values(
+        cwd=state.workspace_dir,
+        sandbox_mode=pack.spec.sandbox.mode,
+    )
 
 
 def _build_completed_sse_block(payload: dict[str, Any]) -> bytes:
@@ -1142,6 +1173,7 @@ async def _update_session_snapshot(
     response_id: str,
     effective_status: str,
     response_json: dict[str, Any] | None = None,
+    prompt_audit: PromptContextAudit | dict[str, Any] | None = None,
 ) -> None:
     latest_seq = await state.events.latest_seq(response_id)
     await persist_session_snapshot(
@@ -1157,4 +1189,5 @@ async def _update_session_snapshot(
         effective_status=effective_status,
         response_json=response_json,
         last_event_seq=latest_seq,
+        prompt_audit=prompt_audit,
     )

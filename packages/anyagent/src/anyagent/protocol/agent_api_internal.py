@@ -12,9 +12,12 @@ Notes:
 - We still keep them in `anyagent.protocol` so both server and client can share types.
 """
 
-from typing import Literal
+from collections.abc import Iterator
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from anyagent.protocol.stage_events import AnyAgentPromptContextEvent, StageEvent, decode_stage_event
 
 
 class InternalEventItem(BaseModel):
@@ -40,6 +43,68 @@ class InternalEventsListResponse(BaseModel):
     run_status: str | None = None
     effective_run_status: str | None = None
 
+    def iter_typed(self, *, include_model_events: bool = True) -> Iterator[StageEvent]:
+        """Yield typed stage events decoded from stored SSE blocks."""
+
+        for item in self.events:
+            decoded = decode_stage_event(
+                response_id=self.response_id,
+                event=item.event,
+                data=item.data,
+                seq=item.seq,
+                include_model_events=include_model_events,
+            )
+            if decoded is not None:
+                yield decoded
+
+    def typed_events(self, *, include_model_events: bool = True) -> list[StageEvent]:
+        """Decode stored SSE blocks into typed stage events."""
+
+        return list(self.iter_typed(include_model_events=include_model_events))
+
+    def latest_prompt_context(self) -> AnyAgentPromptContextEvent | None:
+        """Return the latest prompt-context event present in this page, if any."""
+
+        latest: AnyAgentPromptContextEvent | None = None
+        for event in self.iter_typed(include_model_events=False):
+            if isinstance(event, AnyAgentPromptContextEvent):
+                latest = event
+        return latest
+
+    def replay_summary(self, *, include_model_events: bool = True) -> "InternalEventsReplaySummary":
+        """Build one compact replay summary for this page."""
+
+        typed = self.typed_events(include_model_events=include_model_events)
+        prompt_context = self.latest_prompt_context()
+        return InternalEventsReplaySummary(
+            response_id=self.response_id,
+            requested_last_seq=self.requested_last_seq,
+            next_last_seq=self.next_last_seq,
+            page_event_count=len(self.events),
+            typed_event_count=len(typed),
+            done=self.done,
+            run_status=self.run_status,
+            effective_run_status=self.effective_run_status,
+            prompt_context=prompt_context,
+        )
+
+
+class InternalEventsReplaySummary(BaseModel):
+    """Compact replay/debug summary derived from one or more internal event pages."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    response_id: str
+    requested_last_seq: int = Field(ge=0)
+    next_last_seq: int = Field(ge=0)
+    page_event_count: int = Field(default=0, ge=0)
+    typed_event_count: int = Field(default=0, ge=0)
+    scanned_pages: int = Field(default=1, ge=1)
+    done: bool
+    run_status: str | None = None
+    effective_run_status: str | None = None
+    prompt_context: AnyAgentPromptContextEvent | None = None
+
 
 class InternalSkillListItem(BaseModel):
     """One skill entry returned by `GET /internal/skills/list`."""
@@ -50,8 +115,11 @@ class InternalSkillListItem(BaseModel):
     name: str
     description: str | None = None
     short_description: str | None = None
+    path: str
     scope: str
     enabled: bool
+    source_hash: str | None = None
+    interface: dict[str, Any] | None = None
     requested_tool_names: list[str] = Field(default_factory=list)
 
 

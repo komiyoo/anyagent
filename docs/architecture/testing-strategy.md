@@ -178,7 +178,10 @@ flowchart TD
 
 ```bash
 # unit
-uv run --with pytest --project packages/anyagent pytest tests/unit -q
+uv run --with pytest --project packages/anyagent python -m pytest tests/unit -q
+
+# formal pytest regressions
+bash scripts/ci/run_pytest_regressions.sh
 
 # acceptance smoke
 bash scripts/ci/run_offline_smokes.sh

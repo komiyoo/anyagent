@@ -13,9 +13,16 @@ consumed by anyagent client SDKs to provide 1-level fine-grained runtime progres
 import hashlib
 import json
 import re
+import time
 from typing import Annotated, Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from anyagent.protocol.prompt_context import (
+    PromptContextAudit,
+    PromptFragmentSummary,
+    build_prompt_context_audit,
+    compact_prompt_fragments,
+)
 
 
 class StagePayloadSummary(BaseModel):
@@ -240,12 +247,95 @@ class AnyAgentDoneEvent(StageEventBase):
     type: Literal["anyagent.done"] = "anyagent.done"
 
 
+class AnyAgentPromptContextEvent(StageEventBase, PromptContextAudit):
+    """Prompt assembly summary emitted before model invocation."""
+
+    type: Literal["anyagent.prompt.context"] = "anyagent.prompt.context"
+
+
 StageEvent: TypeAlias = Annotated[
     AnyAgentModelStreamEvent
     | AnyAgentToolPlannedEvent
     | AnyAgentToolResultEvent
     | AnyAgentCommandPlannedEvent
     | AnyAgentCommandResultEvent
+    | AnyAgentPromptContextEvent
     | AnyAgentDoneEvent,
     Field(discriminator="type"),
 ]
+
+_STAGE_EVENT_ADAPTER = TypeAdapter(StageEvent)
+
+
+def parse_stage_event_seq(raw_seq: str | int | None) -> int | None:
+    """Parse a best-effort event sequence value from SSE `id` or persisted rows."""
+
+    if isinstance(raw_seq, int):
+        return raw_seq if raw_seq >= 1 else None
+    if not isinstance(raw_seq, str):
+        return None
+    text = raw_seq.strip()
+    if not text.isdigit():
+        return None
+    try:
+        seq = int(text)
+    except Exception:  # noqa: BLE001
+        return None
+    return seq if seq >= 1 else None
+
+
+def decode_stage_event(
+    *,
+    response_id: str,
+    event: str | None,
+    data: str,
+    seq: int | None = None,
+    include_model_events: bool = True,
+    default_ts_ms: int | None = None,
+) -> StageEvent | None:
+    """Decode one persisted internal event row or SSE block into the typed union."""
+
+    ts_ms = default_ts_ms if default_ts_ms is not None else int(time.time() * 1000)
+
+    if event is None and isinstance(data, str) and data.strip() == "[DONE]":
+        return AnyAgentDoneEvent(response_id=response_id, seq=seq, ts_ms=ts_ms)
+
+    if isinstance(event, str) and event.startswith("anyagent.") and isinstance(data, str):
+        try:
+            payload = json.loads(data)
+        except Exception:  # noqa: BLE001
+            return None
+        if not isinstance(payload, dict):
+            return None
+        payload.setdefault("type", event)
+        payload.setdefault("response_id", response_id)
+        payload.setdefault("seq", seq)
+        if "ts_ms" not in payload:
+            payload["ts_ms"] = ts_ms
+        try:
+            return _STAGE_EVENT_ADAPTER.validate_python(payload)
+        except Exception:  # noqa: BLE001
+            return None
+
+    if not include_model_events:
+        return None
+
+    if not isinstance(event, str):
+        return None
+    if not (event.startswith("response.") or event == "error"):
+        return None
+    if not isinstance(data, str) or not data.strip():
+        return None
+    try:
+        payload = json.loads(data)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return AnyAgentModelStreamEvent(
+        response_id=response_id,
+        seq=seq,
+        sse_event=event,
+        payload=payload,
+        ts_ms=ts_ms,
+    )

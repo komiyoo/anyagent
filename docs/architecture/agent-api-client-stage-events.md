@@ -7,7 +7,7 @@ Single Source of Truth:
 
 # Agent API Client：阶段性事件（Stage Events）设计（v0）
 
-目标：让 `anyagent` Client SDK 的 `events` 命名空间（`client.events.stream_typed()`）能以”阶段性结果”形式向上层返回更细粒度的运行进度，用于：
+目标：让 `anyagent` Client SDK 的 `events` 命名空间（`client.events.stream_typed()` / `client.events.list_typed()` / `client.events.latest_prompt_context()` / `client.events.replay_summary()`）能以“阶段性结果”形式向上层返回更细粒度的运行进度，用于：
 
 - UI/日志：展示“要调用什么工具 + 参数摘要”
 - 可观测：展示“工具执行结果摘要 / 审计引用（audit_ref）”
@@ -53,9 +53,10 @@ Stage Events 可以来自两个渠道：
 
 结论（推荐）：
 
-- v0 的 client SDK 通过 `client.events.stream_typed(response_id)` 消费 `/internal/events/stream`，同时承载：
+- v0 的 client SDK 通过 `client.events.stream_typed(response_id)` 消费 `/internal/events/stream`，并通过 `client.events.list_typed(response_id)` / `client.events.latest_prompt_context(response_id)` / `client.events.replay_summary(response_id)` 消费 `/internal/events/list`，同时承载：
   - 原始 Responses SSE events（与外部兼容面一致）
   - anyagent 自定义 stage events（用于 tool/command 粒度）
+  - prompt assembly audit 摘要（`anyagent.prompt.context`）
 
 ## 3) 事件分层（One-Level Granularity）
 
@@ -130,6 +131,12 @@ v0 只做一层 stage：
 - `source_tool_name: str`
 
 说明：`command.*` 事件只在满足“可可靠解析”的工具 schema 时生成；否则只产生 `tool.*` 事件。
+
+补充约束：
+
+- `anyagent.prompt.context` 应优先传输“压缩后的审计摘要”，至少包含：`fragment_count`、`retained_fragment_count`、按 `cache_class` 的计数、`fragment_kinds`，以及一份去重后的 retained fragments 列表。
+- SDK 的 replay helpers 不应要求调用方自己重新做 fragments 去重/计数；这些应由服务端或 shared protocol helper 统一完成。
+- 上述 prompt context 审计字段应以 `anyagent.protocol.prompt_context.PromptContextAudit` 为 SSOT，而不是由 SDK/server 各自维护局部 shape。
 
 ## 5) 映射规则（Mapping）
 

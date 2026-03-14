@@ -20,12 +20,13 @@
 # 离线 smoke（sdk + mcp）
 bash scripts/ci/run_offline_smokes.sh
 
+# formal pytest regressions
+bash scripts/ci/run_pytest_regressions.sh
+
 # built-in live matrix（PG primary + Redis hot / Redis lease）
 ANYAGENT_TEST_POSTGRES_DSN=postgresql://... \
 ANYAGENT_TEST_REDIS_DSN=redis://... \
-uv run --project packages/anyagent --with pytest python -m pytest -q \
-  tests/acceptance/server/acceptance_builtin_server_smoke.py \
-  -k 'test_session_cached_store_pg_primary_redis_hot_roundtrip_live or test_session_redis_lease_active_during_inflight_request_live'
+bash scripts/ci/run_live_storage_matrix.sh
 
 # built-in MySQL external smoke
 ANYAGENT_TEST_MYSQL_DSN=mysql+asyncmy://... \

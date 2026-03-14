@@ -78,7 +78,7 @@ cd my-workspace && anyagent serve
 
 - **Client SDK（AnyAgent）**
   - OpenAI 兼容面：`client.openai.responses.create()`
-  - anyagent 精细面：`client.events.stream_typed()` → tool/command 级 Stage Events
+  - anyagent 精细面：`client.events.stream_typed()` / `client.events.list_typed()` / `client.events.latest_prompt_context()` / `client.events.replay_summary()`
   - 断线续传（`last_seq`）
 
 - **分布式部署模式**（anyagent-apps）
@@ -115,7 +115,9 @@ Phase 2+ 的能力会提前定义契约与边界，但不阻塞 Phase 1 交付�
 - `Credential Vault`：凭证管理系统。Agent 只见 `credential_id`，server 负责 resolve 和注入。
 - `Session`：会话上下文（消息历史、策略、工具可见性等）。会话内串行，跨会话并行。
 - `Run/Response`：一次 `POST /v1/responses` 的执行实例，对应一个 `response_id`。
-- `Stage Events`：anyagent 精细层事件（tool/command 级阶段性结果），通过 `client.events.stream_typed()` 消费。
+- `Stage Events`：anyagent 精细层事件（tool/command 级阶段性结果），通过 `client.events.stream_typed()`、`client.events.list_typed()` 等 helper 消费。
+  - prompt context 相关 helper 应返回压缩后的审计摘要，而不是要求上层自己对 fragments 去重、计数和裁剪。
+- `PromptEnvelope / PromptContextAudit / SessionSnapshot`：context engineering 的协议层数据模型，应优先定义在 `anyagent.protocol.*`，runtime/server/SDK 只负责消费与映射，不再各自维护匿名 dict 契约。
 - `Tool`：可被模型调用的函数型工具（function tool）。
 - `session_key`：外部平台线程/会话键。
 - `session_partition_key`：并发分片键，固定为 `”{agent_id}::{session_key}”`。
@@ -159,7 +161,10 @@ anyagent v0 必须支持通过“配置目录”定义可对外提供服务的 a
 - AgentRuntime 在每次 run 初始化 prompt 时，必须把 `<agent_pack_dir>/AGENTS.md` 的内容作为**配置侧指令**注入模型上下文。
   - 推荐注入为 `developer` message（或等价层级），并且必须发生在该次 run 的第一条 user 输入之前。
   - 注入内容必须带来源标记（至少包含 `agent_id` 与文件路径），便于审计与复现。
+  - 推荐使用可识别的结构化片段格式，而不是裸文本块；例如 `# AGENTS.md instructions for ...` + `<INSTRUCTIONS>` 包裹，并附带 `path` / `sha256` 等元信息。
+  - v0 先冻结为 `workspace + agent-pack` 两层 stack：`<workspace_dir>/AGENTS.md` 作为低优先级全局层，`<workspace_dir>/.agents/agents/<agent_id>/AGENTS.md` 作为高优先级 agent 层。
 - 若底层模型 API 不支持 `developer` role，可退化为 system prompt 的独立区块，但必须保持清晰分隔与来源标记，避免与用户输入混淆。
+  - 退化方式应通过统一的 `instruction_role` 开关实现，而不是在各 provider adapter 中各写一套注入逻辑。
 - 多智能体场景：child thread 的 prompt 必须按其目标 `agent_id` 注入对应的 `AGENTS.md`，默认不继承父 thread 的 `AGENTS.md`。
 - 安全边界：`AGENTS.md` 仅影响“模型推理与行为偏好”，**不得**作为 tool policy/权限来源；工具可见性与策略仍由 `agent.yaml` + Tool Runtime manifest/policy 决定。
 - 成本控制：对 `AGENTS.md` 的读取必须有硬性大小上限（建议 ≤ 64 KiB UTF-8）。超限必须 fail-fast，并在错误信息中包含 `agent_id/path/bytes`。
@@ -1265,6 +1270,7 @@ anyagent v0 的要求：
 - 注入内容：
   - skill name/path（用于审计）
   - skill body（SKILL.md frontmatter 之后的正文）
+  - 推荐使用可识别的结构化片段格式（例如 `<skill>...</skill>`），并包含 `stable_id` / `path` / `sha256`
 
 注意：
 
@@ -1290,7 +1296,7 @@ anyagent v0 的要求：
 为了让 Gateway 能做“动态披露”（比如在飞书里提示可用 skills、或在控制台列出可选 skills），anyagent v0 建议提供内部接口：
 
 - `GET /internal/skills/list?session_key=...`
-  - 返回 `skills[]`：包含 `name/description/short_description/interface/dependencies/scope/path/enabled`
+  - 返回 `skills[]`：包含 `name/description/short_description/interface/dependencies/scope/path/source_hash/enabled`
   - 返回 `disabled_paths[]`（服务端解析后的 stable_id/path）与 `errors[]`（加载失败原因，类似 Codex）
 
 注意：
@@ -1301,6 +1307,15 @@ anyagent v0 的要求：
 <a id="req-12-8"></a>
 
 ### 12.8 与第 5 节 Tool Runtime 的交互关系（必须一致）
+
+补充约束：
+
+- AgentRuntime 应将“稳定前缀”与“动态上下文”显式分层，推荐通过统一的 `PromptEnvelope` / `ContextFragment` 抽象管理，而不是在多个 handler 中各自拼接字符串。
+- `PromptEnvelope`、`PromptContextAudit` 与 session snapshot 中的 `last_run.prompt_context` 应有显式 typed model；server/runtime/SDK 不应继续依赖匿名 `dict[str, Any]` 约定。
+- 若底层 provider 支持 prompt/prefix cache，应优先让 `AGENTS`、已选 skills 片段、catalog 元信息等稳定内容进入 `prompt_cache_key` 的计算；`session_key`、当前 user 文本、tool output 等高波动字段默认不进入稳定前缀缓存。
+- `environment_context` 这类运行时上下文建议作为结构化 contextual fragment 注入（例如 `<environment_context>`），默认不直接参与稳定前缀 key，但应保持可识别、可重放。
+- SDK replay/debug 路径应提供 typed helper，至少能从 `/internal/events/list` 中直接解码 `StageEvent` 并提取最近一次 `anyagent.prompt.context`，避免上层自己解析原始 SSE block。
+- prompt context 的 replay/audit 摘要应支持 compaction：至少包含 fragment 总数、保留数、按 cache class 的计数、fragment kinds，与一份去重后的 retained fragments 列表。
 
 总结一下三者关系：
 

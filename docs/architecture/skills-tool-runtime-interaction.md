@@ -13,6 +13,7 @@
 - Agent API（`POST /v1/responses`）负责：
   - 解析 agent_id/session_key
   - 选择技能（AgentSpec defaults + metadata.skills + `$skill` mention）
+  - 构建本次 run 的 `PromptEnvelope`（稳定前缀 + 结构化 contextual fragments）
   - 汇总工具可见性请求集合 `requested_tool_names`
   - 调用 Tool Runtime `manifest` 获取最终的 `tools[]` 并注入上游请求
   - 在工具调用 loop 中调用 Tool Runtime `execute`
@@ -24,6 +25,16 @@
 ## 2. 端到端数据流（What happens in one run）
 
 以 Agent API 的 `POST /v1/responses` 为例（stream 与非 stream 两条路径共用同一套 manifest/execute 逻辑）：
+
+0) PromptEnvelope 组装
+   - Agent API 在真正调用上游模型前，先组装统一的 `PromptEnvelope`
+   - `PromptEnvelope` / `PromptContextAudit` / session snapshot prompt context 的类型真源位于 `anyagent.protocol.prompt_context` 与 `anyagent.protocol.session_snapshot`
+   - 稳定层至少包括：
+     - `AGENTS.md` 结构化片段
+     - 已选 skills 的结构化片段
+     - 稳定 `prompt_cache_key`
+   - contextual 层至少可包括：`<environment_context>` 等运行时上下文片段
+   - 高波动层（当前 user 输入、tool output、resume 恢复内容）不进入稳定前缀
 
 1) Skills 选择
    - `selected_skills` 由 Skills 子系统按优先级决定（详见 `requirements.md#req-12-6-1`）
@@ -111,5 +122,7 @@ Agent API 在内存里做短 TTL 缓存，减少同参数重复请求的 manifes
 
 - 输出字段包含：
   - `stable_id`/`name`/`description`/`short_description`/`scope`
+  - `path`/`source_hash`（用于精确资源引用与审计）
+  - `interface`（用于 UI/agent 默认提示与 catalog 渐进式披露）
   - `enabled`（基于 AgentSpec `disabled_paths` 中的 skill name 解析后计算）
   - `requested_tool_names`（来自 skill `dependencies.tools` 映射）

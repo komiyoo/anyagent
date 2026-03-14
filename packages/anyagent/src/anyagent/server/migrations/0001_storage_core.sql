@@ -10,17 +10,16 @@ CREATE TABLE IF NOT EXISTS {{schema}}.sessions (
 
 CREATE TABLE IF NOT EXISTS {{schema}}.runs (
   response_id TEXT PRIMARY KEY,
-  agent_id TEXT NOT NULL,
-  session_key TEXT NOT NULL,
-  stream BOOLEAN NOT NULL,
+  session_partition_key TEXT NOT NULL,
   idempotency_key TEXT NULL UNIQUE,
+  stream BOOLEAN NOT NULL,
   status TEXT NOT NULL,
-  effective_status TEXT NOT NULL,
-  created_at_ms BIGINT NOT NULL,
-  updated_at_ms BIGINT NOT NULL,
-  ended_at_ms BIGINT NULL,
+  last_event_seq BIGINT NOT NULL DEFAULT 0,
   final_response_json JSONB NULL,
-  error_json JSONB NULL
+  error_json JSONB NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at TIMESTAMPTZ NULL
 );
 
 CREATE TABLE IF NOT EXISTS {{schema}}.event_runs (
@@ -36,7 +35,9 @@ CREATE TABLE IF NOT EXISTS {{schema}}.event_runs (
 CREATE TABLE IF NOT EXISTS {{schema}}.events (
   response_id TEXT NOT NULL,
   seq BIGINT NOT NULL,
-  event_type TEXT NULL,
+  session_partition_key TEXT NOT NULL,
+  event_type TEXT NOT NULL,
   payload_json JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (response_id, seq)
 );

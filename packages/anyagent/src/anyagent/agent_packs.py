@@ -79,6 +79,9 @@ class AgentPack:
     agents_md_path: Path
     agents_md_text: str
     agents_md_sha256: str
+    workspace_agents_md_path: Path | None = None
+    workspace_agents_md_text: str | None = None
+    workspace_agents_md_sha256: str | None = None
     mcp_config: MCPConfig | None = None
 
     @property
@@ -143,6 +146,17 @@ def load_agent_catalog(
     if not root_dir.is_dir():
         raise AgentPackError(f"missing agent packs root: {root_dir}")
 
+    workspace_agents_md = workspace_dir / "AGENTS.md"
+    workspace_agents_md_path: Path | None = None
+    workspace_agents_md_text: str | None = None
+    workspace_agents_md_sha256: str | None = None
+    if workspace_agents_md.is_file():
+        workspace_agents_md_text, workspace_agents_md_sha256 = _read_text_with_limit(
+            workspace_agents_md,
+            max_bytes=max_agents_md_bytes,
+        )
+        workspace_agents_md_path = workspace_agents_md
+
     packs: dict[str, AgentPack] = {}
     for child in sorted(root_dir.iterdir(), key=lambda p: p.name):
         if not child.is_dir():
@@ -182,6 +196,9 @@ def load_agent_catalog(
             agents_md_path=agents_md,
             agents_md_text=agents_md_text,
             agents_md_sha256=sha256,
+            workspace_agents_md_path=workspace_agents_md_path,
+            workspace_agents_md_text=workspace_agents_md_text,
+            workspace_agents_md_sha256=workspace_agents_md_sha256,
             mcp_config=mcp_config,
         )
 

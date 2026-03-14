@@ -2,6 +2,9 @@ __all__ = [
     "SkillInjectionWarning",
     "build_skills_injection_text",
     "build_agents_md_injection_text",
+    "PromptEnvelope",
+    "build_prompt_envelope",
+    "build_default_environment_context_values",
     "inject_skills_into_responses_body",
     "MANAGED_RUNTIME_FIELDS",
     "apply_runtime_config_to_body",
@@ -39,7 +42,10 @@ __all__ = [
     "run_tool_loop_stream_live",
 ]
 
+from anyagent.protocol.prompt_context import PromptEnvelope
+
 from .prompt_injection import build_agents_md_injection_text
+from .prompt_envelope import build_default_environment_context_values, build_prompt_envelope
 from .session_runtime import (
     MANAGED_RUNTIME_FIELDS,
     PreparedSessionRequest,

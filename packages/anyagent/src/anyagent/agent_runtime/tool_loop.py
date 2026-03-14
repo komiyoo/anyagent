@@ -385,6 +385,7 @@ async def run_tool_loop_nonstream(
     mcp_manager: MCPServerManager | None = None,
     max_iters: int = 8,
     stage_event_sink: StageEventSink | None = None,
+    prompt_envelope_applied: bool = False,
 ) -> tuple[int, dict[str, Any]]:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     enabled_skills = [s.stable_id for s in (selected_skills or [])]
@@ -410,7 +411,7 @@ async def run_tool_loop_nonstream(
     body = dict(body)
     body["tools"] = strip_internal_tool_fields(manifest_tools)
     body["stream"] = False
-    if selected_skills:
+    if selected_skills and not prompt_envelope_applied:
         body, _warnings = inject_skills_into_responses_body(body=body, selected_skills=selected_skills, role="developer")
 
     try:
@@ -482,6 +483,7 @@ async def run_tool_loop_nonstream(
             tool_choice=body.get("tool_choice"),
             stream=False,
             model=body.get("model") if isinstance(body.get("model"), str) else None,
+            prompt_cache_key=body.get("prompt_cache_key") if isinstance(body.get("prompt_cache_key"), str) else None,
         )
         try:
             resp = await model_provider.create_response(body=next_body, idempotency_key=None)
@@ -513,6 +515,7 @@ async def run_tool_loop_stream_buffered(
     mcp_manager: MCPServerManager | None = None,
     max_iters: int = 8,
     stage_event_sink: StageEventSink | None = None,
+    prompt_envelope_applied: bool = False,
 ) -> tuple[int, Iterable[bytes]]:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     enabled_skills = [s.stable_id for s in (selected_skills or [])]
@@ -538,7 +541,7 @@ async def run_tool_loop_stream_buffered(
     body = dict(body)
     body["tools"] = strip_internal_tool_fields(manifest_tools)
     body["stream"] = True
-    if selected_skills:
+    if selected_skills and not prompt_envelope_applied:
         body, _warnings = inject_skills_into_responses_body(body=body, selected_skills=selected_skills, role="developer")
 
     try:
@@ -611,6 +614,7 @@ async def run_tool_loop_stream_buffered(
             tool_choice=body.get("tool_choice"),
             stream=True,
             model=body.get("model") if isinstance(body.get("model"), str) else None,
+            prompt_cache_key=body.get("prompt_cache_key") if isinstance(body.get("prompt_cache_key"), str) else None,
         )
 
         try:
@@ -657,6 +661,7 @@ async def run_tool_loop_stream_live(
     mcp_manager: MCPServerManager | None = None,
     max_iters: int = 8,
     stage_event_sink: StageEventSink | None = None,
+    prompt_envelope_applied: bool = False,
 ) -> AsyncIterator[bytes]:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     enabled_skills = [s.stable_id for s in (selected_skills or [])]
@@ -682,7 +687,7 @@ async def run_tool_loop_stream_live(
     current_body = dict(body)
     current_body["tools"] = strip_internal_tool_fields(manifest_tools)
     current_body["stream"] = True
-    if selected_skills:
+    if selected_skills and not prompt_envelope_applied:
         current_body, _warnings = inject_skills_into_responses_body(
             body=current_body,
             selected_skills=selected_skills,

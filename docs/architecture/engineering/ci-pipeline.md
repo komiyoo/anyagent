@@ -39,6 +39,15 @@ req: ["requirements.md#req-9", "requirements.md#req-7"]
 
 - 覆盖 SDK 协议稳定性、Client surface 与 MCP manifest 合并等关键链路。
 
+### Gate 2.5：正式 pytest regressions（必须）
+
+- `bash scripts/ci/run_pytest_regressions.sh`
+
+目的：
+
+- 把 `unit / contract / integration / targeted server acceptance pytest` 收口成稳定 CI 入口
+- 让高频回归不再只依赖 smoke 脚本
+
 ### Gate 3：应用层兼容验收（迁出到场景项目）
 
 - 同级项目：`../anyagent-apps`
@@ -55,10 +64,12 @@ req: ["requirements.md#req-9", "requirements.md#req-7"]
 - Workflow：`.github/workflows/ci.yml`
 - 脚本分层：
   - `scripts/ci/run_docs_guardrails.sh`
+  - `scripts/ci/run_pytest_regressions.sh`
   - `scripts/ci/run_offline_smokes.sh`
+  - `scripts/ci/run_live_storage_matrix.sh`（`workflow_dispatch` 手动触发）
 
 ## 失败处理策略
 
 - Gate 1 失败：直接阻断合并（信息架构/证据链已失真）。
-- Gate 2 失败：阻断合并并要求补回归证据。
+- Gate 2 / 2.5 失败：阻断合并并要求补回归证据。
 - Gate 3：由场景项目自行定义阻断策略，不再属于当前仓库 CI 范围。

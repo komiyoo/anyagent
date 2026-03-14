@@ -41,9 +41,12 @@ def test_build_server_storage_bundle_uses_mysql_when_explicitly_selected() -> No
             run_store_backend="external",
             session_store_backend="external",
         )
-        assert isinstance(bundle.event_store, MySQLEventStore)
-        assert isinstance(bundle.run_store, MySQLRunStore)
-        assert isinstance(bundle.session_store, MySQLSessionStore)
+        assert bundle.event_store.__class__.__name__ == "_ExternalSqlEventStoreAdapter"
+        assert bundle.run_store.__class__.__name__ == "_ExternalSqlRunStoreAdapter"
+        assert bundle.session_store.__class__.__name__ == "_ExternalSqlSessionStoreAdapter"
+        assert isinstance(bundle.event_store._store, MySQLEventStore)
+        assert isinstance(bundle.run_store._store, MySQLRunStore)
+        assert isinstance(bundle.session_store._store, MySQLSessionStore)
         assert len(bundle.resources) == 1
     finally:
         for key, value in old.items():

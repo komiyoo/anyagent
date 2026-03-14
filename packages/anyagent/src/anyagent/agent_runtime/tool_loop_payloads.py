@@ -27,6 +27,7 @@ def build_tool_loop_followup_body(
     tool_choice: Any,
     stream: bool | None,
     model: str | None = None,
+    prompt_cache_key: str | None = None,
 ) -> dict[str, Any]:
     """Build the next OpenAI Responses request body for one tool-loop turn."""
 
@@ -38,6 +39,8 @@ def build_tool_loop_followup_body(
     }
     if isinstance(model, str) and model.strip():
         next_body["model"] = model
+    if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+        next_body["prompt_cache_key"] = prompt_cache_key.strip()
     if stream is not None:
         next_body["stream"] = stream
     if tool_choice is not None:

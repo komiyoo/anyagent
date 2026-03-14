@@ -5,6 +5,14 @@ import json
 from time import time
 from typing import Any
 
+from anyagent.protocol.prompt_context import PromptContextAudit, build_prompt_context_audit
+from anyagent.protocol.session_snapshot import (
+    PersistedSessionSnapshot,
+    SessionLastRun,
+    SessionResumeCursor,
+    coerce_persisted_session_snapshot,
+)
+
 
 MANAGED_RUNTIME_FIELDS: tuple[str, ...] = (
     "model",
@@ -106,11 +114,12 @@ def input_to_transcript_items(input_value: Any) -> list[dict[str, Any]]:
 def build_initial_session_snapshot(*, runtime_config: dict[str, Any]) -> dict[str, Any]:
     """Build the minimal initial session snapshot for session resume."""
 
-    return {
-        "provider": "openai_responses",
-        "runtime_config": _json_clone(runtime_config),
-        "resume_cursor": {"last_response_id": None, "fallback_transcript_items": []},
-    }
+    snapshot = PersistedSessionSnapshot(
+        provider="openai_responses",
+        runtime_config=_json_clone(runtime_config if isinstance(runtime_config, dict) else {}),
+        resume_cursor=SessionResumeCursor(last_response_id=None, fallback_transcript_items=[]),
+    )
+    return snapshot.model_dump(mode="json", exclude_none=True)
 
 
 async def prepare_session_request(
@@ -133,10 +142,13 @@ async def prepare_session_request(
             snapshot_json=init_snapshot,
         )
 
-    previous_snapshot = session_record.snapshot_json if isinstance(getattr(session_record, "snapshot_json", None), dict) else {}
+    previous_snapshot_model = coerce_persisted_session_snapshot(
+        session_record.snapshot_json if isinstance(getattr(session_record, "snapshot_json", None), dict) else {}
+    )
+    previous_snapshot = previous_snapshot_model.model_dump(mode="json", exclude_none=True)
     previous_snapshot_version = int(getattr(session_record, "snapshot_version", 0) or 0)
     explicit_runtime_updates = extract_runtime_updates_from_request(body)
-    base_runtime_config = previous_snapshot.get("runtime_config") if isinstance(previous_snapshot.get("runtime_config"), dict) else {}
+    base_runtime_config = previous_snapshot_model.runtime_config if isinstance(previous_snapshot_model.runtime_config, dict) else {}
     effective_runtime_config = merge_runtime_config(
         base_runtime_config=base_runtime_config if isinstance(base_runtime_config, dict) else {},
         explicit_updates=explicit_runtime_updates,
@@ -161,14 +173,12 @@ def apply_session_resume_to_body(*, body: dict[str, Any], session_snapshot: dict
     if isinstance(prev, str) and prev.strip():
         return out, prev.strip()
 
-    resume_cursor = session_snapshot.get("resume_cursor")
-    if not isinstance(resume_cursor, dict):
-        return out, None
-    last_response_id = resume_cursor.get("last_response_id")
+    snapshot_model = coerce_persisted_session_snapshot(session_snapshot)
+    last_response_id = snapshot_model.resume_cursor.last_response_id
     if isinstance(last_response_id, str) and last_response_id.strip():
         out["previous_response_id"] = last_response_id.strip()
         return out, last_response_id.strip()
-    fallback_transcript_items = input_to_transcript_items(resume_cursor.get("fallback_transcript_items"))
+    fallback_transcript_items = input_to_transcript_items(snapshot_model.resume_cursor.fallback_transcript_items)
     if fallback_transcript_items:
         request_items = input_to_transcript_items(out.get("input"))
         out["input"] = [*fallback_transcript_items, *request_items]
@@ -190,10 +200,7 @@ def build_fallback_transcript_items(
 
 
 def read_resume_last_response_id(snapshot: dict[str, Any]) -> str | None:
-    resume_cursor = snapshot.get("resume_cursor")
-    if not isinstance(resume_cursor, dict):
-        return None
-    value = resume_cursor.get("last_response_id")
+    value = coerce_persisted_session_snapshot(snapshot).resume_cursor.last_response_id
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
@@ -214,6 +221,7 @@ async def persist_session_snapshot(
     response_json: dict[str, Any] | None,
     last_event_seq: int | None,
     resume_last_response_id: str | None = None,
+    prompt_audit: PromptContextAudit | dict[str, Any] | None = None,
 ) -> tuple[bool, Any | None]:
     next_snapshot = build_persisted_session_snapshot(
         previous_snapshot=previous_snapshot,
@@ -224,6 +232,7 @@ async def persist_session_snapshot(
         response_json=response_json,
         last_event_seq=last_event_seq,
         resume_last_response_id=resume_last_response_id,
+        prompt_audit=prompt_audit,
     )
     return await _update_session_snapshot(
         session_store=session_store,
@@ -245,8 +254,11 @@ def build_persisted_session_snapshot(
     response_json: dict[str, Any] | None,
     last_event_seq: int | None,
     resume_last_response_id: str | None = None,
+    prompt_audit: PromptContextAudit | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    previous = dict(previous_snapshot) if isinstance(previous_snapshot, dict) else build_initial_session_snapshot(runtime_config={})
+    previous = coerce_persisted_session_snapshot(previous_snapshot if isinstance(previous_snapshot, dict) else None).model_dump(
+        mode="json", exclude_none=True
+    )
     effective_resume_last_response_id = resume_last_response_id
     if effective_resume_last_response_id is None:
         effective_resume_last_response_id = (
@@ -268,6 +280,7 @@ def build_persisted_session_snapshot(
         fallback_transcript_items=fallback_transcript_items,
         run_response_id=response_id,
         last_event_seq=last_event_seq,
+        prompt_audit=prompt_audit,
     )
 
 
@@ -280,40 +293,46 @@ def build_next_session_snapshot(
     run_response_id: str | None,
     last_event_seq: int | None,
     updated_at_ms: int | None = None,
+    prompt_audit: PromptContextAudit | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build next session snapshot JSON for CAS update at run-final time."""
 
-    out = _json_clone(previous_snapshot if isinstance(previous_snapshot, dict) else {})
-    if not isinstance(out, dict):
-        out = {}
-
-    out["provider"] = "openai_responses"
-    out["runtime_config"] = _json_clone(runtime_config if isinstance(runtime_config, dict) else {})
-    resume = out.get("resume_cursor")
-    if not isinstance(resume, dict):
-        resume = {}
-    if isinstance(resume_last_response_id, str) and resume_last_response_id.strip():
-        resume["last_response_id"] = resume_last_response_id.strip()
-    else:
-        resume["last_response_id"] = None
+    snapshot_model = coerce_persisted_session_snapshot(previous_snapshot if isinstance(previous_snapshot, dict) else None)
+    snapshot_model.provider = "openai_responses"
+    snapshot_model.runtime_config = _json_clone(runtime_config if isinstance(runtime_config, dict) else {})
+    snapshot_model.resume_cursor.last_response_id = (
+        resume_last_response_id.strip() if isinstance(resume_last_response_id, str) and resume_last_response_id.strip() else None
+    )
     if isinstance(fallback_transcript_items, list):
-        resume["fallback_transcript_items"] = _json_clone(fallback_transcript_items)
-    out["resume_cursor"] = resume
-
+        snapshot_model.resume_cursor.fallback_transcript_items = _json_clone(fallback_transcript_items)
     now_ms = int(updated_at_ms) if isinstance(updated_at_ms, int) else int(time() * 1000)
-    out["last_run"] = {
-        "response_id": run_response_id,
-        "last_event_seq": int(last_event_seq) if isinstance(last_event_seq, int) else 0,
-        "updated_at_ms": now_ms,
-    }
-    return out
+    snapshot_model.last_run = SessionLastRun(
+        response_id=run_response_id,
+        last_event_seq=int(last_event_seq) if isinstance(last_event_seq, int) else 0,
+        updated_at_ms=now_ms,
+        prompt_context=_coerce_prompt_audit(prompt_audit),
+    )
+    return snapshot_model.model_dump(mode="json", exclude_none=True)
 
 
 def read_fallback_transcript_items(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
-    resume_cursor = snapshot.get("resume_cursor")
-    if not isinstance(resume_cursor, dict):
-        return []
-    return input_to_transcript_items(resume_cursor.get("fallback_transcript_items"))
+    return input_to_transcript_items(coerce_persisted_session_snapshot(snapshot).resume_cursor.fallback_transcript_items)
+
+
+def _coerce_prompt_audit(prompt_audit: PromptContextAudit | dict[str, Any] | None) -> PromptContextAudit | None:
+    if isinstance(prompt_audit, PromptContextAudit):
+        return prompt_audit
+    if isinstance(prompt_audit, dict) and prompt_audit:
+        try:
+            if "fragment_count" in prompt_audit or "retained_fragment_count" in prompt_audit:
+                return PromptContextAudit.model_validate(prompt_audit)
+            return build_prompt_context_audit(
+                prompt_cache_key=prompt_audit.get("prompt_cache_key") if isinstance(prompt_audit.get("prompt_cache_key"), str) else None,
+                fragments=list(prompt_audit.get("fragments") or []),
+            )
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 
 async def _create_initial_session_record(

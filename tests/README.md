@@ -24,13 +24,16 @@
 
 ```bash
 # unit
-uv run --with pytest --project packages/anyagent pytest tests/unit -q
+uv run --with pytest --project packages/anyagent python -m pytest tests/unit -q
 
 # contract
-uv run --with pytest --project packages/anyagent pytest tests/contract -q
+uv run --with pytest --project packages/anyagent python -m pytest tests/contract -q
 
 # integration
-uv run --with pytest --project packages/anyagent pytest tests/integration -q
+uv run --with pytest --project packages/anyagent python -m pytest tests/integration -q
+
+# formal pytest regressions
+bash scripts/ci/run_pytest_regressions.sh
 
 # 离线 smoke（CI 同款）
 bash scripts/ci/run_offline_smokes.sh

@@ -252,7 +252,7 @@ async def _run_builtin_server_exec_and_events_smoke(*, tmp_path: Path, monkeypat
         )
         assert events.status_code == 200
         data = events.json()
-        event_names = [item["event"] for item in data["events"]]
+        event_names = [item.get("event") for item in data["events"]]
         assert "anyagent.tool.planned" in event_names
         assert "anyagent.tool.result" in event_names
         assert "anyagent.command.planned" in event_names

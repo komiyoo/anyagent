@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from anyagent.agent_runtime.prompt_envelope import build_skill_fragment
+from anyagent.protocol.context_fragments import render_context_fragment
 from anyagent.protocol.openai_responses import inject_text_into_responses_body
 from anyagent.skills.models import SkillPackage
 
@@ -26,20 +28,7 @@ def build_skills_injection_text(skills: list[SkillPackage]) -> str:
     """
     blocks: list[str] = []
     for s in skills:
-        sid = s.stable_id
-        name = s.frontmatter.name
-        blocks.append(
-            "\n".join(
-                [
-                    "[anyagent Skill]",
-                    f"name: {name}",
-                    f"stable_id: {sid}",
-                    "",
-                    "[SKILL_BODY]",
-                    (s.body_markdown or "").rstrip(),
-                ]
-            ).rstrip()
-        )
+        blocks.append(render_context_fragment(build_skill_fragment(s)))
     return "\n\n".join(blocks).strip()
 
 

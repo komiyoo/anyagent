@@ -90,6 +90,7 @@ def test_build_next_session_snapshot_sets_runtime_and_last_run_metadata() -> Non
         run_response_id="resp_run",
         last_event_seq=12,
         updated_at_ms=123456,
+        prompt_audit={"prompt_cache_key": "cache-1", "fragments": [{"kind": "agents_instructions"}]},
     )
 
     assert snapshot["provider"] == "openai_responses"
@@ -102,6 +103,17 @@ def test_build_next_session_snapshot_sets_runtime_and_last_run_metadata() -> Non
         "response_id": "resp_run",
         "last_event_seq": 12,
         "updated_at_ms": 123456,
+        "prompt_context": {
+            "prompt_cache_key": "cache-1",
+            "fragments": [{"kind": "agents_instructions", "cache_class": "contextual"}],
+            "fragment_count": 1,
+            "retained_fragment_count": 1,
+            "stable_prefix_count": 0,
+            "contextual_count": 1,
+            "dynamic_count": 0,
+            "fragment_kinds": ["agents_instructions"],
+            "compacted": False,
+        },
     }
 
 
@@ -276,3 +288,31 @@ def test_build_persisted_session_snapshot_honors_resume_override_for_non_complet
 
     assert snapshot["resume_cursor"]["last_response_id"] == "resp_override"
     assert snapshot["last_run"]["response_id"] == "resp_run"
+
+
+def test_build_persisted_session_snapshot_carries_prompt_context() -> None:
+    snapshot = build_persisted_session_snapshot(
+        previous_snapshot={
+            "provider": "openai_responses",
+            "runtime_config": {"model": "gpt-4.1-mini"},
+            "resume_cursor": {"last_response_id": "resp_old", "fallback_transcript_items": []},
+        },
+        runtime_config={"model": "gpt-4.1-mini"},
+        request_transcript_items=[{"role": "user", "content": "turn-2"}],
+        response_id="resp_run",
+        effective_status="completed",
+        response_json={"output": []},
+        last_event_seq=5,
+        prompt_audit={"prompt_cache_key": "cache-2", "fragments": [{"kind": "environment_context"}]},
+    )
+    assert snapshot["last_run"]["prompt_context"] == {
+        "prompt_cache_key": "cache-2",
+        "fragments": [{"kind": "environment_context", "cache_class": "contextual"}],
+        "fragment_count": 1,
+        "retained_fragment_count": 1,
+        "stable_prefix_count": 0,
+        "contextual_count": 1,
+        "dynamic_count": 0,
+        "fragment_kinds": ["environment_context"],
+        "compacted": False,
+    }

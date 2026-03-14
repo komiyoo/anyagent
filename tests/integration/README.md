@@ -9,5 +9,5 @@
 推荐运行：
 
 ```bash
-uv run --with pytest --project packages/anyagent pytest tests/integration -q
+uv run --with pytest --project packages/anyagent python -m pytest tests/integration -q
 ```

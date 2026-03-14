@@ -82,6 +82,22 @@ def _tool_execute_log_fields(
     }
 
 
+def _skill_source_hash(skill: SkillPackage) -> str | None:
+    try:
+        raw = skill.skill_md_path.read_bytes()
+    except Exception:  # noqa: BLE001
+        return None
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _skill_interface(skill: SkillPackage) -> dict[str, Any] | None:
+    metadata = skill.agent_metadata
+    if not isinstance(metadata, dict):
+        return None
+    interface = metadata.get("interface")
+    return interface if isinstance(interface, dict) else None
+
+
 def _log_tool_execute(
     event_name: str,
     *,
@@ -173,8 +189,11 @@ class InProcessToolRuntimeService:
                     short_description=skill.frontmatter.metadata.short_description
                     if skill.frontmatter.metadata is not None
                     else None,
+                    path=str(skill.skill_md_path.resolve()),
                     scope=skill.scope,
                     enabled=enablement.is_enabled(skill),
+                    source_hash=_skill_source_hash(skill),
+                    interface=_skill_interface(skill),
                     requested_tool_names=requested_tool_names_for_skill(skill),
                 )
             )

@@ -16,7 +16,7 @@
 推荐运行：
 
 ```bash
-uv run --with pytest --project packages/anyagent pytest tests/unit -q
+uv run --with pytest --project packages/anyagent python -m pytest tests/unit -q
 ```
 
 约定：

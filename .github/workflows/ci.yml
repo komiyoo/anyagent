@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   offline-quality:
@@ -31,5 +32,37 @@ jobs:
       - name: Docs Guardrails
         run: bash scripts/ci/run_docs_guardrails.sh
 
+      - name: Pytest Regressions
+        run: bash scripts/ci/run_pytest_regressions.sh
+
       - name: Offline Smokes
         run: bash scripts/ci/run_offline_smokes.sh
+
+  live-storage-matrix:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ANYAGENT_TEST_POSTGRES_DSN: ${{ secrets.ANYAGENT_TEST_POSTGRES_DSN }}
+      ANYAGENT_TEST_REDIS_DSN: ${{ secrets.ANYAGENT_TEST_REDIS_DSN }}
+      ANYAGENT_TEST_MYSQL_DSN: ${{ secrets.ANYAGENT_TEST_MYSQL_DSN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: |
+          uv sync --project packages/anyagent --frozen
+
+      - name: Live Storage Matrix
+        run: bash scripts/ci/run_live_storage_matrix.sh

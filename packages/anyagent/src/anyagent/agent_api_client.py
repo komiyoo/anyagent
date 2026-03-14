@@ -14,24 +14,25 @@ anyagent Client SDK — 资源型命名空间入口。
 设计决策：docs/architecture/decisions/openai-first-api-surface.md
 """
 
-import json
-import time
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 import httpx
-from pydantic import AnyHttpUrl, Field, TypeAdapter
+from pydantic import AnyHttpUrl, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from anyagent.protocol.agent_api_internal import (
     InternalEventsListResponse,
+    InternalEventsReplaySummary,
     InternalSkillsListResponse,
 )
 from anyagent.protocol.admin_storage import StorageHealthResponse
 from anyagent.protocol.sse import SSEBlock, SSEBlockDecoder
 from anyagent.protocol.stage_events import (
     AnyAgentDoneEvent,
-    AnyAgentModelStreamEvent,
+    AnyAgentPromptContextEvent,
     StageEvent,
+    decode_stage_event,
+    parse_stage_event_seq,
 )
 
 if TYPE_CHECKING:
@@ -151,6 +152,90 @@ class Events(_Namespace):
         )
         return InternalEventsListResponse.model_validate(data)
 
+    async def list_typed(
+        self,
+        response_id: str,
+        *,
+        last_seq: int = 0,
+        limit: int = 200,
+        include_model_events: bool = True,
+    ) -> list[StageEvent]:
+        """List persisted internal events and decode them into the typed stage union."""
+
+        listing = await self.list(response_id=response_id, last_seq=last_seq, limit=limit)
+        return listing.typed_events(include_model_events=include_model_events)
+
+    async def latest_prompt_context(
+        self,
+        response_id: str,
+        *,
+        last_seq: int = 0,
+        limit: int = 200,
+    ) -> AnyAgentPromptContextEvent | None:
+        """Find the latest prompt-context event across paginated internal replay pages."""
+
+        cursor = int(last_seq)
+        latest: AnyAgentPromptContextEvent | None = None
+        while True:
+            listing = await self.list(response_id=response_id, last_seq=cursor, limit=limit)
+            page_latest = listing.latest_prompt_context()
+            if page_latest is not None:
+                latest = page_latest
+            if listing.done or not listing.events or listing.next_last_seq <= cursor:
+                return latest
+            cursor = listing.next_last_seq
+
+    async def replay_summary(
+        self,
+        response_id: str,
+        *,
+        last_seq: int = 0,
+        limit: int = 200,
+        include_model_events: bool = False,
+        max_pages: int = 20,
+    ) -> InternalEventsReplaySummary:
+        """Build one higher-level replay summary from paginated internal events."""
+
+        cursor = int(last_seq)
+        scanned_pages = 0
+        page_event_count = 0
+        typed_event_count = 0
+        latest_prompt_context: AnyAgentPromptContextEvent | None = None
+        run_status: str | None = None
+        effective_run_status: str | None = None
+        done = False
+        next_last_seq = cursor
+
+        while scanned_pages < max(1, int(max_pages)):
+            listing = await self.list(response_id=response_id, last_seq=cursor, limit=limit)
+            scanned_pages += 1
+            page_event_count += len(listing.events)
+            typed_page = listing.typed_events(include_model_events=include_model_events)
+            typed_event_count += len(typed_page)
+            page_prompt_context = listing.latest_prompt_context()
+            if page_prompt_context is not None:
+                latest_prompt_context = page_prompt_context
+            run_status = listing.run_status
+            effective_run_status = listing.effective_run_status
+            done = listing.done
+            next_last_seq = listing.next_last_seq
+            if listing.done or not listing.events or listing.next_last_seq <= cursor:
+                break
+            cursor = listing.next_last_seq
+
+        return InternalEventsReplaySummary(
+            response_id=response_id,
+            requested_last_seq=int(last_seq),
+            next_last_seq=next_last_seq,
+            page_event_count=page_event_count,
+            typed_event_count=typed_event_count,
+            scanned_pages=scanned_pages,
+            done=done,
+            run_status=run_status,
+            effective_run_status=effective_run_status,
+            prompt_context=latest_prompt_context,
+        )
+
     async def stream(
         self,
         response_id: str,
@@ -192,62 +277,19 @@ class Events(_Namespace):
         Decodes ``anyagent.*``-prefixed events into typed stage models and wraps
         OpenAI Responses SSE events as ``AnyAgentModelStreamEvent``.
         """
-        adapter = TypeAdapter(StageEvent)
         async for blk in self.stream(response_id, last_seq=last_seq):
-            seq: int | None = None
-            if isinstance(blk.id, str) and blk.id.strip().isdigit():
-                try:
-                    seq = int(blk.id.strip())
-                except Exception:  # noqa: BLE001
-                    seq = None
-
-            # [DONE] sentinel
-            if blk.event is None and isinstance(blk.data, str) and blk.data.strip() == "[DONE]":
-                yield AnyAgentDoneEvent(response_id=response_id, seq=seq, ts_ms=int(time.time() * 1000))
-                return
-
-            # anyagent.* stage events
-            if isinstance(blk.event, str) and blk.event.startswith("anyagent.") and isinstance(blk.data, str):
-                try:
-                    payload = json.loads(blk.data)
-                except Exception:  # noqa: BLE001
-                    continue
-                if not isinstance(payload, dict):
-                    continue
-                payload.setdefault("type", blk.event)
-                payload.setdefault("response_id", response_id)
-                payload.setdefault("seq", seq)
-                if "ts_ms" not in payload:
-                    payload["ts_ms"] = int(time.time() * 1000)
-                try:
-                    yield adapter.validate_python(payload)
-                except Exception:  # noqa: BLE001
-                    continue
-                continue
-
-            if not include_model_events:
-                continue
-
-            # OpenAI Responses SSE events → wrap as AnyAgentModelStreamEvent
-            if not isinstance(blk.event, str):
-                continue
-            if not (blk.event.startswith("response.") or blk.event == "error"):
-                continue
-            if not isinstance(blk.data, str) or not blk.data.strip():
-                continue
-            try:
-                payload = json.loads(blk.data)
-            except Exception:  # noqa: BLE001
-                continue
-            if not isinstance(payload, dict):
-                continue
-            yield AnyAgentModelStreamEvent(
+            decoded = decode_stage_event(
                 response_id=response_id,
-                seq=seq,
-                sse_event=blk.event,
-                payload=payload,
-                ts_ms=int(time.time() * 1000),
+                event=blk.event,
+                data=blk.data,
+                seq=parse_stage_event_seq(blk.id),
+                include_model_events=include_model_events,
             )
+            if decoded is None:
+                continue
+            yield decoded
+            if isinstance(decoded, AnyAgentDoneEvent):
+                return
 
 
 # ---------------------------------------------------------------------------

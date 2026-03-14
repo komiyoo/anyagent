@@ -9,6 +9,9 @@ __all__ = [
     "command_derivation",
     "tool_manifest_extensions",
     "responses_optional",
+    "context_fragments",
+    "prompt_context",
+    "session_snapshot",
 ]
 
 # Intentionally do not import submodules here:
