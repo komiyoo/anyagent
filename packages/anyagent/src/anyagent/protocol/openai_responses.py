@@ -38,7 +38,7 @@ class AnyAgentFunctionToolParam(BaseModel):
     description: str | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
     strict: bool = True
-    x_anyagent_kind: Literal["command"] | None = Field(
+    x_anyagent_kind: Literal["command", "mcp"] | None = Field(
         default=None,
         validation_alias=AliasChoices("x-anyagent-kind", "x_anyagent_kind"),
         serialization_alias="x-anyagent-kind",

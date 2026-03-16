@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ class AgentPackError(Exception):
 
 
 _AGENT_ID_RE = re.compile(r"^[a-zA-Z0-9_.-]{1,64}$")
+_ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 class AgentToolPolicy(BaseModel):
@@ -127,6 +129,27 @@ def _load_yaml_object(path: Path) -> dict[str, Any]:
     return obj
 
 
+def _load_workspace_env(workspace_dir: Path) -> dict[str, str]:
+    env: dict[str, str] = {}
+    for candidate in (workspace_dir / ".env", workspace_dir / ".env.local"):
+        if not candidate.is_file():
+            continue
+        for raw_line in candidate.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if key:
+                env[key] = value
+    return env
+
+
+def _expand_env_placeholders(value: str, env: dict[str, str]) -> str:
+    return _ENV_VAR_RE.sub(lambda match: env.get(match.group(1), ""), value)
+
+
 def load_agent_catalog(
     *,
     workspace_dir: Path,
@@ -142,6 +165,9 @@ def load_agent_catalog(
     - 解析失败必须 fail-fast（抛出异常）
     """
     workspace_dir = Path(workspace_dir).expanduser().resolve()
+    workspace_env = _load_workspace_env(workspace_dir)
+    expand_env = dict(workspace_env)
+    expand_env.update({key: value for key, value in os.environ.items() if isinstance(value, str)})
     root_dir = workspace_dir / ".agents" / "agents"
     if not root_dir.is_dir():
         raise AgentPackError(f"missing agent packs root: {root_dir}")
@@ -186,6 +212,23 @@ def load_agent_catalog(
             mcp_raw, _ = _read_text_with_limit(mcp_json, max_bytes=max_mcp_json_bytes)
             try:
                 mcp_config = MCPConfig.model_validate_json(mcp_raw)
+                for server_cfg in mcp_config.mcpServers.values():
+                    if server_cfg.command and not server_cfg.cwd:
+                        server_cfg.cwd = str(workspace_dir)
+                    if isinstance(server_cfg.command, str):
+                        server_cfg.command = _expand_env_placeholders(server_cfg.command, expand_env)
+                    if isinstance(server_cfg.args, list):
+                        server_cfg.args = [
+                            _expand_env_placeholders(item, expand_env) if isinstance(item, str) else item
+                            for item in server_cfg.args
+                        ]
+                    if isinstance(server_cfg.cwd, str):
+                        server_cfg.cwd = _expand_env_placeholders(server_cfg.cwd, expand_env)
+                    if isinstance(server_cfg.env, dict):
+                        server_cfg.env = {
+                            key: _expand_env_placeholders(value, expand_env) if isinstance(value, str) else value
+                            for key, value in server_cfg.env.items()
+                        }
             except Exception as e:  # noqa: BLE001
                 raise AgentPackError(f"invalid mcp.json: {mcp_json}: {e}") from e
 

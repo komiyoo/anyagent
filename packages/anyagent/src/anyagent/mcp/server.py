@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from abc import ABC, abstractmethod
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -269,11 +270,12 @@ class MCPServerStdio(MCPServer):
         if not self.config.command:
             raise MCPServerError(f"mcp server {self.name} missing command")
 
-        env = await resolve_mcp_auth_env(self.config, self.credential_store, self.agent_id)
+        env = dict(os.environ)
+        env.update(await resolve_mcp_auth_env(self.config, self.credential_store, self.agent_id))
         params = StdioServerParameters(
             command=self.config.command,
             args=list(self.config.args or []),
-            env=env or None,
+            env=env,
             cwd=self.config.cwd,
         )
         return stdio_client(params)

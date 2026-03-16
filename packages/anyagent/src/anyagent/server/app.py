@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -70,6 +71,21 @@ from anyagent.skills import (
 )
 
 
+def _load_workspace_env_defaults(workspace_dir: Path) -> None:
+    for candidate in (workspace_dir / ".env", workspace_dir / ".env.local"):
+        if not candidate.is_file():
+            continue
+        for raw_line in candidate.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
 @dataclass(slots=True)
 class AnyAgentServerApp:
     workspace_dir: Path
@@ -123,6 +139,7 @@ def create_app(
         session_lease_ttl_s=session_lease_ttl_s,
     )
     workspace = Path(workspace_dir).expanduser().resolve()
+    _load_workspace_env_defaults(workspace)
     catalog = load_agent_catalog(workspace_dir=workspace)
     main_pack = catalog.get("main")
     if main_pack is None or not main_pack.spec.exposed:
