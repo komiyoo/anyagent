@@ -61,6 +61,10 @@ def test_exec_handler_applies_output_budget_across_stdout_and_stderr() -> None:
                 "cmd": "printf test",
                 "workdir": "nested",
                 "timeout_seconds": 7,
+                "response_id": None,
+                "tool_call_id": None,
+                "trace_id": None,
+                "audit_ref": None,
             }
         ]
         assert payload["stdout"] == "abcd"

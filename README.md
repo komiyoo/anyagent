@@ -21,6 +21,15 @@ anyagent serve     # 一条命令启动 Agent Server
 
 ### 1. 创建 workspace 配置
 
+最快方式：
+
+```bash
+anyagent init --workspace ./my-workspace --with-example-skill
+anyagent doctor --workspace ./my-workspace
+```
+
+`init` 会生成一个最小可启动 workspace；`doctor` 会在启动前检查 agent pack、skills、MCP 配置和常见安全边界问题。
+
 ```text
 my-workspace/
   .agents/

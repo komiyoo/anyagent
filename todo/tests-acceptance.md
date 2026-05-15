@@ -8,6 +8,7 @@
 
 ## 最近完成
 
+- [x] P3 补齐安全与负向测试矩阵：覆盖 tool policy、credential scope、secret redaction、畸形 payload 与未授权工具暴露；并加固 `arguments_json` 为畸形 JSON 字符串时返回结构化 `invalid_arguments`，避免 runtime 抛出非协议化异常（Req: `requirements.md#req-9`，`requirements.md#req-8`；Impl: `packages/anyagent/src/anyagent/server/runtime.py:281`，`tests/unit/server/test_request_validation.py:1`，`tests/unit/server/test_credential_store.py:1`，`tests/unit/protocol/test_stage_events_redaction.py:1`，`tests/integration/server/test_event_pipeline.py:620`，`tests/integration/server/test_event_pipeline.py:668`，`tests/integration/server/test_event_pipeline.py:738`，`tests/integration/server/test_event_pipeline.py:790`；Module: `tests`)
 - [x] P3 补齐正式 pytest 回归环境：新增 `scripts/ci/run_pytest_regressions.sh`，并让 GitHub Actions 默认执行 docs guardrails + pytest regressions + offline smokes；同时补一组离线 server acceptance pytest 子集，保证 built-in server 主路径进入正式回归（Req: `requirements.md#req-9`；Impl: `.github/workflows/ci.yml:1`，`scripts/ci/run_pytest_regressions.sh:1`，`tests/acceptance/server/acceptance_builtin_server_smoke.py:201`；Module: `tests`）
 - [x] P3 补齐 live storage matrix 入口：新增 `scripts/ci/run_live_storage_matrix.sh`，并在 workflow dispatch 下接 PG/Redis + MySQL/Redis 的 built-in server live 验收（Req: `requirements.md#req-9`；Impl: `.github/workflows/ci.yml:1`，`scripts/ci/run_live_storage_matrix.sh:1`，`tests/acceptance/README.md:1`；Module: `tests`）
 - [x] P2 继续扩展 Responses API / SSE / Stage Events contract matrix：补齐 `response.output_text.delta` / `response.output_text.done` / `response.output_item.added` / `response.output_item.done` / `error` / `response.failed` 的 OpenAI SDK typed fixture，并锁住 SDK `stream_typed()` 对 delta、output item、flat error payload 与非数字 SSE id 的解码边界（Req: `requirements.md#req-9-1`；Impl: `tests/contract/test_sse_protocol_contract.py:1`，`tests/contract/test_events_sdk_contract.py:1`；Module: `tests`）
@@ -21,4 +22,4 @@
 
 ## 待处理
 
-- [ ] P3 补齐安全与负向测试矩阵：覆盖 tool policy、credential scope、secret redaction、畸形 payload 与未授权工具暴露（Req: `requirements.md#req-9`，`requirements.md#req-8`；Module: `tests`）
+- 暂无。

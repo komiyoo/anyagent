@@ -273,7 +273,16 @@ class InProcessToolRuntimeService:
         if isinstance(arguments, str):
             import json
 
-            arguments = json.loads(arguments)
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError as e:
+                result = ExecuteResponseError(
+                    status="error",
+                    error=ToolError(type="invalid_request_error", code="invalid_arguments", message=f"invalid JSON arguments: {e}"),
+                    meta=_meta(),
+                )
+                _log_tool_execute("tool_execute.done", req=req, audit_ref=audit_ref, status=result.status)
+                return result
         if not isinstance(arguments, dict):
             result = ExecuteResponseError(
                 status="error",

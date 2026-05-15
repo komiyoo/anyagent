@@ -1026,6 +1026,7 @@ async def _append_sse_chunk(
     previous_snapshot_version: int | None = None,
     runtime_config: dict[str, Any] | None = None,
     request_transcript_items: list[dict[str, Any]] | None = None,
+    prompt_audit: PromptContextAudit | dict[str, Any] | None = None,
 ) -> None:
     append_event = build_response_event_appender(
         response_id=response_id,
@@ -1068,6 +1069,7 @@ async def _append_sse_chunk(
                 response_id=final_state.response_id or response_id,
                 effective_status=final_state.effective_status,
                 response_json=final_state.response_json,
+                prompt_audit=prompt_audit,
             )
 
     persist_block = build_persisted_sse_block_handler(

@@ -14,6 +14,7 @@
 
 ## 任务（Tasks）
 
+- [x] P3 补齐配置化 workspace CLI 入口：新增 `anyagent init` 生成最小 `.agents/` workspace，新增 `anyagent doctor` 离线体检 agent pack、skills、MCP command/cwd、main exposed 与 opensandbox 可用性，并用真实 `init -> doctor -> serve -> /healthz` 闭环验证配置开箱启动（Req: `requirements.md#req-2-1`，`requirements.md#req-2-2`，`requirements.md#req-4`；Impl: `packages/anyagent/src/anyagent/cli.py:79`，`tests/unit/test_cli_workspace_commands.py:1`，`README.md:24`；Module: `sdk-cli`）
 - [x] P0 冻结 context engineering 设计口径，并将工作区草案回收到仓库内真源（Req: `requirements.md#req-2-1-1`；Design: `docs/architecture/skills-tool-runtime-interaction.md:1`、`docs/architecture/responses-api-sdk-and-server.md:113`；Impl: `requirements.md:157`、`docs/architecture/skills-tool-runtime-interaction.md:7`、`docs/architecture/responses-api-sdk-and-server.md:113`；Module: `sdk-context`）
 - [x] P0 定义统一 `PromptEnvelope` / `ContextFragment` 协议与 renderer（Req: `requirements.md#req-2-1-1`、`requirements.md#req-12-6`；Impl: `packages/anyagent/src/anyagent/protocol/context_fragments.py:14`、`packages/anyagent/src/anyagent/agent_runtime/prompt_envelope.py:17`；Module: `agent_runtime`）
 - [x] P0 为 `/internal/skills/list` 补齐 `path/interface/source_hash` 等 catalog 字段（Req: `requirements.md#req-12-7`；Impl: `packages/anyagent/src/anyagent/protocol/agent_api_internal.py:80`、`packages/anyagent/src/anyagent/server/runtime.py:173`；Module: `server`）

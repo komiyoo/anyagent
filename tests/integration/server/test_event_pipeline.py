@@ -13,6 +13,7 @@ from openai.types.responses.response_created_event import ResponseCreatedEvent
 from anyagent.protocol.sse import SSEBlockDecoder
 from anyagent.server.app import _append_sse_chunk, _build_external_response_stream, _update_session_snapshot, create_app
 from anyagent.server.session_context import prepare_response_session_context
+from anyagent.tool_runtime.models import ToolDefinition
 
 
 def _write_workspace(
@@ -20,6 +21,7 @@ def _write_workspace(
     *,
     requested_tool_names: list[str] | None = None,
     sandbox_mode: str = "disabled",
+    tool_policy_lines: list[str] | None = None,
 ) -> None:
     agent_dir = root / ".agents" / "agents" / "main"
     agent_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +38,7 @@ def _write_workspace(
                 "exposed: true",
                 "tools:",
                 *requested_tool_block,
+                *(tool_policy_lines or []),
                 "skills:",
                 "  default_selected: []",
                 "sandbox:",
@@ -693,6 +696,24 @@ def test_internal_tool_execute_rejects_malformed_arguments() -> None:
                 assert invalid_payload["status"] == "error"
                 assert invalid_payload["error"]["code"] == "invalid_arguments"
 
+                invalid_json_arguments = await client.post(
+                    "/internal/tools/execute",
+                    headers={"Authorization": "Bearer admin-key"},
+                    json={
+                        "agent_id": "main",
+                        "session_key": "sess-malformed",
+                        "response_id": "resp-malformed-json",
+                        "tool_call_id": "call-malformed-json",
+                        "tool_name": "exec",
+                        "arguments_json": "{",
+                        "context": {},
+                    },
+                )
+                assert invalid_json_arguments.status_code == 200, invalid_json_arguments.text
+                invalid_json_payload = invalid_json_arguments.json()
+                assert invalid_json_payload["status"] == "error"
+                assert invalid_json_payload["error"]["code"] == "invalid_arguments"
+
                 schema_error = await client.post(
                     "/internal/tools/execute",
                     headers={"Authorization": "Bearer admin-key"},
@@ -710,5 +731,128 @@ def test_internal_tool_execute_rejects_malformed_arguments() -> None:
                 schema_payload = schema_error.json()
                 assert schema_payload["status"] == "error"
                 assert schema_payload["error"]["code"] == "schema_validation_error"
+
+    asyncio.run(_run())
+
+
+def test_configured_tool_policy_deny_blocks_manifest_and_execute() -> None:
+    async def _run() -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_workspace(
+                root,
+                requested_tool_names=["exec"],
+                sandbox_mode="local-unsafe",
+                tool_policy_lines=["  policy:", "    deny_tools: [exec]"],
+            )
+            app = create_app(
+                workspace_dir=root,
+                api_key="user-key",
+                admin_api_key="admin-key",
+                sandbox_root_dir=root / ".sandbox",
+            )
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
+                manifest = await client.post(
+                    "/internal/tools/manifest",
+                    headers={"Authorization": "Bearer admin-key"},
+                    json={
+                        "agent_id": "main",
+                        "session_key": "sess-policy-deny",
+                        "requested_tool_names": ["exec"],
+                        "context": {"policy": {"allow_tools": ["exec"]}},
+                    },
+                )
+                assert manifest.status_code == 200, manifest.text
+                assert manifest.json()["tools"] == []
+
+                execute = await client.post(
+                    "/internal/tools/execute",
+                    headers={"Authorization": "Bearer admin-key"},
+                    json={
+                        "agent_id": "main",
+                        "session_key": "sess-policy-deny",
+                        "response_id": "resp-policy-deny",
+                        "tool_call_id": "call-policy-deny",
+                        "tool_name": "exec",
+                        "arguments_json": {"cmd": "printf should-not-run"},
+                        "context": {"policy": {"allow_tools": ["exec"]}},
+                    },
+                )
+                assert execute.status_code == 200, execute.text
+                payload = execute.json()
+                assert payload["status"] == "error"
+                assert payload["error"]["code"] == "tool_not_allowed"
+
+    asyncio.run(_run())
+
+
+def test_agent_scoped_credential_does_not_cross_agent_boundary() -> None:
+    async def _run() -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_workspace(root, requested_tool_names=["core.auth_echo"])
+            app = create_app(
+                workspace_dir=root,
+                api_key="user-key",
+                admin_api_key="admin-key",
+                sandbox_root_dir=root / ".sandbox",
+            )
+
+            async def _handler(arguments: dict, context: dict) -> str:
+                _ = arguments
+                return context.get("_credentials", {}).get("header:Authorization", "")
+
+            app.state.anyagent.runtime._registry.register_tool(  # noqa: SLF001
+                ToolDefinition(
+                    name="core.auth_echo",
+                    description="Echo injected auth header",
+                    category="core",
+                    parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+                    credentials=[
+                        {
+                            "ref_kind": "bearer_token",
+                            "injection_target": "header:Authorization",
+                            "format": "Bearer {value}",
+                            "required": True,
+                        }
+                    ],
+                ),
+                _handler,
+            )
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
+                set_resp = await client.post(
+                    "/admin/credentials",
+                    headers={"Authorization": "Bearer admin-key"},
+                    json={
+                        "credential_id": "cred_agent_only",
+                        "kind": "bearer_token",
+                        "value": "agent-a-secret",
+                        "scope": {"level": "agent", "agent_id": "agent-a"},
+                        "metadata": {"provider": "test"},
+                    },
+                )
+                assert set_resp.status_code == 200, set_resp.text
+
+                execute = await client.post(
+                    "/internal/tools/execute",
+                    headers={"Authorization": "Bearer admin-key"},
+                    json={
+                        "agent_id": "main",
+                        "session_key": "sess-cred-scope",
+                        "response_id": "resp-cred-scope",
+                        "tool_call_id": "call-cred-scope",
+                        "tool_name": "core.auth_echo",
+                        "arguments_json": {},
+                        "context": {"auth_ref": {"kind": "bearer_token", "ref": "cred_agent_only"}},
+                    },
+                )
+                assert execute.status_code == 200, execute.text
+                payload = execute.json()
+                assert payload["status"] == "error"
+                assert payload["error"]["code"] == "credential_not_found"
+                assert "agent-a-secret" not in execute.text
 
     asyncio.run(_run())

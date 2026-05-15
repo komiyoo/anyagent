@@ -3,13 +3,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
 import uvicorn
 import yaml
 
+from anyagent.agent_packs import AgentPackError, load_agent_catalog
 from anyagent.protocol.credential_vault import (
     AdminCredentialListResponse,
     AdminCredentialRef,
@@ -18,6 +21,7 @@ from anyagent.protocol.credential_vault import (
 )
 from anyagent.server import create_app
 from anyagent.server.migrations import apply_storage_migrations
+from anyagent.skills import SkillRoot, default_skill_roots, discover_skills, resolve_disabled_skill_stable_ids
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +79,20 @@ class _AdminClient:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="anyagent")
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    init = sub.add_parser("init", help="Create a minimal configurable anyagent workspace.")
+    init.add_argument("--workspace", default=".", help="Workspace root to initialize.")
+    init.add_argument("--agent-id", default="main", help="Agent id to create (default: main).")
+    init.add_argument("--force", action="store_true", help="Overwrite files created by this command.")
+    init.add_argument(
+        "--with-example-skill",
+        action="store_true",
+        help="Create `.agents/skills/example-skill/SKILL.md` and select it by default.",
+    )
+
+    doctor = sub.add_parser("doctor", help="Validate an anyagent workspace before serving it.")
+    doctor.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    doctor.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     serve = sub.add_parser("serve", help="Start the built-in anyagent server.")
     serve.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
@@ -161,6 +179,10 @@ def main(argv: list[str] | None = None) -> int:
     p_import.add_argument("--skip-missing", action="store_true", help="Skip items with empty resolved value.")
 
     args = parser.parse_args(argv)
+    if args.cmd == "init":
+        return _cmd_init(args)
+    if args.cmd == "doctor":
+        return _cmd_doctor(args)
     if args.cmd == "serve":
         return _cmd_serve(args)
     if args.cmd == "storage-health":
@@ -234,6 +256,209 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     )
     uvicorn.run(app, host=args.host, port=int(args.port), log_level="info")
     return 0
+
+
+def _cmd_init(args: argparse.Namespace) -> int:
+    workspace = Path(args.workspace).expanduser().resolve()
+    agent_id = _validate_init_agent_id(str(args.agent_id))
+    force = bool(args.force)
+    created: list[str] = []
+    skipped: list[str] = []
+
+    selected_skills = ["example-skill"] if bool(args.with_example_skill) else []
+    agent_dir = workspace / ".agents" / "agents" / agent_id
+    _write_file(
+        agent_dir / "agent.yaml",
+        _render_agent_yaml(selected_skills=selected_skills),
+        force=force,
+        created=created,
+        skipped=skipped,
+    )
+    _write_file(
+        agent_dir / "AGENTS.md",
+        _DEFAULT_AGENT_INSTRUCTIONS,
+        force=force,
+        created=created,
+        skipped=skipped,
+    )
+    _write_file(
+        agent_dir / "mcp.json",
+        _DEFAULT_MCP_JSON,
+        force=force,
+        created=created,
+        skipped=skipped,
+    )
+    if bool(args.with_example_skill):
+        _write_file(
+            workspace / ".agents" / "skills" / "example-skill" / "SKILL.md",
+            _DEFAULT_EXAMPLE_SKILL,
+            force=force,
+            created=created,
+            skipped=skipped,
+        )
+
+    payload = {
+        "ok": True,
+        "workspace": str(workspace),
+        "agent_id": agent_id,
+        "created": created,
+        "skipped": skipped,
+        "next": f"anyagent doctor --workspace {workspace}",
+    }
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    workspace = Path(args.workspace).expanduser().resolve()
+    findings = _doctor_workspace(workspace)
+    ok = not any(item["level"] == "error" for item in findings)
+    payload = {"ok": ok, "workspace": str(workspace), "findings": findings}
+    if bool(args.json):
+        print(json.dumps(payload, ensure_ascii=False))
+    else:
+        print(f"anyagent doctor: {'ok' if ok else 'failed'}")
+        print(f"workspace: {workspace}")
+        for item in findings:
+            print(f"[{item['level']}] {item['code']}: {item['message']}")
+    return 0 if ok else 1
+
+
+def _doctor_workspace(workspace: Path) -> list[dict[str, str]]:
+    findings: list[dict[str, str]] = []
+
+    def add(level: str, code: str, message: str) -> None:
+        findings.append({"level": level, "code": code, "message": message})
+
+    root = workspace / ".agents" / "agents"
+    if not root.is_dir():
+        add("error", "missing_agent_root", f"missing agent packs root: {root}")
+        return findings
+
+    try:
+        catalog = load_agent_catalog(workspace_dir=workspace)
+    except AgentPackError as e:
+        add("error", "agent_catalog_invalid", str(e))
+        return findings
+    except Exception as e:  # noqa: BLE001
+        add("error", "agent_catalog_error", str(e))
+        return findings
+
+    if not catalog.packs:
+        add("error", "no_agents", f"no agent packs found under: {root}")
+        return findings
+
+    main = catalog.get("main")
+    if main is None:
+        add("warning", "missing_main_agent", "no agent_id=main pack found; `anyagent serve` currently requires exposed main")
+    elif not main.spec.exposed:
+        add("error", "main_not_exposed", "agent_id=main exists but exposed=false; `anyagent serve` requires exposed main")
+
+    for pack in catalog.packs.values():
+        add("info", "agent_loaded", f"agent {pack.agent_id}: exposed={pack.spec.exposed} sandbox={pack.spec.sandbox.mode}")
+        if not pack.spec.tools.requested_tool_names:
+            add("warning", "agent_no_tools", f"agent {pack.agent_id} requests no tools")
+        if pack.spec.sandbox.mode == "opensandbox":
+            add("error", "opensandbox_unavailable", f"agent {pack.agent_id} uses opensandbox, which this build does not implement")
+
+        skills, skill_errors = discover_skills(
+            [SkillRoot(scope="agent", root=pack.skills_dir), *default_skill_roots(workspace_dir=workspace)]
+        )
+        for path, reason in skill_errors:
+            add("warning", "skill_load_error", f"{path}: {reason}")
+        disabled_ids = resolve_disabled_skill_stable_ids(
+            pack.spec.skills.disabled_paths,
+            skills=skills,
+            base_dir=pack.root_dir,
+        )
+        visible_skill_names = {skill.frontmatter.name for skill in skills if skill.stable_id not in disabled_ids}
+        for name in pack.spec.skills.default_selected or []:
+            if isinstance(name, str) and name.startswith("skill://"):
+                continue
+            if name not in visible_skill_names:
+                add("warning", "skill_not_found", f"agent {pack.agent_id} selects missing skill: {name}")
+
+        if pack.mcp_config is not None:
+            for label, server in sorted(pack.mcp_config.mcpServers.items()):
+                transport = server.infer_transport().value
+                add("info", "mcp_server_loaded", f"agent {pack.agent_id} mcp {label}: transport={transport}")
+                if server.command:
+                    command = server.command.strip()
+                    if os.sep not in command and shutil.which(command) is None:
+                        add("warning", "mcp_command_missing", f"agent {pack.agent_id} mcp {label} command not found: {command}")
+                    if server.cwd and not Path(server.cwd).expanduser().exists():
+                        add("warning", "mcp_cwd_missing", f"agent {pack.agent_id} mcp {label} cwd missing: {server.cwd}")
+
+    if not findings:
+        add("info", "workspace_ok", "workspace is valid")
+    return findings
+
+
+def _validate_init_agent_id(agent_id: str) -> str:
+    value = agent_id.strip()
+    if not value:
+        raise SystemExit("--agent-id must be non-empty")
+    if len(value) > 64 or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-" for ch in value):
+        raise SystemExit("--agent-id must match [a-zA-Z0-9_.-]{1,64}")
+    return value
+
+
+def _write_file(path: Path, text: str, *, force: bool, created: list[str], skipped: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not force:
+        skipped.append(str(path))
+        return
+    path.write_text(text, encoding="utf-8")
+    created.append(str(path))
+
+
+def _render_agent_yaml(*, selected_skills: list[str]) -> str:
+    skills_block = (
+        "  default_selected: []\n"
+        if not selected_skills
+        else "  default_selected:\n" + "".join(f"    - {name}\n" for name in selected_skills)
+    )
+    return (
+        "exposed: true\n"
+        "tools:\n"
+        "  requested_tool_names: []\n"
+        "skills:\n"
+        f"{skills_block}"
+        "sandbox:\n"
+        "  mode: disabled\n"
+        "multiagent:\n"
+        "  spawn_allow_agent_ids: []\n"
+    )
+
+
+_DEFAULT_AGENT_INSTRUCTIONS = """# Main Agent
+
+You are the default anyagent assistant for this workspace.
+
+- Follow the user's request directly.
+- Use configured skills when they apply.
+- Use configured MCP tools only through their exposed tool names.
+- Do not treat AGENTS.md as a permission source; tool access is controlled by agent.yaml and the server.
+"""
+
+
+_DEFAULT_MCP_JSON = """{
+  "mcpServers": {}
+}
+"""
+
+
+_DEFAULT_EXAMPLE_SKILL = """---
+name: example-skill
+description: Minimal example skill generated by `anyagent init`.
+metadata:
+  short-description: Example skill
+---
+
+# Example Skill
+
+Use this skill when the user asks for a simple demonstration of workspace-local skills.
+"""
 
 
 def _add_common_admin_flags(p: argparse.ArgumentParser) -> None:
