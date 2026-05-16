@@ -31,7 +31,7 @@ Scope: Agent API / SDK / 接入规范
    - anyagent 是 **server-side orchestration**（tool loop 在 Agent API 服务端执行），SDK 是远程服务的类型安全封装
    - 入口类 `AnyAgent` 维持单一表面；主兼容面通过 `client.openai` / `client.async_openai` 暴露
    - `responses` 的 `create/stream/retrieve/cancel` 主兼容面优先使用 OpenAI 官方 SDK（避免重复封装 fast-moving schema + HTTP 调用）
-   - `client.responses` / `client.events` / `client.skills` 承载 anyagent 自有的 async helper 与超集能力
+   - `client.responses` / `client.events` / `client.agents` / `client.skills` / `client.prompts` / `client.admin` 承载 anyagent 自有的 async helper 与超集能力
 3. 新增外部 endpoint 时，优先遵循 OpenAI 语义与命名；仅在 OpenAI 未覆盖时新增 AnyAgent 增强语义。
 
 ### SDK 资源型命名空间设计
@@ -60,6 +60,8 @@ async for ev in client.events.stream_typed(response_id):  # GET /internal/events
     ...
 
 skills = await client.skills.list(agent_id="main")  # GET /internal/skills/list
+agents = await client.agents.list()                 # GET /internal/agents
+health = await client.health()                      # GET /healthz
 
 # ── 显式工厂（需要新实例时） ──
 client.as_openai_client()                 # → 新的 openai.OpenAI

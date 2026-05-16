@@ -19,6 +19,7 @@ from anyagent.gateway.session import session_partition_key
 from anyagent.mcp.manager import MCPManagerRegistry
 from anyagent.observability import emit_observability_event
 from anyagent.protocol.credential_vault import AdminCredentialSetRequest
+from anyagent.protocol.health import HealthResponse
 from anyagent.protocol.agent_api_internal import (
     InternalAgentDetailResponse,
     InternalAgentListItem,
@@ -249,7 +250,11 @@ def create_app(
 
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:
-        return {"ok": True, "workspace": str(state.workspace_dir), "agent_ids": sorted(state.catalog.packs.keys())}
+        return HealthResponse(
+            ok=True,
+            workspace=str(state.workspace_dir),
+            agent_ids=sorted(state.catalog.packs.keys()),
+        ).model_dump(exclude_none=True)
 
     @app.post("/admin/credentials")
     async def admin_set_credential(

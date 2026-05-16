@@ -14,6 +14,7 @@ __all__ = [
     "session_snapshot",
     "workspace",
     "observability",
+    "health",
 ]
 
 # Intentionally do not import submodules here:

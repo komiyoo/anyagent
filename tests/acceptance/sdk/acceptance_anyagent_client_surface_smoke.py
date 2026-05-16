@@ -9,6 +9,8 @@ from anyagent import AnyAgent
 from anyagent.agent_api_client import Admin, Agents, Prompts, Responses
 from anyagent.protocol.admin_storage import StorageHealthResponse
 from anyagent.protocol.agent_api_internal import InternalAgentDetailResponse, InternalAgentsListResponse, InternalPromptBundlePreviewResponse
+from anyagent.protocol.credential_vault import AdminCredentialListResponse, AdminCredentialRef
+from anyagent.protocol.health import HealthResponse
 from anyagent.protocol.openai_responses import build_minimal_openai_response_json
 
 
@@ -42,6 +44,14 @@ def main() -> int:
         str(client_v1.openai.base_url).rstrip("/") == "http://127.0.0.1:8787/v1",
         "pre-normalized /v1 base_url should not duplicate suffix",
     )
+
+    async def _fake_health(self: AnyAgent) -> HealthResponse:
+        _ = self
+        return HealthResponse(ok=True, workspace="/example-workspace", agent_ids=["main"])
+
+    with patch.object(AnyAgent, "health", _fake_health):
+        health = asyncio.run(client.health())
+        _assert(health.agent_ids == ["main"], "`client.health()` should parse typed health payload")
 
     async def _fake_retrieve_valid(self: Responses, response_id: str) -> dict:
         return build_minimal_openai_response_json(response_id=response_id, status="completed")
@@ -89,6 +99,57 @@ def main() -> int:
         _assert(health.ok is True, "`client.admin.storage_health()` should parse typed payload")
         _assert(health.backends.session_lock == "redis", "storage health backend parsing mismatch")
         _assert(health.capabilities["session_store"].tier == "external", "storage capability parsing mismatch")
+
+    async def _fake_set_credential(self: Admin, request) -> AdminCredentialRef:
+        _ = self, request
+        return AdminCredentialRef.model_validate(
+            {
+                "credential_id": "search_api_key",
+                "kind": "api_key",
+                "scope": {"level": "agent", "agent_id": "main"},
+                "metadata": {"provider": "search"},
+            }
+        )
+
+    async def _fake_list_credentials(self: Admin) -> AdminCredentialListResponse:
+        _ = self
+        return AdminCredentialListResponse.model_validate(
+            {
+                "credentials": [
+                    {
+                        "credential_id": "search_api_key",
+                        "kind": "api_key",
+                        "scope": {"level": "agent", "agent_id": "main"},
+                        "metadata": {"provider": "search"},
+                    }
+                ]
+            }
+        )
+
+    async def _fake_delete_credential(self: Admin, credential_id: str) -> dict:
+        _ = self
+        return {"ok": True, "deleted": credential_id == "search_api_key", "credential_id": credential_id}
+
+    with (
+        patch.object(Admin, "set_credential", _fake_set_credential),
+        patch.object(Admin, "list_credentials", _fake_list_credentials),
+        patch.object(Admin, "delete_credential", _fake_delete_credential),
+    ):
+        cred = asyncio.run(
+            client.admin.set_credential(
+                {
+                    "credential_id": "search_api_key",
+                    "kind": "api_key",
+                    "value": "secret",
+                    "scope": {"level": "agent", "agent_id": "main"},
+                }
+            )
+        )
+        _assert(cred.scope.agent_id == "main", "`client.admin.set_credential()` should parse typed ref")
+        creds = asyncio.run(client.admin.list_credentials())
+        _assert(creds.credentials[0].credential_id == "search_api_key", "`client.admin.list_credentials()` parsing mismatch")
+        deleted = asyncio.run(client.admin.delete_credential("search_api_key"))
+        _assert(deleted["deleted"] is True and deleted["credential_id"] == "search_api_key", "`client.admin.delete_credential()` delete payload mismatch")
 
     async def _fake_agents_list(self: Agents, *, include_unexposed: bool = False) -> InternalAgentsListResponse:
         _ = self, include_unexposed

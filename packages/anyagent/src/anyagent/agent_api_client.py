@@ -41,6 +41,8 @@ from anyagent.protocol.agent_api_internal import (
     PromptRunBundleToolLoopItem,
     InternalSkillsListResponse,
 )
+from anyagent.protocol.credential_vault import AdminCredentialListResponse, AdminCredentialRef, AdminCredentialSetRequest
+from anyagent.protocol.health import HealthResponse
 from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam, build_minimal_openai_response_json
 from anyagent.protocol.sandbox import FileSystemSandboxPolicy, SandboxPolicy
 from anyagent.protocol.admin_storage import StorageHealthResponse
@@ -141,6 +143,17 @@ class _Namespace:
                 r = await c.post(url, headers=request_headers, json=json_body)
         else:
             r = await self._http.post(url, headers=request_headers, json=json_body, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+
+    async def _delete(self, path: str, *, timeout: float = 10.0) -> Any:
+        """Issue DELETE and return parsed JSON."""
+        url = f"{self._base_url}{path}"
+        if self._http is None:
+            async with httpx.AsyncClient(timeout=timeout) as c:
+                r = await c.delete(url, headers=self._headers())
+        else:
+            r = await self._http.delete(url, headers=self._headers(), timeout=timeout)
         r.raise_for_status()
         return r.json()
 
@@ -423,6 +436,21 @@ class Admin(_Namespace):
         data = await self._get("/admin/storage/health")
         return StorageHealthResponse.model_validate(data)
 
+    async def set_credential(self, request: AdminCredentialSetRequest | dict[str, Any]) -> AdminCredentialRef:
+        model = request if isinstance(request, AdminCredentialSetRequest) else AdminCredentialSetRequest.model_validate(request)
+        data = await self._post_json("/admin/credentials", json_body=model.model_dump(exclude_none=True))
+        return AdminCredentialRef.model_validate(data)
+
+    async def list_credentials(self) -> AdminCredentialListResponse:
+        data = await self._get("/admin/credentials")
+        return AdminCredentialListResponse.model_validate(data)
+
+    async def delete_credential(self, credential_id: str) -> dict[str, Any]:
+        data = await self._delete(f"/admin/credentials/{credential_id}")
+        if not isinstance(data, dict):
+            raise RuntimeError("invalid /admin/credentials/{credential_id} delete payload")
+        return data
+
 
 # ---------------------------------------------------------------------------
 # AnyAgent — SDK 入口
@@ -447,9 +475,13 @@ class AnyAgent:
         events = await client.events.list(response_id)
         async for ev in client.events.stream_typed(response_id):
             ...
+        health = await client.health()
+        agents = await client.agents.list()
+        agent = await client.agents.get("main")
         skills = await client.skills.list(agent_id="main")
         preview = await client.prompts.preview({...})
         example = client.prompts.example_run_bundle()
+        await client.admin.set_credential({...})
 
         # Convenience: get OpenAI official SDK clients
         openai_client = client.as_openai_client()
@@ -467,6 +499,7 @@ class AnyAgent:
 
         self._base_url = base
         self._api_key = api_key
+        self._http = http
         self._openai_client: OpenAI | None = None
         self._async_openai_client: AsyncOpenAI | None = None
 
@@ -476,6 +509,10 @@ class AnyAgent:
         self.skills = Skills(**shared)
         self.prompts = Prompts(**shared)
         self.admin = Admin(**shared)
+
+    async def health(self) -> HealthResponse:
+        data = await _Namespace(base_url=self._base_url, api_key=self._api_key, http=self._http)._get("/healthz")
+        return HealthResponse.model_validate(data)
 
     def _openai_base_url(self) -> str:
         """Return normalized OpenAI SDK base URL for this AnyAgent server."""

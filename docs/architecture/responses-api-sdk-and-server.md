@@ -175,6 +175,7 @@ custom_bundle = client.prompts.example_run_bundle(
 - `client.openai` / `client.async_openai` 是主入口，承载 OpenAI 兼容面
 - `client.events.*` / `client.skills.*` / `client.agents.*` 承载 anyagent 超集面；其中 replay/debug/catalog 主路径应优先使用 typed helpers，而不是让上层手写 SSE block 或直接读 workspace 文件
 - `client.agents.list()` 用于发现当前允许外部指定的 agent ids；`client.agents.get(agent_id, include_prompt=False)` 用于查看结构化配置和 prompt 元信息，完整 prompt 文本必须显式请求
+- `client.health()`、`client.admin.storage_health()`、`client.admin.set_credential/list_credentials/delete_credential()` 覆盖服务端健康与管理面，凭证接口只返回引用信息，不读取明文 value
 - `client.prompts.preview()` 用于查看某一次请求会如何被上下文工程与 manifest 组装
 - `client.prompts.example_run_bundle()` 用于返回一份纯本地、与真实运行时无关的完整 run bundle 示例，适合 explain / onboarding / UI 开发
 - `client.prompts.example_run_bundle(scenario=...)` 现支持多种场景模板，例如 `sandbox_file_write`、`multi_skill_research`、`toolset_retry`
