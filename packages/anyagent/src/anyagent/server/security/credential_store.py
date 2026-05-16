@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import time
 from typing import Any
 
 from anyagent.mcp.auth import CredentialResolver
+from anyagent.observability import emit_observability_event
 from anyagent.protocol.credential_vault import (
     AdminCredentialListResponse,
     AdminCredentialRef,
@@ -40,7 +40,8 @@ def _log_credential_audit(
         "agent_id": agent_id,
         "deleted": deleted,
     }
-    logger.info("credential_audit %s", json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+    event = emit_observability_event("credential_audit", category="audit", level="info", payload=payload)
+    logger.info("credential_audit %s", event.model_dump_json(exclude_none=True))
 
 
 class InMemoryCredentialStore(CredentialResolver):

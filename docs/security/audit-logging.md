@@ -14,6 +14,25 @@ req: ["requirements.md#req-5-13", "requirements.md#req-8"]
 
 v0 阶段先以结构化日志满足“可追踪/可复盘”的最小线：对每次 tool execute 产生可关联的 `audit_ref`，并在日志中包含必要的链路字段，同时避免写入敏感信息。
 
+当前实现通过 `anyagent.protocol.observability.ObservabilityEvent` 统一封装审计/运行时事件，并由 `anyagent.observability.ObservabilityEmitter` fan-out 到 Python logging 与可选第三方 HTTP JSON collector。`ANYAGENT_LOG_FORMAT=json` 可开启本地 JSON 日志；`ANYAGENT_OBSERVABILITY_HTTP_URL` 可配置远端采集地址。
+
+已纳入统一事件面的最小集合：
+
+- `tool_execute.begin/done/cache_hit`
+- `credential_audit`
+- `mcp.server.connected`
+- `mcp.server.connection_failed`
+- `mcp.tools.listed`
+- `mcp.tools.list_failed`
+- `mcp.tool.conversion_failed`
+- `mcp.tool.called`
+- `mcp.server.idle_disconnected`
+- `server.response.request_received`
+- `server.response.replayed`
+- `server.response.run_started`
+- `server.response.stream.completed/cancelled/failed`
+- `server.response.nonstream.completed/failed`
+
 ## 1. 关键字段（必须）
 
 Tool Runtime 在 `tool_execute.begin/done/cache_hit` 日志里至少包含：

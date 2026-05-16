@@ -30,6 +30,8 @@ anyagent doctor --workspace ./my-workspace
 
 `init` 会生成一个最小可启动 workspace；`doctor` 会在启动前检查 agent pack、skills、MCP 配置和常见安全边界问题。
 
+`doctor --json` 输出遵循 typed protocol model（`WorkspaceDoctorReport`），可直接接入 CI 或平台控制面。
+
 ```text
 my-workspace/
   .agents/
@@ -111,6 +113,11 @@ anyagent storage-migrate
 
 # 本地开发如需跳过显式 migration，可临时退回 runtime fallback
 POSTGRES_SCHEMA_POLICY=runtime_create anyagent serve
+
+# 结构化日志与第三方采集（可选）
+ANYAGENT_LOG_FORMAT=json \
+ANYAGENT_OBSERVABILITY_HTTP_URL=https://collector.example.com/ingest \
+anyagent serve --workspace ./my-workspace
 ```
 
 ### 3. 调用

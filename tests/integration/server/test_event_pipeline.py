@@ -10,6 +10,8 @@ from openai.types.responses.response import Response
 from openai.types.responses.response_completed_event import ResponseCompletedEvent
 from openai.types.responses.response_created_event import ResponseCreatedEvent
 
+from anyagent.observability import ObservabilitySink, get_observability_emitter
+from anyagent.protocol.observability import ObservabilityEvent
 from anyagent.protocol.sse import SSEBlockDecoder
 from anyagent.server.app import _append_sse_chunk, _build_external_response_stream, _update_session_snapshot, create_app
 from anyagent.server.session_context import prepare_response_session_context
@@ -105,6 +107,14 @@ class _RecordingProvider(_NoToolProvider):
         payload = response.model_dump(exclude_none=True, by_alias=True)
         payload["id"] = f"resp_recorded_{len(self.seen_bodies)}"
         return Response.model_validate(payload)
+
+
+class _MemoryObservabilitySink(ObservabilitySink):
+    def __init__(self) -> None:
+        self.events: list[ObservabilityEvent] = []
+
+    def emit(self, event: ObservabilityEvent) -> None:
+        self.events.append(event)
 
 
 def test_external_response_stream_completed_event_marks_final_and_appends_done() -> None:
@@ -362,6 +372,52 @@ def test_create_response_reuses_manifest_cache_within_app_boundary() -> None:
                     server_app_module.get_default_model_provider = original_provider_factory
             finally:
                 runtime.manifest = original_manifest  # type: ignore[method-assign]
+
+    asyncio.run(_run())
+
+
+def test_create_response_emits_server_observability_lifecycle() -> None:
+    async def _run() -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_workspace(root)
+            sink = _MemoryObservabilitySink()
+            emitter = get_observability_emitter()
+            emitter.configure([sink])
+
+            import anyagent.server.app as server_app_module
+
+            original_provider_factory = server_app_module.get_default_model_provider
+            server_app_module.get_default_model_provider = lambda: _NoToolProvider()
+            try:
+                app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+                transport = httpx.ASGITransport(app=app)
+                async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
+                    resp = await client.post(
+                        "/v1/responses",
+                        headers={"Authorization": "Bearer user-key"},
+                        json={"model": "gpt-4o-mini", "input": "observe", "metadata": {"session_key": "sess-observe"}},
+                    )
+                    assert resp.status_code == 200, resp.text
+                    response_id = resp.json()["id"]
+            finally:
+                server_app_module.get_default_model_provider = original_provider_factory
+                emitter.configure([])
+
+            by_name = {event.event: event for event in sink.events}
+            assert "server.response.request_received" in by_name
+            assert "server.response.run_started" in by_name
+            assert "server.response.nonstream.completed" in by_name
+
+            request_payload = by_name["server.response.request_received"].payload
+            assert request_payload["agent_id"] == "main"
+            assert request_payload["session_key"] == "sess-observe"
+            assert request_payload["stream"] is False
+
+            completed_payload = by_name["server.response.nonstream.completed"].payload
+            assert completed_payload["response_id"] == response_id
+            assert completed_payload["status_code"] == 200
+            assert completed_payload["status"] == "completed"
 
     asyncio.run(_run())
 

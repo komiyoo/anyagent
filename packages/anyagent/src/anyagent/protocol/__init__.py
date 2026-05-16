@@ -12,6 +12,8 @@ __all__ = [
     "context_fragments",
     "prompt_context",
     "session_snapshot",
+    "workspace",
+    "observability",
 ]
 
 # Intentionally do not import submodules here:

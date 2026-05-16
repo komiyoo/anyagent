@@ -17,6 +17,7 @@ from anyagent.agent_runtime.model_providers import get_default_model_provider
 from anyagent.gateway.sequencer import KeyedSequencer
 from anyagent.gateway.session import session_partition_key
 from anyagent.mcp.manager import MCPManagerRegistry
+from anyagent.observability import emit_observability_event
 from anyagent.protocol.credential_vault import AdminCredentialSetRequest
 from anyagent.protocol.agent_api_internal import InternalPromptBundlePreviewResponse
 from anyagent.protocol.openai_responses import (
@@ -24,6 +25,7 @@ from anyagent.protocol.openai_responses import (
     build_minimal_openai_response_json,
     serialize_completed_response_event_data,
 )
+from anyagent.protocol.observability import ObservabilityLevel
 from anyagent.protocol.prompt_context import PromptContextAudit
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.protocol.sse import SSEBlockDecoder, encode_sse_block
@@ -84,6 +86,37 @@ def _load_workspace_env_defaults(workspace_dir: Path) -> None:
             value = value.strip()
             if key and key not in os.environ:
                 os.environ[key] = value
+
+
+def _emit_server_response_event(
+    event: str,
+    *,
+    level: ObservabilityLevel = "info",
+    response_id: str | None = None,
+    agent_id: str | None = None,
+    session_key: str | None = None,
+    stream: bool | None = None,
+    idempotency_key_present: bool | None = None,
+    status_code: int | None = None,
+    status: str | None = None,
+    error_type: str | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "response_id": response_id,
+        "agent_id": agent_id,
+        "session_key": session_key,
+        "stream": stream,
+        "idempotency_key_present": idempotency_key_present,
+        "status_code": status_code,
+        "status": status,
+        "error_type": error_type,
+    }
+    emit_observability_event(
+        event,
+        category="server",
+        level=level,
+        payload={key: value for key, value in payload.items() if value is not None},
+    )
 
 
 @dataclass(slots=True)
@@ -409,19 +442,27 @@ def create_app(
         pack = state.require_pack(agent_id, external=True)
         session_key = _resolve_session_key(body=body)
         session_partition_key_value = session_partition_key(agent_id=agent_id, session_key=session_key)
+        stream_requested = bool(body.get("stream"))
+        _emit_server_response_event(
+            "server.response.request_received",
+            agent_id=agent_id,
+            session_key=session_key,
+            stream=stream_requested,
+            idempotency_key_present=idempotency_key is not None,
+        )
         async def _create_started_run(response_id_value: str, idem_value: str | None):
             await state.events.mark_started(response_id=response_id_value)
             return await state.run_store.create_started(
                 response_id=response_id_value,
                 agent_id=agent_id,
                 session_key=session_key,
-                stream=bool(body.get("stream")),
+                stream=stream_requested,
                 idempotency_key=idem_value,
             )
 
         gate = await begin_or_replay_response_run(
             idempotency_key=idempotency_key,
-            stream=bool(body.get("stream")),
+            stream=stream_requested,
             new_response_id_factory=lambda: f"resp_{uuid.uuid4().hex}",
             lookup_existing_run=state.run_store.get_by_idempotency_key,
             create_started_run=_create_started_run,
@@ -438,10 +479,26 @@ def create_app(
             ),
         )
         if gate.response is not None:
-            if bool(body.get("stream")):
+            _emit_server_response_event(
+                "server.response.replayed",
+                response_id=gate.response_id,
+                agent_id=agent_id,
+                session_key=session_key,
+                stream=stream_requested,
+                idempotency_key_present=idempotency_key is not None,
+            )
+            if stream_requested:
                 return gate.response
             return JSONResponse(gate.response)
         response_id = gate.response_id
+        _emit_server_response_event(
+            "server.response.run_started",
+            response_id=response_id,
+            agent_id=agent_id,
+            session_key=session_key,
+            stream=stream_requested,
+            idempotency_key_present=idempotency_key is not None,
+        )
         selected_skills = await _select_skills(state, pack=pack, body=body)
         tool_context = _build_server_tool_context(pack=pack, body=body, selected_skills=selected_skills)
         prompt_envelope = build_prompt_envelope(
@@ -508,7 +565,7 @@ def create_app(
         )
         await _stage_sink(prompt_context_event)
 
-        if bool(body.get("stream")):
+        if stream_requested:
             created_block = _build_created_sse_block(response_id=response_id, body=body)
             created_payload = {
                 "type": "response.created",
@@ -528,8 +585,10 @@ def create_app(
             queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
             async def _worker_stream() -> None:
+                stream_terminal_status = "completed"
                 try:
                     async def _run_stream_serialized() -> None:
+                        nonlocal stream_terminal_status
                         async with hold_session_lease(
                             service=state.session_lock_service,
                             session_partition_key=session_partition_key_value,
@@ -579,6 +638,16 @@ def create_app(
                                     )
                                     await queue.put(chunk)
                             except asyncio.CancelledError:
+                                stream_terminal_status = "cancelled"
+                                _emit_server_response_event(
+                                    "server.response.stream.cancelled",
+                                    response_id=response_id,
+                                    agent_id=agent_id,
+                                    session_key=session_key,
+                                    stream=True,
+                                    idempotency_key_present=idempotency_key is not None,
+                                    status="cancelled",
+                                )
                                 payload = build_minimal_openai_response_json(
                                     response_id=response_id,
                                     status="cancelled",
@@ -620,6 +689,18 @@ def create_app(
                                 await queue.put(done_block)
                                 raise
                             except Exception as e:  # noqa: BLE001
+                                stream_terminal_status = "failed"
+                                _emit_server_response_event(
+                                    "server.response.stream.failed",
+                                    level="error",
+                                    response_id=response_id,
+                                    agent_id=agent_id,
+                                    session_key=session_key,
+                                    stream=True,
+                                    idempotency_key_present=idempotency_key is not None,
+                                    status="failed",
+                                    error_type=type(e).__name__,
+                                )
                                 payload = build_minimal_openai_response_json(
                                     response_id=response_id,
                                     status="failed",
@@ -656,11 +737,22 @@ def create_app(
                                     previous_snapshot_version=session_ctx.previous_snapshot_version,
                                     runtime_config=session_ctx.effective_runtime_config,
                                     request_transcript_items=session_ctx.request_transcript_items,
+                                    prompt_audit=prompt_audit,
                                 )
                                 await queue.put(completed_block)
                                 await queue.put(done_block)
 
                     await state.session_sequencer.run(session_partition_key_value, _run_stream_serialized)
+                    if stream_terminal_status == "completed":
+                        _emit_server_response_event(
+                            "server.response.stream.completed",
+                            response_id=response_id,
+                            agent_id=agent_id,
+                            session_key=session_key,
+                            stream=True,
+                            idempotency_key_present=idempotency_key is not None,
+                            status="completed",
+                        )
                 finally:
                     await queue.put(None)
                     await state.runs.remove(response_id)
@@ -821,6 +913,18 @@ def create_app(
                 )
                 result_box["status_code"] = status_code
                 result_box["payload"] = payload
+                payload_status = payload.get("status") if isinstance(payload, dict) and isinstance(payload.get("status"), str) else None
+                _emit_server_response_event(
+                    "server.response.nonstream.completed" if status_code < 500 else "server.response.nonstream.failed",
+                    level="info" if status_code < 500 else "error",
+                    response_id=response_id,
+                    agent_id=agent_id,
+                    session_key=session_key,
+                    stream=False,
+                    idempotency_key_present=idempotency_key is not None,
+                    status_code=status_code,
+                    status=payload_status,
+                )
             finally:
                 await state.runs.remove(response_id)
 

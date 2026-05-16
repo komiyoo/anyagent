@@ -13,12 +13,14 @@ import uvicorn
 import yaml
 
 from anyagent.agent_packs import AgentPackError, load_agent_catalog
+from anyagent.observability import configure_observability_from_env
 from anyagent.protocol.credential_vault import (
     AdminCredentialListResponse,
     AdminCredentialRef,
     AdminCredentialSetRequest,
     CredentialScope,
 )
+from anyagent.protocol.workspace import WorkspaceDoctorFinding, WorkspaceDoctorReport, WorkspaceInitResult
 from anyagent.server import create_app
 from anyagent.server.migrations import apply_storage_migrations
 from anyagent.skills import SkillRoot, default_skill_roots, discover_skills, resolve_disabled_skill_stable_ids
@@ -240,6 +242,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
+    configure_observability_from_env()
     api_key = args.api_key or os.getenv("ANYAGENT_API_KEY")
     admin_key = args.admin_key or os.getenv("ADMIN_API_KEY")
     app = create_app(
@@ -305,30 +308,31 @@ def _cmd_init(args: argparse.Namespace) -> int:
         "skipped": skipped,
         "next": f"anyagent doctor --workspace {workspace}",
     }
-    print(json.dumps(payload, ensure_ascii=False))
+    result = WorkspaceInitResult.model_validate(payload)
+    print(result.model_dump_json(exclude_none=True))
     return 0
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
     workspace = Path(args.workspace).expanduser().resolve()
     findings = _doctor_workspace(workspace)
-    ok = not any(item["level"] == "error" for item in findings)
-    payload = {"ok": ok, "workspace": str(workspace), "findings": findings}
+    ok = not any(item.level == "error" for item in findings)
+    payload = WorkspaceDoctorReport(ok=ok, workspace=str(workspace), findings=findings)
     if bool(args.json):
-        print(json.dumps(payload, ensure_ascii=False))
+        print(payload.model_dump_json(exclude_none=True))
     else:
         print(f"anyagent doctor: {'ok' if ok else 'failed'}")
         print(f"workspace: {workspace}")
-        for item in findings:
-            print(f"[{item['level']}] {item['code']}: {item['message']}")
+        for item in payload.findings:
+            print(f"[{item.level}] {item.code}: {item.message}")
     return 0 if ok else 1
 
 
-def _doctor_workspace(workspace: Path) -> list[dict[str, str]]:
-    findings: list[dict[str, str]] = []
+def _doctor_workspace(workspace: Path) -> list[WorkspaceDoctorFinding]:
+    findings: list[WorkspaceDoctorFinding] = []
 
     def add(level: str, code: str, message: str) -> None:
-        findings.append({"level": level, "code": code, "message": message})
+        findings.append(WorkspaceDoctorFinding.model_validate({"level": level, "code": code, "message": message}))
 
     root = workspace / ".agents" / "agents"
     if not root.is_dir():

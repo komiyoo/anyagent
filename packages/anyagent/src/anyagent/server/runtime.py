@@ -38,6 +38,7 @@ from anyagent.protocol.tool_runtime import (
 )
 from anyagent.gateway.session import session_partition_key
 from anyagent.mcp.auth import CredentialResolver
+from anyagent.observability import emit_observability_event
 from anyagent.server.sandbox import EXEC_TOOL, SandboxManager, build_exec_handler
 from anyagent.skills import (
     SkillEnablement,
@@ -114,7 +115,8 @@ def _log_tool_execute(
         duration_ms=duration_ms,
         output_truncated=output_truncated,
     )
-    logger.info("%s %s", event_name, json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+    event = emit_observability_event(event_name, category="audit", level="info", payload=payload)
+    logger.info("%s %s", event_name, event.model_dump_json(exclude_none=True))
 
 
 def _extract_output_truncated(output: str) -> bool:

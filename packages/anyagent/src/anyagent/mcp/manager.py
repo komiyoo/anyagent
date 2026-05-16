@@ -5,6 +5,8 @@ import logging
 import time
 from typing import Any
 
+from anyagent.observability import emit_observability_event
+
 from .auth import CredentialResolver
 from .models import MCPConfig
 from .server import MCPServer, MCPServerError, create_mcp_server
@@ -45,8 +47,20 @@ class MCPServerManager:
         for label, server in self._servers.items():
             try:
                 await server.ensure_connected()
+                emit_observability_event(
+                    "mcp.server.connected",
+                    category="mcp",
+                    level="info",
+                    payload={"agent_id": self.agent_id, "server_label": label},
+                )
                 alive.append(server)
             except Exception as e:  # noqa: BLE001
+                emit_observability_event(
+                    "mcp.server.connection_failed",
+                    category="mcp",
+                    level="warning",
+                    payload={"agent_id": self.agent_id, "server_label": label, "error": str(e)},
+                )
                 logger.warning(
                     "mcp server connection failed; drop_failed enabled",
                     extra={"agent_id": self.agent_id, "server_label": label, "error": str(e)},
@@ -60,7 +74,19 @@ class MCPServerManager:
         for server in servers:
             try:
                 tools = await server.list_tools()
+                emit_observability_event(
+                    "mcp.tools.listed",
+                    category="mcp",
+                    level="info",
+                    payload={"agent_id": self.agent_id, "server_label": server.name, "tool_count": len(tools)},
+                )
             except Exception as e:  # noqa: BLE001
+                emit_observability_event(
+                    "mcp.tools.list_failed",
+                    category="mcp",
+                    level="warning",
+                    payload={"agent_id": self.agent_id, "server_label": server.name, "error": str(e)},
+                )
                 logger.warning(
                     "mcp list_tools failed; skipping server",
                     extra={"agent_id": self.agent_id, "server_label": server.name, "error": str(e)},
@@ -70,6 +96,12 @@ class MCPServerManager:
                 try:
                     out.append(mcp_tool_to_function_param(tool, server_label=server.name))
                 except Exception as e:  # noqa: BLE001
+                    emit_observability_event(
+                        "mcp.tool.conversion_failed",
+                        category="mcp",
+                        level="warning",
+                        payload={"agent_id": self.agent_id, "server_label": server.name, "error": str(e)},
+                    )
                     logger.warning(
                         "mcp tool conversion failed; skipping tool",
                         extra={
@@ -88,6 +120,12 @@ class MCPServerManager:
             raise MCPServerError(f"unknown mcp server label: {server_label}")
 
         result = await server.call_tool(local_tool_name, arguments or {})
+        emit_observability_event(
+            "mcp.tool.called",
+            category="mcp",
+            level="info",
+            payload={"agent_id": self.agent_id, "server_label": server_label, "tool_name": local_tool_name},
+        )
         return mcp_call_result_to_output_text(result)
 
     async def cleanup(self) -> None:
@@ -111,6 +149,12 @@ class MCPServerManager:
                     continue
                 try:
                     await server.disconnect()
+                    emit_observability_event(
+                        "mcp.server.idle_disconnected",
+                        category="mcp",
+                        level="info",
+                        payload={"agent_id": self.agent_id, "server_label": label},
+                    )
                     logger.info(
                         "mcp server disconnected due to idle timeout",
                         extra={"agent_id": self.agent_id, "server_label": label},
