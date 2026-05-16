@@ -21,26 +21,42 @@ anyagent serve     # 一条命令启动 Agent Server
 
 ### 1. 创建 workspace 配置
 
-最快方式：
+最快方式是用 `anyagent init` 生成一个最小可启动的 agent workspace：
 
 ```bash
 anyagent init --workspace ./my-workspace --with-example-skill
 anyagent doctor --workspace ./my-workspace
 ```
 
-`init` 会生成一个最小可启动 workspace；`doctor` 会在启动前检查 agent pack、skills、MCP 配置和常见安全边界问题。
+`init` 会生成一个最小可启动 workspace；`doctor` 会在启动前检查 agent pack、skills、MCP 配置和常见安全边界问题。`--with-example-skill` 会额外创建一个本地示例 skill，并把它加入默认选择。
+
+常用参数：
+
+```bash
+# 指定 agent_id
+anyagent init --workspace ./my-workspace --agent-id main
+
+# 带示例 skill
+anyagent init --workspace ./my-workspace --with-example-skill
+
+# 覆盖本命令生成的已有文件
+anyagent init --workspace ./my-workspace --force
+```
 
 `doctor --json` 输出遵循 typed protocol model（`WorkspaceDoctorReport`），可直接接入 CI 或平台控制面。
 
 ```text
 my-workspace/
+  AGENTS.md                       # workspace 级协作规范（可选）
   .agents/
     agents/
       main/                      # agent_id = "main"
         agent.yaml               # AgentSpec：工具、技能、多 agent 策略
-        AGENTS.md                # 行为指令（注入到 system prompt）
+        AGENTS.md                # agent 行为指令（注入到 prompt envelope）
         mcp.json                 # MCP server 连接配置（可选）
     skills/                      # 共享技能目录（可选）
+      example-skill/
+        SKILL.md                 # `--with-example-skill` 生成
 ```
 
 **agent.yaml 示例**：
@@ -78,7 +94,42 @@ multiagent:
 }
 ```
 
-### 2. 启动服务
+### 2. 编辑 Agent 指令与配置
+
+初始化后通常改这些文件：
+
+```text
+my-workspace/
+  AGENTS.md
+  .agents/agents/main/AGENTS.md
+  .agents/agents/main/agent.yaml
+  .agents/agents/main/mcp.json
+```
+
+`AGENTS.md` 写行为和协作方式，`agent.yaml` 控制工具、技能、沙箱和多 agent 边界，`mcp.json` 只放 MCP server 连接配置和凭证引用，不放明文 token。
+
+一个最小 `AGENTS.md` 可以这样写：
+
+```markdown
+你是一个工作区内的 coding agent。
+
+- 先理解用户目标，再选择工具。
+- 执行命令前说明目的。
+- 不要泄露凭据或环境变量。
+- 修改文件后给出验证命令。
+```
+
+如果要启用命令执行，把 `agent.yaml` 中的 sandbox 打开，并让工具清单包含 `exec`：
+
+```yaml
+tools:
+  requested_tool_names:
+    - exec
+sandbox:
+  mode: "local-unsafe"   # 本地开发可用；生产建议接 opensandbox/external
+```
+
+### 3. 启动服务
 
 ```bash
 # 安装
@@ -120,7 +171,7 @@ ANYAGENT_OBSERVABILITY_HTTP_URL=https://collector.example.com/ingest \
 anyagent serve --workspace ./my-workspace
 ```
 
-### 3. 调用
+### 4. 调用 OpenAI 兼容接口
 
 ```python
 from openai import OpenAI
@@ -136,11 +187,40 @@ for event in response:
     print(event)
 ```
 
+指定某个 agent 时，把 `agent_id` 放到 metadata，或者使用 `X-Agent-Id` header：
+
+```python
+response = client.responses.create(
+    model="gpt-4o",
+    input="用当前 workspace 的规则帮我检查项目",
+    metadata={"agent_id": "main", "session_key": "demo-session"},
+)
+```
+
+同一个 `agent_id + session_key` 会共享上下文并串行执行；不同 agent 或不同 session 会使用独立上下文分区。
+
+### 5. 使用 anyagent SDK 查询与调试
+
 ```python
 from anyagent import AnyAgent
 
-# anyagent SDK 提供细粒度观测
 client = AnyAgent(base_url="http://127.0.0.1:8787", api_key="your-key")
+
+# 健康检查
+health = await client.health()
+print(health.agent_ids)
+
+# 查询当前允许外部指定的 agents
+agents = await client.agents.list()
+for item in agents.agents:
+    print(item.agent_id, item.sandbox_mode, item.requested_tool_names)
+
+# 查询某个 agent 的配置和 prompt 元信息
+detail = await client.agents.get("main")
+print(detail.agents_md.path, detail.agents_md.sha256, detail.agents_md.preview)
+
+# 如确实需要完整 AGENTS.md 文本，显式打开 include_prompt
+detail_with_prompt = await client.agents.get("main", include_prompt=True)
 
 # OpenAI 兼容面
 resp = client.openai.responses.create(model="gpt-4o", input="hello")
@@ -179,6 +259,83 @@ custom_bundle = client.prompts.example_run_bundle(
     scenario="multi_skill_research",
     options={"include_mcp": False, "skill_count": 1, "sandbox_mode": "disabled"},
 )
+```
+
+### 6. 配置凭据和 MCP
+
+MCP server 或工具需要 token 时，不要把明文写进 `mcp.json`。先通过 Admin API 写入凭据引用：
+
+```bash
+ADMIN_API_KEY=admin-key anyagent credential set \
+  --admin-url http://127.0.0.1:8787 \
+  --admin-key admin-key \
+  --id cred_bocha_mcp \
+  --kind bearer_token \
+  --scope agent \
+  --agent-id main \
+  --value-from-env BOCHA_MCP_TOKEN \
+  --provider bocha
+```
+
+然后在 `.agents/agents/main/mcp.json` 中引用它：
+
+```json
+{
+  "mcpServers": {
+    "bocha-mcp": {
+      "url": "https://mcp.bochaai.com/mcp",
+      "transport": "streamable_http",
+      "auth": {
+        "credential_id": "cred_bocha_mcp",
+        "ref_kind": "bearer_token",
+        "injection": "header:Authorization",
+        "format": "Bearer {value}"
+      }
+    }
+  }
+}
+```
+
+也可以用 SDK 管理凭据：
+
+```python
+await client.admin.set_credential(
+    {
+        "credential_id": "cred_bocha_mcp",
+        "kind": "bearer_token",
+        "value": "...",
+        "scope": {"level": "agent", "agent_id": "main"},
+        "metadata": {"provider": "bocha"},
+    }
+)
+
+creds = await client.admin.list_credentials()
+await client.admin.delete_credential("cred_bocha_mcp")
+```
+
+### 7. 初始化模板和示例项目
+
+当前仓库内的正式初始化入口是 `anyagent init`，它生成的是 **basic workspace** 模板，并可通过 `--with-example-skill` 附带一个最小 skill 示例。
+
+```bash
+anyagent init --workspace ./basic-workspace --with-example-skill
+```
+
+更丰富的模板，例如 `coding-agent`、`research-agent`、`multi-agent-team`，目前还没有作为 CLI 选项正式内置。应用层 demo、生产级部署模板和平台 connector 会逐步放到同级项目 `anyagent-apps`；本仓库保持为 Server Core + SDK + Protocol 的真源。
+
+在正式模板命令补齐前，推荐做法是：
+
+```bash
+# 1. 生成 basic workspace
+anyagent init --workspace ./my-workspace --with-example-skill
+
+# 2. 复制 main agent 目录，创建另一个独立 agent
+cp -R ./my-workspace/.agents/agents/main ./my-workspace/.agents/agents/researcher
+
+# 3. 修改 researcher/AGENTS.md 和 researcher/agent.yaml
+
+# 4. 检查配置
+anyagent doctor --workspace ./my-workspace
 ```
 
 ## 安全边界
