@@ -266,6 +266,7 @@ anyagent (本仓库)           anyagent-apps (同级项目)
 
 - **Agent Packs**：`.agents/agents/<agent_id>/` 目录即行为包（`agent.yaml` + `AGENTS.md` + `mcp.json`）
 - **agent_id**：同一套服务内不同 agent 的标识（persona/权限/skills/tool policy 组合）
+- **Agent Catalog API**：`GET /internal/agents` 列出当前允许外部指定的 agents，`GET /internal/agents/{agent_id}` 查看配置与 prompt 元信息；完整 prompt 文本需显式 `include_prompt=true`
 - **session_key**：平台侧线程/会话标识
 - **session_partition_key**：并发分片键，固定为 `"{agent_id}::{session_key}"`
 - **Skills 目录**：`.agents/skills/`（跨 agent 共享技能）

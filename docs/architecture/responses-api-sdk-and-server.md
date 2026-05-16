@@ -129,6 +129,7 @@ sequenceDiagram
 - `environment_context` 应作为独立 fragment 接入请求体，而不是混入自由文本说明；如需进入缓存，应明确区分其稳定字段与高波动字段
 - 当 agent 启用 sandbox 且 `exec` 真正可见时，运行时应自动注入 `sandbox_guidance` fragment，而不是只把 `sandbox_mode` 混入环境字段
 - built-in server 应提供一个 internal prompt bundle preview 入口，用于把 rendered fragments、manifest tools、tool context、`effective_body` 与 `applied_body` 一次性展示出来
+- built-in server 应提供 typed Agent Catalog 入口，用于列出当前允许外部指定的 agents，并按 agent 查询 `agent.yaml` 摘要、prompt path/hash/preview、sandbox、skills、MCP 与 multiagent 配置
 
 ### 3.3 内置 Server 层（`anyagent.server/`）
 
@@ -172,7 +173,8 @@ custom_bundle = client.prompts.example_run_bundle(
 
 设计要点：
 - `client.openai` / `client.async_openai` 是主入口，承载 OpenAI 兼容面
-- `client.events.*` / `client.skills.*` 承载 anyagent 超集面；其中 replay/debug 主路径应优先使用 typed helpers，而不是让上层手写 SSE block 解析
+- `client.events.*` / `client.skills.*` / `client.agents.*` 承载 anyagent 超集面；其中 replay/debug/catalog 主路径应优先使用 typed helpers，而不是让上层手写 SSE block 或直接读 workspace 文件
+- `client.agents.list()` 用于发现当前允许外部指定的 agent ids；`client.agents.get(agent_id, include_prompt=False)` 用于查看结构化配置和 prompt 元信息，完整 prompt 文本必须显式请求
 - `client.prompts.preview()` 用于查看某一次请求会如何被上下文工程与 manifest 组装
 - `client.prompts.example_run_bundle()` 用于返回一份纯本地、与真实运行时无关的完整 run bundle 示例，适合 explain / onboarding / UI 开发
 - `client.prompts.example_run_bundle(scenario=...)` 现支持多种场景模板，例如 `sandbox_file_write`、`multi_skill_research`、`toolset_retry`

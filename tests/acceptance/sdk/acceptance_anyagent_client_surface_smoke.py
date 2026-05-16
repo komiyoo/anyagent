@@ -6,9 +6,9 @@ import asyncio
 from unittest.mock import patch
 
 from anyagent import AnyAgent
-from anyagent.agent_api_client import Admin, Prompts, Responses
+from anyagent.agent_api_client import Admin, Agents, Prompts, Responses
 from anyagent.protocol.admin_storage import StorageHealthResponse
-from anyagent.protocol.agent_api_internal import InternalPromptBundlePreviewResponse
+from anyagent.protocol.agent_api_internal import InternalAgentDetailResponse, InternalAgentsListResponse, InternalPromptBundlePreviewResponse
 from anyagent.protocol.openai_responses import build_minimal_openai_response_json
 
 
@@ -89,6 +89,56 @@ def main() -> int:
         _assert(health.ok is True, "`client.admin.storage_health()` should parse typed payload")
         _assert(health.backends.session_lock == "redis", "storage health backend parsing mismatch")
         _assert(health.capabilities["session_store"].tier == "external", "storage capability parsing mismatch")
+
+    async def _fake_agents_list(self: Agents, *, include_unexposed: bool = False) -> InternalAgentsListResponse:
+        _ = self, include_unexposed
+        return InternalAgentsListResponse.model_validate(
+            {
+                "agents": [
+                    {
+                        "agent_id": "main",
+                        "name": "main",
+                        "exposed": True,
+                        "root_dir": "/example-workspace/.agents/agents/main",
+                        "prompt_sha256": "prompt-sha",
+                        "sandbox_mode": "local-unsafe",
+                        "requested_tool_names": ["exec"],
+                        "spawn_allow_agent_ids": ["researcher"],
+                        "has_mcp": True,
+                        "mcp_server_labels": ["github"],
+                    }
+                ]
+            }
+        )
+
+    async def _fake_agent_get(self: Agents, agent_id: str, *, include_prompt: bool = False) -> InternalAgentDetailResponse:
+        _ = self, include_prompt
+        return InternalAgentDetailResponse.model_validate(
+            {
+                "agent_id": agent_id,
+                "name": agent_id,
+                "exposed": True,
+                "root_dir": f"/example-workspace/.agents/agents/{agent_id}",
+                "agents_md": {
+                    "path": f"/example-workspace/.agents/agents/{agent_id}/AGENTS.md",
+                    "sha256": "prompt-sha",
+                    "preview": "你是 main agent。",
+                },
+                "tools": {"requested_tool_names": ["exec"]},
+                "skills": {"default_selected": []},
+                "sandbox": {"mode": "local-unsafe"},
+                "multiagent": {"spawn_allow_agent_ids": ["researcher"]},
+                "mcp": {"configured": True, "server_labels": ["github"]},
+            }
+        )
+
+    with patch.object(Agents, "list", _fake_agents_list), patch.object(Agents, "get", _fake_agent_get):
+        agents = asyncio.run(client.agents.list())
+        _assert(agents.agents[0].agent_id == "main", "`client.agents.list()` should parse typed catalog")
+        _assert(agents.agents[0].spawn_allow_agent_ids == ["researcher"], "agent spawn allowlist parsing mismatch")
+        agent_detail = asyncio.run(client.agents.get("main"))
+        _assert(agent_detail.agents_md.text is None, "`client.agents.get()` should not require prompt text")
+        _assert(agent_detail.mcp.server_labels == ["github"], "agent detail MCP parsing mismatch")
 
     async def _fake_prompt_preview(self: Prompts, request_body: dict, *, x_agent_id: str | None = None) -> InternalPromptBundlePreviewResponse:
         _ = request_body, x_agent_id

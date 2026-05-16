@@ -147,6 +147,90 @@ class InternalSkillsListResponse(BaseModel):
     skills: list[InternalSkillListItem] = Field(default_factory=list)
 
 
+class InternalAgentPromptRef(BaseModel):
+    """Prompt source metadata for an agent or workspace AGENTS.md."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    sha256: str
+    preview: str | None = None
+    text: str | None = None
+
+
+class InternalAgentListItem(BaseModel):
+    """One agent catalog entry returned by `GET /internal/agents`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    name: str
+    exposed: bool
+    root_dir: str
+    prompt_sha256: str
+    workspace_prompt_sha256: str | None = None
+    sandbox_mode: SandboxMode
+    requested_tool_names: list[str] = Field(default_factory=list)
+    default_selected_skill_ids: list[str] = Field(default_factory=list)
+    spawn_allow_agent_ids: list[str] = Field(default_factory=list)
+    has_mcp: bool = False
+    mcp_server_labels: list[str] = Field(default_factory=list)
+
+
+class InternalAgentsListResponse(BaseModel):
+    """Response model for `GET /internal/agents`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agents: list[InternalAgentListItem] = Field(default_factory=list)
+
+
+class InternalAgentToolsConfig(BaseModel):
+    """Agent tools configuration summary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    requested_tool_names: list[str] = Field(default_factory=list)
+    allow_tools: list[str] | None = None
+    deny_tools: list[str] | None = None
+
+
+class InternalAgentSkillsConfig(BaseModel):
+    """Agent skills configuration summary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    default_selected: list[str] | None = None
+    disabled_paths: list[str] | None = None
+
+
+class InternalAgentMCPConfig(BaseModel):
+    """Agent MCP configuration summary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    configured: bool = False
+    server_labels: list[str] = Field(default_factory=list)
+
+
+class InternalAgentDetailResponse(BaseModel):
+    """Detailed response model for `GET /internal/agents/{agent_id}`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    name: str
+    exposed: bool
+    root_dir: str
+    agents_md: InternalAgentPromptRef
+    workspace_agents_md: InternalAgentPromptRef | None = None
+    tools: InternalAgentToolsConfig
+    skills: InternalAgentSkillsConfig
+    sandbox: dict[str, Any] = Field(default_factory=dict)
+    multiagent: dict[str, Any] = Field(default_factory=dict)
+    mcp: InternalAgentMCPConfig = Field(default_factory=InternalAgentMCPConfig)
+
+
 class InternalPromptBundlePreviewResponse(BaseModel):
     """Debug response model for one fully assembled prompt bundle preview."""
 

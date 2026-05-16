@@ -7,6 +7,7 @@ anyagent Client SDK — 资源型命名空间入口。
 
 - ``client.openai`` / ``client.async_openai`` — OpenAI 官方 SDK client（缓存属性）
 - ``client.responses`` — AnyAgent 补充的 `/v1/responses/{id}` async helpers
+- ``client.agents``    — Agent catalog / detail（/internal/agents）
 - ``client.events``    — 内部观测 / replay（/internal/events/*）
 - ``client.skills``    — 技能发现（/internal/skills/list）
 - ``client.prompts``   — prompt explain / preview（preview + local example bundle）
@@ -26,6 +27,8 @@ from anyagent.agent_packs import AgentPack, AgentSkillsSpec, AgentSpec, AgentToo
 from anyagent.agent_runtime import build_default_environment_context_values, build_prompt_envelope
 from anyagent.mcp.models import MCPConfig, MCPServerConfig
 from anyagent.protocol.agent_api_internal import (
+    InternalAgentDetailResponse,
+    InternalAgentsListResponse,
     InternalEventsListResponse,
     InternalEventsReplaySummary,
     InternalPromptBundlePreviewResponse,
@@ -349,6 +352,20 @@ class Skills(_Namespace):
         return InternalSkillsListResponse.model_validate(data)
 
 
+class Agents(_Namespace):
+    """Agent catalog helpers (``/internal/agents``)."""
+
+    async def list(self, *, include_unexposed: bool = False) -> InternalAgentsListResponse:
+        """List agent ids currently callable through the Agent API."""
+        data = await self._get("/internal/agents", params={"include_unexposed": include_unexposed})
+        return InternalAgentsListResponse.model_validate(data)
+
+    async def get(self, agent_id: str, *, include_prompt: bool = False) -> InternalAgentDetailResponse:
+        """Return detailed configuration metadata for one agent."""
+        data = await self._get(f"/internal/agents/{agent_id}", params={"include_prompt": include_prompt})
+        return InternalAgentDetailResponse.model_validate(data)
+
+
 class Prompts(_Namespace):
     """Prompt debug / explain helpers (`/internal/prompt/*`)."""
 
@@ -454,6 +471,7 @@ class AnyAgent:
         self._async_openai_client: AsyncOpenAI | None = None
 
         self.responses = Responses(**shared)
+        self.agents = Agents(**shared)
         self.events = Events(**shared)
         self.skills = Skills(**shared)
         self.prompts = Prompts(**shared)

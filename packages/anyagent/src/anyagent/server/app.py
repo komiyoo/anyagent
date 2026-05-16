@@ -19,7 +19,16 @@ from anyagent.gateway.session import session_partition_key
 from anyagent.mcp.manager import MCPManagerRegistry
 from anyagent.observability import emit_observability_event
 from anyagent.protocol.credential_vault import AdminCredentialSetRequest
-from anyagent.protocol.agent_api_internal import InternalPromptBundlePreviewResponse
+from anyagent.protocol.agent_api_internal import (
+    InternalAgentDetailResponse,
+    InternalAgentListItem,
+    InternalAgentMCPConfig,
+    InternalAgentPromptRef,
+    InternalAgentsListResponse,
+    InternalAgentSkillsConfig,
+    InternalAgentToolsConfig,
+    InternalPromptBundlePreviewResponse,
+)
 from anyagent.protocol.openai_responses import (
     AnyAgentFunctionToolParam,
     build_minimal_openai_response_json,
@@ -275,6 +284,27 @@ def create_app(
     async def internal_skills_list(agent_id: str = "main", authorization: str | None = Header(default=None)) -> JSONResponse:
         _require_user_auth(state, authorization)
         resp = await state.runtime.list_skills(agent_id=agent_id)
+        return JSONResponse(resp.model_dump(exclude_none=True))
+
+    @app.get("/internal/agents")
+    async def internal_agents_list(include_unexposed: bool = False, authorization: str | None = Header(default=None)) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        agents = [
+            _agent_list_item(pack)
+            for pack in sorted(state.catalog.packs.values(), key=lambda item: item.agent_id)
+            if include_unexposed or pack.spec.exposed
+        ]
+        return JSONResponse(InternalAgentsListResponse(agents=agents).model_dump(exclude_none=True))
+
+    @app.get("/internal/agents/{agent_id}")
+    async def internal_agent_detail(
+        agent_id: str,
+        include_prompt: bool = False,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        pack = state.require_pack(agent_id, external=True)
+        resp = _agent_detail_response(pack, include_prompt=include_prompt)
         return JSONResponse(resp.model_dump(exclude_none=True))
 
     @app.post("/internal/tools/manifest")
@@ -1011,6 +1041,90 @@ def _resolve_session_key(*, body: dict[str, Any]) -> str:
     if isinstance(user, str) and user.strip():
         return user.strip()
     return f"ephemeral:{uuid.uuid4().hex}"
+
+
+def _text_preview(text: str | None, *, max_chars: int = 240) -> str | None:
+    if not isinstance(text, str):
+        return None
+    compact = " ".join(text.strip().split())
+    if not compact:
+        return ""
+    if len(compact) <= max_chars:
+        return compact
+    return f"{compact[: max_chars - 1]}…"
+
+
+def _prompt_ref(*, path: Path | None, sha256: str | None, text: str | None, include_prompt: bool) -> InternalAgentPromptRef | None:
+    if path is None or not isinstance(sha256, str) or not sha256:
+        return None
+    return InternalAgentPromptRef(
+        path=str(path),
+        sha256=sha256,
+        preview=_text_preview(text),
+        text=text if include_prompt else None,
+    )
+
+
+def _mcp_server_labels(pack: AgentPack) -> list[str]:
+    if pack.mcp_config is None:
+        return []
+    return sorted(pack.mcp_config.mcpServers.keys())
+
+
+def _agent_list_item(pack: AgentPack) -> InternalAgentListItem:
+    return InternalAgentListItem(
+        agent_id=pack.agent_id,
+        name=pack.agent_id,
+        exposed=pack.spec.exposed,
+        root_dir=str(pack.root_dir),
+        prompt_sha256=pack.agents_md_sha256,
+        workspace_prompt_sha256=pack.workspace_agents_md_sha256,
+        sandbox_mode=pack.spec.sandbox.mode,
+        requested_tool_names=list(pack.spec.tools.requested_tool_names),
+        default_selected_skill_ids=list(pack.spec.skills.default_selected or []),
+        spawn_allow_agent_ids=list(pack.spec.multiagent.spawn_allow_agent_ids or []),
+        has_mcp=pack.mcp_config is not None,
+        mcp_server_labels=_mcp_server_labels(pack),
+    )
+
+
+def _agent_detail_response(pack: AgentPack, *, include_prompt: bool) -> InternalAgentDetailResponse:
+    agents_md = _prompt_ref(
+        path=pack.agents_md_path,
+        sha256=pack.agents_md_sha256,
+        text=pack.agents_md_text,
+        include_prompt=include_prompt,
+    )
+    if agents_md is None:
+        raise HTTPException(status_code=500, detail=f"agent prompt metadata missing: {pack.agent_id}")
+    return InternalAgentDetailResponse(
+        agent_id=pack.agent_id,
+        name=pack.agent_id,
+        exposed=pack.spec.exposed,
+        root_dir=str(pack.root_dir),
+        agents_md=agents_md,
+        workspace_agents_md=_prompt_ref(
+            path=pack.workspace_agents_md_path,
+            sha256=pack.workspace_agents_md_sha256,
+            text=pack.workspace_agents_md_text,
+            include_prompt=include_prompt,
+        ),
+        tools=InternalAgentToolsConfig(
+            requested_tool_names=list(pack.spec.tools.requested_tool_names),
+            allow_tools=list(pack.spec.tools.policy.allow_tools) if pack.spec.tools.policy and pack.spec.tools.policy.allow_tools else None,
+            deny_tools=list(pack.spec.tools.policy.deny_tools) if pack.spec.tools.policy and pack.spec.tools.policy.deny_tools else None,
+        ),
+        skills=InternalAgentSkillsConfig(
+            default_selected=list(pack.spec.skills.default_selected) if pack.spec.skills.default_selected is not None else None,
+            disabled_paths=list(pack.spec.skills.disabled_paths) if pack.spec.skills.disabled_paths is not None else None,
+        ),
+        sandbox=pack.spec.sandbox.model_dump(exclude_none=True),
+        multiagent=pack.spec.multiagent.model_dump(exclude_none=True),
+        mcp=InternalAgentMCPConfig(
+            configured=pack.mcp_config is not None,
+            server_labels=_mcp_server_labels(pack),
+        ),
+    )
 
 
 async def _select_skills(state: AnyAgentServerApp, *, pack: AgentPack, body: dict[str, Any]) -> list[Any]:
