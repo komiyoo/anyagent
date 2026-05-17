@@ -16,6 +16,34 @@ def test_init_creates_minimal_workspace_with_example_skill(tmp_path, capsys) -> 
     assert (tmp_path / ".agents" / "skills" / "example-skill" / "SKILL.md").is_file()
 
 
+def test_init_coding_template_enables_exec_sandbox(tmp_path, capsys) -> None:
+    rc = main(["init", "--workspace", str(tmp_path), "--template", "coding-agent"])
+
+    assert rc == 0
+    WorkspaceInitResult.model_validate_json(capsys.readouterr().out)
+    agent_yaml = (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
+    assert "    - exec\n" in agent_yaml
+    assert "  mode: local-unsafe\n" in agent_yaml
+    assert "Coding Agent" in (tmp_path / ".agents" / "agents" / "main" / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_init_multi_agent_template_creates_independent_agent_packs(tmp_path, capsys) -> None:
+    rc = main(["init", "--workspace", str(tmp_path), "--template", "multi-agent-team"])
+
+    assert rc == 0
+    WorkspaceInitResult.model_validate_json(capsys.readouterr().out)
+    assert (tmp_path / ".agents" / "agents" / "main").is_dir()
+    assert (tmp_path / ".agents" / "agents" / "researcher").is_dir()
+    assert (tmp_path / ".agents" / "agents" / "coder").is_dir()
+    main_yaml = (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
+    coder_yaml = (tmp_path / ".agents" / "agents" / "coder" / "agent.yaml").read_text(encoding="utf-8")
+    researcher_yaml = (tmp_path / ".agents" / "agents" / "researcher" / "agent.yaml").read_text(encoding="utf-8")
+    assert "    - researcher\n" in main_yaml
+    assert "    - coder\n" in main_yaml
+    assert "    - exec\n" in coder_yaml
+    assert "    - core.web_fetch\n" in researcher_yaml
+
+
 def test_doctor_accepts_initialized_workspace(tmp_path, capsys) -> None:
     assert main(["init", "--workspace", str(tmp_path), "--with-example-skill"]) == 0
     capsys.readouterr()

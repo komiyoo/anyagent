@@ -36,6 +36,9 @@ anyagent doctor --workspace ./my-workspace
 # 指定 agent_id
 anyagent init --workspace ./my-workspace --agent-id main
 
+# 选择模板：basic | coding-agent | research-agent | multi-agent-team
+anyagent init --workspace ./coding-workspace --template coding-agent
+
 # 带示例 skill
 anyagent init --workspace ./my-workspace --with-example-skill
 
@@ -315,28 +318,40 @@ await client.admin.delete_credential("cred_bocha_mcp")
 
 ### 7. 初始化模板和示例项目
 
-当前仓库内的正式初始化入口是 `anyagent init`，它生成的是 **basic workspace** 模板，并可通过 `--with-example-skill` 附带一个最小 skill 示例。
+当前仓库内的正式初始化入口是 `anyagent init`，内置以下 workspace 模板：
+
+| 模板 | 适用场景 | 默认 agent | 默认工具/沙箱 |
+|---|---|---|---|
+| `basic` | 最小可启动 agent | `main` | 无工具，`sandbox.mode=disabled` |
+| `coding-agent` | 本地代码理解、修改和验证 | `main` | `exec`，`sandbox.mode=local-unsafe` |
+| `research-agent` | 资料检索、信息整理和来源归纳 | `main` | `core.web_fetch`，`sandbox.mode=disabled` |
+| `multi-agent-team` | 一个 coordinator + 两个独立子 agent 的工作区骨架 | `main`、`researcher`、`coder` | coordinator 允许 spawn researcher/coder；coder 带 `exec` |
 
 ```bash
-anyagent init --workspace ./basic-workspace --with-example-skill
+anyagent init --workspace ./basic-workspace --template basic --with-example-skill
+anyagent init --workspace ./coding-workspace --template coding-agent
+anyagent init --workspace ./research-workspace --template research-agent
+anyagent init --workspace ./team-workspace --template multi-agent-team
 ```
 
-更丰富的模板，例如 `coding-agent`、`research-agent`、`multi-agent-team`，目前还没有作为 CLI 选项正式内置。应用层 demo、生产级部署模板和平台 connector 会逐步放到同级项目 `anyagent-apps`；本仓库保持为 Server Core + SDK + Protocol 的真源。
+`multi-agent-team` 当前生成的是多 Agent Pack 与 allowlist 骨架；完整的内建 spawn tool / child thread 编排还在演进中。它已经能作为多个上下文完全独立的 agent 配置模板使用，每个 agent 仍按 `agent_id + session_key` 分区。
 
-在正式模板命令补齐前，推荐做法是：
+初始化后可以用 SDK 查询这些 agent：
+
+```python
+agents = await client.agents.list()
+for item in agents.agents:
+    print(item.agent_id, item.spawn_allow_agent_ids)
+```
+
+如需手动扩展更多 agent，也可以复制已有 agent pack：
 
 ```bash
-# 1. 生成 basic workspace
-anyagent init --workspace ./my-workspace --with-example-skill
-
-# 2. 复制 main agent 目录，创建另一个独立 agent
 cp -R ./my-workspace/.agents/agents/main ./my-workspace/.agents/agents/researcher
-
-# 3. 修改 researcher/AGENTS.md 和 researcher/agent.yaml
-
-# 4. 检查配置
 anyagent doctor --workspace ./my-workspace
 ```
+
+应用层 demo、生产级部署模板和平台 connector 会逐步放到同级项目 `anyagent-apps`；本仓库保持为 Server Core + SDK + Protocol 的真源。
 
 ## 安全边界
 
