@@ -26,9 +26,12 @@ summary: anyagent (Server Core + SDK) 与 anyagent-apps (高级部署 + 场景) 
 │  │gateway.* │ │tool_     │ │  server/ (内置)        │   │
 │  │(会话/路由)│ │runtime.* │ │  ├─ Agent API         │   │
 │  └──────────┘ │(工具注册)│ │  ├─ Tool Runtime      │   │
-│               └──────────┘ │  ├─ in-memory store   │   │
+│               └──────────┘ │  ├─ reference store   │   │
 │  ┌──────────────────────┐  │  └─ security/         │   │
-│  │ AnyAgent Client SDK  │  └───────────────────────┘   │
+│  │ storage.* / plugins.*│  └───────────────────────┘   │
+│  └──────────────────────┘                               │
+│  ┌──────────────────────┐                               │
+│  │ AnyAgent Client SDK  │                               │
 │  └──────────────────────┘                               │
 └─────────────────────────────────────────────────────────┘
 
@@ -68,15 +71,17 @@ summary: anyagent (Server Core + SDK) 与 anyagent-apps (高级部署 + 场景) 
 | `gateway.*` | 会话映射、agent 路由、sequencer | `packages/anyagent/src/anyagent/gateway/` |
 | `tool_runtime.*` | 工具注册、client、plugin 模型 | `packages/anyagent/src/anyagent/tool_runtime/` |
 | `agent_packs` | Agent Packs 配置加载与校验 | `packages/anyagent/src/anyagent/agent_packs.py` |
-| `server/` | **内置 Agent Server + 共享 Agent API 服务层**（FastAPI + in-memory/reference store + resume/replay/orchestration 语义） | `packages/anyagent/src/anyagent/server/` |
-| `AnyAgent` SDK | Client SDK 资源型命名空间（openai/responses/events/skills） | `packages/anyagent/src/anyagent/agent_api_client.py` |
-| CLI | `anyagent serve` / `anyagent agents list` / `anyagent tools list` | `packages/anyagent/src/anyagent/cli.py` |
+| `storage.*` | 共享存储模型、contracts、runtime bundle、replay helper、capability matrix、SQL/Redis reference adapters 与 schema/migration helper | `packages/anyagent/src/anyagent/storage/` |
+| `plugins.*` | Core 侧插件 API、loader 与插件模型 | `packages/anyagent/src/anyagent/plugins/` |
+| `server/` | **内置 Agent Server + 共享 Agent API 服务层**（FastAPI + reference/external store glue + resume/replay/orchestration 语义） | `packages/anyagent/src/anyagent/server/` |
+| `AnyAgent` SDK | Client SDK 资源型命名空间（openai/responses/events/skills/tools/admin） | `packages/anyagent/src/anyagent/agent_api_client.py` |
+| CLI | `anyagent serve` / `init` / `doctor` / `storage-health` / `storage-migrate` | `packages/anyagent/src/anyagent/cli.py` |
 | Security | Credential Vault / Tool Policy / Agent Sandbox 策略定义 | `packages/anyagent/src/anyagent/server/security/` |
 
 **不做**：
 
-- 不做 production-grade PG/Redis backend 适配
-- 不做分布式锁/跨实例 lease
+- 不在 Core 里承载生产部署壳子、rollout/replay 运维 CLI 或平台 connector wiring
+- 不把 `anyagent-apps` 的 production-only rollout、retention、部署编排反向搬进 SDK/Protocol
 - 不做平台 Gateway connector
 - 不做 K8s/Helm 部署编排
 
@@ -122,8 +127,8 @@ summary: anyagent (Server Core + SDK) 与 anyagent-apps (高级部署 + 场景) 
   - internal events / replay / `last_seq` / `[DONE]` 契约
   - built-in server 与 distributed Agent API 共用的 request normalization / response assembly / orchestration service
 - 继续留在 `anyagent-apps` 的部分：
-  - PostgreSQL / Redis backend 实现
-  - lease lock / event bus / broadcast 的 production 实现
+  - production PostgreSQL / Redis wiring、部署参数与运行手册
+  - production lease lock / event bus / broadcast 策略与运维入口
   - migration / retention / rollout replay CLI
   - 分布式 `apps/agent-api` 服务壳子与部署配置
 

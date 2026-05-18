@@ -23,6 +23,9 @@ from anyagent.protocol.sandbox import SandboxMode
 from anyagent.protocol.stage_events import AnyAgentPromptContextEvent, StageEvent, decode_stage_event
 
 
+WorkspaceAgentFileKind = Literal["agents_md", "agent_yaml", "mcp_json"]
+
+
 class InternalEventItem(BaseModel):
     """One stored SSE block (seq + event + data)."""
 
@@ -109,6 +112,69 @@ class InternalEventsReplaySummary(BaseModel):
     prompt_context: AnyAgentPromptContextEvent | None = None
 
 
+class InternalObservabilityTurnMetric(BaseModel):
+    """Per-turn character metrics derived from request and final response text."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    index: int = Field(ge=1)
+    input_chars: int = Field(default=0, ge=0)
+    output_chars: int = Field(default=0, ge=0)
+
+
+class InternalObservabilitySummaryResponse(BaseModel):
+    """Server-side observability summary for one response/run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    response_id: str
+    agent_id: str | None = None
+    session_key: str | None = None
+    event_count: int = Field(default=0, ge=0)
+    typed_event_count: int = Field(default=0, ge=0)
+    tool_call_count: int = Field(default=0, ge=0)
+    mcp_call_count: int = Field(default=0, ge=0)
+    skill_view_count: int = Field(default=0, ge=0)
+    turn_count: int = Field(default=0, ge=0)
+    input_chars: int = Field(default=0, ge=0)
+    output_chars: int = Field(default=0, ge=0)
+    input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(default=0, ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
+    turns: list[InternalObservabilityTurnMetric] = Field(default_factory=list)
+    first_token_latency_ms: float | None = None
+    total_response_latency_ms: float | None = None
+    run_status: str | None = None
+    effective_run_status: str | None = None
+
+
+class InternalObservabilityRunItem(BaseModel):
+    """One run row for agent/session observability history."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    response_id: str
+    agent_id: str
+    session_key: str
+    stream: bool
+    status: str
+    effective_status: str
+    created_at_ms: int = Field(ge=0)
+    updated_at_ms: int = Field(ge=0)
+    ended_at_ms: int | None = Field(default=None, ge=0)
+
+
+class InternalObservabilityRunsResponse(BaseModel):
+    """Response model for `GET /internal/observability/runs`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str | None = None
+    session_key: str | None = None
+    response_id: str | None = None
+    runs: list[InternalObservabilityRunItem] = Field(default_factory=list)
+
+
 class InternalSkillListItem(BaseModel):
     """One skill entry returned by `GET /internal/skills/list`."""
 
@@ -121,6 +187,7 @@ class InternalSkillListItem(BaseModel):
     path: str
     scope: str
     enabled: bool
+    selected: bool = False
     source_hash: str | None = None
     interface: dict[str, Any] | None = None
     requested_tool_names: list[str] = Field(default_factory=list)
@@ -145,6 +212,40 @@ class InternalSkillsListResponse(BaseModel):
     disabled_paths: list[str] = Field(default_factory=list)
     load_errors: list[InternalSkillLoadError] = Field(default_factory=list)
     skills: list[InternalSkillListItem] = Field(default_factory=list)
+
+
+class InternalToolCatalogItem(BaseModel):
+    """One effective tool visible to an agent after policy/MCP/skill resolution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    description: str | None = None
+    kind: str | None = None
+    parameters: dict[str, Any] | None = None
+    decision: str = "allow"
+    reason: str | None = None
+
+
+class InternalToolCatalogResponse(BaseModel):
+    """Response model for `GET /internal/tools/catalog`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    session_key: str
+    requested_tool_names: list[str] = Field(default_factory=list)
+    toolset_version: int
+    tools: list[InternalToolCatalogItem] = Field(default_factory=list)
+
+
+class AdminToolCatalogResponse(BaseModel):
+    """Response model for `GET /admin/tools/catalog`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    toolset_version: int
+    tools: list[InternalToolCatalogItem] = Field(default_factory=list)
 
 
 class InternalAgentPromptRef(BaseModel):
@@ -213,6 +314,17 @@ class InternalAgentMCPConfig(BaseModel):
     server_labels: list[str] = Field(default_factory=list)
 
 
+class InternalAgentModelConfig(BaseModel):
+    """Agent model resource configuration summary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    default: str | None = None
+    provider: str = "openai"
+    base_url_env: str | None = None
+    api_key_env: str | None = None
+
+
 class InternalAgentDetailResponse(BaseModel):
     """Detailed response model for `GET /internal/agents/{agent_id}`."""
 
@@ -224,11 +336,157 @@ class InternalAgentDetailResponse(BaseModel):
     root_dir: str
     agents_md: InternalAgentPromptRef
     workspace_agents_md: InternalAgentPromptRef | None = None
+    model: InternalAgentModelConfig = Field(default_factory=InternalAgentModelConfig)
     tools: InternalAgentToolsConfig
     skills: InternalAgentSkillsConfig
     sandbox: dict[str, Any] = Field(default_factory=dict)
     multiagent: dict[str, Any] = Field(default_factory=dict)
     mcp: InternalAgentMCPConfig = Field(default_factory=InternalAgentMCPConfig)
+
+
+class AdminAgentCreateResponse(BaseModel):
+    """Response model for `POST /admin/workspace/agents`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent: InternalAgentDetailResponse
+    reloaded_agent_ids: list[str] = Field(default_factory=list)
+
+
+class AdminWorkspaceAgentFile(BaseModel):
+    """One editable agent-pack source file exposed to admin control surfaces."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: WorkspaceAgentFileKind
+    path: str
+    exists: bool
+    sha256: str | None = None
+    text: str | None = None
+
+
+class AdminWorkspaceAgentFilesResponse(BaseModel):
+    """Response model for `GET /admin/workspace/agents/{agent_id}/files`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    files: list[AdminWorkspaceAgentFile] = Field(default_factory=list)
+
+
+class AdminWorkspaceAgentFileUpdateRequest(BaseModel):
+    """Request model for updating one editable agent-pack source file."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    expected_sha256: str | None = None
+
+
+class AdminWorkspaceAgentFileUpdateResponse(BaseModel):
+    """Response model for `PUT /admin/workspace/agents/{agent_id}/files/{kind}`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    file: AdminWorkspaceAgentFile
+    reloaded_agent_ids: list[str] = Field(default_factory=list)
+
+
+class AdminAgentCreateRequest(BaseModel):
+    """Request model for creating one agent pack from Studio/admin UI."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str = Field(min_length=1, max_length=64)
+    instructions: str = Field(min_length=1, max_length=64 * 1024)
+    exposed: bool = True
+    sandbox_mode: SandboxMode = "disabled"
+    model_default: str | None = None
+    model_provider: str = "openai"
+    model_base_url_env: str | None = None
+    model_api_key_env: str | None = None
+    requested_tool_names: list[str] = Field(default_factory=list)
+    default_selected_skills: list[str] = Field(default_factory=list)
+    spawn_allow_agent_ids: list[str] = Field(default_factory=list)
+
+
+class AdminAgentSkillsUpdateRequest(BaseModel):
+    """Request model for updating an agent's default selected skills."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    default_selected: list[str] = Field(default_factory=list)
+
+
+class AdminAgentConfigUpdateRequest(BaseModel):
+    """Request model for updating common no-code agent.yaml controls."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    exposed: bool | None = None
+    model_default: str | None = None
+    model_provider: str | None = None
+    model_base_url_env: str | None = None
+    model_api_key_env: str | None = None
+    requested_tool_names: list[str] | None = None
+    sandbox_mode: SandboxMode | None = None
+    spawn_allow_agent_ids: list[str] | None = None
+    disabled_skill_paths: list[str] | None = None
+
+
+class AdminSkillImportRequest(BaseModel):
+    """Request model for importing one agent-local skill package."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    directory_name: str = Field(min_length=1, max_length=64)
+    skill_md: str = Field(min_length=1)
+    overwrite: bool = False
+
+
+class AdminSkillRegistryInstallRequest(BaseModel):
+    """Request model for installing one skill from a configured skill channel."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    channel: Literal["skills.sh", "registry", "github"] = "skills.sh"
+    package: str = Field(min_length=1, max_length=256)
+    skill: str = Field(min_length=1, max_length=128)
+    directory_name: str | None = Field(default=None, min_length=1, max_length=64)
+    github_repo: str | None = Field(default=None, min_length=1, max_length=256)
+    github_ref: str | None = Field(default=None, min_length=1, max_length=128)
+    github_path: str | None = Field(default=None, min_length=1, max_length=256)
+    overwrite: bool = False
+
+
+class AdminSkillImportResponse(BaseModel):
+    """Response model for `POST /admin/workspace/agents/{agent_id}/skills/import`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    stable_id: str
+    name: str
+    path: str
+    sha256: str
+    reloaded_agent_ids: list[str] = Field(default_factory=list)
+
+
+class AdminSkillUpdateCheckResponse(BaseModel):
+    """Response model for checking one channel-installed agent-local skill."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    directory_name: str
+    channel: str | None = None
+    source_ref: str | None = None
+    current_hash: str | None = None
+    latest_hash: str | None = None
+    update_available: bool = False
+    updatable: bool = False
+    reason: str | None = None
 
 
 class InternalPromptBundlePreviewResponse(BaseModel):

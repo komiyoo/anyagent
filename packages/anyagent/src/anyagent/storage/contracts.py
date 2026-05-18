@@ -18,6 +18,15 @@ class RunStore(Protocol):
 
     async def get(self, response_id: str) -> RunRecord | None: ...
 
+    async def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        limit: int = 100,
+    ) -> list[RunRecord]: ...
+
     async def try_create_started(
         self,
         *,

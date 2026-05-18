@@ -48,6 +48,25 @@ class InMemoryRunStore:
             record = self._runs.get(response_id)
             return None if record is None else _clone_record(record)
 
+    async def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        limit: int = 100,
+    ) -> list[RunRecord]:
+        async with self._lock:
+            records = list(self._runs.values())
+        if response_id is not None and response_id.strip():
+            records = [record for record in records if record.response_id == response_id]
+        if agent_id is not None and agent_id.strip():
+            records = [record for record in records if record.agent_id == agent_id]
+        if session_key is not None and session_key.strip():
+            records = [record for record in records if record.session_key == session_key]
+        records.sort(key=lambda record: record.updated_at_ms, reverse=True)
+        return [_clone_record(record) for record in records[: max(0, int(limit))]]
+
     async def create_started(
         self,
         *,
@@ -112,6 +131,8 @@ class RedisRunStoreAdapter:
     async def set(self, key: str, value: str) -> Any: ...
     async def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any: ...
     async def pexpire(self, key: str, time_ms: int) -> Any: ...
+    async def zadd(self, key: str, mapping: dict[str, float]) -> Any: ...
+    async def zrevrange(self, key: str, start: int, stop: int) -> list[str]: ...
 
 
 
@@ -192,6 +213,39 @@ return 1
             return None
         return await self.get(response_id.strip())
 
+    async def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        limit: int = 100,
+    ) -> list[RunRecord]:
+        if isinstance(response_id, str) and response_id.strip():
+            record = await self.get(response_id.strip())
+            if record is None:
+                return []
+            if isinstance(agent_id, str) and agent_id.strip() and record.agent_id != agent_id.strip():
+                return []
+            if isinstance(session_key, str) and session_key.strip() and record.session_key != session_key.strip():
+                return []
+            return [record]
+        adapter = await self._get_adapter()
+        ids = await adapter.zrevrange(build_redis_run_store_history_key(namespace=self._namespace), 0, max(0, int(limit)) - 1)
+        records: list[RunRecord] = []
+        for rid in ids:
+            record = await self.get(rid)
+            if record is None:
+                continue
+            if isinstance(agent_id, str) and agent_id.strip() and record.agent_id != agent_id.strip():
+                continue
+            if isinstance(session_key, str) and session_key.strip() and record.session_key != session_key.strip():
+                continue
+            records.append(record)
+            if len(records) >= max(0, int(limit)):
+                break
+        return records
+
     async def create_started(
         self,
         *,
@@ -216,6 +270,8 @@ return 1
             idem,
             str(now_ms),
         )
+        await adapter.zadd(build_redis_run_store_history_key(namespace=self._namespace), {response_id: float(now_ms)})
+        await adapter.pexpire(build_redis_run_store_history_key(namespace=self._namespace), self._retention_ms)
         await adapter.pexpire(
             build_redis_run_store_key(namespace=self._namespace, response_id=response_id),
             self._retention_ms,
@@ -281,6 +337,8 @@ return 1
             json.dumps(final_response_json, ensure_ascii=False) if final_response_json is not None else "",
             json.dumps(error_json, ensure_ascii=False) if error_json is not None else "",
         )
+        await adapter.zadd(build_redis_run_store_history_key(namespace=self._namespace), {response_id: float(now_ms)})
+        await adapter.pexpire(build_redis_run_store_history_key(namespace=self._namespace), self._retention_ms)
         await adapter.pexpire(run_key, self._retention_ms)
         record = await self.get(response_id)
         if record is not None and isinstance(record.idempotency_key, str) and record.idempotency_key.strip():
@@ -317,6 +375,8 @@ return 1
             record.idempotency_key or "",
             str(int(record.created_at_ms)),
         )
+        await adapter.zadd(build_redis_run_store_history_key(namespace=self._namespace), {record.response_id: float(record.updated_at_ms)})
+        await adapter.pexpire(build_redis_run_store_history_key(namespace=self._namespace), self._retention_ms)
         await adapter.pexpire(run_key, self._retention_ms)
         if isinstance(record.idempotency_key, str) and record.idempotency_key.strip():
             idem_key = build_redis_run_store_idempotency_key(namespace=self._namespace, idempotency_key=record.idempotency_key)
@@ -441,6 +501,21 @@ class CachedRunStore:
             await self._cache.write_record(record)
         return record
 
+    async def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        limit: int = 100,
+    ) -> list[RunRecord]:
+        return await self._primary.list(
+            agent_id=agent_id,
+            session_key=session_key,
+            response_id=response_id,
+            limit=limit,
+        )
+
     async def create_started(
         self,
         *,
@@ -515,6 +590,22 @@ class PostgresRunStore:
         record = await self._store.get_by_idempotency_key(idempotency_key)
         return None if record is None else _local_run_record(record)
 
+    async def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        limit: int = 100,
+    ) -> list[RunRecord]:
+        records = await self._store.list(
+            agent_id=agent_id,
+            session_key=session_key,
+            response_id=response_id,
+            limit=limit,
+        )
+        return [_local_run_record(record) for record in records]
+
     async def create_started(
         self,
         *,
@@ -581,6 +672,11 @@ def build_redis_run_store_key(*, namespace: str, response_id: str) -> str:
 def build_redis_run_store_idempotency_key(*, namespace: str, idempotency_key: str) -> str:
     ns = namespace.strip() or "anyagent"
     return f"{ns}:run-idem:{idempotency_key}"
+
+
+def build_redis_run_store_history_key(*, namespace: str) -> str:
+    ns = namespace.strip() or "anyagent"
+    return f"{ns}:runs:history"
 
 
 def _local_run_record(record: Any, *, agent_id: str | None = None, session_key: str | None = None) -> RunRecord:

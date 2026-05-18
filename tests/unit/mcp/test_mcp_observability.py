@@ -66,3 +66,18 @@ def test_mcp_manager_emits_observability_events_for_list_and_call() -> None:
 
     asyncio.run(_run())
 
+
+def test_mcp_manager_skips_disabled_servers() -> None:
+    manager = MCPServerManager(
+        agent_id="main",
+        mcp_config=MCPConfig.model_validate(
+            {
+                "mcpServers": {
+                    "enabled": {"url": "https://enabled.example.com/mcp"},
+                    "disabled": {"enabled": False, "url": "https://disabled.example.com/mcp"},
+                }
+            }
+        ),
+    )
+
+    assert sorted(manager._servers) == ["enabled"]

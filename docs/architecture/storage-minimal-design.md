@@ -15,8 +15,8 @@ req: ["requirements.md#req-3-1"]
 当前口径补充：
 
 - 本文描述的 `Session/Run/Event/Dedupe/Lock` 语义属于 `anyagent` Core 的长期边界。
-- `PostgreSQL + Redis` 的 runtime adapter 当前已开始迁入 `packages/anyagent/src/anyagent/storage/external/`；deployment wiring 与 migration/retention/replay CLI 仍主要落在 `anyagent-apps/apps/agent-api`。
-- 后续收敛方向不是把整套 production backend 搬进 Core，而是把 store interfaces、状态模型与一致性语义回收到 Core，再让 `anyagent-apps` 继续承载 production adapters。
+- `PostgreSQL + Redis` 的 typed runtime adapter 当前已开始迁入 `packages/anyagent/src/anyagent/storage/external/`；deployment wiring、retention、rollout replay 与生产运行手册仍主要落在 `anyagent-apps/apps/agent-api`。
+- 后续收敛方向不是把整套 production deployment 搬进 Core，而是把 store interfaces、状态模型、一致性语义与 reference external adapters 回收到 Core，再让 `anyagent-apps` 继续承载 production wiring 与运维入口。
 - 当前已落地的共享抽象位于 `packages/anyagent/src/anyagent/storage/`，`apps/agent-api` 已开始直接消费这些 records / contracts / runtime bundle。
 - `/internal/events/*` 的 replay/list/stream helper 也已开始收敛到 `packages/anyagent/src/anyagent/storage/replay.py`。
 - 会话准备与 snapshot 写回相关的共享编排 helper 已开始收敛到 `packages/anyagent/src/anyagent/agent_runtime/session_runtime.py`。
@@ -55,9 +55,10 @@ req: ["requirements.md#req-3-1"]
   - `Session Store` / `Run Store` / `Event Store` / `Dedupe Store` / `Lock Service` 的抽象接口
   - `snapshot_version` / CAS / idempotency / replay cursor / `[DONE]` 等一致性语义
   - `STORAGE_MODE=none` 对应的 reference 行为
+  - `packages/anyagent/src/anyagent/storage/external/` 下的 SQL/Redis typed reference adapters、schema apply helper 与 backend capability matrix
 - 属于 `anyagent-apps` 的部分：
-  - PostgreSQL / Redis backend 实现
-  - 生产部署下的 lease / event bus / hot cache wiring
+  - PostgreSQL / Redis 的生产部署 wiring、外置服务配置、运行手册与环境模板
+  - 生产部署下的 lease / event bus / hot cache 策略与运维入口
   - migration / retention / rollout replay 等运维命令
 
 ## 3. 推荐技术选型（How）
@@ -76,8 +77,8 @@ req: ["requirements.md#req-3-1"]
 
 说明：
 
-- 这里的 “推荐生产默认” 指的是工作区当前的应用层部署选择，不代表 `anyagent` Core 必须内建一套 PG/Redis production backend。
-- Core 应冻结这些后端所需的抽象与一致性语义；production adapters 继续可以由 `anyagent-apps` 提供。
+- 这里的 “推荐生产默认” 指的是工作区当前的应用层部署选择；`anyagent` Core 提供 reference external adapters 与 typed contract，`anyagent-apps` 继续负责生产部署、rollout/retention 运维与平台化 wiring。
+- Core 应冻结这些后端所需的抽象、一致性语义和可复用 adapter contract；生产运行策略继续由 `anyagent-apps` 承载。
 
 为什么是这个组合：
 
@@ -107,6 +108,8 @@ req: ["requirements.md#req-3-1"]
 1. `Session Store` 先切到 PG 主 + Redis 热层（恢复语义最核心）
 2. `Run Store` 再切到 PG 主 + Redis 热层（幂等与终态查询）
 3. `Event Store` 最后切到 PG 主 + Redis 热层（事件体量最大，适合在前两者稳定后收口）
+
+当前 `Run Store` 的 Redis 热层会维护一个按更新时间排序的 response-run history sorted set，用于支撑 `/internal/observability/runs` 的 agent/session 历史列表；PG/MySQL 路径则直接按 runs 表查询并回填为本地 run record。
 
 ### 3.2 允许（开发/单机）：SQLite（受限）+ 进程内实现
 

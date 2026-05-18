@@ -29,6 +29,20 @@ class RunRecord(BaseModel):
     error_json: dict | None = None
 
 
+class RunHistoryRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    response_id: str
+    session_partition_key: str
+    idempotency_key: str | None = None
+    stream: bool
+    status: RunStatus
+    created_at_s: float = Field(default_factory=time, ge=0)
+    last_event_seq: int = Field(default=0, ge=0)
+    final_response_json: dict | None = None
+    error_json: dict | None = None
+
+
 class EventRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

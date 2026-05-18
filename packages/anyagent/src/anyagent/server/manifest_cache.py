@@ -52,6 +52,10 @@ class ManifestCache:
         async with self._lock:
             self._entries.pop(key, None)
 
+    async def clear(self) -> None:
+        async with self._lock:
+            self._entries.clear()
+
 
 def build_manifest_cache_key(
     *,

@@ -17,3 +17,12 @@ build/
 .mypy_cache/
 .ruff_cache/
 .hypothesis/
+
+# Node / frontend build artifacts
+node_modules/
+**/node_modules/
+**/dist/
+**/.vite/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

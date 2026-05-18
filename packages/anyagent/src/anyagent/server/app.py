@@ -1,17 +1,33 @@
 import asyncio
+import hashlib
 import json
 import os
+import re
+import shutil
+import subprocess
+import tempfile
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import ValidationError
+import yaml
 
-from anyagent.agent_packs import AgentCatalog, AgentPack, load_agent_catalog
-from anyagent.agent_runtime import build_default_environment_context_values, build_prompt_envelope, persist_session_snapshot
+from anyagent.agent_packs import AgentCatalog, AgentPack, AgentSpec, load_agent_catalog
+from anyagent.mcp import MCPConfig
+from anyagent.skills.loader import SkillLoadError, load_skill_package
+from anyagent.agent_runtime import (
+    build_default_environment_context_values,
+    build_prompt_envelope,
+    persist_session_snapshot,
+)
+from anyagent.agent_runtime.session_runtime import input_to_transcript_items, response_to_transcript_items
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp, run_tool_loop_nonstream, run_tool_loop_stream_live
 from anyagent.agent_runtime.model_providers import get_default_model_provider
 from anyagent.gateway.sequencer import KeyedSequencer
@@ -21,6 +37,19 @@ from anyagent.observability import emit_observability_event
 from anyagent.protocol.credential_vault import AdminCredentialSetRequest
 from anyagent.protocol.health import HealthResponse
 from anyagent.protocol.agent_api_internal import (
+    AdminAgentCreateRequest,
+    AdminAgentCreateResponse,
+    AdminAgentConfigUpdateRequest,
+    AdminAgentSkillsUpdateRequest,
+    AdminToolCatalogResponse,
+    AdminWorkspaceAgentFile,
+    AdminWorkspaceAgentFilesResponse,
+    AdminWorkspaceAgentFileUpdateRequest,
+    AdminWorkspaceAgentFileUpdateResponse,
+    AdminSkillImportRequest,
+    AdminSkillImportResponse,
+    AdminSkillRegistryInstallRequest,
+    AdminSkillUpdateCheckResponse,
     InternalAgentDetailResponse,
     InternalAgentListItem,
     InternalAgentMCPConfig,
@@ -28,7 +57,15 @@ from anyagent.protocol.agent_api_internal import (
     InternalAgentsListResponse,
     InternalAgentSkillsConfig,
     InternalAgentToolsConfig,
+    InternalEventsListResponse,
     InternalPromptBundlePreviewResponse,
+    InternalObservabilitySummaryResponse,
+    InternalObservabilityTurnMetric,
+    InternalObservabilityRunItem,
+    InternalObservabilityRunsResponse,
+    InternalToolCatalogItem,
+    InternalToolCatalogResponse,
+    WorkspaceAgentFileKind,
 )
 from anyagent.protocol.openai_responses import (
     AnyAgentFunctionToolParam,
@@ -40,7 +77,7 @@ from anyagent.protocol.prompt_context import PromptContextAudit
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.protocol.sse import SSEBlockDecoder, encode_sse_block
 from anyagent.protocol.stage_events import AnyAgentPromptContextEvent
-from anyagent.protocol.tool_runtime import PolicyHint, ToolContext
+from anyagent.protocol.tool_runtime import ManifestRequest, PolicyHint, ToolContext
 from anyagent.server.finalization import build_nonstream_response_finalizer
 from anyagent.server.idempotency import begin_or_replay_response_run
 from anyagent.server.lock_service import SessionLockService, build_session_lock_service, hold_session_lease
@@ -81,6 +118,13 @@ from anyagent.skills import (
     resolve_disabled_skill_stable_ids,
     select_skills,
 )
+
+_SKILL_DIRECTORY_RE = re.compile(r"^[a-zA-Z0-9_.-]{1,64}$")
+_SKILL_INSTALL_PACKAGE_RE = re.compile(r"^[A-Za-z0-9_.:/@-]{1,256}$")
+_SKILL_INSTALL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_GITHUB_REPO_RE = re.compile(r"^(?:https://github\.com/)?([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
+_GITHUB_REF_RE = re.compile(r"^[A-Za-z0-9_./@+-]{1,128}$")
+_GITHUB_PATH_RE = re.compile(r"^[A-Za-z0-9_./@+-]{1,256}$")
 
 
 def _load_workspace_env_defaults(workspace_dir: Path) -> None:
@@ -129,6 +173,166 @@ def _emit_server_response_event(
     )
 
 
+def _nested_number(payload: dict[str, Any], *paths: str) -> float | None:
+    for path in paths:
+        cursor: Any = payload
+        for segment in path.split("."):
+            cursor = cursor.get(segment) if isinstance(cursor, dict) else None
+        if isinstance(cursor, (int, float)):
+            return float(cursor)
+    return None
+
+
+def _text_length(value: Any) -> int:
+    if isinstance(value, str):
+        return len(value)
+    if not isinstance(value, list):
+        return 0
+    total = 0
+    for item in value:
+        if isinstance(item, str):
+            total += len(item)
+        elif isinstance(item, dict):
+            text = item.get("text")
+            if isinstance(text, str):
+                total += len(text)
+    return total
+
+
+def _turn_stats_from_transcript_items(items: list[dict[str, Any]]) -> tuple[int, int, int, list[InternalObservabilityTurnMetric]]:
+    turns: list[dict[str, int]] = []
+    for item in items:
+        role = item.get("role")
+        content_len = _text_length(item.get("content"))
+        if role == "user":
+            turns.append({"input_chars": content_len, "output_chars": 0})
+        elif role == "assistant":
+            if not turns:
+                turns.append({"input_chars": 0, "output_chars": 0})
+            turns[-1]["output_chars"] += content_len
+    turn_metrics = [
+        InternalObservabilityTurnMetric(
+            index=index,
+            input_chars=turn["input_chars"],
+            output_chars=turn["output_chars"],
+        )
+        for index, turn in enumerate(turns, start=1)
+    ]
+    return (
+        len(turn_metrics),
+        sum(turn.input_chars for turn in turn_metrics),
+        sum(turn.output_chars for turn in turn_metrics),
+        turn_metrics,
+    )
+
+
+def _build_observability_run_item(record: Any) -> InternalObservabilityRunItem:
+    return InternalObservabilityRunItem(
+        response_id=str(getattr(record, "response_id", "")),
+        agent_id=str(getattr(record, "agent_id", "")),
+        session_key=str(getattr(record, "session_key", "")),
+        stream=bool(getattr(record, "stream", False)),
+        status=str(getattr(record, "status", "")),
+        effective_status=str(getattr(record, "effective_status", getattr(record, "status", ""))),
+        created_at_ms=int(getattr(record, "created_at_ms", 0) or 0),
+        updated_at_ms=int(getattr(record, "updated_at_ms", 0) or 0),
+        ended_at_ms=int(getattr(record, "ended_at_ms")) if getattr(record, "ended_at_ms", None) is not None else None,
+    )
+
+
+def _build_observability_summary(
+    resp: InternalEventsListResponse,
+    *,
+    run_record: Any | None = None,
+) -> InternalObservabilitySummaryResponse:
+    typed = resp.typed_events(include_model_events=True)
+    event_payloads: list[dict[str, Any]] = []
+    for item in resp.events:
+        try:
+            parsed = json.loads(item.data)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            event_payloads.append(parsed)
+
+    prompt_context = resp.latest_prompt_context()
+    prompt_payload = next((payload for payload in event_payloads if payload.get("type") == "anyagent.prompt.context"), {})
+    raw_skill_ids = prompt_payload.get("selected_skill_ids")
+    selected_skill_ids = set(prompt_context.selected_skill_ids if prompt_context is not None else [])
+    if isinstance(raw_skill_ids, list):
+        selected_skill_ids.update(item for item in raw_skill_ids if isinstance(item, str) and item.strip())
+    tool_call_count = sum(1 for payload in event_payloads if str(payload.get("type") or "").startswith("anyagent.tool."))
+    mcp_call_count = sum(
+        1
+        for payload in event_payloads
+        if "mcp" in str(payload.get("type") or "")
+        or isinstance(payload.get("server_label"), str)
+        or isinstance(payload.get("mcp_server_label"), str)
+    )
+    input_tokens = 0
+    output_tokens = 0
+    cached_tokens = 0
+    first_token_latency: float | None = None
+    total_latency: float | None = None
+    for payload in event_payloads:
+        input_tokens += int(_nested_number(payload, "usage.input_tokens", "usage.prompt_tokens", "input_tokens") or 0)
+        output_tokens += int(_nested_number(payload, "usage.output_tokens", "usage.completion_tokens", "output_tokens") or 0)
+        cached_tokens += int(
+            _nested_number(
+                payload,
+                "usage.input_tokens_details.cached_tokens",
+                "usage.prompt_tokens_details.cached_tokens",
+                "cached_tokens",
+            )
+            or 0
+        )
+        first_token_latency = first_token_latency or _nested_number(payload, "first_token_ms", "latency.first_token_ms", "ttft_ms")
+        total_latency = _nested_number(payload, "total_latency_ms", "latency.total_ms", "duration_ms", "elapsed_ms") or total_latency
+
+    response_json = next((payload for payload in event_payloads if payload.get("object") == "response" or payload.get("id") == resp.response_id), {})
+    final_response_json = getattr(run_record, "final_response_json", None)
+    if isinstance(final_response_json, dict):
+        response_json = final_response_json
+    request_payload = next((payload for payload in event_payloads if payload.get("type") == "anyagent.response.request"), {})
+    request_items = input_to_transcript_items(request_payload.get("transcript_items"))
+    response_items = response_to_transcript_items(response_json if isinstance(response_json, dict) else None)
+    turn_count, input_chars, output_chars, turn_metrics = _turn_stats_from_transcript_items([*request_items, *response_items])
+    return InternalObservabilitySummaryResponse(
+        response_id=resp.response_id,
+        agent_id=prompt_context.agent_id
+        if prompt_context is not None
+        else (str(prompt_payload.get("agent_id")) if isinstance(prompt_payload.get("agent_id"), str) else None),
+        session_key=prompt_context.session_key
+        if prompt_context is not None
+        else (str(prompt_payload.get("session_key")) if isinstance(prompt_payload.get("session_key"), str) else None),
+        event_count=len(resp.events),
+        typed_event_count=len(typed),
+        tool_call_count=tool_call_count,
+        mcp_call_count=mcp_call_count,
+        skill_view_count=len(selected_skill_ids),
+        turn_count=turn_count,
+        input_chars=input_chars,
+        output_chars=output_chars,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cached_input_tokens=cached_tokens,
+        turns=turn_metrics,
+        first_token_latency_ms=first_token_latency,
+        total_response_latency_ms=total_latency,
+        run_status=resp.run_status or (str(response_json.get("status")) if isinstance(response_json.get("status"), str) else None),
+        effective_run_status=resp.effective_run_status,
+    )
+
+
+def _parse_cors_origins(value: str | list[str] | tuple[str, ...] | None) -> list[str]:
+    if value is None:
+        env_value = os.getenv("ANYAGENT_CORS_ORIGINS", "")
+        value = env_value
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
 @dataclass(slots=True)
 class AnyAgentServerApp:
     workspace_dir: Path
@@ -159,6 +363,15 @@ class AnyAgentServerApp:
             raise HTTPException(status_code=403, detail=f"agent is not exposed: {agent_id}")
         return pack
 
+    def reload_catalog(self) -> None:
+        catalog = load_agent_catalog(workspace_dir=self.workspace_dir)
+        main_pack = catalog.get("main")
+        if main_pack is None or not main_pack.spec.exposed:
+            raise RuntimeError("workspace must define exposed agent_id=main")
+        self.catalog = catalog
+        self.runtime.set_catalog(catalog)
+        self.manifest_cache = ManifestCache(ttl_seconds=2.0)
+
 def create_app(
     *,
     workspace_dir: str | Path,
@@ -171,6 +384,7 @@ def create_app(
     sandbox_root_dir: str | Path | None = None,
     session_lock_backend: str | None = None,
     session_lease_ttl_s: float | None = None,
+    cors_origins: str | list[str] | tuple[str, ...] | None = None,
 ) -> FastAPI:
     server_settings = ServerSettings()
     resolved_storage = server_settings.resolve(
@@ -246,6 +460,15 @@ def create_app(
                         await result
 
     app = FastAPI(title="anyagent", version="0.1.0", lifespan=_lifespan)
+    parsed_cors_origins = _parse_cors_origins(cors_origins)
+    if parsed_cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=parsed_cors_origins,
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["authorization", "content-type", "idempotency-key", "x-agent-id"],
+        )
     app.state.anyagent = state
 
     @app.get("/healthz")
@@ -279,11 +502,242 @@ def create_app(
         payload = await _build_storage_health_payload(state)
         return JSONResponse(payload)
 
+    @app.get("/admin/tools/catalog")
+    async def admin_tools_catalog(authorization: str | None = Header(default=None)) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        tools, toolset_version = state.runtime.list_registered_tools()
+        resp = AdminToolCatalogResponse(
+            toolset_version=toolset_version,
+            tools=[
+                InternalToolCatalogItem(
+                    name=tool.name,
+                    description=tool.description,
+                    kind=tool.kind,
+                    parameters=tool.parameters,
+                    reason=tool.category,
+                )
+                for tool in tools
+            ],
+        )
+        return JSONResponse(resp.model_dump(exclude_none=True))
+
+    @app.post("/admin/workspace/agents")
+    async def admin_workspace_agent_create(
+        req: Request,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        create_req = AdminAgentCreateRequest.model_validate(await req.json())
+        _create_agent_pack(state=state, request=create_req)
+        try:
+            state.reload_catalog()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"workspace reload failed: {e}") from e
+        pack = state.require_pack(create_req.agent_id, external=False)
+        resp = AdminAgentCreateResponse(
+            agent=_agent_detail_response(pack, include_prompt=True),
+            reloaded_agent_ids=sorted(state.catalog.packs.keys()),
+        )
+        return JSONResponse(resp.model_dump(exclude_none=True))
+
     @app.delete("/admin/credentials/{credential_id}")
     async def admin_delete_credential(credential_id: str, authorization: str | None = Header(default=None)) -> JSONResponse:
         _require_admin_auth(state, authorization)
         resp = await state.credentials.delete(credential_id)
         return JSONResponse(resp)
+
+    @app.get("/admin/workspace/agents/{agent_id}")
+    async def admin_workspace_agent_detail(
+        agent_id: str,
+        include_prompt: bool = False,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        pack = state.require_pack(agent_id, external=False)
+        return JSONResponse(_agent_detail_response(pack, include_prompt=include_prompt).model_dump(exclude_none=True))
+
+    @app.get("/admin/workspace/agents/{agent_id}/files")
+    async def admin_workspace_agent_files(
+        agent_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        pack = state.require_pack(agent_id, external=False)
+        resp = AdminWorkspaceAgentFilesResponse(
+            agent_id=agent_id,
+            files=[
+                _workspace_agent_file(pack, kind="agents_md"),
+                _workspace_agent_file(pack, kind="agent_yaml"),
+                _workspace_agent_file(pack, kind="mcp_json"),
+            ],
+        )
+        return JSONResponse(resp.model_dump(exclude_none=True))
+
+    @app.put("/admin/workspace/agents/{agent_id}/files/{kind}")
+    async def admin_workspace_agent_file_update(
+        agent_id: str,
+        kind: WorkspaceAgentFileKind,
+        req: Request,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        pack = state.require_pack(agent_id, external=False)
+        update = AdminWorkspaceAgentFileUpdateRequest.model_validate(await req.json())
+        path = _workspace_agent_file_path(pack, kind=kind)
+        before = _workspace_agent_file(pack, kind=kind)
+        if update.expected_sha256 is not None and update.expected_sha256 != before.sha256:
+            raise HTTPException(status_code=409, detail="file changed; refresh before saving")
+        _validate_workspace_agent_file_text(kind=kind, text=update.text)
+        previous_text = before.text
+        previous_exists = before.exists
+        _write_workspace_agent_file(path=path, text=update.text)
+        try:
+            state.reload_catalog()
+        except Exception as e:  # noqa: BLE001
+            _restore_workspace_agent_file(path=path, text=previous_text, existed=previous_exists)
+            raise HTTPException(status_code=400, detail=f"workspace reload failed: {e}") from e
+        reloaded_pack = state.require_pack(agent_id, external=False)
+        resp = AdminWorkspaceAgentFileUpdateResponse(
+            agent_id=agent_id,
+            file=_workspace_agent_file(reloaded_pack, kind=kind),
+            reloaded_agent_ids=sorted(state.catalog.packs.keys()),
+        )
+        return JSONResponse(resp.model_dump(exclude_none=True))
+
+    @app.put("/admin/workspace/agents/{agent_id}/skills")
+    async def admin_workspace_agent_skills_update(
+        agent_id: str,
+        req: Request,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        pack = state.require_pack(agent_id, external=False)
+        update = AdminAgentSkillsUpdateRequest.model_validate(await req.json())
+        _update_agent_default_skills(state=state, pack=pack, default_selected=update.default_selected)
+        try:
+            state.reload_catalog()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"workspace reload failed: {e}") from e
+        reloaded_pack = state.require_pack(agent_id, external=False)
+        resp = AdminAgentCreateResponse(
+            agent=_agent_detail_response(reloaded_pack, include_prompt=False),
+            reloaded_agent_ids=sorted(state.catalog.packs.keys()),
+        )
+        return JSONResponse(resp.model_dump(exclude_none=True))
+
+    @app.put("/admin/workspace/agents/{agent_id}/config")
+    async def admin_workspace_agent_config_update(
+        agent_id: str,
+        req: Request,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        pack = state.require_pack(agent_id, external=False)
+        update = AdminAgentConfigUpdateRequest.model_validate(await req.json())
+        agent_yaml_path = pack.root_dir / "agent.yaml"
+        previous_text = agent_yaml_path.read_text(encoding="utf-8")
+        _update_agent_config(pack=pack, request=update)
+        try:
+            state.reload_catalog()
+        except Exception as e:  # noqa: BLE001
+            agent_yaml_path.write_text(previous_text, encoding="utf-8")
+            raise HTTPException(status_code=400, detail=f"workspace reload failed: {e}") from e
+        reloaded_pack = state.require_pack(agent_id, external=False)
+        resp = AdminAgentCreateResponse(
+            agent=_agent_detail_response(reloaded_pack, include_prompt=False),
+            reloaded_agent_ids=sorted(state.catalog.packs.keys()),
+        )
+        return JSONResponse(resp.model_dump(exclude_none=True))
+
+    @app.post("/admin/workspace/agents/{agent_id}/skills/import")
+    async def admin_workspace_agent_skill_import(
+        agent_id: str,
+        req: Request,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        pack = state.require_pack(agent_id, external=False)
+        import_req = AdminSkillImportRequest.model_validate(await req.json())
+        skill = _import_agent_local_skill(pack=pack, request=import_req)
+        try:
+            state.reload_catalog()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"workspace reload failed: {e}") from e
+        resp = AdminSkillImportResponse(
+            agent_id=agent_id,
+            stable_id=skill.stable_id,
+            name=skill.frontmatter.name,
+            path=str(skill.skill_md_path.resolve()),
+            sha256=hashlib.sha256(skill.skill_md_path.read_bytes()).hexdigest(),
+            reloaded_agent_ids=sorted(state.catalog.packs.keys()),
+        )
+        return JSONResponse(resp.model_dump(exclude_none=True))
+
+    @app.post("/admin/workspace/agents/{agent_id}/skills/install")
+    async def admin_workspace_agent_skill_install(
+        agent_id: str,
+        req: Request,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        pack = state.require_pack(agent_id, external=False)
+        install_req = AdminSkillRegistryInstallRequest.model_validate(await req.json())
+        skill = _install_agent_local_skill_from_registry(pack=pack, request=install_req)
+        try:
+            state.reload_catalog()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"workspace reload failed: {e}") from e
+        resp = AdminSkillImportResponse(
+            agent_id=agent_id,
+            stable_id=skill.stable_id,
+            name=skill.frontmatter.name,
+            path=str(skill.skill_md_path.resolve()),
+            sha256=hashlib.sha256(skill.skill_md_path.read_bytes()).hexdigest(),
+            reloaded_agent_ids=sorted(state.catalog.packs.keys()),
+        )
+        return JSONResponse(resp.model_dump(exclude_none=True))
+
+    @app.get("/admin/workspace/agents/{agent_id}/skills/{directory_name}/update/check")
+    async def admin_workspace_agent_skill_update_check(
+        agent_id: str,
+        directory_name: str,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        pack = state.require_pack(agent_id, external=False)
+        resp = _check_agent_local_skill_update(pack=pack, directory_name=directory_name)
+        return JSONResponse(resp.model_dump(exclude_none=True))
+
+    @app.post("/admin/workspace/agents/{agent_id}/skills/{directory_name}/update/apply")
+    async def admin_workspace_agent_skill_update_apply(
+        agent_id: str,
+        directory_name: str,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        pack = state.require_pack(agent_id, external=False)
+        skill_dir = _resolve_agent_skill_dir(pack, directory_name)
+        if not (skill_dir / "SKILL.md").is_file():
+            raise HTTPException(status_code=404, detail="skill not found")
+        metadata = _read_skill_source_metadata(skill_dir)
+        install_req = _install_request_from_skill_source_metadata(metadata, overwrite=True)
+        if install_req is None:
+            raise HTTPException(status_code=400, detail="skill has no updatable channel source metadata")
+        install_req = install_req.model_copy(update={"directory_name": directory_name, "overwrite": True})
+        skill = _install_agent_local_skill_from_registry(pack=pack, request=install_req)
+        try:
+            state.reload_catalog()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"workspace reload failed: {e}") from e
+        resp = AdminSkillImportResponse(
+            agent_id=agent_id,
+            stable_id=skill.stable_id,
+            name=skill.frontmatter.name,
+            path=str(skill.skill_md_path.resolve()),
+            sha256=hashlib.sha256(skill.skill_md_path.read_bytes()).hexdigest(),
+            reloaded_agent_ids=sorted(state.catalog.packs.keys()),
+        )
+        return JSONResponse(resp.model_dump(exclude_none=True))
 
     @app.get("/internal/skills/list")
     async def internal_skills_list(agent_id: str = "main", authorization: str | None = Header(default=None)) -> JSONResponse:
@@ -310,6 +764,44 @@ def create_app(
         _require_user_auth(state, authorization)
         pack = state.require_pack(agent_id, external=True)
         resp = _agent_detail_response(pack, include_prompt=include_prompt)
+        return JSONResponse(resp.model_dump(exclude_none=True))
+
+    @app.get("/internal/tools/catalog")
+    async def internal_tools_catalog(
+        agent_id: str = "main",
+        session_key: str = "studio-catalog",
+        requested_tool_names: str | None = None,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        pack = state.require_pack(agent_id, external=True)
+        requested = _split_csv(requested_tool_names)
+        manifest_req = _build_agent_manifest_request(pack=pack, session_key=session_key, requested_tool_names=requested)
+        manifest = await state.runtime.manifest(manifest_req)
+        decision_reasons = {
+            decision.tool_name: decision.reason
+            for decision in (manifest.decisions or [])
+            if decision.decision == "allow"
+        }
+        tools = []
+        for tool in manifest.tools:
+            wire_tool = tool.model_dump(exclude_none=True, by_alias=True)
+            tools.append(
+                InternalToolCatalogItem(
+                    name=tool.name,
+                    description=tool.description,
+                    kind=wire_tool.get("x-anyagent-kind") if isinstance(wire_tool.get("x-anyagent-kind"), str) else None,
+                    parameters=tool.parameters,
+                    reason=decision_reasons.get(tool.name),
+                )
+            )
+        resp = InternalToolCatalogResponse(
+            agent_id=agent_id,
+            session_key=session_key,
+            requested_tool_names=requested,
+            toolset_version=manifest.toolset_version,
+            tools=tools,
+        )
         return JSONResponse(resp.model_dump(exclude_none=True))
 
     @app.post("/internal/tools/manifest")
@@ -353,6 +845,47 @@ def create_app(
         _require_user_auth(state, authorization)
         resp = await state.events.list_events(response_id=response_id, last_seq=last_seq, limit=limit)
         return JSONResponse(resp.model_dump(exclude_none=True))
+
+    @app.get("/internal/observability/summary")
+    async def internal_observability_summary(
+        response_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        resp = await state.events.list_events(response_id=response_id, last_seq=0, limit=10000)
+        run_record = await state.run_store.get(response_id)
+        summary = _build_observability_summary(resp, run_record=run_record)
+        return JSONResponse(summary.model_dump(exclude_none=True))
+
+    @app.get("/internal/observability/runs")
+    async def internal_observability_runs(
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 100,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        records = await state.run_store.list(
+            agent_id=agent_id,
+            session_key=session_key,
+            response_id=response_id,
+            limit=limit,
+        )
+        if created_after_ms is not None:
+            records = [record for record in records if int(getattr(record, "created_at_ms", 0) or 0) >= created_after_ms]
+        if created_before_ms is not None:
+            records = [record for record in records if int(getattr(record, "created_at_ms", 0) or 0) <= created_before_ms]
+        runs = [_build_observability_run_item(record) for record in records]
+        payload = InternalObservabilityRunsResponse(
+            agent_id=agent_id,
+            session_key=session_key,
+            response_id=response_id,
+            runs=runs,
+        )
+        return JSONResponse(payload.model_dump(exclude_none=True))
 
     @app.get("/internal/events/stream")
     async def internal_events_stream(
@@ -599,6 +1132,20 @@ def create_app(
             }
         )
         await _stage_sink(prompt_context_event)
+        await state.events.append(
+            response_id=response_id,
+            event="anyagent.response.request",
+            data=json.dumps(
+                {
+                    "type": "anyagent.response.request",
+                    "response_id": response_id,
+                    "agent_id": agent_id,
+                    "session_key": session_key,
+                    "transcript_items": input_to_transcript_items(body.get("input")),
+                },
+                ensure_ascii=False,
+            ),
+        )
 
         if stream_requested:
             created_block = _build_created_sse_block(response_id=response_id, body=body)
@@ -1070,10 +1617,485 @@ def _prompt_ref(*, path: Path | None, sha256: str | None, text: str | None, incl
     )
 
 
+def _workspace_agent_file_path(pack: AgentPack, *, kind: WorkspaceAgentFileKind) -> Path:
+    if kind == "agents_md":
+        return pack.root_dir / "AGENTS.md"
+    if kind == "agent_yaml":
+        return pack.root_dir / "agent.yaml"
+    if kind == "mcp_json":
+        return pack.root_dir / "mcp.json"
+    raise HTTPException(status_code=404, detail=f"unknown editable file kind: {kind}")
+
+
+def _read_workspace_agent_file(path: Path) -> tuple[bool, str | None, str | None]:
+    if not path.is_file():
+        return False, None, None
+    raw = path.read_bytes()
+    sha256 = hashlib.sha256(raw).hexdigest()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"invalid utf-8 in workspace file: {path}: {e}") from e
+    return True, sha256, text
+
+
+def _workspace_agent_file(pack: AgentPack, *, kind: WorkspaceAgentFileKind) -> AdminWorkspaceAgentFile:
+    path = _workspace_agent_file_path(pack, kind=kind)
+    exists, sha256, text = _read_workspace_agent_file(path)
+    return AdminWorkspaceAgentFile(
+        kind=kind,
+        path=str(path),
+        exists=exists,
+        sha256=sha256,
+        text=text,
+    )
+
+
+def _validate_workspace_agent_file_text(*, kind: WorkspaceAgentFileKind, text: str) -> None:
+    raw = text.encode("utf-8")
+    max_bytes = 64 * 1024 if kind == "agents_md" else 256 * 1024
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"file too large: bytes={len(raw)} max={max_bytes}")
+    if kind == "agent_yaml":
+        try:
+            payload = yaml.safe_load(text)
+            if not isinstance(payload, dict):
+                raise ValueError("agent.yaml must be an object")
+            AgentSpec.model_validate(payload)
+        except (ValueError, ValidationError, yaml.YAMLError) as e:
+            raise HTTPException(status_code=400, detail=f"invalid agent.yaml: {e}") from e
+    elif kind == "mcp_json":
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="invalid mcp.json: file must be a JSON object")
+        try:
+            payload = json.loads(text)
+            if not isinstance(payload, dict):
+                raise ValueError("mcp.json must be an object")
+            MCPConfig.model_validate(payload)
+        except (ValueError, ValidationError, json.JSONDecodeError) as e:
+            raise HTTPException(status_code=400, detail=f"invalid mcp.json: {e}") from e
+
+
+def _write_workspace_agent_file(*, path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _restore_workspace_agent_file(*, path: Path, text: str | None, existed: bool) -> None:
+    if existed:
+        path.write_text(text or "", encoding="utf-8")
+    elif path.exists():
+        path.unlink()
+
+
+def _create_agent_pack(*, state: AnyAgentServerApp, request: AdminAgentCreateRequest) -> None:
+    agent_id = request.agent_id.strip()
+    if not _SKILL_DIRECTORY_RE.fullmatch(agent_id):
+        raise HTTPException(status_code=400, detail="invalid agent_id")
+    agent_dir = state.workspace_dir / ".agents" / "agents" / agent_id
+    if agent_dir.exists():
+        raise HTTPException(status_code=409, detail="agent already exists")
+    spec = AgentSpec.model_validate(
+        {
+            "exposed": request.exposed,
+            "model": {
+                "default": request.model_default,
+                "provider": request.model_provider,
+                "base_url_env": request.model_base_url_env,
+                "api_key_env": request.model_api_key_env,
+            },
+            "tools": {"requested_tool_names": request.requested_tool_names},
+            "skills": {"default_selected": request.default_selected_skills},
+            "sandbox": {"mode": request.sandbox_mode},
+            "multiagent": {"spawn_allow_agent_ids": request.spawn_allow_agent_ids},
+        }
+    )
+    agent_dir.mkdir(parents=True)
+    try:
+        (agent_dir / "agent.yaml").write_text(yaml.safe_dump(spec.model_dump(exclude_none=True), sort_keys=False), encoding="utf-8")
+        (agent_dir / "AGENTS.md").write_text(request.instructions, encoding="utf-8")
+        (agent_dir / "mcp.json").write_text('{"mcpServers": {}}\n', encoding="utf-8")
+        (agent_dir / "skills").mkdir()
+    except Exception:
+        if agent_dir.exists():
+            shutil.rmtree(agent_dir)
+        raise
+
+
+def _update_agent_default_skills(*, state: AnyAgentServerApp, pack: AgentPack, default_selected: list[str]) -> None:
+    cleaned = [item.strip() for item in default_selected if isinstance(item, str) and item.strip()]
+    visible_skills, _errors = state.runtime.visible_skills_for_agent(pack.agent_id)
+    by_name: dict[str, list[Any]] = {}
+    by_id = {skill.stable_id: skill for skill in visible_skills}
+    for skill in visible_skills:
+        by_name.setdefault(skill.frontmatter.name, []).append(skill)
+    normalized: list[str] = []
+    for item in cleaned:
+        if item in by_id:
+            normalized.append(by_id[item].frontmatter.name)
+            continue
+        matches = by_name.get(item) or []
+        if len(matches) == 1:
+            normalized.append(item)
+            continue
+        if not matches:
+            raise HTTPException(status_code=400, detail=f"unknown skill: {item}")
+        raise HTTPException(status_code=400, detail=f"ambiguous skill name: {item}")
+    agent_yaml_path = pack.root_dir / "agent.yaml"
+    payload = yaml.safe_load(agent_yaml_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="agent.yaml must be an object")
+    skills_payload = payload.get("skills")
+    if not isinstance(skills_payload, dict):
+        skills_payload = {}
+        payload["skills"] = skills_payload
+    skills_payload["default_selected"] = normalized
+    AgentSpec.model_validate(payload)
+    agent_yaml_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
+def _update_agent_config(*, pack: AgentPack, request: AdminAgentConfigUpdateRequest) -> None:
+    """Update common Studio-facing controls while preserving unknown agent.yaml keys."""
+
+    agent_yaml_path = pack.root_dir / "agent.yaml"
+    payload = yaml.safe_load(agent_yaml_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="agent.yaml must be an object")
+    if request.exposed is not None:
+        payload["exposed"] = request.exposed
+    if any(
+        value is not None
+        for value in (request.model_default, request.model_provider, request.model_base_url_env, request.model_api_key_env)
+    ):
+        model_payload = payload.get("model")
+        if not isinstance(model_payload, dict):
+            model_payload = {}
+            payload["model"] = model_payload
+        if request.model_default is not None:
+            model_payload["default"] = request.model_default.strip() or None
+        if request.model_provider is not None:
+            model_payload["provider"] = request.model_provider.strip() or "openai"
+        if request.model_base_url_env is not None:
+            model_payload["base_url_env"] = request.model_base_url_env.strip() or None
+        if request.model_api_key_env is not None:
+            model_payload["api_key_env"] = request.model_api_key_env.strip() or None
+    if request.requested_tool_names is not None:
+        tools_payload = payload.get("tools")
+        if not isinstance(tools_payload, dict):
+            tools_payload = {}
+            payload["tools"] = tools_payload
+        tools_payload["requested_tool_names"] = [
+            item.strip() for item in request.requested_tool_names if isinstance(item, str) and item.strip()
+        ]
+    if request.sandbox_mode is not None:
+        sandbox_payload = payload.get("sandbox")
+        if not isinstance(sandbox_payload, dict):
+            sandbox_payload = {}
+            payload["sandbox"] = sandbox_payload
+        sandbox_payload["mode"] = request.sandbox_mode
+    if request.spawn_allow_agent_ids is not None:
+        multiagent_payload = payload.get("multiagent")
+        if not isinstance(multiagent_payload, dict):
+            multiagent_payload = {}
+            payload["multiagent"] = multiagent_payload
+        multiagent_payload["spawn_allow_agent_ids"] = [
+            item.strip() for item in request.spawn_allow_agent_ids if isinstance(item, str) and item.strip()
+        ]
+    if request.disabled_skill_paths is not None:
+        skills_payload = payload.get("skills")
+        if not isinstance(skills_payload, dict):
+            skills_payload = {}
+            payload["skills"] = skills_payload
+        cleaned_disabled = [item.strip() for item in request.disabled_skill_paths if isinstance(item, str) and item.strip()]
+        skills_payload["disabled_paths"] = cleaned_disabled
+        default_selected = skills_payload.get("default_selected")
+        if isinstance(default_selected, list):
+            disabled_names = {Path(item).parent.name for item in cleaned_disabled}
+            skills_payload["default_selected"] = [
+                item
+                for item in default_selected
+                if not (isinstance(item, str) and (item.strip() in cleaned_disabled or item.strip() in disabled_names))
+            ]
+    AgentSpec.model_validate(payload)
+    agent_yaml_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
+def _resolve_agent_skill_dir(pack: AgentPack, directory_name: str) -> Path:
+    directory_name = directory_name.strip()
+    if not _SKILL_DIRECTORY_RE.fullmatch(directory_name):
+        raise HTTPException(status_code=400, detail="invalid skill directory_name")
+    skill_dir = (pack.skills_dir / directory_name).resolve()
+    root = pack.skills_dir.resolve()
+    if root != skill_dir and root not in skill_dir.parents:
+        raise HTTPException(status_code=400, detail="skill directory escapes agent skills root")
+    return skill_dir
+
+
+def _copy_skill_dir_into_agent(
+    *,
+    pack: AgentPack,
+    source_dir: Path,
+    directory_name: str,
+    overwrite: bool,
+    source_metadata: dict[str, Any] | None = None,
+):
+    skill_dir = _resolve_agent_skill_dir(pack, directory_name)
+    skill_md_path = skill_dir / "SKILL.md"
+    if skill_dir.exists() and not overwrite:
+        raise HTTPException(status_code=409, detail="skill already exists; set overwrite=true to replace")
+    previous_dir = None
+    if skill_dir.exists():
+        previous_dir = Path(tempfile.mkdtemp(prefix="anyagent-skill-backup-")) / skill_dir.name
+        shutil.copytree(skill_dir, previous_dir)
+        shutil.rmtree(skill_dir)
+    skill_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source_dir, skill_dir)
+    try:
+        skill = load_skill_package(skill_dir, scope="agent")
+        if source_metadata is not None:
+            metadata = {
+                **source_metadata,
+                "installed_at": datetime.now(timezone.utc).isoformat(),
+                "source_hash": hashlib.sha256((skill_dir / "SKILL.md").read_bytes()).hexdigest(),
+            }
+            (skill_dir / ".anyagent-skill-source.json").write_text(
+                json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        return skill
+    except SkillLoadError as e:
+        if skill_dir.exists():
+            shutil.rmtree(skill_dir)
+        if previous_dir is not None:
+            shutil.copytree(previous_dir, skill_dir)
+        raise HTTPException(status_code=400, detail=f"invalid skill: {e}") from e
+
+
+def _import_agent_local_skill(*, pack: AgentPack, request: AdminSkillImportRequest):
+    raw = request.skill_md.encode("utf-8")
+    if len(raw) > 256 * 1024:
+        raise HTTPException(status_code=413, detail=f"skill too large: bytes={len(raw)} max={256 * 1024}")
+    directory_name = request.directory_name.strip()
+    _resolve_agent_skill_dir(pack, directory_name)
+    with tempfile.TemporaryDirectory(prefix="anyagent-skill-import-") as tmp:
+        source_dir = Path(tmp) / directory_name
+        source_dir.mkdir(parents=True)
+        (source_dir / "SKILL.md").write_text(request.skill_md, encoding="utf-8")
+        return _copy_skill_dir_into_agent(
+            pack=pack,
+            source_dir=source_dir,
+            directory_name=directory_name,
+            overwrite=request.overwrite,
+            source_metadata={
+                "channel": "local_upload",
+                "source_ref": directory_name,
+                "skill": directory_name,
+            },
+        )
+
+
+def _read_skill_source_metadata(skill_dir: Path) -> dict[str, Any]:
+    metadata_path = skill_dir / ".anyagent-skill-source.json"
+    if not metadata_path.is_file():
+        return {}
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _install_request_from_skill_source_metadata(metadata: dict[str, Any], *, overwrite: bool) -> AdminSkillRegistryInstallRequest | None:
+    channel = metadata.get("channel")
+    if channel not in {"skills.sh", "registry", "github"}:
+        return None
+    skill = metadata.get("skill")
+    if not isinstance(skill, str) or not skill.strip():
+        return None
+    package = metadata.get("package")
+    if not isinstance(package, str) or not package.strip():
+        package = metadata.get("github_repo") if channel == "github" else None
+    if not isinstance(package, str) or not package.strip():
+        return None
+    return AdminSkillRegistryInstallRequest(
+        channel=channel,
+        package=package,
+        skill=skill,
+        directory_name=None,
+        github_repo=metadata.get("github_repo") if isinstance(metadata.get("github_repo"), str) else None,
+        github_ref=metadata.get("github_ref") if isinstance(metadata.get("github_ref"), str) else None,
+        github_path=metadata.get("github_path") if isinstance(metadata.get("github_path"), str) else None,
+        overwrite=overwrite,
+    )
+
+
+def _check_agent_local_skill_update(*, pack: AgentPack, directory_name: str) -> AdminSkillUpdateCheckResponse:
+    skill_dir = _resolve_agent_skill_dir(pack, directory_name)
+    if not (skill_dir / "SKILL.md").is_file():
+        raise HTTPException(status_code=404, detail="skill not found")
+    metadata = _read_skill_source_metadata(skill_dir)
+    current_hash = hashlib.sha256((skill_dir / "SKILL.md").read_bytes()).hexdigest()
+    install_req = _install_request_from_skill_source_metadata(metadata, overwrite=True)
+    if install_req is None:
+        return AdminSkillUpdateCheckResponse(
+            agent_id=pack.agent_id,
+            directory_name=directory_name,
+            channel=str(metadata.get("channel")) if isinstance(metadata.get("channel"), str) else None,
+            source_ref=str(metadata.get("source_ref")) if isinstance(metadata.get("source_ref"), str) else None,
+            current_hash=current_hash,
+            updatable=False,
+            reason="skill has no updatable channel source metadata",
+        )
+    with tempfile.TemporaryDirectory(prefix="anyagent-skill-check-") as tmp:
+        temp_pack = AgentPack(
+            agent_id=pack.agent_id,
+            root_dir=Path(tmp),
+            spec=pack.spec,
+            agents_md_path=pack.agents_md_path,
+            agents_md_text=pack.agents_md_text,
+            agents_md_sha256=pack.agents_md_sha256,
+            workspace_agents_md_path=pack.workspace_agents_md_path,
+            workspace_agents_md_text=pack.workspace_agents_md_text,
+            workspace_agents_md_sha256=pack.workspace_agents_md_sha256,
+            mcp_config=pack.mcp_config,
+        )
+        latest = _install_agent_local_skill_from_registry(pack=temp_pack, request=install_req)
+        latest_hash = hashlib.sha256(latest.skill_md_path.read_bytes()).hexdigest()
+    return AdminSkillUpdateCheckResponse(
+        agent_id=pack.agent_id,
+        directory_name=directory_name,
+        channel=install_req.channel,
+        source_ref=str(metadata.get("source_ref")) if isinstance(metadata.get("source_ref"), str) else None,
+        current_hash=current_hash,
+        latest_hash=latest_hash,
+        update_available=current_hash != latest_hash,
+        updatable=True,
+    )
+
+
+def _github_repo_url(repo: str) -> tuple[str, str]:
+    match = _GITHUB_REPO_RE.fullmatch(repo.strip())
+    if not match:
+        raise HTTPException(status_code=400, detail="invalid github_repo")
+    owner, name = match.groups()
+    return f"https://github.com/{owner}/{name}.git", f"{owner}/{name}"
+
+
+def _resolve_github_skill_source(repo_root: Path, github_path: str | None, skill_name: str) -> Path:
+    raw_path = (github_path or skill_name).strip()
+    if not _GITHUB_PATH_RE.fullmatch(raw_path) or raw_path.startswith("/") or ".." in Path(raw_path).parts:
+        raise HTTPException(status_code=400, detail="invalid github_path")
+    candidate = (repo_root / raw_path).resolve()
+    root = repo_root.resolve()
+    if root != candidate and root not in candidate.parents:
+        raise HTTPException(status_code=400, detail="github_path escapes repository")
+    if candidate.is_file() and candidate.name == "SKILL.md":
+        candidate = candidate.parent
+    if not (candidate / "SKILL.md").is_file():
+        raise HTTPException(status_code=400, detail="github_path must point to a skill directory or SKILL.md")
+    return candidate
+
+
+def _install_agent_local_skill_from_github(*, pack: AgentPack, request: AdminSkillRegistryInstallRequest):
+    repo = request.github_repo or request.package
+    repo_url, repo_ref = _github_repo_url(repo)
+    skill_name = request.skill.strip()
+    directory_name = (request.directory_name or skill_name).strip()
+    ref = (request.github_ref or "main").strip()
+    if not _SKILL_INSTALL_NAME_RE.fullmatch(skill_name):
+        raise HTTPException(status_code=400, detail="invalid skill")
+    if not _GITHUB_REF_RE.fullmatch(ref):
+        raise HTTPException(status_code=400, detail="invalid github_ref")
+    _resolve_agent_skill_dir(pack, directory_name)
+    with tempfile.TemporaryDirectory(prefix="anyagent-skill-github-") as tmp:
+        repo_dir = Path(tmp) / "repo"
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", "--branch", ref, repo_url, str(repo_dir)],
+            cwd=tmp,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            raise HTTPException(status_code=400, detail=f"github skill clone failed: {_text_preview(result.stdout, limit=800)}")
+        source_dir = _resolve_github_skill_source(repo_dir, request.github_path, skill_name)
+        return _copy_skill_dir_into_agent(
+            pack=pack,
+            source_dir=source_dir,
+            directory_name=directory_name,
+            overwrite=request.overwrite,
+            source_metadata={
+                "channel": "github",
+                "package": repo_ref,
+                "skill": skill_name,
+                "source_ref": f"github:{repo_ref}:{ref}:{request.github_path or skill_name}",
+                "github_repo": repo_ref,
+                "github_ref": ref,
+                "github_path": request.github_path or skill_name,
+            },
+        )
+
+
+def _install_agent_local_skill_from_registry(*, pack: AgentPack, request: AdminSkillRegistryInstallRequest):
+    if request.channel == "github":
+        return _install_agent_local_skill_from_github(pack=pack, request=request)
+    package = request.package.strip()
+    skill_name = request.skill.strip()
+    directory_name = (request.directory_name or skill_name).strip()
+    if not _SKILL_INSTALL_PACKAGE_RE.fullmatch(package):
+        raise HTTPException(status_code=400, detail="invalid package")
+    if not _SKILL_INSTALL_NAME_RE.fullmatch(skill_name):
+        raise HTTPException(status_code=400, detail="invalid skill")
+    _resolve_agent_skill_dir(pack, directory_name)
+    with tempfile.TemporaryDirectory(prefix="anyagent-skills-install-") as tmp:
+        result = subprocess.run(
+            [
+                "npx",
+                "--yes",
+                "skills",
+                "add",
+                package,
+                "--channel",
+                request.channel,
+                "--skill",
+                skill_name,
+                "--agent",
+                "universal",
+                "--copy",
+                "-y",
+            ],
+            cwd=tmp,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            raise HTTPException(status_code=400, detail=f"skills install failed: {_text_preview(result.stdout, limit=800)}")
+        installed_dir = Path(tmp) / ".agents" / "skills" / skill_name
+        if not installed_dir.is_dir():
+            raise HTTPException(status_code=400, detail="skills install did not produce expected skill directory")
+        return _copy_skill_dir_into_agent(
+            pack=pack,
+            source_dir=installed_dir,
+            directory_name=directory_name,
+            overwrite=request.overwrite,
+            source_metadata={
+                "channel": request.channel,
+                "package": package,
+                "skill": skill_name,
+                "source_ref": f"{request.channel}:{package}:{skill_name}",
+            },
+        )
+
+
 def _mcp_server_labels(pack: AgentPack) -> list[str]:
     if pack.mcp_config is None:
         return []
-    return sorted(pack.mcp_config.mcpServers.keys())
+    return sorted(label for label, cfg in pack.mcp_config.mcpServers.items() if cfg.enabled)
 
 
 def _agent_list_item(pack: AgentPack) -> InternalAgentListItem:
@@ -1085,6 +2107,10 @@ def _agent_list_item(pack: AgentPack) -> InternalAgentListItem:
         prompt_sha256=pack.agents_md_sha256,
         workspace_prompt_sha256=pack.workspace_agents_md_sha256,
         sandbox_mode=pack.spec.sandbox.mode,
+        model_default=pack.spec.model.default,
+        model_provider=pack.spec.model.provider,
+        model_base_url_env=pack.spec.model.base_url_env,
+        model_api_key_env=pack.spec.model.api_key_env,
         requested_tool_names=list(pack.spec.tools.requested_tool_names),
         default_selected_skill_ids=list(pack.spec.skills.default_selected or []),
         spawn_allow_agent_ids=list(pack.spec.multiagent.spawn_allow_agent_ids or []),
@@ -1114,6 +2140,7 @@ def _agent_detail_response(pack: AgentPack, *, include_prompt: bool) -> Internal
             text=pack.workspace_agents_md_text,
             include_prompt=include_prompt,
         ),
+        model=pack.spec.model.model_dump(exclude_none=True),
         tools=InternalAgentToolsConfig(
             requested_tool_names=list(pack.spec.tools.requested_tool_names),
             allow_tools=list(pack.spec.tools.policy.allow_tools) if pack.spec.tools.policy and pack.spec.tools.policy.allow_tools else None,
@@ -1129,6 +2156,33 @@ def _agent_detail_response(pack: AgentPack, *, include_prompt: bool) -> Internal
             configured=pack.mcp_config is not None,
             server_labels=_mcp_server_labels(pack),
         ),
+    )
+
+
+def _split_csv(value: str | None) -> list[str]:
+    if not isinstance(value, str):
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _build_agent_manifest_request(
+    *,
+    pack: AgentPack,
+    session_key: str,
+    requested_tool_names: list[str] | None = None,
+) -> ManifestRequest:
+    context = ToolContext()
+    spec_policy = pack.spec.tools.policy
+    if spec_policy is not None:
+        context.policy = PolicyHint(
+            allow_tools=list(spec_policy.allow_tools) if isinstance(spec_policy.allow_tools, list) else None,
+            deny_tools=list(spec_policy.deny_tools) if isinstance(spec_policy.deny_tools, list) else None,
+        )
+    return ManifestRequest(
+        agent_id=pack.agent_id,
+        session_key=session_key,
+        requested_tool_names=list(requested_tool_names or []),
+        context=context,
     )
 
 

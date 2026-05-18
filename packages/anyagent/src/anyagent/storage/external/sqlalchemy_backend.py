@@ -57,6 +57,26 @@ class SqlAlchemyRunStore(SqlAlchemyBackendBase):
             row = (await conn.execute(stmt)).mappings().first()
         return None if row is None else self._row_to_run(dict(row))
 
+    async def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        limit: int = 100,
+    ) -> list[RunRecord]:
+        stmt = select(self._tables.runs).order_by(self._tables.runs.c.updated_at.desc())
+        if response_id:
+            stmt = stmt.where(self._tables.runs.c.response_id == response_id)
+        if session_key:
+            stmt = stmt.where(self._tables.runs.c.session_partition_key.like(f"%::{session_key}"))
+        if agent_id:
+            stmt = stmt.where(self._tables.runs.c.session_partition_key.like(f"{agent_id}::%"))
+        stmt = stmt.limit(max(0, min(1000, int(limit))))
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).mappings().all()
+        return [self._row_to_run(dict(row)) for row in rows]
+
     async def try_create_started(
         self,
         *,

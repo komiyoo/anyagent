@@ -42,8 +42,15 @@ cd my-workspace && anyagent serve
 #### 1.2 CLI 入口
 
 - `anyagent serve --workspace . --port 8787` — 启动 server
-- `anyagent agents list` — 列出可用 agents
-- `anyagent tools list` — 列出可用 tools（含 MCP tools）
+- `anyagent init --workspace ./my-workspace` — 生成最小可配置 workspace
+- `anyagent doctor --workspace ./my-workspace` — 校验 workspace 配置与安全边界
+- `anyagent storage-health` — 检查内置 server 存储后端与连通性
+- `anyagent storage-migrate` — 应用 PostgreSQL / SQL backend schema
+
+说明：
+
+- 旧版本草案里曾写过 `anyagent agents list` / `anyagent tools list`，当前仓库主 CLI 不再提供这两个子命令。
+- agent / tool 的 typed 发现面已转为 SDK 的资源型 namespace 与 `/internal/*` / `/admin/*` 发现接口。
 
 #### 1.3 Sandbox 执行（策略-后端分离架构）
 
@@ -65,11 +72,16 @@ cd my-workspace && anyagent serve
 - Agent 只见 `credential_id`，server 负责注入
 - 只有 `set`，没有 `get`
 
-#### 1.4 anyagent-apps 反向消费
+#### 1.5 anyagent-apps 反向消费
 
 - `anyagent-apps` 的 agent-api 改为消费 `anyagent.server` 的核心逻辑
 - 仅补充 PG/Redis 存储适配、分布式锁等生产级能力
 - 避免两处代码分叉
+
+#### 1.6 Storage / 外置后端边界
+
+- Core 已包含共享存储契约、reference runtime bundle 与 `storage.external` typed adapter。
+- 生产级 PostgreSQL / Redis wiring、分布式锁、保留策略和 rollout/replay 运维入口仍由 `anyagent-apps` 承担。
 
 ### 交付物
 

@@ -49,9 +49,12 @@ packages/anyagent/src/anyagent/
   mcp/               # MCP server 管理
   gateway/           # 会话/路由
   tool_runtime/      # 工具注册
+  storage/           # 共享存储模型/契约/replay/runtime 与 reference external adapters
+  plugins/           # Core 侧插件 API/loader/model
   server/            # 内置 Agent Server (Phase 1 新增)
     sandbox/         # Sandbox 后端（SandboxManager + OpenSandbox/External/LocalUnsafe）
     security/        # Credential Vault / Tool Policy
+    migrations.py    # built-in server storage migration CLI glue
   agent_packs.py     # Agent Packs 配置加载
   agent_api_client.py # Client SDK
   cli.py             # CLI 入口

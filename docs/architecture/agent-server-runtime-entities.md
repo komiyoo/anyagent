@@ -5,7 +5,7 @@
 说明：
 
 - 本文优先描述“参考实现真实行为”（as-is），并引用需求锚点说明“规范期望”（to-be）。
-- 当前运行型参考实现已迁到同级项目 `../anyagent-apps/`；文中的 `../anyagent-apps/apps/...` 与 `../anyagent-apps/tests/...` 路径即对应证据位置。
+- 当前运行型参考实现已经分层：Core 侧承载协议、SDK、共享存储契约与 reference 外置适配器；同级项目 `../anyagent-apps/` 主要承载生产部署 wiring、分布式存储、运维 CLI 与场景编排。文中的 `../anyagent-apps/apps/...` 与 `../anyagent-apps/tests/...` 路径仍用于说明生产层实现位置。
 - 需求定义基线：`requirements.md#req-2`、`requirements.md#req-4-3`、`requirements.md#req-4-4`、`requirements.md#req-4-5`、`requirements.md#req-5-8`、`requirements.md#req-5-13`。
 - 这些实体语义的长期真源应逐步回收到 `anyagent` Core；当前引用 `../anyagent-apps/apps/agent-api/...` 主要是为了说明现状实现位置，而不是宣告这些语义长期归属 apps 层。
 
@@ -31,7 +31,7 @@
 当前推荐边界：
 
 - `Session / Run / Event / replay / resume / idempotency` 的语义归属：`anyagent`
-- `PG/Redis` backend、distributed service shell、ops tooling 的实现归属：`anyagent-apps`
+- `PG/Redis` 生产 wiring、distributed service shell、ops tooling 的实现归属：`anyagent-apps`
 
 ## 2.1 Connection（传输连接）
 
@@ -92,7 +92,7 @@
 - 根线程生成：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:289`。
 - thread 元数据读取：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:293`。
 - 线程模型：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/multiagent/manager.py:33`。
-- in-memory store：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/multiagent/manager.py:157`。
+- 参考实现的多 agent 管理仍以应用层内存态为主：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/multiagent/manager.py:157`。
 
 ## 2.4 Run / Response（一次执行实例）
 

@@ -103,6 +103,8 @@ def build_mcp_server_ref_fragments(pack: AgentPack, *, role: ContextFragmentRole
         return []
     out: list[ContextFragment] = []
     for label, server_cfg in sorted(pack.mcp_config.mcpServers.items()):
+        if not server_cfg.enabled:
+            continue
         out.append(build_mcp_server_ref_fragment(label=label, server_cfg=server_cfg, role=role))
     return out
 
@@ -275,7 +277,9 @@ def build_prompt_cache_key(
             for fragment in fragments
             if fragment.cache_class == "stable_prefix"
         ],
-        "mcp_servers": sorted(pack.mcp_config.mcpServers) if pack.mcp_config is not None else [],
+        "mcp_servers": sorted(label for label, cfg in pack.mcp_config.mcpServers.items() if cfg.enabled)
+        if pack.mcp_config is not None
+        else [],
     }
     dumped = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(dumped.encode("utf-8")).hexdigest()

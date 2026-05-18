@@ -37,6 +37,7 @@ class MCPServerManager:
                 credential_store=credential_store,
             )
             for label, cfg in sorted(mcp_config.mcpServers.items())
+            if cfg.enabled
         }
         self._idle_check_task: asyncio.Task[None] | None = None
 

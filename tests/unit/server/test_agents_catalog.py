@@ -2,11 +2,24 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
+import subprocess
 from pathlib import Path
 
 import httpx
 
-from anyagent.protocol.agent_api_internal import InternalAgentDetailResponse, InternalAgentsListResponse
+from anyagent.agent_api_client import AnyAgent
+from anyagent.protocol.agent_api_internal import (
+    AdminAgentCreateResponse,
+    AdminSkillImportResponse,
+    AdminToolCatalogResponse,
+    AdminWorkspaceAgentFilesResponse,
+    AdminWorkspaceAgentFileUpdateResponse,
+    InternalAgentDetailResponse,
+    InternalAgentsListResponse,
+    InternalObservabilityRunsResponse,
+    InternalToolCatalogResponse,
+)
 from anyagent.server.app import create_app
 
 
@@ -118,3 +131,788 @@ async def _run_internal_agents_catalog_lists_allowed_agents_and_details(tmp_path
 
         hidden_detail = await client.get("/internal/agents/hidden", headers={"Authorization": "Bearer user-key"})
         assert hidden_detail.status_code == 403, hidden_detail.text
+
+        admin_client = AnyAgent(api_key="admin-key", base_url="http://testserver", http=client)
+        hidden_admin = await admin_client.admin.get_agent("hidden", include_prompt=True)
+        assert hidden_admin.agent_id == "hidden"
+        assert hidden_admin.exposed is False
+        assert hidden_admin.agents_md.text == hidden_prompt
+
+
+def test_admin_workspace_agent_files_update_and_reload(tmp_path: Path) -> None:
+    asyncio.run(_run_admin_workspace_agent_files_update_and_reload(tmp_path))
+
+
+def test_server_cors_origin_for_studio(tmp_path: Path) -> None:
+    asyncio.run(_run_server_cors_origin_for_studio(tmp_path))
+
+
+def test_admin_import_agent_skill(tmp_path: Path) -> None:
+    asyncio.run(_run_admin_import_agent_skill(tmp_path))
+
+
+def test_admin_install_agent_skill_from_registry(tmp_path: Path, monkeypatch) -> None:
+    asyncio.run(_run_admin_install_agent_skill_from_registry(tmp_path, monkeypatch))
+
+
+def test_admin_install_agent_skill_from_github(tmp_path: Path, monkeypatch) -> None:
+    asyncio.run(_run_admin_install_agent_skill_from_github(tmp_path, monkeypatch))
+
+
+def test_admin_create_agent_pack(tmp_path: Path) -> None:
+    asyncio.run(_run_admin_create_agent_pack(tmp_path))
+
+
+def test_admin_update_agent_default_skills(tmp_path: Path) -> None:
+    asyncio.run(_run_admin_update_agent_default_skills(tmp_path))
+
+
+def test_admin_update_agent_config(tmp_path: Path) -> None:
+    asyncio.run(_run_admin_update_agent_config(tmp_path))
+
+
+def test_internal_tools_catalog(tmp_path: Path) -> None:
+    asyncio.run(_run_internal_tools_catalog(tmp_path))
+
+
+def test_internal_observability_summary(tmp_path: Path) -> None:
+    asyncio.run(_run_internal_observability_summary(tmp_path))
+
+
+def test_internal_observability_runs(tmp_path: Path) -> None:
+    asyncio.run(_run_internal_observability_runs(tmp_path))
+
+
+def test_admin_tools_catalog(tmp_path: Path) -> None:
+    asyncio.run(_run_admin_tools_catalog(tmp_path))
+
+
+async def _run_server_cors_origin_for_studio(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="old prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+
+    app = create_app(
+        workspace_dir=tmp_path,
+        api_key="user-key",
+        admin_api_key="admin-key",
+        cors_origins=["http://127.0.0.1:5177"],
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        resp = await http.options(
+            "/internal/agents",
+            headers={
+                "Origin": "http://127.0.0.1:5177",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["access-control-allow-origin"] == "http://127.0.0.1:5177"
+
+
+async def _run_admin_import_agent_skill(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="old prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+
+    skill_md = """---
+name: imported-skill
+description: Imported from Studio
+---
+
+Use this skill when testing the Studio import flow.
+"""
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        admin_client = AnyAgent(api_key="admin-key", base_url="http://testserver", http=http)
+        user_client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+        imported = await admin_client.admin.import_agent_skill(
+            "main",
+            {"directory_name": "imported-skill", "skill_md": skill_md},
+        )
+        assert isinstance(imported, AdminSkillImportResponse)
+        assert imported.name == "imported-skill"
+        assert imported.sha256 == hashlib.sha256(skill_md.encode("utf-8")).hexdigest()
+        imported_dir = tmp_path / ".agents" / "agents" / "main" / "skills" / "imported-skill"
+        assert (imported_dir / "SKILL.md").is_file()
+        source_meta = json.loads((imported_dir / ".anyagent-skill-source.json").read_text(encoding="utf-8"))
+        assert source_meta["channel"] == "local_upload"
+        assert source_meta["source_ref"] == "imported-skill"
+        assert source_meta["source_hash"] == imported.sha256
+
+        skills = await user_client.skills.list(agent_id="main")
+        assert any(skill.name == "imported-skill" and skill.scope == "agent" for skill in skills.skills)
+
+        duplicate = await http.post(
+            "/admin/workspace/agents/main/skills/import",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"directory_name": "imported-skill", "skill_md": skill_md},
+        )
+        assert duplicate.status_code == 409, duplicate.text
+
+        bad_name = await http.post(
+            "/admin/workspace/agents/main/skills/import",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"directory_name": "../escape", "skill_md": skill_md},
+        )
+        assert bad_name.status_code == 400, bad_name.text
+
+        invalid = await http.post(
+            "/admin/workspace/agents/main/skills/import",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"directory_name": "invalid-skill", "skill_md": "no frontmatter"},
+        )
+        assert invalid.status_code == 400, invalid.text
+        assert not (tmp_path / ".agents" / "agents" / "main" / "skills" / "invalid-skill" / "SKILL.md").exists()
+
+
+async def _run_admin_install_agent_skill_from_registry(tmp_path: Path, monkeypatch) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="old prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+
+    install_count = {"value": 0}
+
+    def fake_run(cmd, *, cwd, check, text, stdout, stderr, timeout):  # noqa: ANN001
+        assert cmd[:5] == ["npx", "--yes", "skills", "add", "demo/package"]
+        assert "--channel" in cmd and "skills.sh" in cmd
+        assert "--agent" in cmd and "universal" in cmd
+        skill_dir = Path(cwd) / ".agents" / "skills" / "demo-skill"
+        skill_dir.mkdir(parents=True)
+        install_count["value"] += 1
+        description = "Installed from registry" if install_count["value"] == 1 else "Installed from registry v2"
+        (skill_dir / "SKILL.md").write_text(
+            f"""---
+name: demo-skill
+description: {description}
+---
+
+Use this skill for registry install tests.
+""",
+            encoding="utf-8",
+        )
+        (skill_dir / "references").mkdir()
+        (skill_dir / "references" / "note.md").write_text("kept", encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, stdout="installed")
+
+    monkeypatch.setattr("anyagent.server.app.subprocess.run", fake_run)
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        admin_client = AnyAgent(api_key="admin-key", base_url="http://testserver", http=http)
+        user_client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+        installed = await admin_client.admin.install_agent_skill(
+            "main",
+            {"channel": "skills.sh", "package": "demo/package", "skill": "demo-skill"},
+        )
+        assert isinstance(installed, AdminSkillImportResponse)
+        assert installed.name == "demo-skill"
+        target = tmp_path / ".agents" / "agents" / "main" / "skills" / "demo-skill"
+        assert (target / "SKILL.md").is_file()
+        assert (target / "references" / "note.md").read_text(encoding="utf-8") == "kept"
+        source_meta = json.loads((target / ".anyagent-skill-source.json").read_text(encoding="utf-8"))
+        assert source_meta["channel"] == "skills.sh"
+        assert source_meta["package"] == "demo/package"
+        assert source_meta["skill"] == "demo-skill"
+        assert source_meta["source_ref"] == "skills.sh:demo/package:demo-skill"
+        assert source_meta["source_hash"]
+
+        skills = await user_client.skills.list(agent_id="main")
+        assert any(skill.name == "demo-skill" and skill.scope == "agent" for skill in skills.skills)
+
+        check = await http.get(
+            "/admin/workspace/agents/main/skills/demo-skill/update/check",
+            headers={"Authorization": "Bearer admin-key"},
+        )
+        assert check.status_code == 200, check.text
+        check_payload = check.json()
+        assert check_payload["updatable"] is True
+        assert check_payload["update_available"] is True
+        assert check_payload["current_hash"] != check_payload["latest_hash"]
+
+        applied = await http.post(
+            "/admin/workspace/agents/main/skills/demo-skill/update/apply",
+            headers={"Authorization": "Bearer admin-key"},
+        )
+        assert applied.status_code == 200, applied.text
+        assert "registry v2" in (target / "SKILL.md").read_text(encoding="utf-8")
+
+        bad = await http.post(
+            "/admin/workspace/agents/main/skills/install",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"package": "demo/package;rm -rf /", "skill": "demo-skill"},
+        )
+        assert bad.status_code == 400, bad.text
+
+
+async def _run_admin_install_agent_skill_from_github(tmp_path: Path, monkeypatch) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="old prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+
+    def fake_run(cmd, *, cwd, check, text, stdout, stderr, timeout):  # noqa: ANN001
+        assert cmd[:5] == ["git", "clone", "--depth", "1", "--branch"]
+        assert "v1.2.3" in cmd
+        repo_dir = Path(cmd[-1])
+        skill_dir = repo_dir / "skills" / "github-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: github-skill
+description: Installed from GitHub
+---
+
+Use this skill for github install tests.
+""",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="cloned")
+
+    monkeypatch.setattr("anyagent.server.app.subprocess.run", fake_run)
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        admin_client = AnyAgent(api_key="admin-key", base_url="http://testserver", http=http)
+        user_client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+        installed = await admin_client.admin.install_agent_skill(
+            "main",
+            {
+                "channel": "github",
+                "package": "demo/repo",
+                "skill": "github-skill",
+                "github_ref": "v1.2.3",
+                "github_path": "skills/github-skill",
+            },
+        )
+        assert installed.name == "github-skill"
+        target = tmp_path / ".agents" / "agents" / "main" / "skills" / "github-skill"
+        assert (target / "SKILL.md").is_file()
+        source_meta = json.loads((target / ".anyagent-skill-source.json").read_text(encoding="utf-8"))
+        assert source_meta["channel"] == "github"
+        assert source_meta["github_repo"] == "demo/repo"
+        assert source_meta["github_ref"] == "v1.2.3"
+        assert source_meta["github_path"] == "skills/github-skill"
+        assert source_meta["source_ref"] == "github:demo/repo:v1.2.3:skills/github-skill"
+
+        skills = await user_client.skills.list(agent_id="main")
+        assert any(skill.name == "github-skill" and skill.scope == "agent" for skill in skills.skills)
+
+
+async def _run_admin_create_agent_pack(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="main prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        admin_client = AnyAgent(api_key="admin-key", base_url="http://testserver", http=http)
+        created = await admin_client.admin.create_agent(
+            {
+                "agent_id": "sales-agent",
+                "instructions": "你是销售助手。\n",
+                "requested_tool_names": ["core.web_fetch"],
+                "sandbox_mode": "disabled",
+                "exposed": True,
+            }
+        )
+        assert isinstance(created, AdminAgentCreateResponse)
+        assert created.agent.agent_id == "sales-agent"
+        assert created.agent.agents_md.text == "你是销售助手。\n"
+        assert "sales-agent" in created.reloaded_agent_ids
+        agent_dir = tmp_path / ".agents" / "agents" / "sales-agent"
+        assert (agent_dir / "agent.yaml").is_file()
+        assert (agent_dir / "AGENTS.md").read_text(encoding="utf-8") == "你是销售助手。\n"
+        assert (agent_dir / "mcp.json").read_text(encoding="utf-8") == '{"mcpServers": {}}\n'
+
+        listed = await http.get("/internal/agents", headers={"Authorization": "Bearer user-key"})
+        assert listed.status_code == 200, listed.text
+        payload = InternalAgentsListResponse.model_validate(listed.json())
+        assert [item.agent_id for item in payload.agents] == ["main", "sales-agent"]
+
+        duplicate = await http.post(
+            "/admin/workspace/agents",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"agent_id": "sales-agent", "instructions": "again"},
+        )
+        assert duplicate.status_code == 409, duplicate.text
+
+        bad = await http.post(
+            "/admin/workspace/agents",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"agent_id": "../escape", "instructions": "bad"},
+        )
+        assert bad.status_code == 400, bad.text
+
+
+async def _run_admin_update_agent_default_skills(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="old prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+    skill_dir = tmp_path / ".agents" / "agents" / "main" / "skills" / "demo-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: demo-skill
+description: Demo skill
+---
+
+Use this skill for selection tests.
+""",
+        encoding="utf-8",
+    )
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        admin_client = AnyAgent(api_key="admin-key", base_url="http://testserver", http=http)
+        user_client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+        updated = await admin_client.admin.update_agent_skills("main", {"default_selected": ["demo-skill"]})
+        assert updated.agent.skills.default_selected == ["demo-skill"]
+
+        skills = await user_client.skills.list(agent_id="main")
+        demo = next(skill for skill in skills.skills if skill.name == "demo-skill")
+        assert demo.selected is True
+        assert "default_selected:\n  - demo-skill\n" in (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(
+            encoding="utf-8"
+        )
+
+        bad = await http.put(
+            "/admin/workspace/agents/main/skills",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"default_selected": ["missing-skill"]},
+        )
+        assert bad.status_code == 400, bad.text
+
+
+async def _run_admin_update_agent_config(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="main prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+    _write_agent(
+        tmp_path,
+        "worker",
+        exposed=False,
+        prompt="worker prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        admin_client = AnyAgent(api_key="admin-key", base_url="http://testserver", http=http)
+        user_client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+
+        updated = await admin_client.admin.update_agent_config(
+            "worker",
+            {
+                "exposed": True,
+                "requested_tool_names": [" exec ", "core.web_fetch", ""],
+                "sandbox_mode": "local-unsafe",
+                "spawn_allow_agent_ids": ["main"],
+                "disabled_skill_paths": ["skills/alpha/SKILL.md", ""],
+            },
+        )
+        assert updated.agent.agent_id == "worker"
+        assert updated.agent.exposed is True
+        assert updated.agent.tools.requested_tool_names == ["exec", "core.web_fetch"]
+        assert updated.agent.sandbox["mode"] == "local-unsafe"
+        assert updated.agent.multiagent["spawn_allow_agent_ids"] == ["main"]
+        assert updated.agent.skills.disabled_paths == ["skills/alpha/SKILL.md"]
+
+        worker_yaml = (tmp_path / ".agents" / "agents" / "worker" / "agent.yaml").read_text(encoding="utf-8")
+        assert "exposed: true" in worker_yaml
+        assert "requested_tool_names:\n  - exec\n  - core.web_fetch\n" in worker_yaml
+        assert "mode: local-unsafe" in worker_yaml
+        assert "disabled_paths:\n  - skills/alpha/SKILL.md\n" in worker_yaml
+
+        listed = await user_client.agents.list()
+        assert [item.agent_id for item in listed.agents] == ["main", "worker"]
+
+        main_yaml_path = tmp_path / ".agents" / "agents" / "main" / "agent.yaml"
+        before = main_yaml_path.read_text(encoding="utf-8")
+        bad = await http.put(
+            "/admin/workspace/agents/main/config",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"exposed": False},
+        )
+        assert bad.status_code == 400, bad.text
+        assert main_yaml_path.read_text(encoding="utf-8") == before
+        main = await user_client.agents.get("main")
+        assert main.exposed is True
+
+
+async def _run_admin_workspace_agent_files_update_and_reload(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="old prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        admin_client = AnyAgent(api_key="admin-key", base_url="http://testserver", http=http)
+        user_client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+        files = await admin_client.admin.list_agent_files("main")
+        assert isinstance(files, AdminWorkspaceAgentFilesResponse)
+        by_kind = {item.kind: item for item in files.files}
+        assert by_kind["agents_md"].text == "old prompt\n"
+        assert by_kind["agent_yaml"].exists is True
+        assert by_kind["mcp_json"].exists is False
+
+        updated = await admin_client.admin.update_agent_file(
+            "main",
+            "agents_md",
+            {"text": "new prompt\n", "expected_sha256": by_kind["agents_md"].sha256},
+        )
+        assert isinstance(updated, AdminWorkspaceAgentFileUpdateResponse)
+        assert updated.file.text == "new prompt\n"
+        assert "main" in updated.reloaded_agent_ids
+
+        detail = await user_client.agents.get("main", include_prompt=True)
+        assert detail.agents_md.text == "new prompt\n"
+
+        stale = await http.put(
+            "/admin/workspace/agents/main/files/agents_md",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"text": "stale\n", "expected_sha256": by_kind["agents_md"].sha256},
+        )
+        assert stale.status_code == 409, stale.text
+
+        bad_yaml = await http.put(
+            "/admin/workspace/agents/main/files/agent_yaml",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"text": "not: [valid"},
+        )
+        assert bad_yaml.status_code == 400, bad_yaml.text
+
+        blank_mcp = await http.put(
+            "/admin/workspace/agents/main/files/mcp_json",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"text": ""},
+        )
+        assert blank_mcp.status_code == 400, blank_mcp.text
+        assert (tmp_path / ".agents" / "main" / "mcp.json").exists() is False
+
+        mcp = await admin_client.admin.update_agent_file(
+            "main",
+            "mcp_json",
+            {"text": '{"mcpServers":{"demo":{"url":"https://example.com/mcp"},"off":{"enabled":false,"url":"https://off.example.com/mcp"}}}\n'},
+        )
+        assert mcp.file.exists is True
+        assert mcp.file.sha256 is not None
+        detail_after_mcp = await user_client.agents.get("main")
+        assert detail_after_mcp.mcp.configured is True
+        assert detail_after_mcp.mcp.server_labels == ["demo"]
+
+
+async def _run_internal_tools_catalog(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="main prompt\n",
+        sandbox_mode="local-unsafe",
+        requested_tool_names=["exec"],
+    )
+    _write_agent(
+        tmp_path,
+        "hidden",
+        exposed=False,
+        prompt="hidden prompt\n",
+        sandbox_mode="local-unsafe",
+        requested_tool_names=["exec"],
+    )
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        user_client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+        catalog = await user_client.tools.catalog(agent_id="main", session_key="sess-tools")
+        assert isinstance(catalog, InternalToolCatalogResponse)
+        assert catalog.agent_id == "main"
+        assert catalog.session_key == "sess-tools"
+        assert catalog.toolset_version >= 1
+        assert [tool.name for tool in catalog.tools] == ["exec"]
+        assert catalog.tools[0].kind == "command"
+        assert catalog.tools[0].parameters is not None
+
+        direct = await http.get(
+            "/internal/tools/catalog",
+            params={"agent_id": "main", "requested_tool_names": " exec,missing.tool "},
+            headers={"Authorization": "Bearer user-key"},
+        )
+        assert direct.status_code == 200, direct.text
+        direct_payload = InternalToolCatalogResponse.model_validate(direct.json())
+        assert direct_payload.requested_tool_names == ["exec", "missing.tool"]
+        assert [tool.name for tool in direct_payload.tools] == ["exec"]
+
+        hidden = await http.get(
+            "/internal/tools/catalog",
+            params={"agent_id": "hidden"},
+            headers={"Authorization": "Bearer user-key"},
+        )
+        assert hidden.status_code == 403, hidden.text
+
+
+async def _run_internal_observability_summary(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="main prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+    response_id = "resp_summary"
+    await app.state.anyagent.events.mark_started(response_id=response_id)
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="anyagent.prompt.context",
+        data=json.dumps(
+            {
+                "type": "anyagent.prompt.context",
+                "response_id": response_id,
+                "agent_id": "main",
+                "session_key": "sess",
+                "prompt_cache_key": "k",
+                "fragment_kinds": ["agents_md"],
+                "selected_skill_ids": ["skill-a", "skill-b"],
+            }
+        ),
+    )
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="anyagent.response.request",
+        data=json.dumps(
+            {
+                "type": "anyagent.response.request",
+                "response_id": response_id,
+                "agent_id": "main",
+                "session_key": "sess",
+                "transcript_items": [{"role": "user", "content": "hello summary"}],
+            }
+        ),
+    )
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="anyagent.tool.planned",
+        data=json.dumps({"type": "anyagent.tool.planned", "response_id": response_id, "tool_name": "exec"}),
+    )
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="response.completed",
+        data=json.dumps(
+            {
+                "id": response_id,
+                "object": "response",
+                "status": "completed",
+                "usage": {
+                    "input_tokens": 11,
+                    "output_tokens": 7,
+                    "input_tokens_details": {"cached_tokens": 3},
+                },
+                "first_token_ms": 42,
+                "total_latency_ms": 120,
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "summary answer"}],
+                    }
+                ],
+            }
+        ),
+    )
+    await app.state.anyagent.events.mark_final(response_id=response_id, run_status="completed", effective_run_status="completed")
+    await app.state.anyagent.run_store.create_started(
+        response_id=response_id,
+        agent_id="main",
+        session_key="sess",
+        stream=False,
+        idempotency_key=None,
+    )
+    await app.state.anyagent.run_store.mark_final(
+        response_id=response_id,
+        status="completed",
+        effective_status="completed",
+        final_response_json={
+            "id": response_id,
+            "object": "response",
+            "status": "completed",
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "summary answer"}],
+                }
+            ],
+        },
+    )
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        resp = await http.get(
+            "/internal/observability/summary",
+            params={"response_id": response_id},
+            headers={"Authorization": "Bearer user-key"},
+        )
+        assert resp.status_code == 200, resp.text
+        payload = resp.json()
+        assert payload["agent_id"] == "main"
+        assert payload["session_key"] == "sess"
+        assert payload["event_count"] == 4
+        assert payload["tool_call_count"] == 1
+        assert payload["skill_view_count"] == 2
+        assert payload["turn_count"] == 1
+        assert payload["input_chars"] == len("hello summary")
+        assert payload["output_chars"] == len("summary answer")
+        assert payload["turns"] == [
+            {
+                "index": 1,
+                "input_chars": len("hello summary"),
+                "output_chars": len("summary answer"),
+            }
+        ]
+        assert payload["input_tokens"] == 11
+        assert payload["output_tokens"] == 7
+        assert payload["cached_input_tokens"] == 3
+        assert payload["first_token_latency_ms"] == 42
+        assert payload["total_response_latency_ms"] == 120
+
+
+async def _run_internal_observability_runs(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="main prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+    await app.state.anyagent.run_store.create_started(
+        response_id="resp_keep",
+        agent_id="main",
+        session_key="sess-a",
+        stream=True,
+        idempotency_key=None,
+    )
+    await app.state.anyagent.run_store.mark_final(
+        response_id="resp_keep",
+        status="completed",
+        effective_status="completed",
+        final_response_json={"id": "resp_keep"},
+    )
+    await app.state.anyagent.run_store.create_started(
+        response_id="resp_other_session",
+        agent_id="main",
+        session_key="sess-b",
+        stream=False,
+        idempotency_key=None,
+    )
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        resp = await http.get(
+            "/internal/observability/runs",
+            params={"agent_id": "main", "session_key": "sess-a"},
+            headers={"Authorization": "Bearer user-key"},
+        )
+        assert resp.status_code == 200, resp.text
+        payload = InternalObservabilityRunsResponse.model_validate(resp.json())
+        assert payload.agent_id == "main"
+        assert payload.session_key == "sess-a"
+        assert [item.response_id for item in payload.runs] == ["resp_keep"]
+        assert payload.runs[0].status == "completed"
+        assert payload.runs[0].effective_status == "completed"
+        created_at_ms = payload.runs[0].created_at_ms
+
+        resp = await http.get(
+            "/internal/observability/runs",
+            params={"agent_id": "main", "created_after_ms": created_at_ms + 1},
+            headers={"Authorization": "Bearer user-key"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert InternalObservabilityRunsResponse.model_validate(resp.json()).runs == []
+
+        resp = await http.get(
+            "/internal/observability/runs",
+            params={"agent_id": "main", "created_before_ms": created_at_ms - 1},
+            headers={"Authorization": "Bearer user-key"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert InternalObservabilityRunsResponse.model_validate(resp.json()).runs == []
+
+
+async def _run_admin_tools_catalog(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="main prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        admin_client = AnyAgent(api_key="admin-key", base_url="http://testserver", http=http)
+        catalog = await admin_client.admin.tool_catalog()
+        assert isinstance(catalog, AdminToolCatalogResponse)
+        assert catalog.toolset_version >= 1
+        assert [tool.name for tool in catalog.tools] == ["exec"]
+        assert catalog.tools[0].kind == "command"
+
+        user_catalog = await http.get("/admin/tools/catalog", headers={"Authorization": "Bearer user-key"})
+        assert user_catalog.status_code == 401, user_catalog.text

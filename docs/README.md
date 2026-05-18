@@ -8,6 +8,7 @@
   - [architecture/roadmap.md](architecture/roadmap.md)：Phase 1-4 演进路线图
   - [architecture/apps-packages-boundary.md](architecture/apps-packages-boundary.md)：anyagent vs anyagent-apps 职责边界
   - [architecture/responses-api-sdk-and-server.md](architecture/responses-api-sdk-and-server.md)：SDK + Server 泳道与模块边界
+  - [architecture/studio-control-plane-and-observability.md](architecture/studio-control-plane-and-observability.md)：Studio 控制面、模式分层、观测与 skill 渠道化导入
   - [architecture/sandbox-session-filesystem-design.md](architecture/sandbox-session-filesystem-design.md)：服务化沙箱会话文件系统设计
 - [security/README.md](security/README.md)：威胁模型、安全边界、审计留痕、凭证管理
 - [acceptance/README.md](acceptance/README.md)：验收与可复现手册

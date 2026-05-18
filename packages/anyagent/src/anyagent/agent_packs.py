@@ -43,6 +43,15 @@ class AgentSkillsSpec(BaseModel):
     disabled_paths: list[str] | None = None
 
 
+class AgentModelSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    default: str | None = None
+    provider: str = "openai"
+    base_url_env: str | None = None
+    api_key_env: str | None = None
+
+
 class MultiAgentLimits(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -66,6 +75,7 @@ class AgentSpec(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     exposed: bool
+    model: AgentModelSpec = Field(default_factory=AgentModelSpec)
     tools: AgentToolsSpec
     skills: AgentSkillsSpec = Field(default_factory=AgentSkillsSpec)
     sandbox: SandboxPolicy = Field(default_factory=SandboxPolicy)

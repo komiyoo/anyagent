@@ -108,6 +108,15 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument("--port", type=int, default=8787)
     serve.add_argument("--api-key", default=None, help="Bearer token for `/v1/*` and `/internal/*` APIs.")
     serve.add_argument("--admin-key", default=None, help="Bearer token for `/admin/*` APIs.")
+    serve.add_argument(
+        "--cors-origin",
+        action="append",
+        default=None,
+        help=(
+            "Allowed browser origin for CORS. May be repeated. "
+            "Defaults to comma-separated $ANYAGENT_CORS_ORIGINS when unset."
+        ),
+    )
     serve.add_argument("--sandbox-root", default=None, help="Optional root dir for local sandbox sessions.")
     serve.add_argument(
         "--storage-mode",
@@ -262,6 +271,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         session_store_backend=args.session_store_backend,
         session_lock_backend=args.session_lock_backend,
         session_lease_ttl_s=args.session_lease_ttl_s,
+        cors_origins=args.cors_origin,
     )
     uvicorn.run(app, host=args.host, port=int(args.port), log_level="info")
     return 0

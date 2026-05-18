@@ -380,12 +380,16 @@ anyagent/                            # 本仓库：Server Core + SDK
       mcp/                           # MCP server 管理（auth/连接/工具发现）
       gateway/                       # 会话映射/agent 路由/sequencer
       tool_runtime/                  # 工具注册/client/plugin
-      server/                        # [内置] Agent Server（FastAPI + in-memory storage）
+      storage/                       # 共享存储模型/契约/replay/runtime 与 reference external adapters
+        external/                    # SQL/Redis reference adapters、schema、migrations helper
+      plugins/                       # Core 插件 API/loader/model
+      server/                        # [内置] Agent Server（FastAPI + reference/external storage glue）
+        migrations.py                # storage-migrate CLI glue
         sandbox/                     # Sandbox 后端（SandboxManager + Backend 实现）
         security/                    # Credential Vault / Tool Policy
       agent_packs.py                 # Agent Packs 配置加载
       agent_api_client.py            # Client SDK（AnyAgent 资源型命名空间）
-      cli.py                         # CLI 入口（anyagent serve / agents / tools）
+      cli.py                         # CLI 入口（serve / init / doctor / storage-*）
 ```
 
 ## 两层 API 输出
@@ -401,14 +405,15 @@ anyagent/                            # 本仓库：Server Core + SDK
 anyagent (本仓库)           anyagent-apps (同级项目)
 ┌──────────────────┐       ┌──────────────────────┐
 │ Server Core      │       │ 高级部署模式           │
-│ ├─ 内置 Agent API │◄──────│ ├─ PG/Redis 持久化     │
+│ ├─ 内置 Agent API │◄──────│ ├─ production wiring   │
 │ ├─ 内置 Tool RT  │       │ ├─ 独立 Tool Runtime   │
-│ └─ in-memory 存储 │       │ └─ 分布式锁/keyed seq │
+│ └─ reference 存储 │       │ └─ 分布式锁/keyed seq │
 │                  │       │                      │
 │ SDK + Protocol   │       │ 场景模板 & 示例        │
 │ ├─ AnyAgent      │       │ ├─ demo-workspace     │
 │ ├─ protocol.*    │       │ ├─ multi-agent-team   │
-│ └─ skills/mcp    │       │ └─ project-template   │
+│ ├─ storage.*     │       │ └─ project-template   │
+│ └─ skills/mcp    │       │                      │
 │                  │       │                      │
 │ CLI (anyagent    │       │ 平台 Connectors       │
 │  serve)          │       │ ├─ plugins/feishu     │
@@ -416,8 +421,8 @@ anyagent (本仓库)           anyagent-apps (同级项目)
                            └──────────────────────┘
 ```
 
-- **anyagent**：电池内置的 Agent Server 内核 + 共享服务语义层
-- **anyagent-apps**：生产级 backend/adapters + 分布式部署壳子 + 场景示例 + 平台 connector
+- **anyagent**：电池内置的 Agent Server 内核 + SDK/Protocol + 共享服务语义层；包含 in-memory reference path，也包含 `storage.external` 的 typed SQL/Redis reference adapters 与迁移 helper。
+- **anyagent-apps**：生产级部署 wiring、外置服务编排、独立 Tool Runtime、场景示例与平台 connector；不重复定义 Core 协议或 agent loop。
 
 ## 文档
 
@@ -439,7 +444,7 @@ anyagent (本仓库)           anyagent-apps (同级项目)
 - **Agent Packs**：`.agents/agents/<agent_id>/` 目录即行为包（`agent.yaml` + `AGENTS.md` + `mcp.json`）
 - **agent_id**：同一套服务内不同 agent 的标识（persona/权限/skills/tool policy 组合）
 - **Agent Catalog API**：`GET /internal/agents` 列出当前允许外部指定的 agents，`GET /internal/agents/{agent_id}` 查看配置与 prompt 元信息；完整 prompt 文本需显式 `include_prompt=true`
-- **SDK 控制面**：`client.health()`、`client.agents.*`、`client.skills.*`、`client.prompts.*`、`client.admin.storage_health()` 与 `client.admin.*_credential()` 覆盖服务端 typed 管理/发现面
+- **SDK 控制面**：`client.health()`、`client.agents.*`、`client.tools.*`、`client.skills.*`、`client.prompts.*`、`client.admin.storage_health()`、`client.admin.tool_catalog()`、`client.admin.*_credential()` 与 `client.admin.*agent*()` 覆盖服务端 typed 管理/发现面
 - **session_key**：平台侧线程/会话标识
 - **session_partition_key**：并发分片键，固定为 `"{agent_id}::{session_key}"`
 - **Skills 目录**：`.agents/skills/`（跨 agent 共享技能）

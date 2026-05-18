@@ -8,6 +8,7 @@ anyagent Client SDK — 资源型命名空间入口。
 - ``client.openai`` / ``client.async_openai`` — OpenAI 官方 SDK client（缓存属性）
 - ``client.responses`` — AnyAgent 补充的 `/v1/responses/{id}` async helpers
 - ``client.agents``    — Agent catalog / detail（/internal/agents）
+- ``client.tools``     — Tool catalog / effective manifest discovery
 - ``client.events``    — 内部观测 / replay（/internal/events/*）
 - ``client.skills``    — 技能发现（/internal/skills/list）
 - ``client.prompts``   — prompt explain / preview（preview + local example bundle）
@@ -27,11 +28,23 @@ from anyagent.agent_packs import AgentPack, AgentSkillsSpec, AgentSpec, AgentToo
 from anyagent.agent_runtime import build_default_environment_context_values, build_prompt_envelope
 from anyagent.mcp.models import MCPConfig, MCPServerConfig
 from anyagent.protocol.agent_api_internal import (
+    AdminAgentConfigUpdateRequest,
+    AdminAgentCreateRequest,
+    AdminAgentCreateResponse,
+    AdminAgentSkillsUpdateRequest,
+    AdminSkillImportRequest,
+    AdminSkillImportResponse,
+    AdminSkillRegistryInstallRequest,
+    AdminToolCatalogResponse,
+    AdminWorkspaceAgentFilesResponse,
+    AdminWorkspaceAgentFileUpdateRequest,
+    AdminWorkspaceAgentFileUpdateResponse,
     InternalAgentDetailResponse,
     InternalAgentsListResponse,
     InternalEventsListResponse,
     InternalEventsReplaySummary,
     InternalPromptBundlePreviewResponse,
+    InternalToolCatalogResponse,
     PromptRunBundleExplanation,
     PromptRunBundleExplanationStep,
     PromptRunBundleExampleResponse,
@@ -143,6 +156,24 @@ class _Namespace:
                 r = await c.post(url, headers=request_headers, json=json_body)
         else:
             r = await self._http.post(url, headers=request_headers, json=json_body, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+
+    async def _put_json(
+        self,
+        path: str,
+        *,
+        json_body: dict[str, Any],
+        timeout: float = 10.0,
+    ) -> Any:
+        """Issue PUT with JSON body and return parsed JSON."""
+
+        url = f"{self._base_url}{path}"
+        if self._http is None:
+            async with httpx.AsyncClient(timeout=timeout) as c:
+                r = await c.put(url, headers=self._headers(), json=json_body)
+        else:
+            r = await self._http.put(url, headers=self._headers(), json=json_body, timeout=timeout)
         r.raise_for_status()
         return r.json()
 
@@ -379,6 +410,26 @@ class Agents(_Namespace):
         return InternalAgentDetailResponse.model_validate(data)
 
 
+class Tools(_Namespace):
+    """Effective tool discovery helpers (``/internal/tools/catalog``)."""
+
+    async def catalog(
+        self,
+        *,
+        agent_id: str = "main",
+        session_key: str = "sdk-catalog",
+        requested_tool_names: list[str] | None = None,
+    ) -> InternalToolCatalogResponse:
+        params: dict[str, Any] = {
+            "agent_id": agent_id,
+            "session_key": session_key,
+        }
+        if requested_tool_names:
+            params["requested_tool_names"] = ",".join(item for item in requested_tool_names if item)
+        data = await self._get("/internal/tools/catalog", params=params)
+        return InternalToolCatalogResponse.model_validate(data)
+
+
 class Prompts(_Namespace):
     """Prompt debug / explain helpers (`/internal/prompt/*`)."""
 
@@ -436,6 +487,10 @@ class Admin(_Namespace):
         data = await self._get("/admin/storage/health")
         return StorageHealthResponse.model_validate(data)
 
+    async def tool_catalog(self) -> AdminToolCatalogResponse:
+        data = await self._get("/admin/tools/catalog")
+        return AdminToolCatalogResponse.model_validate(data)
+
     async def set_credential(self, request: AdminCredentialSetRequest | dict[str, Any]) -> AdminCredentialRef:
         model = request if isinstance(request, AdminCredentialSetRequest) else AdminCredentialSetRequest.model_validate(request)
         data = await self._post_json("/admin/credentials", json_body=model.model_dump(exclude_none=True))
@@ -450,6 +505,96 @@ class Admin(_Namespace):
         if not isinstance(data, dict):
             raise RuntimeError("invalid /admin/credentials/{credential_id} delete payload")
         return data
+
+    async def create_agent(self, request: AdminAgentCreateRequest | dict[str, Any]) -> AdminAgentCreateResponse:
+        model = request if isinstance(request, AdminAgentCreateRequest) else AdminAgentCreateRequest.model_validate(request)
+        data = await self._post_json("/admin/workspace/agents", json_body=model.model_dump(exclude_none=True))
+        return AdminAgentCreateResponse.model_validate(data)
+
+    async def get_agent(self, agent_id: str, *, include_prompt: bool = False) -> InternalAgentDetailResponse:
+        data = await self._get(f"/admin/workspace/agents/{agent_id}", params={"include_prompt": include_prompt})
+        return InternalAgentDetailResponse.model_validate(data)
+
+    async def list_agent_files(self, agent_id: str) -> AdminWorkspaceAgentFilesResponse:
+        data = await self._get(f"/admin/workspace/agents/{agent_id}/files")
+        return AdminWorkspaceAgentFilesResponse.model_validate(data)
+
+    async def update_agent_file(
+        self,
+        agent_id: str,
+        kind: str,
+        request: AdminWorkspaceAgentFileUpdateRequest | dict[str, Any],
+    ) -> AdminWorkspaceAgentFileUpdateResponse:
+        model = (
+            request
+            if isinstance(request, AdminWorkspaceAgentFileUpdateRequest)
+            else AdminWorkspaceAgentFileUpdateRequest.model_validate(request)
+        )
+        data = await self._put_json(
+            f"/admin/workspace/agents/{agent_id}/files/{kind}",
+            json_body=model.model_dump(exclude_none=True),
+        )
+        return AdminWorkspaceAgentFileUpdateResponse.model_validate(data)
+
+    async def import_agent_skill(
+        self,
+        agent_id: str,
+        request: AdminSkillImportRequest | dict[str, Any],
+    ) -> AdminSkillImportResponse:
+        model = request if isinstance(request, AdminSkillImportRequest) else AdminSkillImportRequest.model_validate(request)
+        data = await self._post_json(
+            f"/admin/workspace/agents/{agent_id}/skills/import",
+            json_body=model.model_dump(exclude_none=True),
+        )
+        return AdminSkillImportResponse.model_validate(data)
+
+    async def install_agent_skill(
+        self,
+        agent_id: str,
+        request: AdminSkillRegistryInstallRequest | dict[str, Any],
+    ) -> AdminSkillImportResponse:
+        model = (
+            request
+            if isinstance(request, AdminSkillRegistryInstallRequest)
+            else AdminSkillRegistryInstallRequest.model_validate(request)
+        )
+        data = await self._post_json(
+            f"/admin/workspace/agents/{agent_id}/skills/install",
+            json_body=model.model_dump(exclude_none=True),
+        )
+        return AdminSkillImportResponse.model_validate(data)
+
+    async def update_agent_skills(
+        self,
+        agent_id: str,
+        request: AdminAgentSkillsUpdateRequest | dict[str, Any],
+    ) -> AdminAgentCreateResponse:
+        model = (
+            request
+            if isinstance(request, AdminAgentSkillsUpdateRequest)
+            else AdminAgentSkillsUpdateRequest.model_validate(request)
+        )
+        data = await self._put_json(
+            f"/admin/workspace/agents/{agent_id}/skills",
+            json_body=model.model_dump(exclude_none=True),
+        )
+        return AdminAgentCreateResponse.model_validate(data)
+
+    async def update_agent_config(
+        self,
+        agent_id: str,
+        request: AdminAgentConfigUpdateRequest | dict[str, Any],
+    ) -> AdminAgentCreateResponse:
+        model = (
+            request
+            if isinstance(request, AdminAgentConfigUpdateRequest)
+            else AdminAgentConfigUpdateRequest.model_validate(request)
+        )
+        data = await self._put_json(
+            f"/admin/workspace/agents/{agent_id}/config",
+            json_body=model.model_dump(exclude_none=True),
+        )
+        return AdminAgentCreateResponse.model_validate(data)
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +624,7 @@ class AnyAgent:
         agents = await client.agents.list()
         agent = await client.agents.get("main")
         skills = await client.skills.list(agent_id="main")
+        tools = await client.tools.catalog(agent_id="main")
         preview = await client.prompts.preview({...})
         example = client.prompts.example_run_bundle()
         await client.admin.set_credential({...})
@@ -505,6 +651,7 @@ class AnyAgent:
 
         self.responses = Responses(**shared)
         self.agents = Agents(**shared)
+        self.tools = Tools(**shared)
         self.events = Events(**shared)
         self.skills = Skills(**shared)
         self.prompts = Prompts(**shared)

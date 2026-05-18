@@ -154,6 +154,9 @@ class InProcessToolRuntimeService:
             ),
         )
 
+    def set_catalog(self, catalog: AgentCatalog) -> None:
+        self._catalog = catalog
+
     def sandbox_policy_for_agent(self, agent_id: str) -> SandboxPolicy:
         pack = self.require_pack(agent_id)
         return pack.spec.sandbox
@@ -181,6 +184,7 @@ class InProcessToolRuntimeService:
             base_dir=pack.root_dir,
         )
         enablement = SkillEnablement(user_disabled_paths=disabled_ids)
+        default_selected = set(pack.spec.skills.default_selected or [])
         items: list[InternalSkillListItem] = []
         for skill in skills:
             items.append(
@@ -194,6 +198,7 @@ class InProcessToolRuntimeService:
                     path=str(skill.skill_md_path.resolve()),
                     scope=skill.scope,
                     enabled=enablement.is_enabled(skill),
+                    selected=skill.frontmatter.name in default_selected or skill.stable_id in default_selected,
                     source_hash=_skill_source_hash(skill),
                     interface=_skill_interface(skill),
                     requested_tool_names=requested_tool_names_for_skill(skill),
@@ -219,6 +224,9 @@ class InProcessToolRuntimeService:
             toolset_version=self._registry.toolset_version,
             decisions=[ManifestDecision(tool_name=tool.name, decision="allow", reason="agent_policy") for tool in tools],
         )
+
+    def list_registered_tools(self) -> tuple[list[Any], int]:
+        return self._registry.list_tools(), self._registry.toolset_version
 
     async def execute(self, req: ExecuteRequest) -> ExecuteResponse:
         audit_ref = _build_audit_ref(response_id=req.response_id, tool_call_id=req.tool_call_id)

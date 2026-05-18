@@ -194,6 +194,33 @@ def test_prompt_envelope_includes_sandbox_guidance_and_mcp_refs_when_available(t
     assert any(fragment.kind == "sandbox_guidance" for fragment in rendered)
 
 
+def test_prompt_envelope_skips_disabled_mcp_refs(tmp_path: Path) -> None:
+    pack = _build_pack(tmp_path)
+    pack = AgentPack(
+        agent_id=pack.agent_id,
+        root_dir=pack.root_dir,
+        spec=pack.spec,
+        agents_md_path=pack.agents_md_path,
+        agents_md_text=pack.agents_md_text,
+        agents_md_sha256=pack.agents_md_sha256,
+        workspace_agents_md_path=pack.workspace_agents_md_path,
+        workspace_agents_md_text=pack.workspace_agents_md_text,
+        workspace_agents_md_sha256=pack.workspace_agents_md_sha256,
+        mcp_config=MCPConfig(
+            mcpServers={
+                "enabled": MCPServerConfig(url="https://enabled.example.test"),
+                "disabled": MCPServerConfig(enabled=False, url="https://disabled.example.test"),
+            }
+        ),
+    )
+
+    envelope = build_prompt_envelope(pack=pack, selected_skills=[], model="gpt-5")
+    rendered = "\n".join(fragment.rendered_text for fragment in envelope.rendered_fragments())
+
+    assert "<label>enabled</label>" in rendered
+    assert "<label>disabled</label>" not in rendered
+
+
 def test_context_fragment_detection_recognizes_agents_skill_and_environment_texts(tmp_path: Path) -> None:
     agents_text = build_agents_md_injection_text(_build_pack(tmp_path))
     skill_text = build_skills_injection_text([_build_skill(tmp_path)])

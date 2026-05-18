@@ -38,6 +38,7 @@ class MCPServerConfig(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    enabled: bool = True
     # transport 自动推断：有 url → streamable_http/sse，有 command → stdio
     url: str | None = None
     command: str | None = None

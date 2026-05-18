@@ -23,7 +23,11 @@ from anyagent.protocol.stage_events import (
     summarize_command,
     summarize_payload,
 )
-from anyagent.protocol.tool_manifest_extensions import strip_internal_tool_fields, tool_kind_for_tool_name
+from anyagent.protocol.tool_manifest_extensions import (
+    source_tool_name_for_model_name,
+    strip_internal_tool_fields,
+    tool_kind_for_tool_name,
+)
 from anyagent.protocol.tool_runtime import ExecuteRequest, ManifestRequest, ToolContext
 from anyagent.skills.models import SkillPackage
 from anyagent.tool_runtime.client import ToolRuntimeClient
@@ -233,7 +237,7 @@ async def _execute_one_tool(
     stage_event_sink: StageEventSink | None,
 ) -> tuple[FunctionCallOutput | None, list[dict[str, Any]], int]:
     call_id = call.call_id
-    tool_name = call.name
+    tool_name = source_tool_name_for_model_name(manifest_tools, call.name)
     arguments = call.arguments
     if not isinstance(call_id, str) or not isinstance(tool_name, str):
         return None, manifest_tools, toolset_version

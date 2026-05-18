@@ -43,6 +43,14 @@ class EventStore(Protocol):
 class RunStore(Protocol):
     async def get(self, response_id: str): ...
     async def get_by_idempotency_key(self, idempotency_key: str): ...
+    async def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        limit: int = 100,
+    ): ...
     async def create_started(self, *, response_id: str, agent_id: str, session_key: str, stream: bool, idempotency_key: str | None): ...
     async def mark_cancel_requested(self, response_id: str) -> None: ...
     async def mark_final(self, *, response_id: str, status: str, effective_status: str, final_response_json, error_json=None) -> None: ...
@@ -72,6 +80,22 @@ class _ExternalSqlRunStoreAdapter:
     async def get_by_idempotency_key(self, idempotency_key: str):
         record = await self._store.get_by_idempotency_key(idempotency_key)
         return None if record is None else _local_run_record(record)
+
+    async def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        limit: int = 100,
+    ):
+        records = await self._store.list(
+            agent_id=agent_id,
+            session_key=session_key,
+            response_id=response_id,
+            limit=limit,
+        )
+        return [_local_run_record(record) for record in records]
 
     async def create_started(
         self,
