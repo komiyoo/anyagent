@@ -3,10 +3,10 @@ set -euo pipefail
 
 echo "[ci] pytest regressions: unit + contract + integration + targeted server acceptance"
 
-uv run --project packages/anyagent --with pytest python -m pytest tests/unit -q
-uv run --project packages/anyagent --with pytest python -m pytest tests/contract -q
-uv run --project packages/anyagent --with pytest python -m pytest tests/integration -q
-uv run --project packages/anyagent --with pytest python -m pytest -q \
+uv run --project packages/anyagent --extra external-storage --with pytest python -m pytest tests/unit -q
+uv run --project packages/anyagent --extra external-storage --with pytest python -m pytest tests/contract -q
+uv run --project packages/anyagent --extra external-storage --with pytest python -m pytest tests/integration -q
+uv run --project packages/anyagent --extra external-storage --with pytest python -m pytest -q \
   tests/acceptance/server/acceptance_skills_list_smoke.py \
   tests/acceptance/server/acceptance_prompt_envelope_smoke.py \
   tests/acceptance/server/acceptance_builtin_server_smoke.py \
