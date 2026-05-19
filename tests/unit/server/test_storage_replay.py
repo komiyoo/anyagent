@@ -5,6 +5,10 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from anyagent.server.internal_events import create_internal_events_router
 from anyagent.storage.models import EventRecord, RunRecord
 from anyagent.storage.replay import (
     InternalEventsCursorOutOfRange,
@@ -82,6 +86,42 @@ def test_list_internal_events_marks_cancelled_effective_status() -> None:
         assert [item.event for item in payload.events] == ["response.completed", None]
 
     asyncio.run(_run())
+
+
+def test_internal_events_router_lists_persisted_events() -> None:
+    run_store = _FakeRunStore(
+        runs={
+            "resp_router": RunRecord(
+                response_id="resp_router",
+                session_partition_key="main::sess",
+                stream=False,
+                status="completed",
+                final_response_json={"id": "resp_router", "object": "response", "status": "completed"},
+            )
+        }
+    )
+    event_store = _FakeEventStore(
+        events={
+            "resp_router": [
+                EventRecord(response_id="resp_router", seq=1, event="response.created", data='{"id":"resp_router"}'),
+                EventRecord(response_id="resp_router", seq=2, event=None, data="[DONE]"),
+            ]
+        }
+    )
+    app = FastAPI()
+    app.state.storage = type("_Storage", (), {"run_store": run_store, "event_store": event_store})()
+    app.include_router(create_internal_events_router(api_key="test-key"))
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/internal/events/list?response_id=resp_router",
+            headers={"authorization": "Bearer test-key"},
+        )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["next_last_seq"] == 2
+    assert [item["event"] for item in payload["events"]] == ["response.created", None]
 
 
 def test_stream_internal_event_blocks_allows_terminal_cursor_past_tail() -> None:

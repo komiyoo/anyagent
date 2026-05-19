@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import shutil
@@ -20,10 +21,16 @@ from anyagent.protocol.credential_vault import (
     AdminCredentialSetRequest,
     CredentialScope,
 )
+from anyagent.protocol.plugins import PluginCatalogResponse
 from anyagent.protocol.workspace import WorkspaceDoctorFinding, WorkspaceDoctorReport, WorkspaceInitResult
-from anyagent.server import create_app
+from anyagent.server import DistributedAgentRuntimeConfig, create_app, create_distributed_agent_app
 from anyagent.server.migrations import apply_storage_migrations
 from anyagent.skills import SkillRoot, default_skill_roots, discover_skills, resolve_disabled_skill_stable_ids
+from anyagent.storage.runtime import create_storage_runtime
+from anyagent.storage.settings import StorageSettings
+from anyagent.storage.retention import run_retention_from_args
+from anyagent.storage.rollout_replay import ReplayFilters, replay_rollout_records, resolve_rollout_root_dir
+from anyagent.tool_runtime import create_tool_runtime_app, create_tool_runtime_app_async
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +83,15 @@ class _AdminClient:
         if not isinstance(obj, dict):
             raise ValueError("unexpected storage health response (not an object)")
         return obj
+
+    def plugin_catalog(self) -> PluginCatalogResponse:
+        r = httpx.get(
+            f"{self.url}/admin/plugins/catalog",
+            headers=self._headers(),
+            timeout=15.0,
+        )
+        _raise_for_status(r)
+        return PluginCatalogResponse.model_validate(r.json())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -155,6 +171,69 @@ def main(argv: list[str] | None = None) -> int:
         help="Session lease TTL seconds (default: $SESSION_LEASE_TTL_S or 30).",
     )
 
+    agent_api = sub.add_parser("agent-api", help="Distributed Agent API operations.")
+    agent_api_sub = agent_api.add_subparsers(dest="agent_api_cmd", required=True)
+    agent_api_serve = agent_api_sub.add_parser("serve", help="Start the distributed Agent API service.")
+    agent_api_serve.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    agent_api_serve.add_argument("--host", default="127.0.0.1")
+    agent_api_serve.add_argument("--port", type=int, default=8787)
+    agent_api_serve.add_argument(
+        "--api-key",
+        default=None,
+        help="Bearer token for Agent API callers (default: $AGENT_API_KEY).",
+    )
+    agent_api_serve.add_argument(
+        "--tool-runtime-url",
+        default=None,
+        help="Tool Runtime base URL (default: $TOOL_RUNTIME_BASE_URL or http://127.0.0.1:8788).",
+    )
+    agent_api_serve.add_argument(
+        "--tool-runtime-internal-key",
+        default=None,
+        help="Bearer token for Agent API -> Tool Runtime calls (default: $TOOL_RUNTIME_INTERNAL_KEY).",
+    )
+    agent_api_serve.add_argument(
+        "--manifest-cache-ttl-seconds",
+        type=float,
+        default=None,
+        help="Manifest cache TTL seconds (default: $MANIFEST_CACHE_TTL_SECONDS or 5).",
+    )
+    agent_api_serve.add_argument(
+        "--disable-keyed-serialization",
+        action="store_true",
+        help="Disable per-session keyed serialization for local mode.",
+    )
+
+    tool_runtime = sub.add_parser("tool-runtime", help="Tool Runtime operations.")
+    tool_runtime_sub = tool_runtime.add_subparsers(dest="tool_runtime_cmd", required=True)
+    tool_runtime_serve = tool_runtime_sub.add_parser("serve", help="Start the standalone Tool Runtime service.")
+    tool_runtime_serve.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    tool_runtime_serve.add_argument("--host", default="127.0.0.1")
+    tool_runtime_serve.add_argument("--port", type=int, default=8788)
+    tool_runtime_serve.add_argument(
+        "--internal-key",
+        default=None,
+        help="Bearer token for `/internal/tools/*` APIs (default: $TOOL_RUNTIME_INTERNAL_KEY; unset disables auth).",
+    )
+    tool_runtime_serve.add_argument(
+        "--admin-key",
+        default=None,
+        help="Bearer token for Tool Runtime `/admin/*` APIs (default: $ADMIN_API_KEY; unset disables admin APIs).",
+    )
+    tool_runtime_serve.add_argument("--sandbox-root", default=None, help="Optional root dir for local sandbox sessions.")
+    tool_runtime_serve.add_argument(
+        "--plugin-root",
+        action="append",
+        default=None,
+        help="Plugin root to scan for plugin.json files. May be repeated. Defaults to comma-separated $TOOL_RUNTIME_PLUGIN_ROOTS.",
+    )
+    tool_runtime_serve.add_argument(
+        "--plugins-fail-open",
+        action="store_true",
+        default=None,
+        help="Continue serving when one or more plugin roots fail to load (default: fail closed).",
+    )
+
     storage_health = sub.add_parser("storage-health", help="Check built-in server storage backends and connectivity.")
     _add_common_admin_flags(storage_health)
 
@@ -162,6 +241,25 @@ def main(argv: list[str] | None = None) -> int:
     migrate.add_argument("--postgres-dsn", default=None, help="Override POSTGRES_DSN.")
     migrate.add_argument("--postgres-schema", default=None, help="Override POSTGRES_SCHEMA.")
     migrate.add_argument("--dry-run", action="store_true", help="Only print planned migrations.")
+
+    storage_replay = sub.add_parser("storage-replay", help="Replay local rollout records from Core storage journals.")
+    _add_storage_replay_flags(storage_replay)
+
+    storage_retention = sub.add_parser("storage-retention", help="Run PostgreSQL storage retention maintenance.")
+    _add_storage_retention_flags(storage_retention)
+
+    storage = sub.add_parser("storage", help="Storage operations.")
+    storage_sub = storage.add_subparsers(dest="storage_cmd", required=True)
+    storage_health_nested = storage_sub.add_parser("health", help="Check built-in server storage backends and connectivity.")
+    _add_common_admin_flags(storage_health_nested)
+    storage_migrate_nested = storage_sub.add_parser("migrate", help="Apply PostgreSQL storage migrations.")
+    storage_migrate_nested.add_argument("--postgres-dsn", default=None, help="Override POSTGRES_DSN.")
+    storage_migrate_nested.add_argument("--postgres-schema", default=None, help="Override POSTGRES_SCHEMA.")
+    storage_migrate_nested.add_argument("--dry-run", action="store_true", help="Only print planned migrations.")
+    storage_replay_nested = storage_sub.add_parser("replay", help="Replay local rollout records from Core storage journals.")
+    _add_storage_replay_flags(storage_replay_nested)
+    storage_retention_nested = storage_sub.add_parser("retention", help="Run PostgreSQL storage retention maintenance.")
+    _add_storage_retention_flags(storage_retention_nested)
 
     cred = sub.add_parser("credential", help="Manage credentials via built-in Admin API.")
     cred_sub = cred.add_subparsers(dest="cred_cmd", required=True)
@@ -195,6 +293,13 @@ def main(argv: list[str] | None = None) -> int:
     p_import.add_argument("--dry-run", action="store_true")
     p_import.add_argument("--skip-missing", action="store_true", help="Skip items with empty resolved value.")
 
+    plugin = sub.add_parser("plugin", help="Inspect Tool Runtime plugins via Admin API.")
+    plugin_sub = plugin.add_subparsers(dest="plugin_cmd", required=True)
+    _add_common_admin_flags(plugin)
+    plugin_catalog = plugin_sub.add_parser("catalog", help="List loaded plugins, registered tools, and cite refs.")
+    _add_common_admin_flags(plugin_catalog)
+    plugin_catalog.add_argument("--json", action="store_true", help="Print JSON (default).")
+
     args = parser.parse_args(argv)
     if args.cmd == "init":
         return _cmd_init(args)
@@ -202,6 +307,14 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_doctor(args)
     if args.cmd == "serve":
         return _cmd_serve(args)
+    if args.cmd == "agent-api":
+        if args.agent_api_cmd == "serve":
+            return _cmd_agent_api_serve(args)
+        parser.error("unsupported agent-api command")
+    if args.cmd == "tool-runtime":
+        if args.tool_runtime_cmd == "serve":
+            return _cmd_tool_runtime_serve(args)
+        parser.error("unsupported tool-runtime command")
     if args.cmd == "storage-health":
         client = _admin_client_from_args(args)
         print(json.dumps(client.storage_health(), ensure_ascii=False))
@@ -214,6 +327,34 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(result, ensure_ascii=False))
         return 0
+    if args.cmd == "storage-replay":
+        return _cmd_storage_replay(args)
+    if args.cmd == "storage-retention":
+        return run_retention_from_args(args)
+    if args.cmd == "storage":
+        if args.storage_cmd == "health":
+            client = _admin_client_from_args(args)
+            print(json.dumps(client.storage_health(), ensure_ascii=False))
+            return 0
+        if args.storage_cmd == "migrate":
+            result = apply_storage_migrations(
+                postgres_dsn=args.postgres_dsn,
+                postgres_schema=args.postgres_schema,
+                dry_run=bool(args.dry_run),
+            )
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
+        if args.storage_cmd == "replay":
+            return _cmd_storage_replay(args)
+        if args.storage_cmd == "retention":
+            return run_retention_from_args(args)
+        parser.error("unsupported storage command")
+    if args.cmd == "plugin":
+        if args.plugin_cmd == "catalog":
+            client = _admin_client_from_args(args)
+            print(json.dumps(client.plugin_catalog().model_dump(exclude_none=True), ensure_ascii=False))
+            return 0
+        parser.error("unsupported plugin command")
     if args.cmd != "credential":
         parser.error("unsupported command")
 
@@ -256,6 +397,62 @@ def main(argv: list[str] | None = None) -> int:
     parser.error("unsupported credential command")
 
 
+def _add_storage_replay_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--root-dir", default=None, help="Rollout root directory (default: env ROLLOUT_ROOT_DIR or WORKSPACE_DIR/.runs/rollouts).")
+    parser.add_argument("--workspace-dir", default=None, help="Workspace root used when --root-dir is not set (default: env WORKSPACE_DIR or cwd).")
+    parser.add_argument("--session-partition-key", default=None, help="Filter by exact session_partition_key.")
+    parser.add_argument("--response-id", default=None, help="Filter by exact response_id.")
+    parser.add_argument("--kind", action="append", default=None, help="Filter by kind (repeatable).")
+    parser.add_argument("--last-seq", type=int, default=0, help="Event replay cursor: only return event_appended with seq > last_seq.")
+    parser.add_argument("--limit", type=int, default=200, help="Max records to return (default: 200, max: 5000).")
+    parser.add_argument("--format", choices=["json", "jsonl"], default="json", help="Output format.")
+    parser.add_argument("--include-fingerprint", action="store_true", help="Include per-record fingerprint in output.")
+
+
+def _add_storage_retention_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--apply", action="store_true", help="Apply changes (default: plan-only, no writes).")
+    parser.add_argument("--dsn", default=None, help="Postgres DSN (default: env POSTGRES_DSN).")
+    parser.add_argument("--schema", default=None, help='Postgres schema/search_path (default: env POSTGRES_SCHEMA or "public").')
+    parser.add_argument("--batch-size", type=int, default=500, help="Max rows per batch (default: 500).")
+    parser.add_argument("--max-batches", type=int, default=200, help="Max batches per action (default: 200).")
+    parser.add_argument("--idempotency-ttl-hours", type=int, default=24, help="TTL for Idempotency-Key (default: 24).")
+    parser.add_argument("--events-retention-days", type=int, default=30, help="Retention for events (default: 30).")
+    parser.add_argument("--runs-retention-days", type=int, default=180, help="Retention for runs (default: 180).")
+    parser.add_argument("--sessions-retention-days", type=int, default=90, help="Retention for sessions (default: 90).")
+
+
+def _cmd_storage_replay(args: argparse.Namespace) -> int:
+    kinds = {
+        s
+        for raw in (args.kind or [])
+        if isinstance(raw, str)
+        for s in [raw.strip()]
+        if s
+    }
+    filters = ReplayFilters(
+        session_partition_key=args.session_partition_key.strip()
+        if isinstance(args.session_partition_key, str) and args.session_partition_key.strip()
+        else None,
+        response_id=args.response_id.strip() if isinstance(args.response_id, str) and args.response_id.strip() else None,
+        kinds=kinds,
+        last_seq=max(0, int(args.last_seq or 0)),
+        limit=max(1, min(5000, int(args.limit or 200))),
+    )
+    root_dir = resolve_rollout_root_dir(root_dir=args.root_dir, workspace_dir=args.workspace_dir)
+    result = replay_rollout_records(
+        root_dir=root_dir,
+        filters=filters,
+        include_fingerprint=bool(args.include_fingerprint),
+    )
+    if args.format == "jsonl":
+        print(json.dumps({"summary": result["summary"]}, ensure_ascii=False))
+        for row in result["records"]:
+            print(json.dumps(row, ensure_ascii=False))
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     configure_observability_from_env()
     api_key = args.api_key or os.getenv("ANYAGENT_API_KEY")
@@ -272,6 +469,62 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         session_lock_backend=args.session_lock_backend,
         session_lease_ttl_s=args.session_lease_ttl_s,
         cors_origins=args.cors_origin,
+    )
+    uvicorn.run(app, host=args.host, port=int(args.port), log_level="info")
+    return 0
+
+
+def _cmd_tool_runtime_serve(args: argparse.Namespace) -> int:
+    configure_observability_from_env()
+    app = asyncio.run(create_tool_runtime_app_async(
+        workspace_dir=args.workspace,
+        internal_key=args.internal_key,
+        admin_api_key=args.admin_key,
+        sandbox_root_dir=args.sandbox_root,
+        plugin_roots=args.plugin_root,
+        plugins_fail_open=args.plugins_fail_open,
+    ))
+    uvicorn.run(app, host=args.host, port=int(args.port), log_level="info")
+    return 0
+
+
+def _cmd_agent_api_serve(args: argparse.Namespace) -> int:
+    configure_observability_from_env()
+    workspace_dir = str(args.workspace)
+    api_key = args.api_key or os.getenv("AGENT_API_KEY")
+    if not api_key:
+        raise RuntimeError("agent-api serve requires --api-key or AGENT_API_KEY")
+    tool_runtime_internal_key = args.tool_runtime_internal_key or os.getenv("TOOL_RUNTIME_INTERNAL_KEY")
+    if not tool_runtime_internal_key:
+        raise RuntimeError("agent-api serve requires --tool-runtime-internal-key or TOOL_RUNTIME_INTERNAL_KEY")
+
+    storage_settings = StorageSettings()
+    app = create_distributed_agent_app(
+        api_key=api_key,
+        runtime_config=DistributedAgentRuntimeConfig(
+            workspace_dir=workspace_dir,
+            tool_runtime_base_url=args.tool_runtime_url
+            or os.getenv("TOOL_RUNTIME_BASE_URL")
+            or "http://127.0.0.1:8788",
+            tool_runtime_internal_key=tool_runtime_internal_key,
+            manifest_cache_ttl_seconds=float(
+                args.manifest_cache_ttl_seconds
+                if isinstance(args.manifest_cache_ttl_seconds, (int, float))
+                else os.getenv("MANIFEST_CACHE_TTL_SECONDS", "5")
+            ),
+            mcp_credential_store_backend=os.getenv("MCP_CREDENTIAL_STORE_BACKEND", "none"),
+            mcp_credential_store_file_root=os.getenv("MCP_CREDENTIAL_STORE_FILE_ROOT", "/data/credentials"),
+            infisical_host=os.getenv("INFISICAL_HOST", "https://app.infisical.com"),
+            infisical_universal_auth_client_id=os.getenv("INFISICAL_UNIVERSAL_AUTH_CLIENT_ID"),
+            infisical_universal_auth_client_secret=os.getenv("INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET"),
+            infisical_project_id=os.getenv("INFISICAL_PROJECT_ID"),
+            infisical_environment=os.getenv("INFISICAL_ENVIRONMENT"),
+            infisical_cache_ttl_seconds=int(os.getenv("INFISICAL_CACHE_TTL_SECONDS", "60")),
+            infisical_credential_root_path=os.getenv("INFISICAL_CREDENTIAL_ROOT_PATH", "/anyagent/credentials"),
+        ),
+        storage_factory=lambda: create_storage_runtime(storage_settings, workspace_dir=workspace_dir),
+        settings=storage_settings,
+        enable_keyed_serialization=not bool(args.disable_keyed_serialization),
     )
     uvicorn.run(app, host=args.host, port=int(args.port), log_level="info")
     return 0

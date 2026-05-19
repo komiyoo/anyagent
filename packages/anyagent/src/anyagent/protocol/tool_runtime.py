@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .openai_responses import AnyAgentFunctionToolParam
 
@@ -52,6 +52,16 @@ class ToolContext(BaseModel):
     auth_ref: AuthRef | None = None
     policy: PolicyHint | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_plaintext_secrets(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        forbidden = _find_plaintext_secret_path(data)
+        if forbidden is not None:
+            raise ValueError(f"tool context must reference credentials via auth_ref, not plaintext secret field: {forbidden}")
+        return data
+
 
 class ManifestRequest(BaseModel):
     tenant_id: str | None = None
@@ -62,6 +72,42 @@ class ManifestRequest(BaseModel):
     enabled_skills: list[str] | None = None
     requested_tool_names: list[str] | None = None
     requested_tools: list[dict[str, Any]] | None = None
+
+
+_PLAINTEXT_SECRET_KEYS = {
+    "api_key",
+    "apikey",
+    "authorization",
+    "bearer_token",
+    "credential_value",
+    "password",
+    "refresh_token",
+    "secret",
+    "token",
+}
+_PLAINTEXT_SECRET_SUFFIXES = ("_api_key", "_apikey", "_password", "_refresh_token", "_secret", "_token")
+
+
+def _find_plaintext_secret_path(value: Any, *, prefix: str = "") -> str | None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                continue
+            path = f"{prefix}.{key}" if prefix else key
+            normalized = key.lower().replace("-", "_")
+            if normalized in {"auth_ref", "credential_id"}:
+                continue
+            if normalized in _PLAINTEXT_SECRET_KEYS or normalized.endswith(_PLAINTEXT_SECRET_SUFFIXES):
+                return path
+            nested = _find_plaintext_secret_path(item, prefix=path)
+            if nested is not None:
+                return nested
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            nested = _find_plaintext_secret_path(item, prefix=f"{prefix}[{index}]")
+            if nested is not None:
+                return nested
+    return None
 
 
 class ManifestDecision(BaseModel):

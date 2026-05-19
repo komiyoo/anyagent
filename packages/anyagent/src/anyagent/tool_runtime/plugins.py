@@ -16,6 +16,7 @@ class ToolRuntimePluginError(Exception):
 @dataclass(frozen=True)
 class ToolRuntimePluginAPI(PluginAPIBase):
     registry: ToolRegistry
+    registered_tools: list[ToolDefinition] | None = None
 
     def registerTool(  # noqa: N802
         self,
@@ -47,3 +48,5 @@ class ToolRuntimePluginAPI(PluginAPIBase):
             )
 
         self.registry.register_tool(tool, h)
+        if self.registered_tools is not None:
+            self.registered_tools.append(tool)

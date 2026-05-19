@@ -71,11 +71,11 @@ def test_internal_skills_list_returns_catalog_fields(tmp_path: Path) -> None:
                 "/internal/skills/list",
                 params={"agent_id": "main"},
                 headers={"Authorization": "Bearer user-key"},
-            )
+        )
         assert resp.status_code == 200
         payload = InternalSkillsListResponse.model_validate(resp.json())
-        assert len(payload.skills) == 1
-        skill = payload.skills[0]
+        skill = next((item for item in payload.skills if item.path == str(skill_md.resolve())), None)
+        assert skill is not None
         assert skill.path == str(skill_md.resolve())
         assert skill.source_hash == hashlib.sha256(skill_md.read_bytes()).hexdigest()
         assert skill.interface == {

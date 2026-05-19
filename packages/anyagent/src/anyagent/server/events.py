@@ -8,11 +8,8 @@ from typing import Any
 
 from anyagent.protocol.agent_api_internal import InternalEventItem, InternalEventsListResponse
 from anyagent.protocol.responses_optional import AnyAgentResponseError
-from anyagent.storage.external import PostgresEventStore as ExternalPostgresEventStore
-from anyagent.storage.external import create_external_sql_engine, resolve_external_sql_backend_config
 from anyagent.server.postgres_schema import PostgresSchemaPolicy, ensure_postgres_schema_objects
 from anyagent.storage.settings import StorageSettings
-from sqlalchemy import BOOLEAN, JSON, TEXT, Column, MetaData, Table, insert, select, update
 
 
 @dataclass(slots=True)
@@ -522,6 +519,16 @@ class PostgresEventStore:
         poll_interval_s: float = 0.05,
         schema_policy: PostgresSchemaPolicy = "migrate",
     ) -> None:
+        try:
+            from anyagent.storage.external import PostgresEventStore as ExternalPostgresEventStore
+            from anyagent.storage.external import create_external_sql_engine, resolve_external_sql_backend_config
+            from sqlalchemy import BOOLEAN, JSON, TEXT, Column, MetaData, Table
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(
+                "postgres event store requires installing anyagent[postgres]"
+                " (and anyagent[redis] when using the cached external store)"
+            ) from e
+
         self._poll_interval_s = max(poll_interval_s, 0.01)
         self._schema_policy = schema_policy
         self._postgres_dsn = postgres_dsn
@@ -557,6 +564,8 @@ class PostgresEventStore:
 
     async def mark_started(self, *, response_id: str) -> None:
         await self._ensure_tables()
+        from sqlalchemy import insert, select, update
+
         async with self._engine.begin() as conn:
             existing = (await conn.execute(select(self._meta_table.c.response_id).where(self._meta_table.c.response_id == response_id))).first()
             if existing is None:
@@ -576,6 +585,8 @@ class PostgresEventStore:
 
     async def mark_cancel_requested(self, *, response_id: str) -> None:
         await self._ensure_tables()
+        from sqlalchemy import update
+
         async with self._engine.begin() as conn:
             await conn.execute(
                 update(self._meta_table)
@@ -594,6 +605,8 @@ class PostgresEventStore:
         error: AnyAgentResponseError | None = None,
     ) -> None:
         await self._ensure_tables()
+        from sqlalchemy import insert, select, update
+
         async with self._engine.begin() as conn:
             existing = (await conn.execute(select(self._meta_table.c.response_id).where(self._meta_table.c.response_id == response_id))).first()
             if existing is None:
@@ -672,6 +685,8 @@ class PostgresEventStore:
             await asyncio.sleep(self._poll_interval_s)
 
     async def _get_meta_row(self, response_id: str) -> dict[str, Any] | None:
+        from sqlalchemy import select
+
         async with self._engine.connect() as conn:
             row = (await conn.execute(select(self._meta_table).where(self._meta_table.c.response_id == response_id).limit(1))).mappings().first()
         return None if row is None else dict(row)

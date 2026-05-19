@@ -682,7 +682,8 @@ async def _run_internal_tools_catalog(tmp_path: Path) -> None:
         assert catalog.session_key == "sess-tools"
         assert catalog.toolset_version >= 1
         assert [tool.name for tool in catalog.tools] == ["exec"]
-        assert catalog.tools[0].kind == "command"
+        exec_tool = next(tool for tool in catalog.tools if tool.name == "exec")
+        assert exec_tool.kind == "command"
         assert catalog.tools[0].parameters is not None
 
         direct = await http.get(
@@ -911,8 +912,14 @@ async def _run_admin_tools_catalog(tmp_path: Path) -> None:
         catalog = await admin_client.admin.tool_catalog()
         assert isinstance(catalog, AdminToolCatalogResponse)
         assert catalog.toolset_version >= 1
-        assert [tool.name for tool in catalog.tools] == ["exec"]
-        assert catalog.tools[0].kind == "command"
+        assert [tool.name for tool in catalog.tools] == [
+            "admin.credential_set",
+            "core.web_fetch",
+            "core.web_search",
+            "exec",
+        ]
+        exec_tool = next(tool for tool in catalog.tools if tool.name == "exec")
+        assert exec_tool.kind == "command"
 
         user_catalog = await http.get("/admin/tools/catalog", headers={"Authorization": "Bearer user-key"})
         assert user_catalog.status_code == 401, user_catalog.text

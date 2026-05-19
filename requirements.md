@@ -27,12 +27,12 @@ anyagent/                        # Server Core + SDK（本仓库）
       agent_api_client.py        # Client SDK
       cli.py                     # CLI (anyagent serve)
 
-anyagent-apps/                   # 高级部署 + 场景（同级项目）
+anyagent-apps/                   # 示例与模板（同级项目）
   apps/
-    agent-api/                   # 分布式 Agent API (PG/Redis)
-    tool-runtime/                # 独立 Tool Runtime 服务
-  plugins/                       # 平台 Connectors (飞书/Discord/TG)
-  examples/                      # 场景模板
+    agent-api/                   # 迁移期历史 Agent API 接线与回归参照
+    tool-runtime/                # 迁移期历史 Tool Runtime 接线与回归参照
+  plugins/                       # 示例平台接线与官方 CLI/插件使用说明
+  examples/                      # 示例 workspace
   templates/                     # 业务项目脚手架
 ```
 
@@ -52,7 +52,7 @@ cd my-workspace && anyagent serve
 
 无需 fork 代码，无需编写服务端逻辑，无需部署基础设施（零外部依赖）。
 
-需要生产级部署时，使用 `anyagent-apps` 扩展为 PG/Redis 持久化、独立 Tool Runtime、平台 Connector 的分布式部署。
+需要生产级部署时，仍以 `anyagent` 为 production runtime、PG/MySQL/Redis storage、独立 Tool Runtime、ops CLI 与插件 contract 的真源；`anyagent-apps` 负责给出示例配置、业务模板、迁移期接线和消费侧验收。
 
 ### 0.3 协议治理
 
@@ -81,10 +81,11 @@ cd my-workspace && anyagent serve
   - anyagent 精细面：`client.events.stream_typed()` / `client.events.list_typed()` / `client.events.latest_prompt_context()` / `client.events.replay_summary()`
   - 断线续传（`last_seq`）
 
-- **分布式部署模式**（anyagent-apps）
-  - PG/Redis 持久化 + 分布式锁
-  - 独立 Tool Runtime 服务
-  - 平台 Gateway connector
+- **分布式 / 生产部署模式**（Core 真源，按需启用）
+  - PG/MySQL/Redis 持久化 + 分布式锁 contract
+  - 独立 Tool Runtime 服务形态
+  - 平台 Gateway / Connector contract
+  - `anyagent-apps` 只保留示例配置、迁移期接线和验收
 
 ### 1.2 Out of Scope（本阶段不做）
 

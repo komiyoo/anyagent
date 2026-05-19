@@ -44,3 +44,30 @@ class AdminCredentialListResponse(BaseModel):
 
     credentials: list[AdminCredentialRef]
 
+
+class CredentialBackendCapability(BaseModel):
+    """Describes one credential backend mode without exposing secrets."""
+
+    mode: str
+    display_name: str
+    kind: Literal["resolver", "admin_store"]
+    status: Literal["stable", "preview", "planned"] = "stable"
+    description: str
+    supports_resolve: bool
+    supports_set: bool
+    supports_delete: bool
+    supports_list_refs: bool
+    read_only: bool
+    default_for: list[str] = Field(default_factory=list)
+    requires_extras: list[str] = Field(default_factory=list)
+    requires_env: list[str] = Field(default_factory=list)
+    source: str
+
+
+class CredentialBackendCapabilityMatrix(BaseModel):
+    """Lists Core credential backend modes and their operational capabilities."""
+
+    resolver_modes: list[CredentialBackendCapability]
+    admin_store_modes: list[CredentialBackendCapability]
+    environment_variable: str = "MCP_CREDENTIAL_STORE_BACKEND"
+    secret_value_returned: bool = False

@@ -129,7 +129,7 @@
 证据：
 
 - 流式/非流式 loop：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:885`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1399`。
-- turn rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:343`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/rollout.py:156`。
+- turn rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:343`、`packages/anyagent/src/anyagent/storage/rollout.py:156`。
 
 ## 2.6 Item（Turn 内最小内容单元）
 
@@ -149,7 +149,7 @@
 
 - output item 解析：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:156`。
 - 回灌 item 构造：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1339`。
-- item rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:371`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/rollout.py:210`。
+- item rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:371`、`packages/anyagent/src/anyagent/storage/rollout.py:210`。
 - output_item 事件语义：`requirements.md:356`。
 
 ## 2.7 Tool 与 Tool Call（能力面与执行面）
@@ -171,7 +171,7 @@
 - manifest 拉取与注入：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:471`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:513`。
 - execute 协议字段：`packages/anyagent/src/anyagent/protocol/tool_runtime.py:86`。
 - execute 幂等键：`../anyagent-apps/apps/tool-runtime/src/anyagent_tool_runtime/http/app.py:209`。
-- tool_call rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:390`, `../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:409`, `../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/rollout.py:240`。
+- tool_call rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:390`, `../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:409`, `packages/anyagent/src/anyagent/storage/rollout.py:240`。
 - system tool 执行：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:595`。
 
 ## 2.8 Event（流式与重放）
@@ -195,8 +195,8 @@
 - 事件模型：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/models.py:22`。
 - 事件写入递增：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/postgres.py:141`。
 - 内部补发/追尾：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/internal/events.py:43`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/internal/events.py:99`。
-- 本地 rollout 写入器：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/rollout.py:52`。
-- 本地 rollout 回放工具：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/rollout_replay.py:1`。
+- 本地 rollout 写入器：`packages/anyagent/src/anyagent/storage/rollout.py:52`。
+- 本地 rollout 回放工具：`packages/anyagent/src/anyagent/storage/rollout_replay.py:1`。
 - 轮转/恢复 smoke：`../anyagent-apps/tests/acceptance/storage/acceptance_rollout_rotation_smoke.py:1`、`../anyagent-apps/tests/acceptance/agent_api/acceptance_session_resume_smoke.py:1`。
 
 ## 3. 关键关联键（跨层串联）

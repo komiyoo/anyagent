@@ -12,13 +12,38 @@ dependencies = [
   "fastapi>=0.116",
   "openai>=2.24.0",
   "mcp>=1.0.0",
+  "uvicorn>=0.35",
+]
+
+[project.optional-dependencies]
+postgres = [
   "psycopg[binary]>=3.2",
   "psycopg-pool>=3.2",
-  "redis>=5.0",
   "sqlalchemy>=2.0",
   "greenlet>=3.0",
+]
+mysql = [
   "asyncmy>=0.2",
-  "uvicorn>=0.35",
+  "sqlalchemy>=2.0",
+  "greenlet>=3.0",
+]
+redis = [
+  "redis>=5.0",
+]
+s3 = [
+  "minio>=7.2.8",
+]
+infisical = [
+  "infisicalsdk>=1.0.16",
+]
+external-storage = [
+  "psycopg[binary]>=3.2",
+  "psycopg-pool>=3.2",
+  "asyncmy>=0.2",
+  "sqlalchemy>=2.0",
+  "greenlet>=3.0",
+  "redis>=5.0",
+  "minio>=7.2.8",
 ]
 
 [project.scripts]

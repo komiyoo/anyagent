@@ -14,7 +14,7 @@ anyagent serve     # 一条命令启动 Agent Server
 - **细粒度观测**：anyagent SDK 提供 tool/command 级别的阶段性事件流（Stage Events）
 - **安全边界**：Agent 只能"看到"和"使用"资源，不能"访问"和"操作"资源——密钥、凭证、tool policy 由 server 代理管理
 - **零外部依赖启动**：内置 in-memory 存储 + 进程内 Tool Runtime，开箱即用
-- **可扩展至生产级**：通过同级项目 `anyagent-apps` 扩展为 PG/Redis backend、独立 Tool Runtime、平台 Gateway 的分布式部署
+- **可扩展至生产级**：PG/MySQL/Redis、独立 Tool Runtime、Credential backend 与运维入口逐步收敛在 Core，通过 extras、插件和子命令按需启用
 - **共享服务层收敛**：Session / Run / Event / replay / resume 等共享语义应逐步回收到 Core，而不是长期散落在应用层
 
 ## 快速开始
@@ -138,6 +138,10 @@ sandbox:
 # 安装
 uv pip install anyagent
 
+# 如需外置存储，按 backend 安装可选依赖
+uv pip install 'anyagent[postgres,redis]'
+# 或：uv pip install 'anyagent[mysql,redis]'
+
 # 启动（自动发现 .agents/ 配置）
 anyagent serve --workspace ./my-workspace --port 8787
 
@@ -159,11 +163,11 @@ SESSION_STORE_RETENTION_S=86400 \
 anyagent serve --session-lock-backend redis
 
 # 运维自检
-ADMIN_API_KEY=admin-key anyagent storage-health --admin-key admin-key
+ADMIN_API_KEY=admin-key anyagent storage health --admin-key admin-key
 
 # 应用 PostgreSQL schema migration
 POSTGRES_DSN=postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent \
-anyagent storage-migrate
+anyagent storage migrate
 
 # 本地开发如需跳过显式 migration，可临时退回 runtime fallback
 POSTGRES_SCHEMA_POLICY=runtime_create anyagent serve
@@ -316,6 +320,14 @@ creds = await client.admin.list_credentials()
 await client.admin.delete_credential("cred_bocha_mcp")
 ```
 
+`anyagent serve` 默认使用 Admin API 的 write-only 内存凭据库解析 MCP 引用；需要从环境变量、文件或 Infisical 读取 MCP 凭据时，可以设置 `MCP_CREDENTIAL_STORE_BACKEND=env|file|infisical`。`file` 后端默认读取 `<workspace>/.agents/credentials`；`infisical` 后端需安装 `anyagent[infisical]`，并配置 `INFISICAL_PROJECT_ID`、`INFISICAL_ENVIRONMENT`、`INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` 和 `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET`。独立 `anyagent tool-runtime serve` 的 process settings 由 `anyagent.tool_runtime.settings.ToolRuntimeSettings` / `ToolRuntimeServerConfig` 统一解析；它也可用同一变量解析凭据，需要 Tool Runtime credential store 的 `set/list_refs/delete` backend 时，可使用过渡模式 `env-write`、`file-write` 或 read-only `infisical-write`，并通过 `--admin-key` 或 `ADMIN_API_KEY` 启用 `/admin/credentials`。这些 resolver/admin-store 后端由 Core `anyagent.server.security.credential_runtime.CredentialRuntimeConfig` 统一组装。Core server 与 standalone Tool Runtime 都提供 `/admin/credentials/capabilities`，用于查看 resolver/admin-store、read-only 状态、required extras/env 与 planned db/vault 后端，不返回任何凭证明文。
+
+独立 Tool Runtime 可通过 `--plugin-root` 或 `TOOL_RUNTIME_PLUGIN_ROOTS` 扫描包含 `plugin.json` 的插件目录，并使用 Core `anyagent.plugins` loader 与 `ToolRuntimePluginAPI` 将插件工具注册到统一 registry；加载失败默认 fail-closed，可用 `--plugins-fail-open` 或 `TOOL_RUNTIME_PLUGINS_FAIL_OPEN=1` 改为记录错误后继续启动。启用 `--admin-key` 或 `ADMIN_API_KEY` 后，`GET /admin/plugins/catalog`、SDK `client.admin.plugin_catalog()` 或 CLI `anyagent plugin catalog --admin-url <url> --admin-key <key>` 会返回 plugin roots、loaded plugin、registered tools、manifest/entrypoint cite、docs/schemas/tests refs 与 load errors，便于从工具追回插件来源。
+
+进程内与独立 Tool Runtime 都会从 Core `anyagent.tool_runtime.builtin_tools` 注册内置工具：`core.web_fetch`、`core.web_search`，以及需要显式 allowlist 的 privileged `admin.credential_set`。这些内置工具与插件工具一样进入统一 registry，并通过 `ToolDefinition.credentials` 解析 credential 到 handler context 的 `_credentials`，例如 `core.web_fetch` 可把 `bearer_token` 注入为 `Authorization` header，`core.web_search` 可把 `api_key` 注入给 Tavily / SerpApi provider。
+
+独立 Tool Runtime 也提供本地 reference sandbox workspace 控制面：`GET /admin/sandbox/health`、`GET /admin/sandbox/workspaces`、`GET /admin/sandbox/workspace?agent_id=...&session_key=...`、`GET /admin/sandbox/events?agent_id=...&session_key=...`、`POST /admin/sandbox/workspace/hibernate` 与 `DELETE /admin/sandbox/workspace`。这些 endpoint 使用 Core `SandboxManager`、`anyagent.protocol.admin_storage` typed model 与 `anyagent.server.sandbox.workspace_events` event store，适用于 `sandbox.filesystem.persistence_mode=session_hot_cold` 的本地生命周期调试；设置 `WORKSPACE_EVENT_BACKEND=jsonl` 可把 workspace lifecycle events 写入本地 jsonl 以便重启后回放。Core 还提供 `anyagent.server.sandbox.workspace_snapshots` 的 local-file/S3-compatible snapshot store、`anyagent.server.sandbox.workspace_persistence` 的 local-file/Postgres workspace metadata store、in-memory/Redis workspace lease store 与 `hold_workspace_lease`、`anyagent.server.sandbox.opensandbox_backend.OpenSandboxWorkspaceBackend` 的 OpenSandbox Lifecycle API + execd proxy backend、`anyagent.server.sandbox.workspace_service.WorkspaceService` 的 restore/hibernate/delete/health 编排，以及 `anyagent.server.sandbox.workspace_runtime.build_workspace_runtime` 的 metadata/lease/snapshot/event/backend/service 组装器；`ToolRuntimeSettings` 会把 `ALLOW_SANDBOX`、`SANDBOX_*`、`WORKSPACE_*`、`POSTGRES_DSN`、`REDIS_DSN` 等 env 组装为 `WorkspaceRuntimeConfig`，`create_tool_runtime_app_async` 和 `anyagent tool-runtime serve` 会据此构造 `WorkspaceRuntimeAssembly`，让 standalone Tool Runtime 的 `exec` 和 admin sandbox endpoint 直接消费同一个 `WorkspaceService`。S3 需要安装 `anyagent[s3]`，Postgres/Redis workspace backend 需要对应 `anyagent[postgres]` / `anyagent[redis]` 可选依赖。
+
 ### 7. 初始化模板和示例项目
 
 当前仓库内的正式初始化入口是 `anyagent init`，内置以下 workspace 模板：
@@ -379,7 +391,7 @@ anyagent/                            # 本仓库：Server Core + SDK
       skills/                        # Skills 发现/加载/选择/权限
       mcp/                           # MCP server 管理（auth/连接/工具发现）
       gateway/                       # 会话映射/agent 路由/sequencer
-      tool_runtime/                  # 工具注册/client/plugin
+      tool_runtime/                  # 工具注册/client/plugin/standalone server
       storage/                       # 共享存储模型/契约/replay/runtime 与 reference external adapters
         external/                    # SQL/Redis reference adapters、schema、migrations helper
       plugins/                       # Core 插件 API/loader/model
@@ -389,7 +401,7 @@ anyagent/                            # 本仓库：Server Core + SDK
         security/                    # Credential Vault / Tool Policy
       agent_packs.py                 # Agent Packs 配置加载
       agent_api_client.py            # Client SDK（AnyAgent 资源型命名空间）
-      cli.py                         # CLI 入口（serve / init / doctor / storage-*）
+      cli.py                         # CLI 入口（serve / tool-runtime serve / init / doctor / storage）
 ```
 
 ## 两层 API 输出
@@ -404,10 +416,11 @@ anyagent/                            # 本仓库：Server Core + SDK
 ```text
 anyagent (本仓库)           anyagent-apps (同级项目)
 ┌──────────────────┐       ┌──────────────────────┐
-│ Server Core      │       │ 高级部署模式           │
+│ 框架本体          │       │ 示例与模板             │
 │ ├─ 内置 Agent API │◄──────│ ├─ production wiring   │
-│ ├─ 内置 Tool RT  │       │ ├─ 独立 Tool Runtime   │
-│ └─ reference 存储 │       │ └─ 分布式锁/keyed seq │
+│ ├─ 内置 Tool RT  │       │ ├─ historical apps     │
+│ ├─ 独立 Tool RT  │       │ └─ regression smokes   │
+│ └─ reference 存储 │       │                      │
 │                  │       │                      │
 │ SDK + Protocol   │       │ 场景模板 & 示例        │
 │ ├─ AnyAgent      │       │ ├─ demo-workspace     │
@@ -415,14 +428,14 @@ anyagent (本仓库)           anyagent-apps (同级项目)
 │ ├─ storage.*     │       │ └─ project-template   │
 │ └─ skills/mcp    │       │                      │
 │                  │       │                      │
-│ CLI (anyagent    │       │ 平台 Connectors       │
-│  serve)          │       │ ├─ plugins/feishu     │
+│ CLI (serve /     │       │ 示例 Connectors       │
+│  tool-runtime)   │       │ ├─ plugins/feishu     │
 └──────────────────┘       │ └─ plugins/discord    │
                            └──────────────────────┘
 ```
 
-- **anyagent**：电池内置的 Agent Server 内核 + SDK/Protocol + 共享服务语义层；包含 in-memory reference path，也包含 `storage.external` 的 typed SQL/Redis reference adapters 与迁移 helper。
-- **anyagent-apps**：生产级部署 wiring、外置服务编排、独立 Tool Runtime、场景示例与平台 connector；不重复定义 Core 协议或 agent loop。
+- **anyagent**：框架本体，包含 Agent Server 内核、SDK/Protocol、共享服务语义层、基础生产 runtime、ops 入口、in-memory reference path，以及 `storage.external` 的 typed SQL/Redis reference adapters 与迁移 helper。
+- **anyagent-apps**：示例与模板仓；迁移期历史 Agent API / Tool Runtime / Studio 只作为消费侧接线和回归参照，不再是 Core 协议、runtime、storage、Tool Runtime 或 ops CLI 的真源。
 
 ## 文档
 
@@ -444,7 +457,7 @@ anyagent (本仓库)           anyagent-apps (同级项目)
 - **Agent Packs**：`.agents/agents/<agent_id>/` 目录即行为包（`agent.yaml` + `AGENTS.md` + `mcp.json`）
 - **agent_id**：同一套服务内不同 agent 的标识（persona/权限/skills/tool policy 组合）
 - **Agent Catalog API**：`GET /internal/agents` 列出当前允许外部指定的 agents，`GET /internal/agents/{agent_id}` 查看配置与 prompt 元信息；完整 prompt 文本需显式 `include_prompt=true`
-- **SDK 控制面**：`client.health()`、`client.agents.*`、`client.tools.*`、`client.skills.*`、`client.prompts.*`、`client.admin.storage_health()`、`client.admin.tool_catalog()`、`client.admin.*_credential()` 与 `client.admin.*agent*()` 覆盖服务端 typed 管理/发现面
+- **SDK 控制面**：`client.health()`、`client.agents.*`、`client.tools.*`、`client.skills.*`、`client.prompts.*`、`client.admin.storage_health()`、`client.admin.tool_catalog()`、`client.admin.plugin_catalog()`、`client.admin.*_credential()` 与 `client.admin.*agent*()` 覆盖服务端 typed 管理/发现面
 - **session_key**：平台侧线程/会话标识
 - **session_partition_key**：并发分片键，固定为 `"{agent_id}::{session_key}"`
 - **Skills 目录**：`.agents/skills/`（跨 agent 共享技能）

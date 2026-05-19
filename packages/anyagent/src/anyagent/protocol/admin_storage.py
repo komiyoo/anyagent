@@ -130,3 +130,20 @@ class AdminSandboxWorkspaceListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     workspaces: list[AdminSandboxWorkspaceRef] = Field(default_factory=list)
+
+
+class AdminSandboxWorkspaceHealthResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    backend: str
+    metadata_backend: str
+    lease_backend: str
+    snapshot_backend: str
+    sandbox_mode: str
+    persistence_mode: str
+    workspace_root: str
+    workspace_count: int = Field(ge=0)
+    sandbox_root_dir: str | None = None
+    runtime_providers: list[str] = Field(default_factory=list)
+    runtime_states: dict[str, int] = Field(default_factory=dict)

@@ -35,6 +35,7 @@ from anyagent.protocol.agent_api_internal import (
     AdminSkillImportRequest,
     AdminSkillImportResponse,
     AdminSkillRegistryInstallRequest,
+    AdminSkillUpdateCheckResponse,
     AdminToolCatalogResponse,
     AdminWorkspaceAgentFilesResponse,
     AdminWorkspaceAgentFileUpdateRequest,
@@ -57,6 +58,7 @@ from anyagent.protocol.agent_api_internal import (
 from anyagent.protocol.credential_vault import AdminCredentialListResponse, AdminCredentialRef, AdminCredentialSetRequest
 from anyagent.protocol.health import HealthResponse
 from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam, build_minimal_openai_response_json
+from anyagent.protocol.plugins import PluginCatalogResponse
 from anyagent.protocol.sandbox import FileSystemSandboxPolicy, SandboxPolicy
 from anyagent.protocol.admin_storage import StorageHealthResponse
 from anyagent.protocol.sse import SSEBlock, SSEBlockDecoder
@@ -186,6 +188,8 @@ class _Namespace:
         else:
             r = await self._http.delete(url, headers=self._headers(), timeout=timeout)
         r.raise_for_status()
+        if not r.content:
+            return None
         return r.json()
 
 
@@ -491,6 +495,10 @@ class Admin(_Namespace):
         data = await self._get("/admin/tools/catalog")
         return AdminToolCatalogResponse.model_validate(data)
 
+    async def plugin_catalog(self) -> PluginCatalogResponse:
+        data = await self._get("/admin/plugins/catalog")
+        return PluginCatalogResponse.model_validate(data)
+
     async def set_credential(self, request: AdminCredentialSetRequest | dict[str, Any]) -> AdminCredentialRef:
         model = request if isinstance(request, AdminCredentialSetRequest) else AdminCredentialSetRequest.model_validate(request)
         data = await self._post_json("/admin/credentials", json_body=model.model_dump(exclude_none=True))
@@ -561,6 +569,27 @@ class Admin(_Namespace):
         data = await self._post_json(
             f"/admin/workspace/agents/{agent_id}/skills/install",
             json_body=model.model_dump(exclude_none=True),
+        )
+        return AdminSkillImportResponse.model_validate(data)
+
+    async def check_agent_skill_update(
+        self,
+        agent_id: str,
+        directory_name: str,
+    ) -> AdminSkillUpdateCheckResponse:
+        data = await self._get(
+            f"/admin/workspace/agents/{agent_id}/skills/{directory_name}/update/check"
+        )
+        return AdminSkillUpdateCheckResponse.model_validate(data)
+
+    async def apply_agent_skill_update(
+        self,
+        agent_id: str,
+        directory_name: str,
+    ) -> AdminSkillImportResponse:
+        data = await self._post_json(
+            f"/admin/workspace/agents/{agent_id}/skills/{directory_name}/update/apply",
+            json_body={},
         )
         return AdminSkillImportResponse.model_validate(data)
 

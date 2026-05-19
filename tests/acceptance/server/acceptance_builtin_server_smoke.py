@@ -964,6 +964,14 @@ def test_storage_migrations_apply_live(monkeypatch) -> None:
     assert result2["applied"] == []
 
 
+def test_storage_migrate_dry_run_without_dsn(monkeypatch) -> None:
+    monkeypatch.delenv("POSTGRES_DSN", raising=False)
+    result = apply_storage_migrations(dry_run=True)
+    assert result["schema"] == "public"
+    assert result["planned"]
+    assert result["applied"] == []
+
+
 def test_postgres_store_requires_migration_first_live(tmp_path: Path, monkeypatch) -> None:
     postgres_dsn = os.getenv("ANYAGENT_TEST_POSTGRES_DSN")
     redis_dsn = os.getenv("ANYAGENT_TEST_REDIS_DSN")
@@ -986,7 +994,7 @@ def test_postgres_store_requires_migration_first_live(tmp_path: Path, monkeypatc
     )
 
     async def _check() -> None:
-        with pytest.raises(RuntimeError, match="storage-migrate"):
+        with pytest.raises(RuntimeError, match="storage migrate"):
             await app.state.anyagent.session_store.get(session_partition_key="main::no-mig")
 
     asyncio.run(_check())
@@ -1187,6 +1195,7 @@ async def _run_redis_run_store_roundtrip_via_adapter() -> None:
     calls: list[tuple] = []
     hashes: dict[str, dict[str, str]] = {}
     strings: dict[str, str] = {}
+    sorted_sets: dict[str, dict[str, float]] = {}
 
     class _Adapter:
         async def hgetall(self, key: str) -> dict[str, str]:
@@ -1201,6 +1210,26 @@ async def _run_redis_run_store_roundtrip_via_adapter() -> None:
             calls.append(("set", key, value))
             strings[key] = value
             return 1
+
+        async def zadd(self, key: str, mapping: dict[str, float]) -> int:
+            calls.append(("zadd", key, mapping))
+            bucket = sorted_sets.setdefault(key, {})
+            before = len(bucket)
+            bucket.update(mapping)
+            return len(bucket) - before
+
+        async def zrevrange(self, key: str, start: int, end: int) -> list[str]:
+            calls.append(("zrevrange", key, start, end))
+            values = sorted(
+                sorted_sets.get(key, {}).items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+            if end < 0:
+                sliced = values[start:]
+            else:
+                sliced = values[start : end + 1]
+            return [item[0] for item in sliced]
 
         async def eval(self, script: str, numkeys: int, *keys_and_args):
             calls.append(("eval", script, numkeys, *keys_and_args))

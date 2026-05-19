@@ -4,6 +4,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+
+from anyagent.storage import StorageRuntime, resolve_nonstream_replay_payload
+
+from .responses_optional import openai_error_response
+from .streaming import build_external_response_stream_response
+
 
 NewResponseIdFactory = Callable[[], str]
 LookupExistingRun = Callable[[str], Awaitable[Any | None]]
@@ -20,6 +27,96 @@ class BeginOrReplayResponseRunResult:
     response_id: str
     run: Any | None = None
     response: Any | None = None
+
+
+@dataclass(slots=True)
+class DistributedResponseRunGate:
+    created: bool
+    response_id: str | None = None
+    response: Response | None = None
+
+
+def build_distributed_response_stream_response(*, storage: StorageRuntime, response_id: str) -> StreamingResponse:
+    async def _iter_sse_from_store() -> Any:
+        async for chunk in build_external_response_stream_response(
+            run_store=storage.run_store,
+            event_store=storage.event_store,
+            response_id=response_id,
+        ).body_iterator:
+            yield chunk
+
+    return StreamingResponse(_iter_sse_from_store(), media_type="text/event-stream")
+
+
+async def begin_distributed_response_run(
+    *,
+    idempotency_key: str | None,
+    stream: bool,
+    session_partition_key: str,
+    storage: StorageRuntime,
+    new_response_id_factory: NewResponseIdFactory,
+    nonstream_wait_timeout_s: float = 60.0,
+) -> DistributedResponseRunGate:
+    if idempotency_key is None:
+        return DistributedResponseRunGate(created=False)
+
+    def _validate_run(run: Any) -> Response | None:
+        if getattr(run, "session_partition_key", None) != session_partition_key:
+            return openai_error_response(
+                409,
+                message="Idempotency-Key conflict (session mismatch)",
+                type_="invalid_request_error",
+                code="idempotency_key_conflict",
+            )
+        return None
+
+    gate = await begin_or_replay_response_run(
+        idempotency_key=idempotency_key,
+        stream=stream,
+        new_response_id_factory=new_response_id_factory,
+        try_create_started_run=lambda candidate_response_id, idem_value: storage.run_store.try_create_started(
+            response_id=candidate_response_id,
+            session_partition_key=session_partition_key,
+            idempotency_key=idem_value,
+            stream=stream,
+        ),
+        validate_run=_validate_run,
+        build_stream_replay_response=lambda replay_response_id: build_distributed_response_stream_response(
+            storage=storage,
+            response_id=replay_response_id,
+        ),
+        build_nonstream_replay_response=lambda run, replay_response_id: resolve_nonstream_replay_payload(
+            run_store=storage.run_store,
+            run=run,
+            response_id=replay_response_id,
+            wait_timeout_s=nonstream_wait_timeout_s,
+        ),
+    )
+
+    if gate.response is not None:
+        if isinstance(gate.response, dict):
+            return DistributedResponseRunGate(
+                created=False,
+                response_id=gate.response_id,
+                response=JSONResponse(status_code=200, content=gate.response),
+            )
+        return DistributedResponseRunGate(
+            created=False,
+            response_id=gate.response_id,
+            response=gate.response,
+        )
+    if not gate.created:
+        return DistributedResponseRunGate(
+            created=False,
+            response_id=gate.response_id,
+            response=openai_error_response(
+                504,
+                message="Idempotent request still in progress",
+                type_="timeout_error",
+            ),
+        )
+
+    return DistributedResponseRunGate(created=True, response_id=gate.response_id)
 
 
 async def begin_or_replay_response_run(

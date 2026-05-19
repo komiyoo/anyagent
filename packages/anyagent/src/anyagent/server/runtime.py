@@ -40,6 +40,8 @@ from anyagent.gateway.session import session_partition_key
 from anyagent.mcp.auth import CredentialResolver
 from anyagent.observability import emit_observability_event
 from anyagent.server.sandbox import EXEC_TOOL, SandboxManager, build_exec_handler
+from anyagent.server.security.credential_backends import CredentialStore
+from anyagent.tool_runtime.builtin_tools import register_builtin_core_tools_sync, register_privileged_core_tools_sync
 from anyagent.skills import (
     SkillEnablement,
     default_skill_roots,
@@ -50,6 +52,7 @@ from anyagent.skills import (
 from anyagent.skills.discovery import SkillRoot
 from anyagent.skills.models import SkillPackage
 from anyagent.tool_runtime.registry import ToolRegistry
+from anyagent.tool_runtime.models import ToolDefinition, ToolHandler
 
 logger = logging.getLogger("anyagent.tool_runtime")
 
@@ -153,6 +156,9 @@ class InProcessToolRuntimeService:
                 sandbox_policy_for_agent=self.sandbox_policy_for_agent,
             ),
         )
+        register_builtin_core_tools_sync(self._registry)
+        if isinstance(credential_store, CredentialStore) and hasattr(credential_store, "list_refs"):
+            register_privileged_core_tools_sync(registry=self._registry, credential_store=credential_store)
 
     def set_catalog(self, catalog: AgentCatalog) -> None:
         self._catalog = catalog
@@ -227,6 +233,9 @@ class InProcessToolRuntimeService:
 
     def list_registered_tools(self) -> tuple[list[Any], int]:
         return self._registry.list_tools(), self._registry.toolset_version
+
+    def register_tool(self, tool: ToolDefinition, handler: ToolHandler) -> None:
+        self._registry.register_tool(tool, handler)
 
     async def execute(self, req: ExecuteRequest) -> ExecuteResponse:
         audit_ref = _build_audit_ref(response_id=req.response_id, tool_call_id=req.tool_call_id)
@@ -340,6 +349,10 @@ class InProcessToolRuntimeService:
                     "tool_call_id": req.tool_call_id,
                     "context": req.context.model_dump(exclude_none=True) if isinstance(req.context, ToolContext) else {},
                     "_credentials": resolved_credentials,
+                    "_trace_id": req.context.trace.trace_id
+                    if isinstance(req.context, ToolContext) and req.context.trace is not None
+                    else None,
+                    "_audit_ref": audit_ref,
                 },
             ),
             name=f"tool-exec:{req.response_id}:{req.tool_call_id}",

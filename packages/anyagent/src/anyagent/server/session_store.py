@@ -5,8 +5,6 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from anyagent.storage.external import PostgresSessionStore as ExternalPostgresSessionStore
-from anyagent.storage.external import create_external_sql_engine, resolve_external_sql_backend_config
 from anyagent.server.postgres_schema import PostgresSchemaPolicy
 from anyagent.storage.settings import StorageSettings
 
@@ -282,6 +280,15 @@ class PostgresSessionStore:
         postgres_schema: str = "public",
         schema_policy: PostgresSchemaPolicy = "migrate",
     ) -> None:
+        try:
+            from anyagent.storage.external import PostgresSessionStore as ExternalPostgresSessionStore
+            from anyagent.storage.external import create_external_sql_engine, resolve_external_sql_backend_config
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(
+                "postgres session store requires installing anyagent[postgres]"
+                " (and anyagent[redis] when using the cached external store)"
+            ) from e
+
         _ = schema_policy
         config = resolve_external_sql_backend_config(
             postgres_dsn=postgres_dsn,

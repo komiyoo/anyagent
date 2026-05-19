@@ -45,7 +45,7 @@ async def ensure_postgres_schema_objects(
 
     missing_desc = ", ".join(missing) if missing else "schema_migrations"
     raise RuntimeError(
-        "postgres schema is not ready; run `anyagent storage-migrate` first "
+        "postgres schema is not ready; run `anyagent storage migrate` first "
         f"(schema={postgres_schema}, missing={missing_desc}) "
         "or set POSTGRES_SCHEMA_POLICY=runtime_create for development fallback"
     )

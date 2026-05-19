@@ -40,6 +40,20 @@ __all__ = [
     "run_tool_loop_nonstream",
     "run_tool_loop_stream_buffered",
     "run_tool_loop_stream_live",
+    "CloseAgentResult",
+    "InMemoryThreadStore",
+    "MultiAgentLimitsResolved",
+    "MultiAgentManager",
+    "ResumeAgentResult",
+    "SubmissionRecord",
+    "ThreadRecord",
+    "ThreadStatus",
+    "close_agent_tool_schema",
+    "resume_agent_tool_schema",
+    "send_input_tool_schema",
+    "spawn_agent_tool_schema",
+    "stable_root_thread_id",
+    "wait_tool_schema",
 ]
 
 from anyagent.protocol.prompt_context import PromptEnvelope
@@ -87,4 +101,20 @@ from .model_providers import (
     OpenAIResponsesModelProviderSettings,
     create_openai_responses_model_provider,
     get_default_model_provider,
+)
+from .multiagent import (
+    CloseAgentResult,
+    InMemoryThreadStore,
+    MultiAgentLimitsResolved,
+    MultiAgentManager,
+    ResumeAgentResult,
+    SubmissionRecord,
+    ThreadRecord,
+    ThreadStatus,
+    close_agent_tool_schema,
+    resume_agent_tool_schema,
+    send_input_tool_schema,
+    spawn_agent_tool_schema,
+    stable_root_thread_id,
+    wait_tool_schema,
 )

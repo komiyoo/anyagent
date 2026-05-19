@@ -17,15 +17,7 @@ from anyagent.server.session_store import (
     build_cached_session_store,
     build_redis_session_store,
 )
-from anyagent.storage.external import (
-    MySQLEventStore,
-    MySQLRunStore,
-    MySQLSessionStore,
-    create_external_sql_engine,
-    resolve_external_sql_backend_config,
-)
 from anyagent.storage.settings import StorageSettings
-from sqlalchemy import BOOLEAN, JSON, TEXT, Column, MetaData, String, Table, insert, select, update
 
 
 class EventStore(Protocol):
@@ -70,7 +62,7 @@ class ServerStorageBundle:
 
 
 class _ExternalSqlRunStoreAdapter:
-    def __init__(self, *, store: MySQLRunStore) -> None:
+    def __init__(self, *, store: Any) -> None:
         self._store = store
 
     async def get(self, response_id: str):
@@ -136,7 +128,7 @@ class _ExternalSqlRunStoreAdapter:
 
 
 class _ExternalSqlSessionStoreAdapter:
-    def __init__(self, *, store: MySQLSessionStore) -> None:
+    def __init__(self, *, store: Any) -> None:
         self._store = store
 
     async def get(self, *, session_partition_key: str):
@@ -180,7 +172,12 @@ class _ExternalSqlSessionStoreAdapter:
 
 
 class _ExternalSqlEventStoreAdapter:
-    def __init__(self, *, engine, store: MySQLEventStore, dialect: str, schema_name: str | None = None, poll_interval_s: float = 0.05) -> None:
+    def __init__(self, *, engine: Any, store: Any, dialect: str, schema_name: str | None = None, poll_interval_s: float = 0.05) -> None:
+        try:
+            from sqlalchemy import BOOLEAN, JSON, TEXT, Column, MetaData, String, Table
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError("mysql event store requires installing anyagent[mysql]") from e
+
         self._engine = engine
         self._store = store
         self._dialect = dialect
@@ -209,6 +206,8 @@ class _ExternalSqlEventStoreAdapter:
 
     async def mark_started(self, *, response_id: str) -> None:
         await self._ensure_meta_table()
+        from sqlalchemy import insert, select, update
+
         async with self._engine.begin() as conn:
             existing = (await conn.execute(select(self._meta_table.c.response_id).where(self._meta_table.c.response_id == response_id))).first()
             if existing is None:
@@ -228,6 +227,8 @@ class _ExternalSqlEventStoreAdapter:
 
     async def mark_cancel_requested(self, *, response_id: str) -> None:
         await self._ensure_meta_table()
+        from sqlalchemy import update
+
         async with self._engine.begin() as conn:
             await conn.execute(
                 update(self._meta_table)
@@ -247,6 +248,8 @@ class _ExternalSqlEventStoreAdapter:
     ) -> None:
         await self._ensure_meta_table()
         error_json = error.model_dump(exclude_none=True) if error is not None else None
+        from sqlalchemy import insert, select, update
+
         async with self._engine.begin() as conn:
             existing = (await conn.execute(select(self._meta_table.c.response_id).where(self._meta_table.c.response_id == response_id))).first()
             if existing is None:
@@ -325,6 +328,8 @@ class _ExternalSqlEventStoreAdapter:
             await asyncio.sleep(self._poll_interval_s)
 
     async def _get_meta_row(self, response_id: str) -> dict[str, Any] | None:
+        from sqlalchemy import select
+
         async with self._engine.connect() as conn:
             row = (await conn.execute(select(self._meta_table).where(self._meta_table.c.response_id == response_id).limit(1))).mappings().first()
         return None if row is None else dict(row)
@@ -391,6 +396,17 @@ def build_server_storage_bundle(
                 session_store=build_cached_session_store() if session_store_backend == "external" else build_session_store(backend=session_store_backend),
                 resources=[],
             )
+
+        try:
+            from anyagent.storage.external import (
+                MySQLEventStore,
+                MySQLRunStore,
+                MySQLSessionStore,
+                create_external_sql_engine,
+                resolve_external_sql_backend_config,
+            )
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError("mysql server storage requires installing anyagent[mysql]") from e
 
         config = resolve_external_sql_backend_config(
             postgres_dsn=settings.postgres_dsn,

@@ -37,3 +37,9 @@ class StorageSettings(BaseSettings):
         default="migrate",
         alias="POSTGRES_SCHEMA_POLICY",
     )
+
+    storage_mode: Literal["auto", "none", "external"] = Field(default="auto", alias="STORAGE_MODE")
+    rollout_root_dir: str | None = Field(default=None, alias="ROLLOUT_ROOT_DIR")
+    rollout_rotate_max_bytes: int = Field(default=0, alias="ROLLOUT_ROTATE_MAX_BYTES")
+    rollout_rotate_max_age_seconds: int = Field(default=0, alias="ROLLOUT_ROTATE_MAX_AGE_SECONDS")
+    rollout_rotate_keep_files: int = Field(default=16, alias="ROLLOUT_ROTATE_KEEP_FILES")

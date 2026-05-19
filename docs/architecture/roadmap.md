@@ -44,8 +44,8 @@ cd my-workspace && anyagent serve
 - `anyagent serve --workspace . --port 8787` — 启动 server
 - `anyagent init --workspace ./my-workspace` — 生成最小可配置 workspace
 - `anyagent doctor --workspace ./my-workspace` — 校验 workspace 配置与安全边界
-- `anyagent storage-health` — 检查内置 server 存储后端与连通性
-- `anyagent storage-migrate` — 应用 PostgreSQL / SQL backend schema
+- `anyagent storage health` — 检查内置 server 存储后端与连通性
+- `anyagent storage migrate` — 应用 PostgreSQL / SQL backend schema
 
 说明：
 
@@ -178,6 +178,7 @@ cd my-workspace && anyagent serve
 
 #### 4.1 平台 Gateway
 
+- 平台 connector contract 真源在 `anyagent.plugins`；具体平台实现优先采用官方包或独立 optional connector，当前状态见 [platform-connectors.md](platform-connectors.md)
 - 飞书 / Discord / Telegram / Slack connector 完善
 - 统一消息桥接协议
 - 平台能力注入（群信息、文档操作等）
@@ -205,7 +206,7 @@ cd my-workspace && anyagent serve
 - [ ] 多租户隔离
 - [ ] 管理后台 API
 - [ ] Sandbox executor 可用
-- [ ] 4+ 平台 connector
+- [ ] 4+ 平台 connector optional packages
 
 ---
 

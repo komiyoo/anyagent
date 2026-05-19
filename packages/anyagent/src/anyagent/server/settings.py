@@ -44,6 +44,21 @@ class ServerSettings(BaseSettings):
         default=30.0,
         alias="SESSION_LEASE_TTL_S",
     )
+    mcp_credential_store_backend: str = Field(
+        default="none",
+        alias="MCP_CREDENTIAL_STORE_BACKEND",
+    )
+    mcp_credential_store_file_root: str = Field(
+        default=".agents/credentials",
+        alias="MCP_CREDENTIAL_STORE_FILE_ROOT",
+    )
+    infisical_host: str = Field(default="https://app.infisical.com", alias="INFISICAL_HOST")
+    infisical_universal_auth_client_id: str | None = Field(default=None, alias="INFISICAL_UNIVERSAL_AUTH_CLIENT_ID")
+    infisical_universal_auth_client_secret: str | None = Field(default=None, alias="INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET")
+    infisical_project_id: str | None = Field(default=None, alias="INFISICAL_PROJECT_ID")
+    infisical_environment: str | None = Field(default=None, alias="INFISICAL_ENVIRONMENT")
+    infisical_cache_ttl_seconds: int = Field(default=60, alias="INFISICAL_CACHE_TTL_SECONDS")
+    infisical_credential_root_path: str = Field(default="/anyagent/credentials", alias="INFISICAL_CREDENTIAL_ROOT_PATH")
 
     def resolve(
         self,

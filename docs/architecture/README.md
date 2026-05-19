@@ -19,6 +19,7 @@
 8) [agent-server-runtime-entities.md](agent-server-runtime-entities.md)：运行时实体分层
 9) [agent-api-client-stage-events.md](agent-api-client-stage-events.md)：Client Stage Events 设计
 10) [studio-control-plane-and-observability.md](studio-control-plane-and-observability.md)：Studio 控制面、使用/研发模式、观测指标与 skill 渠道化导入
-11) [testing-strategy.md](testing-strategy.md)：测试分层策略与补齐顺序
-12) [decisions/README.md](decisions/README.md)：架构决策记录
-13) [engineering/README.md](engineering/README.md)：工程流程
+11) [platform-connectors.md](platform-connectors.md)：平台 connector contract、官方包优先策略与 Lark/Discord/Telegram 当前状态
+12) [testing-strategy.md](testing-strategy.md)：测试分层策略与补齐顺序
+13) [decisions/README.md](decisions/README.md)：架构决策记录
+14) [engineering/README.md](engineering/README.md)：工程流程

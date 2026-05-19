@@ -21,6 +21,7 @@ import yaml
 
 from anyagent.agent_packs import AgentCatalog, AgentPack, AgentSpec, load_agent_catalog
 from anyagent.mcp import MCPConfig
+from anyagent.mcp.auth import CredentialResolver
 from anyagent.skills.loader import SkillLoadError, load_skill_package
 from anyagent.agent_runtime import (
     build_default_environment_context_values,
@@ -88,6 +89,7 @@ from anyagent.server.request_validation import (
     ensure_request_body_object,
     parse_function_tools,
 )
+from anyagent.server.request_context import resolve_agent_id, resolve_session_key
 from anyagent.server.responses_optional import optional_response_payload_from_run
 from anyagent.server.session_context import prepare_response_session_context
 from anyagent.server.streaming import (
@@ -100,7 +102,12 @@ from anyagent.server.streaming import (
 from anyagent.server.runs import RunRegistry
 from anyagent.server.runtime import InProcessToolRuntimeService
 from anyagent.server.sandbox import SandboxManager
-from anyagent.server.security import InMemoryCredentialStore
+from anyagent.server.security import (
+    CredentialRuntimeConfig,
+    InMemoryCredentialStore,
+    build_credential_backend_capability_matrix,
+    build_credential_resolver_from_config,
+)
 from anyagent.server.settings import ResolvedServerStorageSettings, ServerSettings
 from anyagent.server.storage_backends import (
     EventStore,
@@ -341,6 +348,7 @@ class AnyAgentServerApp:
     storage_settings: StorageSettings
     events: EventStore
     credentials: InMemoryCredentialStore
+    mcp_credentials: CredentialResolver | None
     sandbox_manager: SandboxManager
     runtime: InProcessToolRuntimeService
     mcp_managers: MCPManagerRegistry
@@ -386,6 +394,8 @@ def create_app(
     session_lease_ttl_s: float | None = None,
     cors_origins: str | list[str] | tuple[str, ...] | None = None,
 ) -> FastAPI:
+    workspace = Path(workspace_dir).expanduser().resolve()
+    _load_workspace_env_defaults(workspace)
     server_settings = ServerSettings()
     resolved_storage = server_settings.resolve(
         storage_mode=storage_mode if isinstance(storage_mode, str) else None,
@@ -395,8 +405,6 @@ def create_app(
         session_lock_backend=session_lock_backend if isinstance(session_lock_backend, str) else None,
         session_lease_ttl_s=session_lease_ttl_s,
     )
-    workspace = Path(workspace_dir).expanduser().resolve()
-    _load_workspace_env_defaults(workspace)
     catalog = load_agent_catalog(workspace_dir=workspace)
     main_pack = catalog.get("main")
     if main_pack is None or not main_pack.spec.exposed:
@@ -412,6 +420,21 @@ def create_app(
 
     sandbox_manager = SandboxManager(root_dir=sandbox_root_dir)
     credential_store = InMemoryCredentialStore()
+    mcp_credential_store = build_credential_resolver_from_config(
+        CredentialRuntimeConfig(
+            backend=server_settings.mcp_credential_store_backend,
+            file_root=server_settings.mcp_credential_store_file_root,
+            workspace_dir=workspace,
+            infisical_host=server_settings.infisical_host,
+            infisical_universal_auth_client_id=server_settings.infisical_universal_auth_client_id,
+            infisical_universal_auth_client_secret=server_settings.infisical_universal_auth_client_secret,
+            infisical_project_id=server_settings.infisical_project_id,
+            infisical_environment=server_settings.infisical_environment,
+            infisical_cache_ttl_seconds=server_settings.infisical_cache_ttl_seconds,
+            infisical_credential_root_path=server_settings.infisical_credential_root_path,
+        ),
+        fallback_to_memory=False,
+    )
     storage_bundle: ServerStorageBundle = build_server_storage_bundle(
         event_store_backend=resolved_storage.event_store_backend,
         run_store_backend=resolved_storage.run_store_backend,
@@ -424,6 +447,7 @@ def create_app(
         storage_settings=StorageSettings(),
         events=storage_bundle.event_store,
         credentials=credential_store,
+        mcp_credentials=mcp_credential_store or credential_store,
         sandbox_manager=sandbox_manager,
         runtime=InProcessToolRuntimeService(
             workspace_dir=str(workspace),
@@ -496,6 +520,12 @@ def create_app(
         resp = await state.credentials.list()
         return JSONResponse(resp.model_dump(exclude_none=True))
 
+    @app.get("/admin/credentials/capabilities")
+    async def admin_credential_capabilities(authorization: str | None = Header(default=None)) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        matrix = build_credential_backend_capability_matrix()
+        return JSONResponse(matrix.model_dump(exclude_none=True))
+
     @app.get("/admin/storage/health")
     async def admin_storage_health(authorization: str | None = Header(default=None)) -> JSONResponse:
         _require_admin_auth(state, authorization)
@@ -543,8 +573,8 @@ def create_app(
     @app.delete("/admin/credentials/{credential_id}")
     async def admin_delete_credential(credential_id: str, authorization: str | None = Header(default=None)) -> JSONResponse:
         _require_admin_auth(state, authorization)
-        resp = await state.credentials.delete(credential_id)
-        return JSONResponse(resp)
+        deleted = await state.credentials.delete(credential_id)
+        return JSONResponse({"ok": True, "deleted": bool(deleted), "credential_id": credential_id})
 
     @app.get("/admin/workspace/agents/{agent_id}")
     async def admin_workspace_agent_detail(
@@ -934,7 +964,7 @@ def create_app(
             mcp_manager = await state.mcp_managers.get_manager(
                 agent_id=pack.agent_id,
                 mcp_config=pack.mcp_config,
-                credential_store=state.credentials,
+                credential_store=state.mcp_credentials,
             )
         manifest_tools, _toolset_version = await resolve_manifest_with_mcp(
             tool_runtime=state.runtime,
@@ -1082,7 +1112,7 @@ def create_app(
             mcp_manager = await state.mcp_managers.get_manager(
                 agent_id=pack.agent_id,
                 mcp_config=pack.mcp_config,
-                credential_store=state.credentials,
+                credential_store=state.mcp_credentials,
             )
         model_provider = get_default_model_provider()
         enabled_skill_ids = [skill.stable_id for skill in selected_skills]
@@ -1573,26 +1603,19 @@ def _require_bearer(*, authorization: str | None, expected: str | None) -> None:
 
 def _resolve_agent_id(*, body: dict[str, Any], x_agent_id: str | None) -> str:
     metadata = body.get("metadata")
-    if isinstance(metadata, dict) and isinstance(metadata.get("agent_id"), str) and metadata["agent_id"].strip():
-        return metadata["agent_id"].strip()
-    if isinstance(x_agent_id, str) and x_agent_id.strip():
-        return x_agent_id.strip()
-    model = body.get("model")
-    if isinstance(model, str) and model.startswith("agent:") and model[6:].strip():
-        return model[6:].strip()
-    return "main"
+    return resolve_agent_id(
+        metadata=metadata if isinstance(metadata, dict) else None,
+        x_agent_id=x_agent_id,
+        model=body.get("model"),
+    )
 
 
 def _resolve_session_key(*, body: dict[str, Any]) -> str:
     metadata = body.get("metadata")
-    if isinstance(metadata, dict):
-        value = metadata.get("session_key")
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    user = body.get("user")
-    if isinstance(user, str) and user.strip():
-        return user.strip()
-    return f"ephemeral:{uuid.uuid4().hex}"
+    return resolve_session_key(
+        metadata=metadata if isinstance(metadata, dict) else None,
+        user=body.get("user"),
+    )
 
 
 def _text_preview(text: str | None, *, max_chars: int = 240) -> str | None:

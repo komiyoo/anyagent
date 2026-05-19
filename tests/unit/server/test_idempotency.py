@@ -1,14 +1,29 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
-from anyagent.server.idempotency import begin_or_replay_response_run
+from fastapi.responses import JSONResponse
+
+from anyagent.server.idempotency import begin_distributed_response_run, begin_or_replay_response_run
+from anyagent.storage.inmemory import InMemoryEventStore, InMemoryLeaseLock, InMemoryRunStore, InMemorySessionStore
+from anyagent.storage.runtime import StorageRuntime
 
 
 class _Run:
     def __init__(self, response_id: str, session_partition_key: str = "main::sess") -> None:
         self.response_id = response_id
         self.session_partition_key = session_partition_key
+
+
+def _storage() -> StorageRuntime:
+    return StorageRuntime(
+        mode="none",
+        run_store=InMemoryRunStore(),
+        event_store=InMemoryEventStore(),
+        lease_lock=InMemoryLeaseLock(),
+        session_store=InMemorySessionStore(),
+    )
 
 
 def test_begin_or_replay_response_run_creates_new_run_without_idempotency_key() -> None:
@@ -100,5 +115,98 @@ def test_begin_or_replay_response_run_replays_existing_stream_run() -> None:
         assert result.created is False
         assert result.response_id == "resp_existing_stream"
         assert result.response == "stream:resp_existing_stream"
+
+    asyncio.run(_run())
+
+
+def test_begin_distributed_response_run_creates_and_replays_nonstream_payload() -> None:
+    async def _run() -> None:
+        storage = _storage()
+        first = await begin_distributed_response_run(
+            idempotency_key="idem-dist",
+            stream=False,
+            session_partition_key="main::sess",
+            storage=storage,
+            new_response_id_factory=lambda: "resp_dist",
+            nonstream_wait_timeout_s=0.0,
+        )
+        assert first.created is True
+        assert first.response_id == "resp_dist"
+        assert first.response is None
+
+        await storage.run_store.set_final(
+            response_id="resp_dist",
+            status="completed",
+            final_response_json={"id": "resp_dist", "status": "completed"},
+            error_json=None,
+        )
+
+        replay = await begin_distributed_response_run(
+            idempotency_key="idem-dist",
+            stream=False,
+            session_partition_key="main::sess",
+            storage=storage,
+            new_response_id_factory=lambda: "resp_unused",
+            nonstream_wait_timeout_s=0.0,
+        )
+        assert replay.created is False
+        assert replay.response_id == "resp_dist"
+        assert isinstance(replay.response, JSONResponse)
+        assert json.loads(replay.response.body) == {"id": "resp_dist", "status": "completed"}
+
+    asyncio.run(_run())
+
+
+def test_begin_distributed_response_run_conflicts_on_session_mismatch() -> None:
+    async def _run() -> None:
+        storage = _storage()
+        await begin_distributed_response_run(
+            idempotency_key="idem-conflict",
+            stream=False,
+            session_partition_key="main::sess",
+            storage=storage,
+            new_response_id_factory=lambda: "resp_conflict",
+            nonstream_wait_timeout_s=0.0,
+        )
+
+        replay = await begin_distributed_response_run(
+            idempotency_key="idem-conflict",
+            stream=False,
+            session_partition_key="other::sess",
+            storage=storage,
+            new_response_id_factory=lambda: "resp_unused",
+            nonstream_wait_timeout_s=0.0,
+        )
+        assert replay.created is False
+        assert replay.response is not None
+        assert replay.response.status_code == 409
+        assert json.loads(replay.response.body)["error"]["code"] == "idempotency_key_conflict"
+
+    asyncio.run(_run())
+
+
+def test_begin_distributed_response_run_times_out_in_progress_nonstream() -> None:
+    async def _run() -> None:
+        storage = _storage()
+        await begin_distributed_response_run(
+            idempotency_key="idem-wait",
+            stream=False,
+            session_partition_key="main::sess",
+            storage=storage,
+            new_response_id_factory=lambda: "resp_waiting",
+            nonstream_wait_timeout_s=0.0,
+        )
+
+        replay = await begin_distributed_response_run(
+            idempotency_key="idem-wait",
+            stream=False,
+            session_partition_key="main::sess",
+            storage=storage,
+            new_response_id_factory=lambda: "resp_unused",
+            nonstream_wait_timeout_s=0.0,
+        )
+        assert replay.created is False
+        assert replay.response is not None
+        assert replay.response.status_code == 504
 
     asyncio.run(_run())

@@ -27,7 +27,7 @@ req: ["requirements.md#req-3-1", "requirements.md#req-5", "requirements.md#req-5
 - `SandboxPolicy` 当前只收敛了 `mode/network/resource_limits/ttl_seconds` 最小字段：`packages/anyagent/src/anyagent/protocol/sandbox.py:28`
 - `exec` 当前仍是统一的 `core` 命令工具入口：`packages/anyagent/src/anyagent/server/sandbox/exec_handler.py:12`
 - `SandboxManager` 当前最小实现仍以本地目录复用为主，`opensandbox` 尚未落地：`packages/anyagent/src/anyagent/server/sandbox/manager.py:11`
-- 应用层今天已经有“会话级元数据/快照”的持久化思路，但只覆盖 session snapshot 和 rollout 事件，不覆盖沙箱文件系统本体：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/rollout.py:369`
+- Core storage 今天已经有“会话级元数据/快照”的 rollout journal 持久化思路，但只覆盖 session snapshot 和 rollout 事件，不覆盖沙箱文件系统本体：`packages/anyagent/src/anyagent/storage/rollout.py:369`
 
 这在单机或 demo 模式下够用，但一旦进入服务化部署，马上会遇到四类问题：
 

@@ -271,6 +271,10 @@ class InternalAgentListItem(BaseModel):
     prompt_sha256: str
     workspace_prompt_sha256: str | None = None
     sandbox_mode: SandboxMode
+    model_default: str | None = None
+    model_provider: str = "openai"
+    model_base_url_env: str | None = None
+    model_api_key_env: str | None = None
     requested_tool_names: list[str] = Field(default_factory=list)
     default_selected_skill_ids: list[str] = Field(default_factory=list)
     spawn_allow_agent_ids: list[str] = Field(default_factory=list)

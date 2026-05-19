@@ -13,6 +13,7 @@ from anyagent.protocol.credential_vault import (
     AdminCredentialSetRequest,
 )
 from anyagent.protocol.tool_runtime import AuthRef
+from anyagent.server.security.credential_backends import CredentialStore
 
 logger = logging.getLogger("anyagent.credentials")
 
@@ -44,7 +45,7 @@ def _log_credential_audit(
     logger.info("credential_audit %s", event.model_dump_json(exclude_none=True))
 
 
-class InMemoryCredentialStore(CredentialResolver):
+class InMemoryCredentialStore(CredentialStore, CredentialResolver):
     def __init__(self) -> None:
         self._refs: dict[str, AdminCredentialRef] = {}
         self._values: dict[tuple[str, str, str | None], str] = {}
@@ -53,7 +54,26 @@ class InMemoryCredentialStore(CredentialResolver):
     def _key(*, credential_id: str, scope_level: str, agent_id: str | None) -> tuple[str, str, str | None]:
         return credential_id.strip(), scope_level.strip(), agent_id.strip() if isinstance(agent_id, str) else None
 
-    async def set(self, req: AdminCredentialSetRequest) -> AdminCredentialRef:
+    async def set(
+        self,
+        req: AdminCredentialSetRequest | None = None,
+        *,
+        credential_id: str | None = None,
+        kind: str | None = None,
+        value: str | None = None,
+        scope: CredentialScope | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> AdminCredentialRef:
+        if req is None:
+            if credential_id is None or kind is None or value is None or scope is None:
+                raise ValueError("credential_id, kind, value, and scope are required")
+            req = AdminCredentialSetRequest(
+                credential_id=credential_id,
+                kind=kind,
+                value=value,
+                scope=scope,
+                metadata=dict(metadata or {}),
+            )
         ref = AdminCredentialRef(
             credential_id=req.credential_id,
             kind=req.kind,
@@ -80,7 +100,7 @@ class InMemoryCredentialStore(CredentialResolver):
         refs = [self._refs[k] for k in sorted(self._refs.keys())]
         return AdminCredentialListResponse(credentials=refs)
 
-    async def delete(self, credential_id: str) -> dict[str, Any]:
+    async def delete(self, credential_id: str) -> bool:
         ref = self._refs.pop(credential_id, None)
         if ref is not None:
             key = self._key(
@@ -97,7 +117,19 @@ class InMemoryCredentialStore(CredentialResolver):
             agent_id=ref.scope.agent_id if ref is not None else None,
             deleted=ref is not None,
         )
-        return {"ok": True, "deleted": ref is not None, "credential_id": credential_id}
+        return ref is not None
+
+    async def list_refs(self, scope: CredentialScope | None = None) -> list[dict[str, Any]]:
+        refs = [self._refs[k] for k in sorted(self._refs.keys())]
+        out: list[dict[str, Any]] = []
+        for ref in refs:
+            if scope is not None:
+                if ref.scope.level != scope.level:
+                    continue
+                if scope.level == "agent" and ref.scope.agent_id != scope.agent_id:
+                    continue
+            out.append(ref.model_dump(exclude_none=True))
+        return out
 
     async def resolve(self, auth_ref: AuthRef, scope_context: dict[str, Any] | None = None) -> str | None:
         credential_id = (auth_ref.ref or "").strip()

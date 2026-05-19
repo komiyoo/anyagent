@@ -4,7 +4,13 @@ import asyncio
 import hashlib
 from pathlib import Path
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from anyagent.agent_packs import load_agent_catalog
 from anyagent.server.app import create_app
+from anyagent.server.internal_skills import create_internal_skills_router
+from anyagent.skills import load_skills_from_root
 
 
 def _write_workspace_with_skill(root: Path) -> Path:
@@ -78,3 +84,52 @@ async def _run_runtime_skills_list_includes_catalog_fields(tmp_path: Path) -> No
         "default_prompt": "Try the demo skill",
     }
     assert skill.requested_tool_names == ["core.web_fetch"]
+
+
+def test_internal_skills_router_lists_catalog_fields(tmp_path: Path) -> None:
+    skill_md = _write_workspace_with_skill(tmp_path)
+
+    app = FastAPI()
+    app.state.workspace_dir = tmp_path
+    app.state.agent_catalog = load_agent_catalog(workspace_dir=tmp_path)
+    app.state.agent_skills = {}
+    app.state.global_skills, app.state.global_skill_errors = load_skills_from_root(
+        tmp_path / ".agents" / "skills",
+        scope="repo",
+    )
+    app.state.agent_skill_errors = {}
+    app.include_router(create_internal_skills_router(api_key="test-key"))
+
+    with TestClient(app) as client:
+        missing_auth = client.get("/internal/skills/list", params={"agent_id": "main"})
+        assert missing_auth.status_code == 401
+
+        unknown_agent = client.get(
+            "/internal/skills/list",
+            params={"agent_id": "missing"},
+            headers={"authorization": "Bearer test-key"},
+        )
+        assert unknown_agent.status_code == 404
+        assert unknown_agent.json()["error"]["message"] == "unknown agent_id: missing"
+
+        resp = client.get(
+            "/internal/skills/list",
+            params={"agent_id": "main"},
+            headers={"authorization": "Bearer test-key"},
+        )
+        assert resp.status_code == 200, resp.text
+
+    payload = resp.json()
+    assert payload["agent_id"] == "main"
+    assert payload["load_errors"] == []
+    assert len(payload["skills"]) == 1
+
+    skill = payload["skills"][0]
+    assert skill["name"] == "demo-skill"
+    assert skill["path"] == str(skill_md.resolve())
+    assert skill["source_hash"] == hashlib.sha256(skill_md.read_bytes()).hexdigest()
+    assert skill["interface"] == {
+        "display_name": "Demo Skill",
+        "default_prompt": "Try the demo skill",
+    }
+    assert skill["requested_tool_names"] == ["core.web_fetch"]

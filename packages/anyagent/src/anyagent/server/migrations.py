@@ -27,15 +27,16 @@ def apply_storage_migrations(
     dry_run: bool = False,
 ) -> dict[str, list[str] | str]:
     settings = StorageSettings()
-    effective_dsn = postgres_dsn or (str(settings.postgres_dsn) if settings.postgres_dsn is not None else None)
-    if effective_dsn is None:
-        raise RuntimeError("storage migrations require POSTGRES_DSN")
     effective_schema = postgres_schema or settings.postgres_schema
 
     migrations = list_storage_migrations()
     planned = [m.version for m in migrations]
     if dry_run:
         return {"schema": effective_schema, "planned": planned, "applied": []}
+
+    effective_dsn = postgres_dsn or (str(settings.postgres_dsn) if settings.postgres_dsn is not None else None)
+    if effective_dsn is None:
+        raise RuntimeError("storage migrations require POSTGRES_DSN")
 
     from psycopg import Connection
 

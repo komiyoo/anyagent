@@ -17,7 +17,7 @@ anyagent = **配置即服务的 Agent Server 内核 + SDK**：
 - **Protocol SSOT**：`anyagent.protocol.*` 是所有 wire-level 协议的单一真源
 - **安全边界**：Agent 可见资源但不可直接操作——密钥、凭证、tool policy 由 server 代理管理
 
-同级项目 `../anyagent-apps` 消费本仓库，扩展为生产级分布式部署（PG/Redis 持久化、独立 Tool Runtime、平台 Connector）。
+同级项目 `../anyagent-apps` 消费本仓库，展示业务示例、模板与示例平台接线；迁移期仍保留历史 Agent API / Tool Runtime / Studio 接线用于回归参照，但 production runtime、PG/MySQL/Redis storage、独立 Tool Runtime、ops CLI 与插件 contract 的真源应逐步收敛到本仓库。
 
 ---
 
@@ -48,10 +48,10 @@ packages/anyagent/src/anyagent/
   skills/            # Skills 系统
   mcp/               # MCP server 管理
   gateway/           # 会话/路由
-  tool_runtime/      # 工具注册
-  storage/           # 共享存储模型/契约/replay/runtime 与 reference external adapters
+  tool_runtime/      # 工具注册、Tool Runtime contract/client/server 形态
+  storage/           # 共享存储模型/契约/replay/runtime、reference external adapters 与运维语义
   plugins/           # Core 侧插件 API/loader/model
-  server/            # 内置 Agent Server (Phase 1 新增)
+  server/            # 内置 Agent Server + 共享服务层 + production runtime shell
     sandbox/         # Sandbox 后端（SandboxManager + OpenSandbox/External/LocalUnsafe）
     security/        # Credential Vault / Tool Policy
     migrations.py    # built-in server storage migration CLI glue

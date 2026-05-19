@@ -75,9 +75,9 @@ def test_delete_removes_resolved_value() -> None:
         resolved = await store.resolve(AuthRef(kind="bearer_token", ref="cred_api"))
         deleted_missing = await store.delete("cred_api")
 
-        assert deleted == {"ok": True, "deleted": True, "credential_id": "cred_api"}
+        assert deleted is True
         assert resolved is None
-        assert deleted_missing == {"ok": True, "deleted": False, "credential_id": "cred_api"}
+        assert deleted_missing is False
 
     asyncio.run(_run())
 
