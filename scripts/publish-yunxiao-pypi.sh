@@ -8,7 +8,7 @@ export PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST:-mirrors.aliyun.com}"
 export TWINE_REPOSITORY_URL="${TWINE_REPOSITORY_URL:-${ANYAGENT_PYPI_REPOSITORY_URL:-https://packages.aliyun.com/63d476f8d14a7f379aa798da/pypi/anyagent}}"
 export TWINE_USERNAME="${TWINE_USERNAME:-${ANYAGENT_PYPI_USERNAME:-63c537efbb097da55ff323e3}}"
 
-if [[ -z "${TWINE_PASSWORD:-}" ]]; then
+if [[ -z "${TWINE_PASSWORD:-}" || "${TWINE_PASSWORD:-}" == "REPLACE_ME" ]]; then
   echo "TWINE_PASSWORD encrypted variable is not configured; skip package publish."
   exit 0
 fi

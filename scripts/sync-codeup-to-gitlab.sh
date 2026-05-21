@@ -9,7 +9,7 @@ username="${GITLAB_USERNAME:-oauth2}"
 token="${GITLAB_TOKEN:-}"
 proxy_url="${GIT_STANDARD_PROXY_URL:-${HTTPS_PROXY:-${HTTP_PROXY:-}}}"
 
-if [[ -z "$remote_url" ]]; then
+if [[ -z "$remote_url" || "$remote_url" == "REPLACE_ME" ]]; then
   if [[ "$required" == "1" ]]; then
     echo "ANYAGENT_GITLAB_REMOTE_URL or GITLAB_REMOTE_URL is required for GitLab sync."
     exit 1
@@ -20,7 +20,7 @@ fi
 
 auth_url="$remote_url"
 if [[ "$remote_url" != *"@"* ]]; then
-  if [[ -z "$token" ]]; then
+  if [[ -z "$token" || "$token" == "REPLACE_ME" ]]; then
     if [[ "$required" == "1" ]]; then
       echo "GITLAB_TOKEN is required for HTTPS GitLab sync."
       exit 1
