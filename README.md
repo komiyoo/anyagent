@@ -322,7 +322,7 @@ custom_bundle = client.prompts.example_run_bundle(
 )
 ```
 
-SDK 对外数据模型集中从 `anyagent.types` 导出，类似 OpenAI Python SDK 的 `openai.types`；业务代码需要显式构造请求体时优先导入这些模型。`AnyAgent` 各命名空间方法会在请求发送前和响应返回后各做一次 Pydantic 边界校验，避免未校验的 dict 在业务层继续传播。
+SDK 对外数据模型集中从 `anyagent.types` 导出；业务代码需要显式构造请求体时优先导入这些模型。`AnyAgent` 各命名空间方法会在请求发送前和响应返回后各做一次 Pydantic 边界校验，避免未校验的 dict 在业务层继续传播。
 
 ### 6. 配置凭据和 MCP
 

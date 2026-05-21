@@ -40,7 +40,7 @@ Stage Events 可以来自两个渠道：
 1. **Responses SSE（外部兼容面）**
 
 - 由 `POST /v1/responses?stream=true` 返回
-- 事件本体为 OpenAI SDK typed models：`openai.types.responses.ResponseStreamEvent`
+- 事件本体遵循 Responses API stream event 结构
 - 优点：标准化、兼容 OpenAI SDK
 - 局限：无法稳定表达“工具已被执行并返回结果”的服务端阶段（除非服务端额外注入事件）
 

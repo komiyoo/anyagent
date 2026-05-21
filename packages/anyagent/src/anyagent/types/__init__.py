@@ -1,9 +1,9 @@
 """Public SDK data models.
 
-This package is the SDK-facing model entrypoint, similar in spirit to
-``openai.types``. Protocol modules remain the single source of truth for the
-wire contract; this package re-exports the stable models that application code
-is expected to import and pass across SDK function boundaries.
+This package is the SDK-facing model entrypoint. Protocol modules remain the
+single source of truth for the wire contract; this package re-exports the stable
+models that application code is expected to import and pass across SDK function
+boundaries.
 """
 
 from anyagent.protocol.admin_storage import StorageHealthResponse

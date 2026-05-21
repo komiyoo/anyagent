@@ -6,6 +6,8 @@
 
 本仓库按 **Agentic Engineering** 方式组织，围绕五个支柱：上下文工程、验证闭环、工具化、Agentic 代码库、复合式工程。
 
+本文件是 agent harness，不是项目百科。它约束 agent 如何阅读上下文、判断边界、修改代码、同步文档和完成验证；具体接口字段、运行手册、架构决策、验收矩阵和迁移记录应保留在 `requirements.md`、`todo/*.md`、`docs/**`、README 或代码真源中。
+
 ---
 
 ## 0) 项目定位
@@ -37,6 +39,16 @@ anyagent = **配置即服务的 Agent Server 内核 + SDK**：
 - **行为真源（How/Truth）**：仓库代码以 `packages/anyagent/` 为主
 - **长期维护文档（How/Contract）**：`docs/architecture|security|acceptance|performance/`
 - **研发草案（非稳定）**：`docs/_dev/`、`docs/_notes/`
+
+### 1.2.1 文档系统分层
+
+- `AGENTS.md`：agent 行为、协作纪律、上下文读取和文档 stewardship。
+- `requirements.md`：需求和约束真源。
+- `todo/*.md`：阶段任务、状态和实现证据。
+- `docs/architecture|security|acceptance|performance/`：长期维护的架构、契约、安全、验收和性能文档。
+- `README.md`：人类和业务使用者的主入口。
+
+当代码变更影响公开 API、wire contract、SDK 类型、配置、运行方式、用户可见行为或模块归属时，同轮更新最贴近的真源文档。不要把同一条规则复制到多个地方；必要时用链接指向真源。
 
 ### 1.3 核心目录结构
 
@@ -142,7 +154,8 @@ packages/anyagent/src/anyagent/
 ### 4.1 协议与类型系统
 
 - **Protocol-First**：新增/修改协议必须先更新 `anyagent.protocol.*`
-- **SDK/示例强类型**：输入/输出/事件必须有 typed model
+- **Boundary Data Parsing**：HTTP/CLI/SDK/存储/文件/第三方工具输出进入系统边界时要做一次校验和归一化，内部主路径尽量只传已知形状的数据。
+- **SDK/示例强类型**：输入/输出/事件必须有 typed model；SDK 业务边界模型集中从 `anyagent.types` 导出，`anyagent.protocol.*` 仍是 wire-level SSOT。
 - **外部接口策略**：OpenAI Responses API 兼容为第一优先级，`AnyAgent` SDK 承载超集能力
 
 ### 4.2 代码组织
@@ -150,6 +163,7 @@ packages/anyagent/src/anyagent/
 - 层级化组织，禁止平铺
 - 允许破坏性调整，不做兼容层
 - `pydantic` 模型优先
+- 严格维护模块边界和数据流向；新增 facade、adapter、store、runtime service 时，要能说明所属层、入口、下游 contract 和验证点。
 
 ### 4.3 Agent Loop / Tool Ecosystem 具体约束
 

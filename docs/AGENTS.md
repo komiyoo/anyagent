@@ -7,12 +7,15 @@
 - 把 `docs/` 当作 agent 的 harness：可导航、可复现、可机械校验。
 - 长期维护文档（`docs/acceptance|architecture|security|performance/`）保持稳定、可引用、可验收。
 - 研发草案（`docs/_dev/`）可快速迭代，但必须有清晰的“毕业/归档”路径。
+- 文档系统要帮助 agent 做 protocol-first、boundary parsing、strict boundary 和 predictable structure 的判断，而不是把代码实现重新叙述一遍。
 
 ## 规则（必须）
 
 - 新增/移动任何 `docs/**.md`：同步更新对应目录的 `README.md`（目录级 TOC）。
 - 不把实现真相放在 `docs/_notes/`：需要约束落地时，回写到 `requirements.md` 或长期维护文档。
 - 文档里避免重复粘贴协议/字段：以 `requirements.md` 与 `anyagent.protocol.*` 为准，文档只做解释与约束引用。
+- 影响公开 contract、SDK 类型、配置、事件、存储 schema、运行入口或模块归属的代码变更，必须同步检查最近的长期维护文档和 TODO 证据。
+- 不把 `AGENTS.md` 当作架构真源；`AGENTS.md` 只承载 agent 行为约束，项目事实回到 README、requirements、todo 或长期维护 docs。
 
 ## 引用格式（推荐统一）
 
