@@ -12,7 +12,7 @@ pip install anyagent
 ```
 
 Consumers should configure their package installer to read from the Yunxiao
-Packages PyPI repository `lyriktrip`. Keep repository passwords in local,
+Packages PyPI repository `anyagent`. Keep repository passwords in local,
 server, or pipeline secrets, not in source-controlled dependency files.
 
 ## Package Source
@@ -95,10 +95,13 @@ anyagent config init \
   --agent-id delivery-agent \
   --model-alias fast \
   --model gpt-4.1-mini \
-  --provider openai
+  --provider openai \
+  --with-web-fetch
 ```
 
-这会生成业务仓库根目录 `models.yaml`，并在 `.agents/agents/delivery-agent/agent.yaml` 中写入：
+这会生成业务仓库根目录 `models.yaml`、`.gitignore`、`.agents/agents/delivery-agent/*`。如果 `--agent-id` 不是 `main`，还会同时生成一个 exposed `main` 默认入口，避免 `anyagent serve` 的默认入口缺失；业务调用仍可用 `metadata.agent_id=delivery-agent` 精确路由。
+
+在 `.agents/agents/delivery-agent/agent.yaml` 中会写入：
 
 ```yaml
 model:
@@ -106,6 +109,21 @@ model:
 ```
 
 `fast` 会在服务端解析为业务仓库根目录 `models.yaml` 里的真实 provider 与上游模型名。请求体显式传入 `model` 时仍优先生效，未传时使用 agent 的默认模型选择。
+
+常用业务初始化开关：
+
+```bash
+# 采集/研究类 agent：开启内置网页抓取工具
+anyagent config init --workspace ./research-workspace --agent-id reddit-collector --with-web-fetch
+
+# 需要代码执行或本地命令的 agent：开启 exec，并默认写入 local-unsafe sandbox
+anyagent config init --workspace ./ops-workspace --agent-id ops-agent --with-exec
+
+# 显式声明工具或 sandbox
+anyagent config init --workspace ./tool-workspace --agent-id worker --tool core.web_fetch --tool exec --sandbox-mode local-unsafe
+```
+
+`anyagent serve` 默认使用进程内 Tool Runtime，适合本地开发和单进程业务 demo；需要水平扩容、独立工具执行池或更强隔离时，再拆成 `anyagent agent-api serve` + `anyagent tool-runtime serve`。只有使用 `exec` 这类命令执行工具时才需要开启 sandbox；普通 `core.web_fetch` / MCP HTTP 工具不需要本地 sandbox。`local-unsafe` 只适合可信本地开发，生产建议接 `opensandbox` 或 `external`。
 
 **agent.yaml 示例**：
 

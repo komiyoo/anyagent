@@ -136,6 +136,28 @@ def main(argv: list[str] | None = None) -> int:
     config_init.add_argument("--api-key-env", default=None, help="Environment variable containing the provider API key.")
     config_init.add_argument("--base-url", default=None, help="Provider base URL literal.")
     config_init.add_argument("--base-url-env", default=None, help="Environment variable containing provider base URL.")
+    config_init.add_argument(
+        "--tool",
+        action="append",
+        default=None,
+        help="Requested tool name to add to the generated agent.yaml. May be repeated.",
+    )
+    config_init.add_argument(
+        "--with-web-fetch",
+        action="store_true",
+        help="Add core.web_fetch to requested tools.",
+    )
+    config_init.add_argument(
+        "--with-exec",
+        action="store_true",
+        help="Add exec to requested tools and default sandbox mode to local-unsafe unless --sandbox-mode is set.",
+    )
+    config_init.add_argument(
+        "--sandbox-mode",
+        choices=["disabled", "local-unsafe", "opensandbox", "external"],
+        default=None,
+        help="Sandbox mode to write to agent.yaml (default: disabled, or local-unsafe with --with-exec).",
+    )
     config_init.add_argument("--force", action="store_true", help="Overwrite files created by this command.")
 
     serve = sub.add_parser("serve", help="Start the built-in anyagent server.")
@@ -572,6 +594,13 @@ def _cmd_init(args: argparse.Namespace) -> int:
         created=created,
         skipped=skipped,
     )
+    _write_file(
+        workspace / ".gitignore",
+        _DEFAULT_WORKSPACE_GITIGNORE,
+        force=force,
+        created=created,
+        skipped=skipped,
+    )
     for spec in _init_agent_specs(template=template, primary_agent_id=agent_id, selected_skills=selected_skills):
         agent_dir = workspace / ".agents" / "agents" / spec["agent_id"]
         _write_file(
@@ -601,6 +630,24 @@ def _cmd_init(args: argparse.Namespace) -> int:
             created=created,
             skipped=skipped,
         )
+    if agent_id != "main":
+        main_spec = _default_main_agent_spec(primary_agent_id=agent_id)
+        main_dir = workspace / ".agents" / "agents" / "main"
+        _write_file(
+            main_dir / "agent.yaml",
+            _render_agent_yaml(
+                selected_skills=list(main_spec["selected_skills"]),
+                requested_tool_names=list(main_spec["requested_tool_names"]),
+                sandbox_mode=str(main_spec["sandbox_mode"]),
+                spawn_allow_agent_ids=list(main_spec["spawn_allow_agent_ids"]),
+                model_default=None,
+            ),
+            force=force,
+            created=created,
+            skipped=skipped,
+        )
+        _write_file(main_dir / "AGENTS.md", str(main_spec["instructions"]), force=force, created=created, skipped=skipped)
+        _write_file(main_dir / "mcp.json", _DEFAULT_MCP_JSON, force=force, created=created, skipped=skipped)
     _write_file(
         workspace / ".agents" / "skills" / ".gitkeep",
         "",
@@ -643,6 +690,8 @@ def _cmd_config_init(args: argparse.Namespace) -> int:
     force = bool(args.force)
     created: list[str] = []
     skipped: list[str] = []
+    requested_tool_names = _resolve_requested_tool_names(args)
+    sandbox_mode = str(args.sandbox_mode or ("local-unsafe" if bool(args.with_exec) else "disabled"))
     models_yaml = _render_models_yaml(
         model_alias=model_alias,
         provider_name=provider_name,
@@ -666,13 +715,20 @@ def _cmd_config_init(args: argparse.Namespace) -> int:
         created=created,
         skipped=skipped,
     )
+    _write_file(
+        workspace / ".gitignore",
+        _DEFAULT_WORKSPACE_GITIGNORE,
+        force=force,
+        created=created,
+        skipped=skipped,
+    )
     agent_dir = workspace / ".agents" / "agents" / agent_id
     _write_file(
         agent_dir / "agent.yaml",
         _render_agent_yaml(
             selected_skills=[],
-            requested_tool_names=[],
-            sandbox_mode="disabled",
+            requested_tool_names=requested_tool_names,
+            sandbox_mode=sandbox_mode,
             spawn_allow_agent_ids=[],
             model_default=model_alias,
         ),
@@ -682,6 +738,24 @@ def _cmd_config_init(args: argparse.Namespace) -> int:
     )
     _write_file(agent_dir / "AGENTS.md", _BASIC_AGENT_INSTRUCTIONS, force=force, created=created, skipped=skipped)
     _write_file(agent_dir / "mcp.json", _DEFAULT_MCP_JSON, force=force, created=created, skipped=skipped)
+    if agent_id != "main":
+        main_spec = _default_main_agent_spec(primary_agent_id=agent_id)
+        main_dir = workspace / ".agents" / "agents" / "main"
+        _write_file(
+            main_dir / "agent.yaml",
+            _render_agent_yaml(
+                selected_skills=list(main_spec["selected_skills"]),
+                requested_tool_names=requested_tool_names,
+                sandbox_mode=sandbox_mode,
+                spawn_allow_agent_ids=list(main_spec["spawn_allow_agent_ids"]),
+                model_default=model_alias,
+            ),
+            force=force,
+            created=created,
+            skipped=skipped,
+        )
+        _write_file(main_dir / "AGENTS.md", str(main_spec["instructions"]), force=force, created=created, skipped=skipped)
+        _write_file(main_dir / "mcp.json", _DEFAULT_MCP_JSON, force=force, created=created, skipped=skipped)
     _write_file(workspace / ".agents" / "skills" / ".gitkeep", "", force=force, created=created, skipped=skipped)
 
     config = WorkspaceModelsConfig.model_validate(yaml.safe_load(models_yaml))
@@ -740,7 +814,7 @@ def _doctor_workspace(workspace: Path) -> list[WorkspaceDoctorFinding]:
 
     main = catalog.get("main")
     if main is None:
-        add("warning", "missing_main_agent", "no agent_id=main pack found; default requests must pass metadata.agent_id or x-agent-id")
+        add("warning", "missing_main_agent", "no agent_id=main pack found; create one for the default `anyagent serve` entrypoint")
     elif not main.spec.exposed:
         add("error", "main_not_exposed", "agent_id=main exists but exposed=false; `anyagent serve` requires exposed main")
 
@@ -800,6 +874,19 @@ def _validate_config_key(value: str, flag: str) -> str:
     if len(value) > 128 or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-" for ch in value):
         raise SystemExit(f"{flag} must match [a-zA-Z0-9_.-]{{1,128}}")
     return value
+
+
+def _resolve_requested_tool_names(args: argparse.Namespace) -> list[str]:
+    requested: list[str] = []
+    for tool in args.tool or []:
+        value = str(tool).strip()
+        if value and value not in requested:
+            requested.append(value)
+    if bool(args.with_web_fetch) and "core.web_fetch" not in requested:
+        requested.append("core.web_fetch")
+    if bool(args.with_exec) and "exec" not in requested:
+        requested.append("exec")
+    return requested
 
 
 def _write_file(path: Path, text: str, *, force: bool, created: list[str], skipped: list[str]) -> None:
@@ -893,6 +980,17 @@ This workspace was generated by `anyagent init --template {template}`.
 """
 
 
+_DEFAULT_WORKSPACE_GITIGNORE = """.venv/
+.env
+.env.local
+.env.*.local
+.runs/
+.pip/
+__pycache__/
+*.py[cod]
+"""
+
+
 def _init_agent_specs(*, template: str, primary_agent_id: str, selected_skills: list[str]) -> list[dict[str, object]]:
     if template == "coding-agent":
         return [
@@ -957,11 +1055,34 @@ def _init_agent_specs(*, template: str, primary_agent_id: str, selected_skills: 
     ]
 
 
+def _default_main_agent_spec(*, primary_agent_id: str) -> dict[str, object]:
+    return {
+        "agent_id": "main",
+        "selected_skills": [],
+        "requested_tool_names": [],
+        "sandbox_mode": "disabled",
+        "spawn_allow_agent_ids": [primary_agent_id],
+        "instructions": _DEFAULT_MAIN_AGENT_INSTRUCTIONS.format(primary_agent_id=primary_agent_id),
+    }
+
+
 _BASIC_AGENT_INSTRUCTIONS = """# Main Agent
 
 You are the default anyagent assistant for this workspace.
 
 - Follow the user's request directly.
+- Use configured skills when they apply.
+- Use configured MCP tools only through their exposed tool names.
+- Do not treat AGENTS.md as a permission source; tool access is controlled by agent.yaml and the server.
+"""
+
+
+_DEFAULT_MAIN_AGENT_INSTRUCTIONS = """# Main Agent
+
+You are the default entrypoint for this workspace.
+
+- Use `{primary_agent_id}` as the primary business agent when the user request belongs to that configured workflow.
+- Keep default-entrypoint behavior thin; business-specific behavior belongs in `.agents/agents/{primary_agent_id}/AGENTS.md`.
 - Use configured skills when they apply.
 - Use configured MCP tools only through their exposed tool names.
 - Do not treat AGENTS.md as a permission source; tool access is controlled by agent.yaml and the server.

@@ -21,6 +21,7 @@ def test_init_creates_minimal_workspace_with_example_skill(tmp_path, capsys) -> 
     assert (tmp_path / ".agents" / "agents" / "main" / "AGENTS.md").is_file()
     assert (tmp_path / ".agents" / "agents" / "main" / "mcp.json").is_file()
     assert (tmp_path / ".agents" / "skills" / "example-skill" / "SKILL.md").is_file()
+    assert (tmp_path / ".gitignore").is_file()
 
 
 def test_init_coding_template_enables_exec_sandbox(tmp_path, capsys) -> None:
@@ -78,6 +79,8 @@ def test_config_init_creates_models_config_and_agent_selection(tmp_path, capsys)
             "gpt-4.1-mini",
             "--provider",
             "openai",
+            "--with-web-fetch",
+            "--with-exec",
         ]
     )
 
@@ -91,6 +94,27 @@ def test_config_init_creates_models_config_and_agent_selection(tmp_path, capsys)
     assert models.models["fast"].model == "gpt-4.1-mini"
     agent_yaml = (tmp_path / ".agents" / "agents" / "delivery-agent" / "agent.yaml").read_text(encoding="utf-8")
     assert "model:\n  default: fast\n" in agent_yaml
+    assert "    - core.web_fetch\n" in agent_yaml
+    assert "    - exec\n" in agent_yaml
+    assert "  mode: local-unsafe\n" in agent_yaml
+    main_yaml = (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
+    assert "model:\n  default: fast\n" in main_yaml
+    assert "    - delivery-agent\n" in main_yaml
+    assert "    - core.web_fetch\n" in main_yaml
+    assert "    - exec\n" in main_yaml
+    assert (tmp_path / ".gitignore").read_text(encoding="utf-8").startswith(".venv/\n")
+
+
+def test_init_non_main_agent_creates_default_main_entrypoint(tmp_path, capsys) -> None:
+    rc = main(["init", "--workspace", str(tmp_path), "--agent-id", "reddit-collector", "--template", "research-agent"])
+
+    assert rc == 0
+    WorkspaceInitResult.model_validate_json(capsys.readouterr().out)
+    assert (tmp_path / ".agents" / "agents" / "reddit-collector" / "agent.yaml").is_file()
+    main_yaml = (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
+    main_instructions = (tmp_path / ".agents" / "agents" / "main" / "AGENTS.md").read_text(encoding="utf-8")
+    assert "    - reddit-collector\n" in main_yaml
+    assert "reddit-collector" in main_instructions
 
 
 def test_doctor_rejects_missing_workspace(tmp_path, capsys) -> None:
