@@ -8,6 +8,7 @@ import httpx
 from anyagent import AnyAgent
 from anyagent.server.app import create_app
 from anyagent.tool_runtime import create_tool_runtime_app
+from anyagent.types import AdminCredentialSetRequest, HealthResponse, NormalizedTelemetryEvent
 
 
 def _write_workspace(root: Path) -> None:
@@ -41,6 +42,25 @@ def test_sdk_admin_plugin_catalog_matches_tool_runtime(tmp_path: Path) -> None:
 
 def test_sdk_admin_skill_update_helpers_match_server(tmp_path: Path, monkeypatch) -> None:
     asyncio.run(_run_sdk_admin_skill_update_helpers_match_server(tmp_path, monkeypatch))
+
+
+def test_sdk_observability_namespace_matches_server(tmp_path: Path) -> None:
+    asyncio.run(_run_sdk_observability_namespace_matches_server(tmp_path))
+
+
+def test_sdk_public_types_entrypoint_exports_boundary_models() -> None:
+    request = AdminCredentialSetRequest.model_validate(
+        {
+            "credential_id": "search_api_key",
+            "kind": "api_key",
+            "value": "secret-value",
+            "scope": {"level": "agent", "agent_id": "main"},
+        }
+    )
+    health = HealthResponse.model_validate({"ok": True, "workspace": "/tmp/ws", "agent_ids": ["main"]})
+
+    assert request.scope.agent_id == "main"
+    assert health.agent_ids == ["main"]
 
 
 async def _run_sdk_health_and_admin_credentials_match_server(tmp_path: Path) -> None:
@@ -78,6 +98,55 @@ async def _run_sdk_health_and_admin_credentials_match_server(tmp_path: Path) -> 
 
         listed_after = await client.admin.list_credentials()
         assert listed_after.credentials == []
+
+
+async def _run_sdk_observability_namespace_matches_server(tmp_path: Path) -> None:
+    _write_workspace(tmp_path)
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    response_id = "resp_sdk_observe"
+    trace_id = "trace-sdk"
+    await app.state.anyagent.run_store.create_started(
+        response_id=response_id,
+        agent_id="main",
+        session_key="sdk",
+        stream=False,
+        idempotency_key=None,
+    )
+    await app.state.anyagent.events.mark_started(response_id=response_id)
+    await app.state.anyagent.telemetry_store.ingest(
+        NormalizedTelemetryEvent(
+            source="audit",
+            type="tool.policy.denied",
+            response_id=response_id,
+            agent_id="main",
+            session_key="sdk",
+            trace_id=trace_id,
+            level="warning",
+            category="audit",
+            status="denied",
+            tool_name="exec",
+            tool_call_id="call_sdk",
+            audit_ref="aud_sdk",
+            payload={"policy": "deny"},
+        )
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+
+        runs = await client.observability.runs(agent_id="main", session_key="sdk")
+        assert [item.response_id for item in runs.runs] == [response_id]
+
+        timeline = await client.observability.timeline(agent_id="main", trace_id=trace_id)
+        assert [item.type for item in timeline.events] == ["tool.policy.denied"]
+
+        tools = await client.observability.tools(agent_id="main")
+        assert tools.tools[0].tool_name == "exec"
+        assert tools.tools[0].audit_refs == ["aud_sdk"]
+
+        trace = await client.observability.trace(trace_id)
+        assert trace.response_ids == [response_id]
+        assert trace.audit_refs == ["aud_sdk"]
 
 
 async def _run_sdk_admin_plugin_catalog_matches_tool_runtime(tmp_path: Path) -> None:

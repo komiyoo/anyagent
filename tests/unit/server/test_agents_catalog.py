@@ -7,8 +7,13 @@ import subprocess
 from pathlib import Path
 
 import httpx
+from openai.types.responses.response import Response
+from openai.types.responses.response_output_message import ResponseOutputMessage
+from openai.types.responses.response_output_text import ResponseOutputText
 
 from anyagent.agent_api_client import AnyAgent
+from anyagent.observability import emit_observability_event, get_observability_emitter
+from anyagent.protocol.observability import NormalizedTelemetryEvent
 from anyagent.protocol.agent_api_internal import (
     AdminAgentCreateResponse,
     AdminSkillImportResponse,
@@ -17,10 +22,50 @@ from anyagent.protocol.agent_api_internal import (
     AdminWorkspaceAgentFileUpdateResponse,
     InternalAgentDetailResponse,
     InternalAgentsListResponse,
+    InternalObservabilityErrorsResponse,
+    InternalObservabilityMetricsResponse,
     InternalObservabilityRunsResponse,
+    InternalObservabilityTimelineResponse,
+    InternalObservabilityToolsResponse,
+    InternalObservabilityTraceResponse,
     InternalToolCatalogResponse,
 )
 from anyagent.server.app import create_app
+
+
+class _RecordingProvider:
+    def __init__(self) -> None:
+        self.seen_bodies: list[dict] = []
+
+    async def create_response(self, *, body: dict, idempotency_key: str | None = None, timeout_s: float = 60.0) -> Response:
+        _ = idempotency_key, timeout_s
+        self.seen_bodies.append(dict(body))
+        return Response.model_validate(
+            {
+                "id": "resp_recorded",
+                "object": "response",
+                "created_at": 0,
+                "model": str(body.get("model") or "unknown"),
+                "output": [
+                    ResponseOutputMessage(
+                        id="msg_recorded",
+                        role="assistant",
+                        status="completed",
+                        type="message",
+                        content=[
+                            ResponseOutputText(
+                                type="output_text",
+                                text="ok",
+                                annotations=[],
+                            ).model_dump(exclude_none=True, by_alias=True)
+                        ],
+                    ).model_dump(exclude_none=True, by_alias=True)
+                ],
+                "parallel_tool_calls": False,
+                "tool_choice": "auto",
+                "tools": list(body.get("tools") or []),
+            }
+        )
 
 
 def _write_agent(
@@ -67,6 +112,81 @@ def _write_agent(
 
 def test_internal_agents_catalog_lists_allowed_agents_and_details(tmp_path: Path) -> None:
     asyncio.run(_run_internal_agents_catalog_lists_allowed_agents_and_details(tmp_path))
+
+
+def test_studio_static_is_mounted_by_default_and_can_be_disabled(tmp_path: Path) -> None:
+    asyncio.run(_run_studio_static_is_mounted_by_default_and_can_be_disabled(tmp_path))
+
+
+def test_create_app_allows_exposed_workspace_without_main_agent(tmp_path: Path) -> None:
+    _write_agent(tmp_path, "delivery-agent", exposed=True, prompt="Delivery agent\n")
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    assert sorted(app.state.anyagent.catalog.packs) == ["delivery-agent"]
+
+
+def test_workspace_model_alias_applies_to_non_main_agent_request(tmp_path: Path, monkeypatch) -> None:
+    asyncio.run(_run_workspace_model_alias_applies_to_non_main_agent_request(tmp_path, monkeypatch))
+
+
+async def _run_workspace_model_alias_applies_to_non_main_agent_request(tmp_path: Path, monkeypatch) -> None:
+    _write_agent(tmp_path, "delivery-agent", exposed=True, prompt="Delivery agent\n")
+    (tmp_path / "models.yaml").write_text(
+        "\n".join(
+            [
+                "default_model: travel-default",
+                "providers:",
+                "  openai:",
+                "    kind: openai",
+                "models:",
+                "  travel-default:",
+                "    provider: openai",
+                "    model: gpt-5.5",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    agent_yaml = tmp_path / ".agents" / "agents" / "delivery-agent" / "agent.yaml"
+    agent_yaml.write_text(
+        agent_yaml.read_text(encoding="utf-8").replace("tools:", "model:\n  default: travel-default\ntools:"),
+        encoding="utf-8",
+    )
+    provider = _RecordingProvider()
+    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: provider)
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        resp = await client.post(
+            "/v1/responses",
+            headers={"authorization": "Bearer user-key"},
+            json={"input": "hello", "metadata": {"agent_id": "delivery-agent", "session_key": "s1"}},
+        )
+        assert resp.status_code == 200, resp.text
+
+    assert provider.seen_bodies
+    assert provider.seen_bodies[0]["model"] == "gpt-5.5"
+
+
+async def _run_studio_static_is_mounted_by_default_and_can_be_disabled(tmp_path: Path) -> None:
+    _write_agent(tmp_path, "main", exposed=True, prompt="Main agent\n")
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        resp = await client.get("/studio/")
+        assert resp.status_code == 200
+        assert "AnyAgent Studio" in resp.text
+        assert "/studio/assets/" in resp.text
+        resp_no_slash = await client.get("/studio")
+        assert resp_no_slash.status_code == 200
+        assert "AnyAgent Studio" in resp_no_slash.text
+
+    disabled = create_app(
+        workspace_dir=tmp_path,
+        api_key="user-key",
+        admin_api_key="admin-key",
+        enable_studio=False,
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=disabled), base_url="http://testserver") as client:
+        resp = await client.get("/studio/")
+        assert resp.status_code == 404
 
 
 async def _run_internal_agents_catalog_lists_allowed_agents_and_details(tmp_path: Path) -> None:
@@ -181,6 +301,14 @@ def test_internal_observability_summary(tmp_path: Path) -> None:
 
 def test_internal_observability_runs(tmp_path: Path) -> None:
     asyncio.run(_run_internal_observability_runs(tmp_path))
+
+
+def test_internal_observability_query_surfaces(tmp_path: Path) -> None:
+    asyncio.run(_run_internal_observability_query_surfaces(tmp_path))
+
+
+def test_postgres_telemetry_store_is_selected_for_external_storage(tmp_path: Path, monkeypatch) -> None:
+    asyncio.run(_run_postgres_telemetry_store_is_selected_for_external_storage(tmp_path, monkeypatch))
 
 
 def test_admin_tools_catalog(tmp_path: Path) -> None:
@@ -575,11 +703,19 @@ async def _run_admin_update_agent_config(tmp_path: Path) -> None:
         main_yaml_path = tmp_path / ".agents" / "agents" / "main" / "agent.yaml"
         before = main_yaml_path.read_text(encoding="utf-8")
         bad = await http.put(
+            "/admin/workspace/agents/worker/config",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"exposed": False},
+        )
+        assert bad.status_code == 200, bad.text
+
+        before = main_yaml_path.read_text(encoding="utf-8")
+        last_exposed = await http.put(
             "/admin/workspace/agents/main/config",
             headers={"Authorization": "Bearer admin-key"},
             json={"exposed": False},
         )
-        assert bad.status_code == 400, bad.text
+        assert last_exposed.status_code == 400, last_exposed.text
         assert main_yaml_path.read_text(encoding="utf-8") == before
         main = await user_client.agents.get("main")
         assert main.exposed is True
@@ -877,10 +1013,11 @@ async def _run_internal_observability_runs(tmp_path: Path) -> None:
         assert payload.runs[0].status == "completed"
         assert payload.runs[0].effective_status == "completed"
         created_at_ms = payload.runs[0].created_at_ms
+        max_created_at_ms = max(item.created_at_ms for item in await app.state.anyagent.run_store.list(agent_id="main"))
 
         resp = await http.get(
             "/internal/observability/runs",
-            params={"agent_id": "main", "created_after_ms": created_at_ms + 1},
+            params={"agent_id": "main", "created_after_ms": max_created_at_ms + 1},
             headers={"Authorization": "Bearer user-key"},
         )
         assert resp.status_code == 200, resp.text
@@ -893,6 +1030,270 @@ async def _run_internal_observability_runs(tmp_path: Path) -> None:
         )
         assert resp.status_code == 200, resp.text
         assert InternalObservabilityRunsResponse.model_validate(resp.json()).runs == []
+
+
+async def _run_internal_observability_query_surfaces(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="main prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+    response_id = "resp_observe"
+    trace_id = "trace-observe"
+    await app.state.anyagent.events.mark_started(response_id=response_id)
+    await app.state.anyagent.run_store.create_started(
+        response_id=response_id,
+        agent_id="main",
+        session_key="sess",
+        stream=True,
+        idempotency_key=None,
+    )
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="anyagent.prompt.context",
+        data=json.dumps(
+            {
+                "type": "anyagent.prompt.context",
+                "response_id": response_id,
+                "agent_id": "main",
+                "session_key": "sess",
+                "trace_id": trace_id,
+                "prompt_cache_key": "k",
+                "fragment_kinds": ["agents_md"],
+                "selected_skill_ids": [],
+            }
+        ),
+    )
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="anyagent.tool.planned",
+        data=json.dumps(
+            {
+                "type": "anyagent.tool.planned",
+                "response_id": response_id,
+                "trace_id": trace_id,
+                "tool_call_id": "call_1",
+                "tool_name": "exec",
+                "arguments": {"bytes": 2, "sha256": hashlib.sha256(b"{}").hexdigest()},
+            }
+        ),
+    )
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="anyagent.tool.result",
+        data=json.dumps(
+            {
+                "type": "anyagent.tool.result",
+                "response_id": response_id,
+                "trace_id": trace_id,
+                "tool_call_id": "call_1",
+                "tool_name": "exec",
+                "status": "error",
+                "meta": {"duration_ms": 37, "audit_ref": "aud_1"},
+                "error": {"type": "ToolError", "code": "boom", "message": "tool failed", "retryable": False},
+            }
+        ),
+    )
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="response.completed",
+        data=json.dumps(
+            {
+                "id": response_id,
+                "object": "response",
+                "status": "completed",
+                "usage": {"input_tokens": 5, "output_tokens": 3, "input_tokens_details": {"cached_tokens": 1}},
+                "first_token_ms": 10,
+                "total_latency_ms": 99,
+            }
+        ),
+    )
+    await app.state.anyagent.events.mark_final(response_id=response_id, run_status="completed", effective_run_status="completed")
+    await app.state.anyagent.run_store.mark_final(
+        response_id=response_id,
+        status="completed",
+        effective_status="completed",
+        final_response_json={"id": response_id, "object": "response", "status": "completed"},
+    )
+    await app.state.anyagent.telemetry_store.ingest(
+        NormalizedTelemetryEvent(
+            source="workspace",
+            type="anyagent.sandbox.workspace.checkpoint_failed",
+            response_id=response_id,
+            agent_id="main",
+            session_key="sess",
+            trace_id=trace_id,
+            level="error",
+            category="workspace",
+            status="error",
+            audit_ref="aud_workspace",
+            message="checkpoint failed",
+            payload={"failure_code": "checkpoint_failed"},
+        )
+    )
+    await app.state.anyagent.telemetry_store.ingest_observability_event(
+        emit_observability_event(
+            "tool.policy.denied",
+            category="audit",
+            level="warning",
+            payload={
+                "response_id": response_id,
+                "agent_id": "main",
+                "session_key": "sess",
+                "trace_id": trace_id,
+                "status": "denied",
+                "tool_name": "exec",
+                "tool_call_id": "call_2",
+                "audit_ref": "aud_policy",
+                "policy": "deny",
+            },
+        )
+    )
+
+    emitter = get_observability_emitter()
+    emitter.add_sink(app.state.anyagent.observability_event_sink)
+    emitter.add_sink(app.state.anyagent.telemetry_observability_sink)
+    try:
+        emit_observability_event(
+            "credential.audit",
+            category="audit",
+            level="error",
+            payload={
+                "response_id": response_id,
+                "agent_id": "main",
+                "session_key": "sess",
+                "trace_id": trace_id,
+                "audit_ref": "aud_2",
+                "message": "credential denied",
+            },
+        )
+    finally:
+        emitter.remove_sink(app.state.anyagent.observability_event_sink)
+        emitter.remove_sink(app.state.anyagent.telemetry_observability_sink)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        headers = {"Authorization": "Bearer user-key"}
+        resp = await http.get(
+            "/internal/observability/timeline",
+            params={"agent_id": "main", "session_key": "sess", "trace_id": trace_id},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        timeline = InternalObservabilityTimelineResponse.model_validate(resp.json())
+        assert timeline.trace_id == trace_id
+        assert {item.type for item in timeline.events} >= {
+            "anyagent.tool.planned",
+            "anyagent.tool.result",
+            "credential.audit",
+            "anyagent.sandbox.workspace.checkpoint_failed",
+            "tool.policy.denied",
+        }
+
+        resp = await http.get("/internal/observability/metrics", params={"agent_id": "main"}, headers=headers)
+        assert resp.status_code == 200, resp.text
+        metrics = InternalObservabilityMetricsResponse.model_validate(resp.json())
+        assert metrics.run_count == 1
+        assert metrics.tool_call_count == 2
+        assert metrics.error_count >= 3
+        assert metrics.input_tokens == 5
+        assert metrics.output_tokens == 3
+        assert metrics.cached_input_tokens == 1
+        assert metrics.max_response_latency_ms == 99
+
+        resp = await http.get("/internal/observability/tools", params={"agent_id": "main"}, headers=headers)
+        assert resp.status_code == 200, resp.text
+        tools = InternalObservabilityToolsResponse.model_validate(resp.json())
+        assert len(tools.tools) == 1
+        assert tools.tools[0].tool_name == "exec"
+        assert tools.tools[0].planned_count == 1
+        assert tools.tools[0].result_count == 1
+        assert tools.tools[0].error_count == 1
+        assert tools.tools[0].avg_duration_ms == 37
+        assert tools.tools[0].audit_refs == ["aud_1", "aud_policy"]
+
+        resp = await http.get("/internal/observability/errors", params={"agent_id": "main"}, headers=headers)
+        assert resp.status_code == 200, resp.text
+        errors = InternalObservabilityErrorsResponse.model_validate(resp.json())
+        assert {item.type for item in errors.errors} >= {
+            "anyagent.tool.result",
+            "credential.audit",
+            "anyagent.sandbox.workspace.checkpoint_failed",
+        }
+
+        resp = await http.get(f"/internal/observability/traces/{trace_id}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        trace = InternalObservabilityTraceResponse.model_validate(resp.json())
+        assert trace.response_ids == [response_id]
+        assert trace.audit_refs == ["aud_1", "aud_2", "aud_policy", "aud_workspace"]
+
+
+async def _run_postgres_telemetry_store_is_selected_for_external_storage(tmp_path: Path, monkeypatch) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="main prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+
+    class FakePostgresTelemetryEventStore:
+        def __init__(self, *, postgres_dsn: str, postgres_schema: str, schema_policy: str) -> None:
+            self.postgres_dsn = postgres_dsn
+            self.postgres_schema = postgres_schema
+            self.schema_policy = schema_policy
+            self.events: list[NormalizedTelemetryEvent] = []
+
+        async def append(self, event: NormalizedTelemetryEvent) -> None:
+            self.events.append(event)
+
+        def append_sync(self, event: NormalizedTelemetryEvent) -> None:
+            self.events.append(event)
+
+        async def extend(self, events: list[NormalizedTelemetryEvent]) -> None:
+            self.events.extend(events)
+
+        async def list(self) -> list[NormalizedTelemetryEvent]:
+            return list(self.events)
+
+        async def dispose(self) -> None:
+            return None
+
+    monkeypatch.setenv("POSTGRES_DSN", "postgresql://user:pass@localhost:5432/anyagent")
+    monkeypatch.setenv("POSTGRES_SCHEMA", "anyagent_test")
+    monkeypatch.setenv("POSTGRES_SCHEMA_POLICY", "runtime_create")
+    monkeypatch.setenv("STORAGE_MODE", "none")
+    monkeypatch.setattr("anyagent.server.app.PostgresTelemetryEventStore", FakePostgresTelemetryEventStore)
+
+    app = create_app(
+        workspace_dir=tmp_path,
+        api_key="user-key",
+        admin_api_key="admin-key",
+        storage_mode="external",
+        event_store_backend="inmemory",
+        run_store_backend="inmemory",
+        session_store_backend="inmemory",
+        session_lock_backend="inmemory",
+    )
+    store = app.state.anyagent.telemetry_event_store
+    assert isinstance(store, FakePostgresTelemetryEventStore)
+    assert store.postgres_dsn == "postgresql://user:pass@localhost:5432/anyagent"
+    assert store.postgres_schema == "anyagent_test"
+    assert store.schema_policy == "runtime_create"
+
+    event = emit_observability_event(
+        "credential.audit",
+        category="audit",
+        level="warning",
+        payload={"agent_id": "main", "session_key": "sess", "trace_id": "trace_pg", "audit_ref": "aud_pg"},
+    )
+    app.state.anyagent.telemetry_observability_sink.emit(event)
+    assert [item.audit_ref for item in await store.list()] == ["aud_pg"]
 
 
 async def _run_admin_tools_catalog(tmp_path: Path) -> None:

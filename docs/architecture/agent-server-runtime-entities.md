@@ -5,9 +5,9 @@
 说明：
 
 - 本文优先描述“参考实现真实行为”（as-is），并引用需求锚点说明“规范期望”（to-be）。
-- 当前运行型参考实现已经分层：Core 侧承载协议、SDK、共享存储契约与 reference 外置适配器；同级项目 `../anyagent-apps/` 主要承载生产部署 wiring、分布式存储、运维 CLI 与场景编排。文中的 `../anyagent-apps/apps/...` 与 `../anyagent-apps/tests/...` 路径仍用于说明生产层实现位置。
+- 当前运行型参考实现已经分层：Core 侧承载协议、SDK、共享存储契约、reference 外置适配器、分布式 Agent API 与 Tool Runtime；同级项目 `../anyagent-apps/` 主要承载业务示例、服务栈文档和消费侧验收。
 - 需求定义基线：`requirements.md#req-2`、`requirements.md#req-4-3`、`requirements.md#req-4-4`、`requirements.md#req-4-5`、`requirements.md#req-5-8`、`requirements.md#req-5-13`。
-- 这些实体语义的长期真源应逐步回收到 `anyagent` Core；当前引用 `../anyagent-apps/apps/agent-api/...` 主要是为了说明现状实现位置，而不是宣告这些语义长期归属 apps 层。
+- 这些实体语义的真源在 `anyagent` Core；`anyagent-apps` 只通过已安装或已发布 SDK/CLI 消费。
 
 ## 1. 总览：anyagent 与 Codex 的层级映射
 
@@ -48,8 +48,8 @@
 证据：
 
 - 同连接 SSE 语义：`requirements.md:272`。
-- 实际 SSE 返回：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1174`。
-- 断线补发接口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/internal/events.py:99`。
+- 实际 SSE 返回：`packages/anyagent/src/anyagent/server/distributed_responses.py:1`。
+- 断线补发接口：`packages/anyagent/src/anyagent/server/internal_events.py:1`。
 
 ## 2.2 Session（Conversation 主边界）
 
@@ -69,10 +69,10 @@
 
 - 会话键约定：`requirements.md:301`。
 - 分片键实现：`packages/anyagent/src/anyagent/gateway/session.py:70`。
-- 入口解析：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:279`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:284`。
-- 会话内串行：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1319`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1324`。
-- Session Store 协议与实现：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/runtime.py:99`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/postgres.py:251`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/inmemory.py:168`。
-- Session Resume + Runtime Config 组装：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:239`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:452`。
+- 入口解析：`packages/anyagent/src/anyagent/server/request_context.py:1`。
+- 会话内串行：`packages/anyagent/src/anyagent/server/session_serialization.py:1`。
+- Session Store 协议与实现：`packages/anyagent/src/anyagent/storage/contracts.py:1`、`packages/anyagent/src/anyagent/storage/inmemory.py:1`、`packages/anyagent/src/anyagent/storage/external/postgres.py:1`。
+- Session Resume + Runtime Config 组装：`packages/anyagent/src/anyagent/agent_runtime/session_runtime.py:1`。
 
 ## 2.3 Multi-Agent Thread（协作线程）
 
@@ -89,10 +89,8 @@
 
 证据：
 
-- 根线程生成：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:289`。
-- thread 元数据读取：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:293`。
-- 线程模型：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/multiagent/manager.py:33`。
-- 参考实现的多 agent 管理仍以应用层内存态为主：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/multiagent/manager.py:157`。
+- 根线程生成与 thread 元数据读取：`packages/anyagent/src/anyagent/server/request_context.py:1`。
+- 线程模型与管理：`packages/anyagent/src/anyagent/agent_runtime/multiagent.py:1`。
 
 ## 2.4 Run / Response（一次执行实例）
 
@@ -109,9 +107,9 @@
 
 证据：
 
-- run 模型：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/models.py:10`。
-- run 持久化：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/postgres.py:12`。
-- 幂等入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:357`。
+- run 模型：`packages/anyagent/src/anyagent/storage/models.py:1`。
+- run 持久化：`packages/anyagent/src/anyagent/storage/contracts.py:1`、`packages/anyagent/src/anyagent/storage/external/postgres.py:1`。
+- 幂等入口：`packages/anyagent/src/anyagent/server/idempotency.py:1`。
 
 ## 2.5 Turn（run 内推理迭代单元）
 
@@ -128,8 +126,8 @@
 
 证据：
 
-- 流式/非流式 loop：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:885`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1399`。
-- turn rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:343`、`packages/anyagent/src/anyagent/storage/rollout.py:156`。
+- 流式/非流式 loop：`packages/anyagent/src/anyagent/server/response_execution.py:1`。
+- turn rollout 记录入口：`packages/anyagent/src/anyagent/server/response_persistence.py:1`、`packages/anyagent/src/anyagent/storage/rollout.py:156`。
 
 ## 2.6 Item（Turn 内最小内容单元）
 
@@ -147,9 +145,8 @@
 
 证据：
 
-- output item 解析：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:156`。
-- 回灌 item 构造：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:1339`。
-- item rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:371`、`packages/anyagent/src/anyagent/storage/rollout.py:210`。
+- output item 解析与回灌 item 构造：`packages/anyagent/src/anyagent/server/response_execution.py:1`。
+- item rollout 记录入口：`packages/anyagent/src/anyagent/server/response_persistence.py:1`、`packages/anyagent/src/anyagent/storage/rollout.py:210`。
 - output_item 事件语义：`requirements.md:356`。
 
 ## 2.7 Tool 与 Tool Call（能力面与执行面）
@@ -168,11 +165,11 @@
 
 证据：
 
-- manifest 拉取与注入：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:471`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:513`。
+- manifest 拉取与注入：`packages/anyagent/src/anyagent/server/response_tooling.py:1`。
 - execute 协议字段：`packages/anyagent/src/anyagent/protocol/tool_runtime.py:86`。
-- execute 幂等键：`../anyagent-apps/apps/tool-runtime/src/anyagent_tool_runtime/http/app.py:209`。
-- tool_call rollout 记录入口：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:390`, `../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:409`, `packages/anyagent/src/anyagent/storage/rollout.py:240`。
-- system tool 执行：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/app.py:595`。
+- execute 幂等键：`packages/anyagent/src/anyagent/tool_runtime/server.py:1`。
+- tool_call rollout 记录入口：`packages/anyagent/src/anyagent/server/response_persistence.py:1`、`packages/anyagent/src/anyagent/storage/rollout.py:240`。
+- system tool 执行：`packages/anyagent/src/anyagent/agent_runtime/multiagent.py:1`。
 
 ## 2.8 Event（流式与重放）
 
@@ -192,9 +189,9 @@
 
 证据：
 
-- 事件模型：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/models.py:22`。
-- 事件写入递增：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/storage/postgres.py:141`。
-- 内部补发/追尾：`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/internal/events.py:43`、`../anyagent-apps/apps/agent-api/src/anyagent_agent_api/internal/events.py:99`。
+- 事件模型：`packages/anyagent/src/anyagent/storage/models.py:1`。
+- 事件写入递增：`packages/anyagent/src/anyagent/storage/contracts.py:1`、`packages/anyagent/src/anyagent/storage/external/postgres.py:1`。
+- 内部补发/追尾：`packages/anyagent/src/anyagent/server/internal_events.py:1`。
 - 本地 rollout 写入器：`packages/anyagent/src/anyagent/storage/rollout.py:52`。
 - 本地 rollout 回放工具：`packages/anyagent/src/anyagent/storage/rollout_replay.py:1`。
 - 轮转/恢复 smoke：`../anyagent-apps/tests/acceptance/storage/acceptance_rollout_rotation_smoke.py:1`、`../anyagent-apps/tests/acceptance/agent_api/acceptance_session_resume_smoke.py:1`。
@@ -223,7 +220,7 @@
 2. Turn 与 Item 均为逻辑层/协议层概念，尚未成为一等持久化实体。
 3. Multi-Agent Thread 与 Session 是两条正交维度：前者是协作拓扑，后者是并发分片键；不能混用。
 4. Tool Runtime execute 幂等键当前包含 `tool_name`（比需求最小键更严格）。
-5. 本文提到的 Session / Run / Event 语义虽然当前大量实现在 `../anyagent-apps/apps/agent-api/`，但长期不应把这层共享语义继续留作 apps-only 资产。
+5. 本文提到的 Session / Run / Event 语义已归属 `anyagent` Core，业务示例不再保留 apps-only 服务实现。
 
 ## 5. 参考 Codex 后的优化建议
 
@@ -233,7 +230,7 @@
 2. 短期做（可观测增强）：给 turn 增加显式序号（如 `turn_index`）并写入结构化日志，降低排障成本；不必先落库。
 3. 中期做（重放精度增强）：定义内部 `Item` 规范化事件（至少 message/function_call/function_call_output 三类），让 replay 能按 Item 级别重建，而不只依赖原始 SSE 块；写入路径采用“写前门控一次判重”，不走“先写后校验”。
 4. 中长期做（跨实例协作一致性）：若 Multi-Agent 进入生产多实例，需把 `ThreadRecord/SubmissionRecord` 从内存迁移到外置存储，并补 lease/幂等语义。
-5. 中长期做（服务层收敛）：把 Session / Run / Event / replay / resume 的共享 orchestration 从 `apps/agent-api` 提炼回 `anyagent.server/` 或相邻 Core 模块，让 built-in server 与 distributed agent-api 共享同一层服务逻辑。
+5. 持续做（服务层收敛）：继续让 built-in server 与 distributed agent-api 共享 `anyagent.server/` 或相邻 Core 模块中的 Session / Run / Event / replay / resume orchestration。
 
 ### 5.1 本轮新增约束（to-be）
 

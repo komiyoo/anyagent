@@ -14,8 +14,8 @@ summary: 定义会话分片串行、幂等、事件补发与慢消费者治理�
 当前口径补充：
 
 - 本文描述的是 `anyagent` Core 应拥有的无状态服务语义，而不只是某个应用层 demo 的局部实现。
-- 当前不少 production-grade 实现仍在 `../anyagent-apps/apps/agent-api`，这是“实现位置”，不是长期边界。
-- 后续应逐步把 replay / resume / session-run-event orchestration 等共享服务层收敛回 `anyagent`，而把 PG/Redis backend、分布式 service shell 与部署 wiring 保留在 `anyagent-apps`。
+- production-grade 实现真源已收敛到 `anyagent` Core。
+- replay / resume / session-run-event orchestration、PG/Redis backend 与分布式 service shell 归属 `anyagent`；`anyagent-apps` 只保留业务示例配置、服务栈文档和消费侧验收。
 
 ## 1. 核心概念：为什么“会话内串行”不会阻塞全系统
 

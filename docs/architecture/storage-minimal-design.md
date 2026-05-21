@@ -15,9 +15,9 @@ req: ["requirements.md#req-3-1"]
 当前口径补充：
 
 - 本文描述的 `Session/Run/Event/Dedupe/Lock` 语义属于 `anyagent` Core 的长期边界。
-- `PostgreSQL + Redis` 的 typed runtime adapter 当前已开始迁入 `packages/anyagent/src/anyagent/storage/external/`；deployment wiring 与生产运行手册仍主要落在 `anyagent-apps/apps/agent-api`，storage retention / rollout replay 运维语义已开始由 Core CLI 承载。
-- 后续收敛方向不是把整套 production deployment 搬进 Core，而是把 store interfaces、状态模型、一致性语义、reference external adapters 与基础运维入口回收到 Core，再让 `anyagent-apps` 继续承载示例配置、迁移期接线和运行手册。
-- 当前已落地的共享抽象位于 `packages/anyagent/src/anyagent/storage/`，`apps/agent-api` 已开始直接消费这些 records / contracts / runtime bundle。
+- `PostgreSQL + Redis` 的 typed runtime adapter 已进入 `packages/anyagent/src/anyagent/storage/external/`；deployment wiring 与生产运行手册由 `anyagent-apps` 的示例配置和服务栈文档消费，storage retention / rollout replay 运维语义由 Core CLI 承载。
+- 后续收敛方向不是把整套 production deployment 搬进 Core，而是把 store interfaces、状态模型、一致性语义、reference external adapters 与基础运维入口回收到 Core，再让 `anyagent-apps` 继续承载示例配置和运行手册。
+- 当前已落地的共享抽象位于 `packages/anyagent/src/anyagent/storage/`，业务示例通过已发布 SDK/CLI 消费这些 records / contracts / runtime bundle。
 - `/internal/events/*` 的 replay/list/stream helper 也已开始收敛到 `packages/anyagent/src/anyagent/storage/replay.py`。
 - 会话准备与 snapshot 写回相关的共享编排 helper 已开始收敛到 `packages/anyagent/src/anyagent/agent_runtime/session_runtime.py`。
 - 当前 `anyagent` 也已通过 `packages/anyagent/src/anyagent/storage/capabilities.py` 与 `/admin/storage/health` 暴露 reference/external backend capability matrix，用来明确 Core reference backend 边界与长期归属。
@@ -110,7 +110,7 @@ req: ["requirements.md#req-3-1"]
 2. `Run Store` 再切到 PG 主 + Redis 热层（幂等与终态查询）
 3. `Event Store` 最后切到 PG 主 + Redis 热层（事件体量最大，适合在前两者稳定后收口）
 
-当前 `Run Store` 的 Redis 热层会维护一个按更新时间排序的 response-run history sorted set，用于支撑 `/internal/observability/runs` 的 agent/session 历史列表；PG/MySQL 路径则直接按 runs 表查询并回填为本地 run record。
+当前 `Run Store` 的 Redis 热层会维护一个按更新时间排序的 response-run history sorted set，用于支撑 `/internal/observability/runs` 的 agent/session 历史列表；PG/MySQL 路径则直接按 runs 表查询并回填为本地 run record。Core 侧 `TelemetryStore` 会在其上聚合 `/internal/observability/timeline`、`/metrics`、`/tools`、`/errors` 与 `/traces/{trace_id}`；当前实现组合 Run Store、Event Store 与 normalized telemetry ingest store。启用 `STORAGE_MODE=external` 且配置 `POSTGRES_DSN` 时，structured observability/audit events 会写入 PostgreSQL `telemetry_events` 表并继续通过同一 typed API 查询；其他日志/分析后端暂不接入，Studio 也不直接适配具体数据库或日志平台。持久化 adapter 的写入输入以 `NormalizedTelemetryEvent` 为边界，查询输出保持 `/internal/observability/*` typed response。
 
 ### 3.2 允许（开发/单机）：SQLite（受限）+ 进程内实现
 

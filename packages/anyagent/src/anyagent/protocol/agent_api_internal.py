@@ -18,6 +18,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
+from anyagent.protocol.observability import NormalizedTelemetryEvent, TelemetrySource
 from anyagent.protocol.prompt_context import PromptContextAudit, RenderedPromptFragment
 from anyagent.protocol.sandbox import SandboxMode
 from anyagent.protocol.stage_events import AnyAgentPromptContextEvent, StageEvent, decode_stage_event
@@ -173,6 +174,111 @@ class InternalObservabilityRunsResponse(BaseModel):
     session_key: str | None = None
     response_id: str | None = None
     runs: list[InternalObservabilityRunItem] = Field(default_factory=list)
+
+
+class InternalObservabilityTimelineEvent(NormalizedTelemetryEvent):
+    """One normalized observability event for Studio timelines and traces."""
+
+
+class InternalObservabilityTimelineResponse(BaseModel):
+    """Response model for `GET /internal/observability/timeline`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str | None = None
+    session_key: str | None = None
+    response_id: str | None = None
+    trace_id: str | None = None
+    events: list[InternalObservabilityTimelineEvent] = Field(default_factory=list)
+
+
+class InternalObservabilityMetricsResponse(BaseModel):
+    """Aggregated Studio observability metrics."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str | None = None
+    session_key: str | None = None
+    response_id: str | None = None
+    run_count: int = Field(default=0, ge=0)
+    event_count: int = Field(default=0, ge=0)
+    tool_call_count: int = Field(default=0, ge=0)
+    mcp_call_count: int = Field(default=0, ge=0)
+    error_count: int = Field(default=0, ge=0)
+    input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(default=0, ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
+    avg_response_latency_ms: float | None = None
+    max_response_latency_ms: float | None = None
+    first_token_latency_ms: float | None = None
+
+
+class InternalObservabilityToolStats(BaseModel):
+    """Aggregated execution stats for one tool."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool_name: str
+    planned_count: int = Field(default=0, ge=0)
+    result_count: int = Field(default=0, ge=0)
+    error_count: int = Field(default=0, ge=0)
+    avg_duration_ms: float | None = None
+    max_duration_ms: float | None = None
+    last_status: str | None = None
+    audit_refs: list[str] = Field(default_factory=list)
+
+
+class InternalObservabilityToolsResponse(BaseModel):
+    """Response model for `GET /internal/observability/tools`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str | None = None
+    session_key: str | None = None
+    response_id: str | None = None
+    tools: list[InternalObservabilityToolStats] = Field(default_factory=list)
+
+
+class InternalObservabilityErrorItem(BaseModel):
+    """One normalized error observed from runs, stage events, or audit logs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: TelemetrySource
+    type: str
+    message: str | None = None
+    ts_ms: int | None = Field(default=None, ge=0)
+    response_id: str | None = None
+    agent_id: str | None = None
+    session_key: str | None = None
+    trace_id: str | None = None
+    tool_name: str | None = None
+    tool_call_id: str | None = None
+    audit_ref: str | None = None
+    retryable: bool | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class InternalObservabilityErrorsResponse(BaseModel):
+    """Response model for `GET /internal/observability/errors`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str | None = None
+    session_key: str | None = None
+    response_id: str | None = None
+    errors: list[InternalObservabilityErrorItem] = Field(default_factory=list)
+
+
+class InternalObservabilityTraceResponse(BaseModel):
+    """Response model for `GET /internal/observability/traces/{trace_id}`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    trace_id: str
+    response_ids: list[str] = Field(default_factory=list)
+    audit_refs: list[str] = Field(default_factory=list)
+    events: list[InternalObservabilityTimelineEvent] = Field(default_factory=list)
 
 
 class InternalSkillListItem(BaseModel):

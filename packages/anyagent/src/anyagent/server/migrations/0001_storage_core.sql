@@ -41,3 +41,37 @@ CREATE TABLE IF NOT EXISTS {{schema}}.events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (response_id, seq)
 );
+
+CREATE TABLE IF NOT EXISTS {{schema}}.telemetry_events (
+  id BIGSERIAL PRIMARY KEY,
+  source TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  ts_ms BIGINT NULL,
+  response_id TEXT NULL,
+  agent_id TEXT NULL,
+  session_key TEXT NULL,
+  trace_id TEXT NULL,
+  seq BIGINT NULL,
+  level TEXT NULL,
+  category TEXT NULL,
+  status TEXT NULL,
+  tool_name TEXT NULL,
+  tool_call_id TEXT NULL,
+  duration_ms DOUBLE PRECISION NULL,
+  audit_ref TEXT NULL,
+  message TEXT NULL,
+  payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS telemetry_events_agent_session_idx
+  ON {{schema}}.telemetry_events(agent_id, session_key, ts_ms);
+
+CREATE INDEX IF NOT EXISTS telemetry_events_response_idx
+  ON {{schema}}.telemetry_events(response_id, ts_ms);
+
+CREATE INDEX IF NOT EXISTS telemetry_events_trace_idx
+  ON {{schema}}.telemetry_events(trace_id, ts_ms);
+
+CREATE INDEX IF NOT EXISTS telemetry_events_tool_idx
+  ON {{schema}}.telemetry_events(tool_name, ts_ms);

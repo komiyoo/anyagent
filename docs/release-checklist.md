@@ -42,9 +42,9 @@ installation docs change.
    - run `anyagent --help`
    - run `anyagent serve --help`
 10. Update downstream consumers if needed:
-   - `anyagent-apps/apps/*/pyproject.toml`
    - `anyagent-apps/config/service-stack.example.toml`
    - `anyagent-apps/docs/service-stack-guide.md`
+   - `anyagent-apps/examples/*`
 
 ## Notes
 

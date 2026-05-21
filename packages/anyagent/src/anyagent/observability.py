@@ -60,6 +60,15 @@ class ObservabilityEmitter:
         with self._lock:
             self._sinks = list(sinks)
 
+    def add_sink(self, sink: ObservabilitySink) -> None:
+        with self._lock:
+            if sink not in self._sinks:
+                self._sinks = [*self._sinks, sink]
+
+    def remove_sink(self, sink: ObservabilitySink) -> None:
+        with self._lock:
+            self._sinks = [item for item in self._sinks if item is not sink]
+
     def emit(
         self,
         event: str,

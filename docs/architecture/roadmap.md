@@ -31,7 +31,7 @@ cd my-workspace && anyagent serve
 
 #### 1.1 `anyagent.server` 模块
 
-从 `anyagent-apps/apps/agent-api` 提炼核心 agent loop 编排，内置为 `anyagent.server/`：
+核心 agent loop 编排已收敛到 `anyagent.server/`：
 
 - FastAPI app + `POST /v1/responses` + SSE streaming
 - 进程内 Tool Runtime（manifest + execute，无需启动独立服务）

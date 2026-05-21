@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from anyagent.observability import ObservabilityEmitter, ObservabilitySink
-from anyagent.protocol.observability import ObservabilityEvent
+from anyagent.protocol.observability import NormalizedTelemetryEvent, ObservabilityEvent
+from anyagent.server.telemetry_store import PostgresTelemetryEventStore, _telemetry_event_from_row, _telemetry_row
 
 
 class _MemorySink(ObservabilitySink):
@@ -31,3 +32,45 @@ def test_observability_event_rejects_unknown_category() -> None:
         assert "category" in str(exc)
     else:
         raise AssertionError("expected validation failure")
+
+
+def test_postgres_telemetry_store_maps_rows_without_real_database(monkeypatch) -> None:
+    class FakeConfig:
+        pass
+
+    class FakeEngine:
+        pass
+
+    monkeypatch.setattr("anyagent.storage.external.resolve_external_sql_backend_config", lambda **_: FakeConfig())
+    monkeypatch.setattr("anyagent.storage.external.create_external_sql_engine", lambda _: FakeEngine())
+
+    store = PostgresTelemetryEventStore(
+        postgres_dsn="postgresql://user:pass@localhost:5432/anyagent",
+        postgres_schema="public",
+        schema_policy="runtime_create",
+    )
+    event = NormalizedTelemetryEvent(
+        source="audit",
+        type="tool.policy.denied",
+        ts_ms=123,
+        response_id="resp",
+        agent_id="main",
+        session_key="sess",
+        trace_id="trace",
+        level="warning",
+        category="audit",
+        status="denied",
+        tool_name="exec",
+        tool_call_id="call",
+        duration_ms=3,
+        audit_ref="aud",
+        message="denied",
+        payload={"policy": "deny"},
+    )
+    row = _telemetry_row(event)
+    round_trip = _telemetry_event_from_row(row)
+
+    assert callable(store._table.insert().values)
+    assert row["event_type"] == "tool.policy.denied"
+    assert row["payload_json"] == {"policy": "deny"}
+    assert round_trip == event

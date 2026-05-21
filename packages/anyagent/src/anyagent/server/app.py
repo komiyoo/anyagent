@@ -15,11 +15,20 @@ from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 import yaml
 
 from anyagent.agent_packs import AgentCatalog, AgentPack, AgentSpec, load_agent_catalog
+from anyagent.model_config import (
+    ModelConfigError,
+    WorkspaceModelsConfig,
+    apply_effective_model_to_body,
+    load_workspace_models_config,
+    model_provider_for_selection,
+    resolve_effective_model_selection,
+)
 from anyagent.mcp import MCPConfig
 from anyagent.mcp.auth import CredentialResolver
 from anyagent.skills.loader import SkillLoadError, load_skill_package
@@ -28,13 +37,13 @@ from anyagent.agent_runtime import (
     build_prompt_envelope,
     persist_session_snapshot,
 )
-from anyagent.agent_runtime.session_runtime import input_to_transcript_items, response_to_transcript_items
+from anyagent.agent_runtime.session_runtime import input_to_transcript_items
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp, run_tool_loop_nonstream, run_tool_loop_stream_live
-from anyagent.agent_runtime.model_providers import get_default_model_provider
+from anyagent.agent_runtime.model_providers import get_default_model_provider  # re-exported for existing smoke monkeypatches
 from anyagent.gateway.sequencer import KeyedSequencer
 from anyagent.gateway.session import session_partition_key
 from anyagent.mcp.manager import MCPManagerRegistry
-from anyagent.observability import emit_observability_event
+from anyagent.observability import emit_observability_event, get_observability_emitter
 from anyagent.protocol.credential_vault import AdminCredentialSetRequest
 from anyagent.protocol.health import HealthResponse
 from anyagent.protocol.agent_api_internal import (
@@ -58,12 +67,7 @@ from anyagent.protocol.agent_api_internal import (
     InternalAgentsListResponse,
     InternalAgentSkillsConfig,
     InternalAgentToolsConfig,
-    InternalEventsListResponse,
     InternalPromptBundlePreviewResponse,
-    InternalObservabilitySummaryResponse,
-    InternalObservabilityTurnMetric,
-    InternalObservabilityRunItem,
-    InternalObservabilityRunsResponse,
     InternalToolCatalogItem,
     InternalToolCatalogResponse,
     WorkspaceAgentFileKind,
@@ -115,6 +119,15 @@ from anyagent.server.storage_backends import (
     ServerStorageBundle,
     SessionStore,
     build_server_storage_bundle,
+)
+from anyagent.server.telemetry_store import (
+    InMemoryObservabilityEventSink,
+    InMemoryTelemetryEventStore,
+    ObservabilityQuery,
+    PostgresTelemetryEventStore,
+    RunEventTelemetryStore,
+    TelemetryStore,
+    TelemetryObservabilitySink,
 )
 from anyagent.storage import build_storage_capability_matrix, resolve_nonstream_replay_payload
 from anyagent.storage.settings import StorageSettings
@@ -180,157 +193,6 @@ def _emit_server_response_event(
     )
 
 
-def _nested_number(payload: dict[str, Any], *paths: str) -> float | None:
-    for path in paths:
-        cursor: Any = payload
-        for segment in path.split("."):
-            cursor = cursor.get(segment) if isinstance(cursor, dict) else None
-        if isinstance(cursor, (int, float)):
-            return float(cursor)
-    return None
-
-
-def _text_length(value: Any) -> int:
-    if isinstance(value, str):
-        return len(value)
-    if not isinstance(value, list):
-        return 0
-    total = 0
-    for item in value:
-        if isinstance(item, str):
-            total += len(item)
-        elif isinstance(item, dict):
-            text = item.get("text")
-            if isinstance(text, str):
-                total += len(text)
-    return total
-
-
-def _turn_stats_from_transcript_items(items: list[dict[str, Any]]) -> tuple[int, int, int, list[InternalObservabilityTurnMetric]]:
-    turns: list[dict[str, int]] = []
-    for item in items:
-        role = item.get("role")
-        content_len = _text_length(item.get("content"))
-        if role == "user":
-            turns.append({"input_chars": content_len, "output_chars": 0})
-        elif role == "assistant":
-            if not turns:
-                turns.append({"input_chars": 0, "output_chars": 0})
-            turns[-1]["output_chars"] += content_len
-    turn_metrics = [
-        InternalObservabilityTurnMetric(
-            index=index,
-            input_chars=turn["input_chars"],
-            output_chars=turn["output_chars"],
-        )
-        for index, turn in enumerate(turns, start=1)
-    ]
-    return (
-        len(turn_metrics),
-        sum(turn.input_chars for turn in turn_metrics),
-        sum(turn.output_chars for turn in turn_metrics),
-        turn_metrics,
-    )
-
-
-def _build_observability_run_item(record: Any) -> InternalObservabilityRunItem:
-    return InternalObservabilityRunItem(
-        response_id=str(getattr(record, "response_id", "")),
-        agent_id=str(getattr(record, "agent_id", "")),
-        session_key=str(getattr(record, "session_key", "")),
-        stream=bool(getattr(record, "stream", False)),
-        status=str(getattr(record, "status", "")),
-        effective_status=str(getattr(record, "effective_status", getattr(record, "status", ""))),
-        created_at_ms=int(getattr(record, "created_at_ms", 0) or 0),
-        updated_at_ms=int(getattr(record, "updated_at_ms", 0) or 0),
-        ended_at_ms=int(getattr(record, "ended_at_ms")) if getattr(record, "ended_at_ms", None) is not None else None,
-    )
-
-
-def _build_observability_summary(
-    resp: InternalEventsListResponse,
-    *,
-    run_record: Any | None = None,
-) -> InternalObservabilitySummaryResponse:
-    typed = resp.typed_events(include_model_events=True)
-    event_payloads: list[dict[str, Any]] = []
-    for item in resp.events:
-        try:
-            parsed = json.loads(item.data)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            event_payloads.append(parsed)
-
-    prompt_context = resp.latest_prompt_context()
-    prompt_payload = next((payload for payload in event_payloads if payload.get("type") == "anyagent.prompt.context"), {})
-    raw_skill_ids = prompt_payload.get("selected_skill_ids")
-    selected_skill_ids = set(prompt_context.selected_skill_ids if prompt_context is not None else [])
-    if isinstance(raw_skill_ids, list):
-        selected_skill_ids.update(item for item in raw_skill_ids if isinstance(item, str) and item.strip())
-    tool_call_count = sum(1 for payload in event_payloads if str(payload.get("type") or "").startswith("anyagent.tool."))
-    mcp_call_count = sum(
-        1
-        for payload in event_payloads
-        if "mcp" in str(payload.get("type") or "")
-        or isinstance(payload.get("server_label"), str)
-        or isinstance(payload.get("mcp_server_label"), str)
-    )
-    input_tokens = 0
-    output_tokens = 0
-    cached_tokens = 0
-    first_token_latency: float | None = None
-    total_latency: float | None = None
-    for payload in event_payloads:
-        input_tokens += int(_nested_number(payload, "usage.input_tokens", "usage.prompt_tokens", "input_tokens") or 0)
-        output_tokens += int(_nested_number(payload, "usage.output_tokens", "usage.completion_tokens", "output_tokens") or 0)
-        cached_tokens += int(
-            _nested_number(
-                payload,
-                "usage.input_tokens_details.cached_tokens",
-                "usage.prompt_tokens_details.cached_tokens",
-                "cached_tokens",
-            )
-            or 0
-        )
-        first_token_latency = first_token_latency or _nested_number(payload, "first_token_ms", "latency.first_token_ms", "ttft_ms")
-        total_latency = _nested_number(payload, "total_latency_ms", "latency.total_ms", "duration_ms", "elapsed_ms") or total_latency
-
-    response_json = next((payload for payload in event_payloads if payload.get("object") == "response" or payload.get("id") == resp.response_id), {})
-    final_response_json = getattr(run_record, "final_response_json", None)
-    if isinstance(final_response_json, dict):
-        response_json = final_response_json
-    request_payload = next((payload for payload in event_payloads if payload.get("type") == "anyagent.response.request"), {})
-    request_items = input_to_transcript_items(request_payload.get("transcript_items"))
-    response_items = response_to_transcript_items(response_json if isinstance(response_json, dict) else None)
-    turn_count, input_chars, output_chars, turn_metrics = _turn_stats_from_transcript_items([*request_items, *response_items])
-    return InternalObservabilitySummaryResponse(
-        response_id=resp.response_id,
-        agent_id=prompt_context.agent_id
-        if prompt_context is not None
-        else (str(prompt_payload.get("agent_id")) if isinstance(prompt_payload.get("agent_id"), str) else None),
-        session_key=prompt_context.session_key
-        if prompt_context is not None
-        else (str(prompt_payload.get("session_key")) if isinstance(prompt_payload.get("session_key"), str) else None),
-        event_count=len(resp.events),
-        typed_event_count=len(typed),
-        tool_call_count=tool_call_count,
-        mcp_call_count=mcp_call_count,
-        skill_view_count=len(selected_skill_ids),
-        turn_count=turn_count,
-        input_chars=input_chars,
-        output_chars=output_chars,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cached_input_tokens=cached_tokens,
-        turns=turn_metrics,
-        first_token_latency_ms=first_token_latency,
-        total_response_latency_ms=total_latency,
-        run_status=resp.run_status or (str(response_json.get("status")) if isinstance(response_json.get("status"), str) else None),
-        effective_run_status=resp.effective_run_status,
-    )
-
-
 def _parse_cors_origins(value: str | list[str] | tuple[str, ...] | None) -> list[str]:
     if value is None:
         env_value = os.getenv("ANYAGENT_CORS_ORIGINS", "")
@@ -344,6 +206,7 @@ def _parse_cors_origins(value: str | list[str] | tuple[str, ...] | None) -> list
 class AnyAgentServerApp:
     workspace_dir: Path
     catalog: AgentCatalog
+    models_config: WorkspaceModelsConfig
     resolved_storage: ResolvedServerStorageSettings
     storage_settings: StorageSettings
     events: EventStore
@@ -356,6 +219,10 @@ class AnyAgentServerApp:
     manifest_cache: ManifestCache
     run_store: RunStore
     session_store: SessionStore
+    telemetry_store: TelemetryStore
+    observability_event_sink: InMemoryObservabilityEventSink
+    telemetry_event_store: Any
+    telemetry_observability_sink: TelemetryObservabilitySink
     session_sequencer: KeyedSequencer
     session_lock_service: SessionLockService
     session_lease_ttl_s: float
@@ -373,10 +240,11 @@ class AnyAgentServerApp:
 
     def reload_catalog(self) -> None:
         catalog = load_agent_catalog(workspace_dir=self.workspace_dir)
-        main_pack = catalog.get("main")
-        if main_pack is None or not main_pack.spec.exposed:
-            raise RuntimeError("workspace must define exposed agent_id=main")
+        models_config = load_workspace_models_config(self.workspace_dir)
+        if not any(pack.spec.exposed for pack in catalog.packs.values()):
+            raise RuntimeError("workspace must define at least one exposed agent")
         self.catalog = catalog
+        self.models_config = models_config
         self.runtime.set_catalog(catalog)
         self.manifest_cache = ManifestCache(ttl_seconds=2.0)
 
@@ -393,6 +261,7 @@ def create_app(
     session_lock_backend: str | None = None,
     session_lease_ttl_s: float | None = None,
     cors_origins: str | list[str] | tuple[str, ...] | None = None,
+    enable_studio: bool = True,
 ) -> FastAPI:
     workspace = Path(workspace_dir).expanduser().resolve()
     _load_workspace_env_defaults(workspace)
@@ -406,9 +275,9 @@ def create_app(
         session_lease_ttl_s=session_lease_ttl_s,
     )
     catalog = load_agent_catalog(workspace_dir=workspace)
-    main_pack = catalog.get("main")
-    if main_pack is None or not main_pack.spec.exposed:
-        raise RuntimeError("workspace must define exposed agent_id=main")
+    models_config = load_workspace_models_config(workspace)
+    if not any(pack.spec.exposed for pack in catalog.packs.values()):
+        raise RuntimeError("workspace must define at least one exposed agent")
     unsupported_opensandbox = [
         pack.agent_id for pack in catalog.packs.values() if pack.spec.sandbox.mode == "opensandbox"
     ]
@@ -440,11 +309,30 @@ def create_app(
         run_store_backend=resolved_storage.run_store_backend,
         session_store_backend=resolved_storage.session_store_backend,
     )
+    storage_settings = StorageSettings()
+    observability_event_sink = InMemoryObservabilityEventSink()
+    if resolved_storage.storage_mode == "external" and storage_settings.postgres_dsn is not None:
+        telemetry_event_store: Any = PostgresTelemetryEventStore(
+            postgres_dsn=str(storage_settings.postgres_dsn),
+            postgres_schema=storage_settings.postgres_schema,
+            schema_policy=storage_settings.postgres_schema_policy,
+        )
+    else:
+        telemetry_event_store = InMemoryTelemetryEventStore()
+    telemetry_observability_sink = TelemetryObservabilitySink(telemetry_events=telemetry_event_store)
+    telemetry_store = RunEventTelemetryStore(
+        event_store=storage_bundle.event_store,
+        run_store=storage_bundle.run_store,
+        observability_events=observability_event_sink,
+        telemetry_events=telemetry_event_store,
+        include_observability_sink_events=False,
+    )
     state = AnyAgentServerApp(
         workspace_dir=workspace,
         catalog=catalog,
+        models_config=models_config,
         resolved_storage=resolved_storage,
-        storage_settings=StorageSettings(),
+        storage_settings=storage_settings,
         events=storage_bundle.event_store,
         credentials=credential_store,
         mcp_credentials=mcp_credential_store or credential_store,
@@ -460,6 +348,10 @@ def create_app(
         manifest_cache=ManifestCache(ttl_seconds=2.0),
         run_store=storage_bundle.run_store,
         session_store=storage_bundle.session_store,
+        telemetry_store=telemetry_store,
+        observability_event_sink=observability_event_sink,
+        telemetry_event_store=telemetry_event_store,
+        telemetry_observability_sink=telemetry_observability_sink,
         session_sequencer=KeyedSequencer(),
         session_lock_service=build_session_lock_service(
             backend=resolved_storage.session_lock_backend,
@@ -472,10 +364,19 @@ def create_app(
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
         _app.state.anyagent = state
+        get_observability_emitter().add_sink(state.observability_event_sink)
+        get_observability_emitter().add_sink(state.telemetry_observability_sink)
         try:
             yield
         finally:
+            get_observability_emitter().remove_sink(state.telemetry_observability_sink)
+            get_observability_emitter().remove_sink(state.observability_event_sink)
             await state.mcp_managers.cleanup_all()
+            telemetry_closer = getattr(state.telemetry_event_store, "dispose", None)
+            if callable(telemetry_closer):
+                result = telemetry_closer()
+                if asyncio.iscoroutine(result):
+                    await result
             for resource in state.storage_resources:
                 closer = getattr(resource, "dispose", None) or getattr(resource, "aclose", None) or getattr(resource, "close", None)
                 if callable(closer):
@@ -484,6 +385,14 @@ def create_app(
                         await result
 
     app = FastAPI(title="anyagent", version="0.1.0", lifespan=_lifespan)
+    if enable_studio:
+        studio_dir = Path(__file__).resolve().parents[1] / "studio_static"
+        if studio_dir.is_dir():
+            @app.get("/studio", include_in_schema=False)
+            async def studio_index() -> FileResponse:
+                return FileResponse(studio_dir / "index.html")
+
+            app.mount("/studio", StaticFiles(directory=str(studio_dir), html=True), name="studio")
     parsed_cors_origins = _parse_cors_origins(cors_origins)
     if parsed_cors_origins:
         app.add_middleware(
@@ -882,9 +791,7 @@ def create_app(
         authorization: str | None = Header(default=None),
     ) -> JSONResponse:
         _require_user_auth(state, authorization)
-        resp = await state.events.list_events(response_id=response_id, last_seq=0, limit=10000)
-        run_record = await state.run_store.get(response_id)
-        summary = _build_observability_summary(resp, run_record=run_record)
+        summary = await state.telemetry_store.summary(response_id=response_id)
         return JSONResponse(summary.model_dump(exclude_none=True))
 
     @app.get("/internal/observability/runs")
@@ -898,23 +805,122 @@ def create_app(
         authorization: str | None = Header(default=None),
     ) -> JSONResponse:
         _require_user_auth(state, authorization)
-        records = await state.run_store.list(
-            agent_id=agent_id,
-            session_key=session_key,
-            response_id=response_id,
-            limit=limit,
+        payload = await state.telemetry_store.runs(
+            ObservabilityQuery(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=limit,
+            )
         )
-        if created_after_ms is not None:
-            records = [record for record in records if int(getattr(record, "created_at_ms", 0) or 0) >= created_after_ms]
-        if created_before_ms is not None:
-            records = [record for record in records if int(getattr(record, "created_at_ms", 0) or 0) <= created_before_ms]
-        runs = [_build_observability_run_item(record) for record in records]
-        payload = InternalObservabilityRunsResponse(
-            agent_id=agent_id,
-            session_key=session_key,
-            response_id=response_id,
-            runs=runs,
+        return JSONResponse(payload.model_dump(exclude_none=True))
+
+    @app.get("/internal/observability/timeline")
+    async def internal_observability_timeline(
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        trace_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 200,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        payload = await state.telemetry_store.timeline(
+            ObservabilityQuery(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                trace_id=trace_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=limit,
+            )
         )
+        return JSONResponse(payload.model_dump(exclude_none=True))
+
+    @app.get("/internal/observability/metrics")
+    async def internal_observability_metrics(
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 100,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        payload = await state.telemetry_store.metrics(
+            ObservabilityQuery(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=limit,
+            )
+        )
+        return JSONResponse(payload.model_dump(exclude_none=True))
+
+    @app.get("/internal/observability/tools")
+    async def internal_observability_tools(
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 100,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        payload = await state.telemetry_store.tools(
+            ObservabilityQuery(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=limit,
+            )
+        )
+        return JSONResponse(payload.model_dump(exclude_none=True))
+
+    @app.get("/internal/observability/errors")
+    async def internal_observability_errors(
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        trace_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 100,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        payload = await state.telemetry_store.errors(
+            ObservabilityQuery(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                trace_id=trace_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=limit,
+            )
+        )
+        return JSONResponse(payload.model_dump(exclude_none=True))
+
+    @app.get("/internal/observability/traces/{trace_id}")
+    async def internal_observability_trace(
+        trace_id: str,
+        limit: int = 500,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        payload = await state.telemetry_store.trace(trace_id=trace_id, limit=limit)
         return JSONResponse(payload.model_dump(exclude_none=True))
 
     @app.get("/internal/events/stream")
@@ -956,6 +962,8 @@ def create_app(
 
         agent_id = _resolve_agent_id(body=body, x_agent_id=x_agent_id)
         pack = state.require_pack(agent_id, external=True)
+        model_selection = resolve_effective_model_selection(workspace_config=state.models_config, pack=pack)
+        apply_effective_model_to_body(body=body, selection=model_selection)
         session_key = _resolve_session_key(body=body)
         selected_skills = await _select_skills(state, pack=pack, body=body)
         tool_context = _build_server_tool_context(pack=pack, body=body, selected_skills=selected_skills)
@@ -1038,6 +1046,8 @@ def create_app(
         idempotency_key = req.headers.get("idempotency-key")
         agent_id = _resolve_agent_id(body=body, x_agent_id=x_agent_id)
         pack = state.require_pack(agent_id, external=True)
+        model_selection = resolve_effective_model_selection(workspace_config=state.models_config, pack=pack)
+        apply_effective_model_to_body(body=body, selection=model_selection)
         session_key = _resolve_session_key(body=body)
         session_partition_key_value = session_partition_key(agent_id=agent_id, session_key=session_key)
         stream_requested = bool(body.get("stream"))
@@ -1114,7 +1124,10 @@ def create_app(
                 mcp_config=pack.mcp_config,
                 credential_store=state.mcp_credentials,
             )
-        model_provider = get_default_model_provider()
+        try:
+            model_provider = _model_provider_for_selection(model_selection)
+        except ModelConfigError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         enabled_skill_ids = [skill.stable_id for skill in selected_skills]
         requested_tool_names = extract_requested_tool_names(body.get("tools"))
         manifest_cache_key = build_manifest_cache_key(
@@ -1579,6 +1592,12 @@ def create_app(
 
 def _require_user_auth(state: AnyAgentServerApp, authorization: str | None) -> None:
     _require_bearer(authorization=authorization, expected=state.api_key)
+
+
+def _model_provider_for_selection(selection) -> Any:
+    if selection.provider_kind == "openai" and not selection.uses_workspace_provider:
+        return get_default_model_provider()
+    return model_provider_for_selection(selection)
 
 
 def _require_admin_auth(state: AnyAgentServerApp, authorization: str | None) -> None:
@@ -2458,7 +2477,12 @@ async def _persist_sse_run(
     return response_id, response_json
 
 async def _build_storage_health_payload(state: AnyAgentServerApp) -> dict[str, Any]:
-    uses_postgres = _uses_backend(state.events, "Postgres") or _uses_backend(state.run_store, "Postgres") or _uses_backend(state.session_store, "Postgres")
+    uses_postgres = (
+        _uses_backend(state.events, "Postgres")
+        or _uses_backend(state.run_store, "Postgres")
+        or _uses_backend(state.session_store, "Postgres")
+        or _uses_backend(state.telemetry_event_store, "Postgres")
+    )
     uses_redis = (
         _uses_backend(state.events, "Redis")
         or _uses_backend(state.run_store, "Redis")
@@ -2475,6 +2499,8 @@ async def _build_storage_health_payload(state: AnyAgentServerApp) -> dict[str, A
         "run_store": _describe_runtime_component(state.run_store),
         "session_store": _describe_runtime_component(state.session_store),
         "session_lock_service": _describe_runtime_component(state.session_lock_service),
+        "telemetry_store": _describe_runtime_component(state.telemetry_store),
+        "telemetry_events": _describe_runtime_component(state.telemetry_event_store),
     }
     ok = True
     if uses_postgres:

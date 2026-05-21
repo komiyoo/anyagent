@@ -10,6 +10,7 @@ anyagent Client SDK — 资源型命名空间入口。
 - ``client.agents``    — Agent catalog / detail（/internal/agents）
 - ``client.tools``     — Tool catalog / effective manifest discovery
 - ``client.events``    — 内部观测 / replay（/internal/events/*）
+- ``client.observability`` — typed telemetry query helpers（/internal/observability/*）
 - ``client.skills``    — 技能发现（/internal/skills/list）
 - ``client.prompts``   — prompt explain / preview（preview + local example bundle）
 - ``client.admin``     — 管理面 helpers（如 `/admin/storage/health`）
@@ -18,20 +19,22 @@ anyagent Client SDK — 资源型命名空间入口。
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import TYPE_CHECKING, Any, AsyncIterator, TypeVar
 
 import httpx
-from pydantic import AnyHttpUrl, Field
+from pydantic import AnyHttpUrl, BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from anyagent.agent_packs import AgentPack, AgentSkillsSpec, AgentSpec, AgentToolsSpec, MultiAgentSpec
 from anyagent.agent_runtime import build_default_environment_context_values, build_prompt_envelope
-from anyagent.mcp.models import MCPConfig, MCPServerConfig
-from anyagent.protocol.agent_api_internal import (
+from anyagent.types import (
     AdminAgentConfigUpdateRequest,
     AdminAgentCreateRequest,
     AdminAgentCreateResponse,
     AdminAgentSkillsUpdateRequest,
+    AdminCredentialListResponse,
+    AdminCredentialRef,
+    AdminCredentialSetRequest,
     AdminSkillImportRequest,
     AdminSkillImportResponse,
     AdminSkillRegistryInstallRequest,
@@ -40,12 +43,32 @@ from anyagent.protocol.agent_api_internal import (
     AdminWorkspaceAgentFilesResponse,
     AdminWorkspaceAgentFileUpdateRequest,
     AdminWorkspaceAgentFileUpdateResponse,
+    AnyAgentCommandPlannedEvent,
+    AnyAgentCommandResultEvent,
+    AnyAgentDoneEvent,
+    AnyAgentFunctionToolParam,
+    AnyAgentModelStreamEvent,
+    AnyAgentPromptContextEvent,
+    AnyAgentToolPlannedEvent,
+    AnyAgentToolResultEvent,
+    FileSystemSandboxPolicy,
+    HealthResponse,
     InternalAgentDetailResponse,
     InternalAgentsListResponse,
     InternalEventsListResponse,
     InternalEventsReplaySummary,
+    InternalObservabilityErrorsResponse,
+    InternalObservabilityMetricsResponse,
+    InternalObservabilityRunsResponse,
+    InternalObservabilitySummaryResponse,
+    InternalObservabilityTimelineResponse,
+    InternalObservabilityToolsResponse,
+    InternalObservabilityTraceResponse,
     InternalPromptBundlePreviewResponse,
     InternalToolCatalogResponse,
+    MCPConfig,
+    MCPServerConfig,
+    PolicyHint,
     PromptRunBundleExplanation,
     PromptRunBundleExplanationStep,
     PromptRunBundleExampleResponse,
@@ -53,30 +76,24 @@ from anyagent.protocol.agent_api_internal import (
     PromptRunBundleScenario,
     PromptRunBundleScenarioDescriptor,
     PromptRunBundleToolLoopItem,
-    InternalSkillsListResponse,
-)
-from anyagent.protocol.credential_vault import AdminCredentialListResponse, AdminCredentialRef, AdminCredentialSetRequest
-from anyagent.protocol.health import HealthResponse
-from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam, build_minimal_openai_response_json
-from anyagent.protocol.plugins import PluginCatalogResponse
-from anyagent.protocol.sandbox import FileSystemSandboxPolicy, SandboxPolicy
-from anyagent.protocol.admin_storage import StorageHealthResponse
-from anyagent.protocol.sse import SSEBlock, SSEBlockDecoder
-from anyagent.protocol.stage_events import (
-    AnyAgentDoneEvent,
-    AnyAgentModelStreamEvent,
-    AnyAgentPromptContextEvent,
-    AnyAgentCommandPlannedEvent,
-    AnyAgentCommandResultEvent,
+    RequesterContext,
+    SSEBlock,
+    SandboxPolicy,
     StageEvent,
-    AnyAgentToolPlannedEvent,
-    AnyAgentToolResultEvent,
+    InternalSkillsListResponse,
+    PluginCatalogResponse,
+    StorageHealthResponse,
+    ToolContext,
+    TraceContext,
+)
+from anyagent.protocol.openai_responses import build_minimal_openai_response_json
+from anyagent.protocol.sse import SSEBlockDecoder
+from anyagent.protocol.stage_events import (
     summarize_command,
     summarize_payload,
     decode_stage_event,
     parse_stage_event_seq,
 )
-from anyagent.protocol.tool_runtime import PolicyHint, RequesterContext, ToolContext, TraceContext
 from anyagent.skills.models import SkillFrontMatter, SkillPackage
 
 if TYPE_CHECKING:
@@ -84,6 +101,8 @@ if TYPE_CHECKING:
     from openai.types.responses.response import Response as OpenAIResponseModel
 else:
     OpenAIResponseModel = object
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +212,18 @@ class _Namespace:
         return r.json()
 
 
+def _validate_response(model_type: type[ModelT], data: Any) -> ModelT:
+    """Validate one SDK response boundary against the public data model."""
+
+    return model_type.model_validate(data)
+
+
+def _validate_request(model_type: type[ModelT], data: ModelT | dict[str, Any]) -> ModelT:
+    """Validate one SDK request boundary before serializing JSON."""
+
+    return model_type.model_validate(data.model_dump(exclude_none=True) if isinstance(data, model_type) else data)
+
+
 # ---------------------------------------------------------------------------
 # client.responses — AnyAgent optional response helpers
 # ---------------------------------------------------------------------------
@@ -245,7 +276,7 @@ class Events(_Namespace):
             "/internal/events/list",
             params={"response_id": response_id, "last_seq": int(last_seq), "limit": int(limit)},
         )
-        return InternalEventsListResponse.model_validate(data)
+        return _validate_response(InternalEventsListResponse, data)
 
     async def list_typed(
         self,
@@ -387,6 +418,165 @@ class Events(_Namespace):
                 return
 
 
+class Observability(_Namespace):
+    """Typed Core telemetry query helpers (``/internal/observability/*``)."""
+
+    async def summary(self, response_id: str) -> InternalObservabilitySummaryResponse:
+        data = await self._get("/internal/observability/summary", params={"response_id": response_id})
+        return _validate_response(InternalObservabilitySummaryResponse, data)
+
+    async def runs(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 100,
+    ) -> InternalObservabilityRunsResponse:
+        data = await self._get(
+            "/internal/observability/runs",
+            params=_observability_params(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=limit,
+            ),
+        )
+        return _validate_response(InternalObservabilityRunsResponse, data)
+
+    async def timeline(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        trace_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 200,
+    ) -> InternalObservabilityTimelineResponse:
+        data = await self._get(
+            "/internal/observability/timeline",
+            params=_observability_params(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                trace_id=trace_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=limit,
+            ),
+        )
+        return _validate_response(InternalObservabilityTimelineResponse, data)
+
+    async def metrics(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 100,
+    ) -> InternalObservabilityMetricsResponse:
+        data = await self._get(
+            "/internal/observability/metrics",
+            params=_observability_params(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=limit,
+            ),
+        )
+        return _validate_response(InternalObservabilityMetricsResponse, data)
+
+    async def tools(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 100,
+    ) -> InternalObservabilityToolsResponse:
+        data = await self._get(
+            "/internal/observability/tools",
+            params=_observability_params(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=limit,
+            ),
+        )
+        return _validate_response(InternalObservabilityToolsResponse, data)
+
+    async def errors(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        trace_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 100,
+    ) -> InternalObservabilityErrorsResponse:
+        data = await self._get(
+            "/internal/observability/errors",
+            params=_observability_params(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                trace_id=trace_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=limit,
+            ),
+        )
+        return _validate_response(InternalObservabilityErrorsResponse, data)
+
+    async def trace(self, trace_id: str, *, limit: int = 500) -> InternalObservabilityTraceResponse:
+        data = await self._get(f"/internal/observability/traces/{trace_id}", params={"limit": int(limit)})
+        return _validate_response(InternalObservabilityTraceResponse, data)
+
+
+def _observability_params(
+    *,
+    agent_id: str | None = None,
+    session_key: str | None = None,
+    response_id: str | None = None,
+    trace_id: str | None = None,
+    created_after_ms: int | None = None,
+    created_before_ms: int | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+    if agent_id:
+        params["agent_id"] = agent_id
+    if session_key:
+        params["session_key"] = session_key
+    if response_id:
+        params["response_id"] = response_id
+    if trace_id:
+        params["trace_id"] = trace_id
+    if created_after_ms is not None:
+        params["created_after_ms"] = int(created_after_ms)
+    if created_before_ms is not None:
+        params["created_before_ms"] = int(created_before_ms)
+    if limit is not None:
+        params["limit"] = int(limit)
+    return params
+
+
 # ---------------------------------------------------------------------------
 # client.skills — 技能发现
 # ---------------------------------------------------------------------------
@@ -397,7 +587,7 @@ class Skills(_Namespace):
     async def list(self, *, agent_id: str = "main") -> InternalSkillsListResponse:
         """List skills visible to an agent via ``GET /internal/skills/list``."""
         data = await self._get("/internal/skills/list", params={"agent_id": agent_id})
-        return InternalSkillsListResponse.model_validate(data)
+        return _validate_response(InternalSkillsListResponse, data)
 
 
 class Agents(_Namespace):
@@ -406,12 +596,12 @@ class Agents(_Namespace):
     async def list(self, *, include_unexposed: bool = False) -> InternalAgentsListResponse:
         """List agent ids currently callable through the Agent API."""
         data = await self._get("/internal/agents", params={"include_unexposed": include_unexposed})
-        return InternalAgentsListResponse.model_validate(data)
+        return _validate_response(InternalAgentsListResponse, data)
 
     async def get(self, agent_id: str, *, include_prompt: bool = False) -> InternalAgentDetailResponse:
         """Return detailed configuration metadata for one agent."""
         data = await self._get(f"/internal/agents/{agent_id}", params={"include_prompt": include_prompt})
-        return InternalAgentDetailResponse.model_validate(data)
+        return _validate_response(InternalAgentDetailResponse, data)
 
 
 class Tools(_Namespace):
@@ -431,7 +621,7 @@ class Tools(_Namespace):
         if requested_tool_names:
             params["requested_tool_names"] = ",".join(item for item in requested_tool_names if item)
         data = await self._get("/internal/tools/catalog", params=params)
-        return InternalToolCatalogResponse.model_validate(data)
+        return _validate_response(InternalToolCatalogResponse, data)
 
 
 class Prompts(_Namespace):
@@ -450,7 +640,7 @@ class Prompts(_Namespace):
             json_body=request_body,
             headers={"x-agent-id": x_agent_id} if isinstance(x_agent_id, str) and x_agent_id.strip() else None,
         )
-        return InternalPromptBundlePreviewResponse.model_validate(data)
+        return _validate_response(InternalPromptBundlePreviewResponse, data)
 
     def example_run_bundle(
         self,
@@ -489,24 +679,24 @@ class Admin(_Namespace):
 
     async def storage_health(self) -> StorageHealthResponse:
         data = await self._get("/admin/storage/health")
-        return StorageHealthResponse.model_validate(data)
+        return _validate_response(StorageHealthResponse, data)
 
     async def tool_catalog(self) -> AdminToolCatalogResponse:
         data = await self._get("/admin/tools/catalog")
-        return AdminToolCatalogResponse.model_validate(data)
+        return _validate_response(AdminToolCatalogResponse, data)
 
     async def plugin_catalog(self) -> PluginCatalogResponse:
         data = await self._get("/admin/plugins/catalog")
-        return PluginCatalogResponse.model_validate(data)
+        return _validate_response(PluginCatalogResponse, data)
 
     async def set_credential(self, request: AdminCredentialSetRequest | dict[str, Any]) -> AdminCredentialRef:
-        model = request if isinstance(request, AdminCredentialSetRequest) else AdminCredentialSetRequest.model_validate(request)
+        model = _validate_request(AdminCredentialSetRequest, request)
         data = await self._post_json("/admin/credentials", json_body=model.model_dump(exclude_none=True))
-        return AdminCredentialRef.model_validate(data)
+        return _validate_response(AdminCredentialRef, data)
 
     async def list_credentials(self) -> AdminCredentialListResponse:
         data = await self._get("/admin/credentials")
-        return AdminCredentialListResponse.model_validate(data)
+        return _validate_response(AdminCredentialListResponse, data)
 
     async def delete_credential(self, credential_id: str) -> dict[str, Any]:
         data = await self._delete(f"/admin/credentials/{credential_id}")
@@ -515,17 +705,17 @@ class Admin(_Namespace):
         return data
 
     async def create_agent(self, request: AdminAgentCreateRequest | dict[str, Any]) -> AdminAgentCreateResponse:
-        model = request if isinstance(request, AdminAgentCreateRequest) else AdminAgentCreateRequest.model_validate(request)
+        model = _validate_request(AdminAgentCreateRequest, request)
         data = await self._post_json("/admin/workspace/agents", json_body=model.model_dump(exclude_none=True))
-        return AdminAgentCreateResponse.model_validate(data)
+        return _validate_response(AdminAgentCreateResponse, data)
 
     async def get_agent(self, agent_id: str, *, include_prompt: bool = False) -> InternalAgentDetailResponse:
         data = await self._get(f"/admin/workspace/agents/{agent_id}", params={"include_prompt": include_prompt})
-        return InternalAgentDetailResponse.model_validate(data)
+        return _validate_response(InternalAgentDetailResponse, data)
 
     async def list_agent_files(self, agent_id: str) -> AdminWorkspaceAgentFilesResponse:
         data = await self._get(f"/admin/workspace/agents/{agent_id}/files")
-        return AdminWorkspaceAgentFilesResponse.model_validate(data)
+        return _validate_response(AdminWorkspaceAgentFilesResponse, data)
 
     async def update_agent_file(
         self,
@@ -533,44 +723,36 @@ class Admin(_Namespace):
         kind: str,
         request: AdminWorkspaceAgentFileUpdateRequest | dict[str, Any],
     ) -> AdminWorkspaceAgentFileUpdateResponse:
-        model = (
-            request
-            if isinstance(request, AdminWorkspaceAgentFileUpdateRequest)
-            else AdminWorkspaceAgentFileUpdateRequest.model_validate(request)
-        )
+        model = _validate_request(AdminWorkspaceAgentFileUpdateRequest, request)
         data = await self._put_json(
             f"/admin/workspace/agents/{agent_id}/files/{kind}",
             json_body=model.model_dump(exclude_none=True),
         )
-        return AdminWorkspaceAgentFileUpdateResponse.model_validate(data)
+        return _validate_response(AdminWorkspaceAgentFileUpdateResponse, data)
 
     async def import_agent_skill(
         self,
         agent_id: str,
         request: AdminSkillImportRequest | dict[str, Any],
     ) -> AdminSkillImportResponse:
-        model = request if isinstance(request, AdminSkillImportRequest) else AdminSkillImportRequest.model_validate(request)
+        model = _validate_request(AdminSkillImportRequest, request)
         data = await self._post_json(
             f"/admin/workspace/agents/{agent_id}/skills/import",
             json_body=model.model_dump(exclude_none=True),
         )
-        return AdminSkillImportResponse.model_validate(data)
+        return _validate_response(AdminSkillImportResponse, data)
 
     async def install_agent_skill(
         self,
         agent_id: str,
         request: AdminSkillRegistryInstallRequest | dict[str, Any],
     ) -> AdminSkillImportResponse:
-        model = (
-            request
-            if isinstance(request, AdminSkillRegistryInstallRequest)
-            else AdminSkillRegistryInstallRequest.model_validate(request)
-        )
+        model = _validate_request(AdminSkillRegistryInstallRequest, request)
         data = await self._post_json(
             f"/admin/workspace/agents/{agent_id}/skills/install",
             json_body=model.model_dump(exclude_none=True),
         )
-        return AdminSkillImportResponse.model_validate(data)
+        return _validate_response(AdminSkillImportResponse, data)
 
     async def check_agent_skill_update(
         self,
@@ -580,7 +762,7 @@ class Admin(_Namespace):
         data = await self._get(
             f"/admin/workspace/agents/{agent_id}/skills/{directory_name}/update/check"
         )
-        return AdminSkillUpdateCheckResponse.model_validate(data)
+        return _validate_response(AdminSkillUpdateCheckResponse, data)
 
     async def apply_agent_skill_update(
         self,
@@ -591,39 +773,31 @@ class Admin(_Namespace):
             f"/admin/workspace/agents/{agent_id}/skills/{directory_name}/update/apply",
             json_body={},
         )
-        return AdminSkillImportResponse.model_validate(data)
+        return _validate_response(AdminSkillImportResponse, data)
 
     async def update_agent_skills(
         self,
         agent_id: str,
         request: AdminAgentSkillsUpdateRequest | dict[str, Any],
     ) -> AdminAgentCreateResponse:
-        model = (
-            request
-            if isinstance(request, AdminAgentSkillsUpdateRequest)
-            else AdminAgentSkillsUpdateRequest.model_validate(request)
-        )
+        model = _validate_request(AdminAgentSkillsUpdateRequest, request)
         data = await self._put_json(
             f"/admin/workspace/agents/{agent_id}/skills",
             json_body=model.model_dump(exclude_none=True),
         )
-        return AdminAgentCreateResponse.model_validate(data)
+        return _validate_response(AdminAgentCreateResponse, data)
 
     async def update_agent_config(
         self,
         agent_id: str,
         request: AdminAgentConfigUpdateRequest | dict[str, Any],
     ) -> AdminAgentCreateResponse:
-        model = (
-            request
-            if isinstance(request, AdminAgentConfigUpdateRequest)
-            else AdminAgentConfigUpdateRequest.model_validate(request)
-        )
+        model = _validate_request(AdminAgentConfigUpdateRequest, request)
         data = await self._put_json(
             f"/admin/workspace/agents/{agent_id}/config",
             json_body=model.model_dump(exclude_none=True),
         )
-        return AdminAgentCreateResponse.model_validate(data)
+        return _validate_response(AdminAgentCreateResponse, data)
 
 
 # ---------------------------------------------------------------------------
@@ -649,6 +823,7 @@ class AnyAgent:
         events = await client.events.list(response_id)
         async for ev in client.events.stream_typed(response_id):
             ...
+        timeline = await client.observability.timeline(agent_id="main")
         health = await client.health()
         agents = await client.agents.list()
         agent = await client.agents.get("main")
@@ -682,13 +857,14 @@ class AnyAgent:
         self.agents = Agents(**shared)
         self.tools = Tools(**shared)
         self.events = Events(**shared)
+        self.observability = Observability(**shared)
         self.skills = Skills(**shared)
         self.prompts = Prompts(**shared)
         self.admin = Admin(**shared)
 
     async def health(self) -> HealthResponse:
         data = await _Namespace(base_url=self._base_url, api_key=self._api_key, http=self._http)._get("/healthz")
-        return HealthResponse.model_validate(data)
+        return _validate_response(HealthResponse, data)
 
     def _openai_base_url(self) -> str:
         """Return normalized OpenAI SDK base URL for this AnyAgent server."""
@@ -1208,10 +1384,10 @@ def _build_example_run_bundle_explanation(
 
 
 def _coerce_example_options(options: PromptRunBundleExampleOptions | dict[str, Any] | None) -> PromptRunBundleExampleOptions:
-    if isinstance(options, PromptRunBundleExampleOptions):
-        return options
     if isinstance(options, dict):
-        return PromptRunBundleExampleOptions.model_validate(options)
+        return _validate_request(PromptRunBundleExampleOptions, options)
+    if isinstance(options, PromptRunBundleExampleOptions):
+        return _validate_request(PromptRunBundleExampleOptions, options)
     return PromptRunBundleExampleOptions()
 
 

@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
+import yaml
+
 from anyagent.cli import main
+from anyagent.model_config import WorkspaceModelsConfig
 from anyagent.protocol.plugins import PluginCatalogResponse
 from anyagent.protocol.workspace import WorkspaceDoctorReport, WorkspaceInitResult
 
@@ -58,6 +61,36 @@ def test_doctor_accepts_initialized_workspace(tmp_path, capsys) -> None:
     payload = WorkspaceDoctorReport.model_validate_json(capsys.readouterr().out)
     assert payload.ok is True
     assert any(item.code == "agent_loaded" for item in payload.findings)
+
+
+def test_config_init_creates_models_config_and_agent_selection(tmp_path, capsys) -> None:
+    rc = main(
+        [
+            "config",
+            "init",
+            "--workspace",
+            str(tmp_path),
+            "--agent-id",
+            "delivery-agent",
+            "--model-alias",
+            "fast",
+            "--model",
+            "gpt-4.1-mini",
+            "--provider",
+            "openai",
+        ]
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    models = WorkspaceModelsConfig.model_validate(
+        yaml.safe_load((tmp_path / "models.yaml").read_text(encoding="utf-8"))
+    )
+    assert models.default_model == "fast"
+    assert models.models["fast"].model == "gpt-4.1-mini"
+    agent_yaml = (tmp_path / ".agents" / "agents" / "delivery-agent" / "agent.yaml").read_text(encoding="utf-8")
+    assert "model:\n  default: fast\n" in agent_yaml
 
 
 def test_doctor_rejects_missing_workspace(tmp_path, capsys) -> None:

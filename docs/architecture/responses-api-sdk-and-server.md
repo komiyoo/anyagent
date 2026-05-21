@@ -144,6 +144,7 @@ sequenceDiagram
 
 ```python
 from anyagent import AnyAgent
+from anyagent.types import AdminCredentialSetRequest, InternalObservabilityTimelineResponse
 
 client = AnyAgent(api_key="...", base_url="http://127.0.0.1:8787")
 
@@ -170,6 +171,8 @@ custom_bundle = client.prompts.example_run_bundle(
     options={"include_mcp": False, "skill_count": 1, "sandbox_mode": "disabled"},
 )
 ```
+
+SDK 的业务边界模型集中从 `anyagent.types` 导出，业务侧不要直接依赖分散的 `anyagent.protocol.*` 模块来表达 SDK 输入/输出类型。`protocol.*` 仍是 wire-level SSOT；`types` 是 SDK public model facade。SDK 网络方法在请求体序列化前和响应返回后都调用 Pydantic model validation，确保业务函数边界处只继续传递已验证模型。
 
 设计要点：
 - `client.openai` / `client.async_openai` 是主入口，承载 OpenAI 兼容面

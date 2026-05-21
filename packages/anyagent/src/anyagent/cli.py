@@ -14,6 +14,7 @@ import uvicorn
 import yaml
 
 from anyagent.agent_packs import AgentPackError, load_agent_catalog
+from anyagent.model_config import WorkspaceModelsConfig, workspace_models_config_path
 from anyagent.observability import configure_observability_from_env
 from anyagent.protocol.credential_vault import (
     AdminCredentialListResponse,
@@ -118,6 +119,25 @@ def main(argv: list[str] | None = None) -> int:
     doctor.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
     doctor.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
+    config = sub.add_parser("config", help="Business workspace configuration operations.")
+    config_sub = config.add_subparsers(dest="config_cmd", required=True)
+    config_init = config_sub.add_parser("init", help="Initialize workspace model/provider config and an agent pack.")
+    config_init.add_argument("--workspace", default=".", help="Business workspace root to initialize.")
+    config_init.add_argument("--agent-id", default="main", help="Agent id to create/update (default: main).")
+    config_init.add_argument("--model-alias", default="default", help="Model alias stored in workspace-root `models.yaml`.")
+    config_init.add_argument("--model", default="gpt-4o-mini", help="Upstream provider model name.")
+    config_init.add_argument(
+        "--provider",
+        default="openai",
+        choices=["openai", "anthropic", "gemini"],
+        help="Provider kind for the model alias.",
+    )
+    config_init.add_argument("--provider-name", default=None, help="Provider config key (default: --provider).")
+    config_init.add_argument("--api-key-env", default=None, help="Environment variable containing the provider API key.")
+    config_init.add_argument("--base-url", default=None, help="Provider base URL literal.")
+    config_init.add_argument("--base-url-env", default=None, help="Environment variable containing provider base URL.")
+    config_init.add_argument("--force", action="store_true", help="Overwrite files created by this command.")
+
     serve = sub.add_parser("serve", help="Start the built-in anyagent server.")
     serve.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
     serve.add_argument("--host", default="127.0.0.1")
@@ -134,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     serve.add_argument("--sandbox-root", default=None, help="Optional root dir for local sandbox sessions.")
+    serve.add_argument("--no-studio", action="store_true", help="Do not mount the bundled Studio at /studio.")
     serve.add_argument(
         "--storage-mode",
         choices=["none", "external"],
@@ -305,6 +326,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_init(args)
     if args.cmd == "doctor":
         return _cmd_doctor(args)
+    if args.cmd == "config":
+        if args.config_cmd == "init":
+            return _cmd_config_init(args)
+        parser.error("unsupported config command")
     if args.cmd == "serve":
         return _cmd_serve(args)
     if args.cmd == "agent-api":
@@ -469,6 +494,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         session_lock_backend=args.session_lock_backend,
         session_lease_ttl_s=args.session_lease_ttl_s,
         cors_origins=args.cors_origin,
+        enable_studio=not bool(args.no_studio),
     )
     uvicorn.run(app, host=args.host, port=int(args.port), log_level="info")
     return 0
@@ -555,6 +581,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
                 requested_tool_names=list(spec["requested_tool_names"]),
                 sandbox_mode=str(spec["sandbox_mode"]),
                 spawn_allow_agent_ids=list(spec["spawn_allow_agent_ids"]),
+                model_default=None,
             ),
             force=force,
             created=created,
@@ -603,6 +630,75 @@ def _cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_config_init(args: argparse.Namespace) -> int:
+    workspace = Path(args.workspace).expanduser().resolve()
+    agent_id = _validate_init_agent_id(str(args.agent_id))
+    model_alias = _validate_config_key(str(args.model_alias), "--model-alias")
+    provider_name = _validate_config_key(str(args.provider_name or args.provider), "--provider-name")
+    provider_kind = str(args.provider)
+    model_name = str(args.model or "").strip()
+    if not model_name:
+        raise SystemExit("--model must be non-empty")
+
+    force = bool(args.force)
+    created: list[str] = []
+    skipped: list[str] = []
+    models_yaml = _render_models_yaml(
+        model_alias=model_alias,
+        provider_name=provider_name,
+        provider_kind=provider_kind,
+        model=model_name,
+        api_key_env=str(args.api_key_env).strip() if args.api_key_env else None,
+        base_url=str(args.base_url).strip() if args.base_url else None,
+        base_url_env=str(args.base_url_env).strip() if args.base_url_env else None,
+    )
+    _write_file(
+        workspace_models_config_path(workspace),
+        models_yaml,
+        force=force,
+        created=created,
+        skipped=skipped,
+    )
+    _write_file(
+        workspace / "AGENTS.md",
+        _workspace_instructions_for_template("business-workspace"),
+        force=force,
+        created=created,
+        skipped=skipped,
+    )
+    agent_dir = workspace / ".agents" / "agents" / agent_id
+    _write_file(
+        agent_dir / "agent.yaml",
+        _render_agent_yaml(
+            selected_skills=[],
+            requested_tool_names=[],
+            sandbox_mode="disabled",
+            spawn_allow_agent_ids=[],
+            model_default=model_alias,
+        ),
+        force=force,
+        created=created,
+        skipped=skipped,
+    )
+    _write_file(agent_dir / "AGENTS.md", _BASIC_AGENT_INSTRUCTIONS, force=force, created=created, skipped=skipped)
+    _write_file(agent_dir / "mcp.json", _DEFAULT_MCP_JSON, force=force, created=created, skipped=skipped)
+    _write_file(workspace / ".agents" / "skills" / ".gitkeep", "", force=force, created=created, skipped=skipped)
+
+    config = WorkspaceModelsConfig.model_validate(yaml.safe_load(models_yaml))
+    payload = {
+        "ok": True,
+        "workspace": str(workspace),
+        "agent_id": agent_id,
+        "models_config": str(workspace_models_config_path(workspace)),
+        "default_model": config.default_model,
+        "created": created,
+        "skipped": skipped,
+        "next": f"anyagent doctor --workspace {workspace}",
+    }
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     workspace = Path(args.workspace).expanduser().resolve()
     findings = _doctor_workspace(workspace)
@@ -644,7 +740,7 @@ def _doctor_workspace(workspace: Path) -> list[WorkspaceDoctorFinding]:
 
     main = catalog.get("main")
     if main is None:
-        add("warning", "missing_main_agent", "no agent_id=main pack found; `anyagent serve` currently requires exposed main")
+        add("warning", "missing_main_agent", "no agent_id=main pack found; default requests must pass metadata.agent_id or x-agent-id")
     elif not main.spec.exposed:
         add("error", "main_not_exposed", "agent_id=main exists but exposed=false; `anyagent serve` requires exposed main")
 
@@ -697,6 +793,15 @@ def _validate_init_agent_id(agent_id: str) -> str:
     return value
 
 
+def _validate_config_key(value: str, flag: str) -> str:
+    value = value.strip()
+    if not value:
+        raise SystemExit(f"{flag} must be non-empty")
+    if len(value) > 128 or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-" for ch in value):
+        raise SystemExit(f"{flag} must match [a-zA-Z0-9_.-]{{1,128}}")
+    return value
+
+
 def _write_file(path: Path, text: str, *, force: bool, created: list[str], skipped: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and not force:
@@ -712,6 +817,7 @@ def _render_agent_yaml(
     requested_tool_names: list[str] | None = None,
     sandbox_mode: str = "disabled",
     spawn_allow_agent_ids: list[str] | None = None,
+    model_default: str | None = None,
 ) -> str:
     skills_block = (
         "  default_selected: []\n"
@@ -730,8 +836,10 @@ def _render_agent_yaml(
         if not spawn_ids
         else "  spawn_allow_agent_ids:\n" + "".join(f"    - {agent_id}\n" for agent_id in spawn_ids)
     )
+    model_block = "" if not model_default else f"model:\n  default: {model_default}\n"
     return (
         "exposed: true\n"
+        f"{model_block}"
         "tools:\n"
         f"{tools_block}"
         "skills:\n"
@@ -741,6 +849,37 @@ def _render_agent_yaml(
         "multiagent:\n"
         f"{spawn_block}"
     )
+
+
+def _render_models_yaml(
+    *,
+    model_alias: str,
+    provider_name: str,
+    provider_kind: str,
+    model: str,
+    api_key_env: str | None,
+    base_url: str | None,
+    base_url_env: str | None,
+) -> str:
+    provider: dict[str, str] = {"kind": provider_kind}
+    if api_key_env:
+        provider["api_key_env"] = api_key_env
+    elif provider_kind == "anthropic":
+        provider["api_key_env"] = "ANTHROPIC_API_KEY"
+    elif provider_kind == "gemini":
+        provider["api_key_env"] = "GOOGLE_API_KEY"
+    else:
+        provider["api_key_env"] = "OPENAI_API_KEY"
+    if base_url:
+        provider["base_url"] = base_url
+    if base_url_env:
+        provider["base_url_env"] = base_url_env
+    payload = {
+        "default_model": model_alias,
+        "providers": {provider_name: provider},
+        "models": {model_alias: {"provider": provider_name, "model": model}},
+    }
+    return yaml.safe_dump(payload, sort_keys=False)
 
 
 def _workspace_instructions_for_template(template: str) -> str:

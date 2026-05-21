@@ -75,6 +75,7 @@ anyagent init --workspace ./my-workspace --force
 ```text
 my-workspace/
   AGENTS.md                       # workspace 级协作规范（可选）
+  models.yaml                     # workspace 级模型/provider 目录（可选）
   .agents/
     agents/
       main/                      # agent_id = "main"
@@ -85,6 +86,26 @@ my-workspace/
       example-skill/
         SKILL.md                 # `--with-example-skill` 生成
 ```
+
+业务仓库根目录也可以用 `anyagent config init` 一次生成模型/provider 目录与 agent pack：
+
+```bash
+anyagent config init \
+  --workspace ./my-workspace \
+  --agent-id delivery-agent \
+  --model-alias fast \
+  --model gpt-4.1-mini \
+  --provider openai
+```
+
+这会生成业务仓库根目录 `models.yaml`，并在 `.agents/agents/delivery-agent/agent.yaml` 中写入：
+
+```yaml
+model:
+  default: fast
+```
+
+`fast` 会在服务端解析为业务仓库根目录 `models.yaml` 里的真实 provider 与上游模型名。请求体显式传入 `model` 时仍优先生效，未传时使用 agent 的默认模型选择。
 
 **agent.yaml 示例**：
 
@@ -169,6 +190,12 @@ uv pip install 'anyagent[postgres,redis]'
 # 启动（自动发现 .agents/ 配置）
 anyagent serve --workspace ./my-workspace --port 8787
 
+# 默认在同一服务挂载内置 Studio：/studio
+anyagent serve --workspace ./my-workspace --port 8787
+
+# 仅启动 API，不挂载 Studio
+anyagent serve --workspace ./my-workspace --no-studio
+
 # 或使用环境变量
 OPENAI_API_KEY=sk-... anyagent serve
 
@@ -202,6 +229,8 @@ ANYAGENT_OBSERVABILITY_HTTP_URL=https://collector.example.com/ingest \
 anyagent serve --workspace ./my-workspace
 ```
 
+内置 Studio 默认从 Core typed observability API 聚合运行数据，而不是读取日志文件或绑定某个日志后端。当前可通过 `/internal/observability/runs`、`/summary`、`/timeline`、`/metrics`、`/tools`、`/errors` 与 `/traces/{trace_id}` 查询 run 历史、工具性能、错误、trace/audit_ref 关联和聚合指标；结构化日志会同时进入 normalized telemetry store 与可选 HTTP collector。启用 `STORAGE_MODE=external` 且配置 `POSTGRES_DSN` 时，Core 会使用 PostgreSQL `telemetry_events` 表持久化 normalized telemetry events，支撑跨进程、跨重启的 Studio 查询；其他日志/分析后端暂不在本阶段接入。
+
 ### 4. 调用 OpenAI 兼容接口
 
 ```python
@@ -234,6 +263,7 @@ response = client.responses.create(
 
 ```python
 from anyagent import AnyAgent
+from anyagent.types import AdminCredentialSetRequest
 
 client = AnyAgent(base_url="http://127.0.0.1:8787", api_key="your-key")
 
@@ -291,6 +321,8 @@ custom_bundle = client.prompts.example_run_bundle(
     options={"include_mcp": False, "skill_count": 1, "sandbox_mode": "disabled"},
 )
 ```
+
+SDK 对外数据模型集中从 `anyagent.types` 导出，类似 OpenAI Python SDK 的 `openai.types`；业务代码需要显式构造请求体时优先导入这些模型。`AnyAgent` 各命名空间方法会在请求发送前和响应返回后各做一次 Pydantic 边界校验，避免未校验的 dict 在业务层继续传播。
 
 ### 6. 配置凭据和 MCP
 

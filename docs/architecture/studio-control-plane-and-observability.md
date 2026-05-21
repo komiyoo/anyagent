@@ -36,7 +36,23 @@ Studio 左上角 `AnyAgent` logo 区域应成为工作模式切换入口，提�
 - 指定 agent 的轮数统计：session turn count、run count、每轮输入/输出字符长度、平均/分位长度。
 - LLM 调用事件统计：model、provider、input tokens、output tokens、cached input tokens、first-token latency、total response latency、finish reason、error。
 
-v0 可以从已有 SSE / internal events / session-run-event store 聚合；Studio 现已补上 `/internal/observability/runs` 作为 agent/session 的 response-run 历史列表入口，并补上 `/internal/observability/summary` 作为单个 response 的 typed telemetry summary 入口，浏览器端优先消费这些摘要，并允许从历史列表选中指定 response/run 后加载对应摘要与事件回放，避免默认扫描大量 raw events。Core 在 run 开始时写入 `anyagent.response.request` 内部事件，并在 summary 中结合 final response 聚合 turn count、总输入/输出字符数与每轮输入/输出字符数。`/internal/observability/runs` 支持 `created_after_ms` / `created_before_ms` / `limit`，Studio 提供 All time / Last hour / Last 24 hours 和 limit 过滤。
+当前实现已从 per-response v0 提升为 Core typed telemetry query 面：Studio 不直连日志库，也不承担存储适配；它只消费 Core 的 `/internal/observability/*` typed API。Core 侧新增 `TelemetryStore` 查询门面，底层由 Run Store、Event Store 与 normalized telemetry ingest store 聚合；启用 `STORAGE_MODE=external` 且配置 `POSTGRES_DSN` 时，normalized telemetry 会写入 PostgreSQL `telemetry_events` 表。其他日志/分析后端暂不接入，后续即使替换为 ClickHouse、Loki、ES 或 HTTP collector 的持久化实现，也不改变 Studio 调用契约。
+
+写入侧统一 contract 是 `anyagent.protocol.observability.NormalizedTelemetryEvent`，`source` 使用 `TelemetrySource = run | event | stage | observability | workspace | audit`。`TelemetryStore` 必须提供 `ingest(event)` / `ingest_many(events)` 与 typed 查询方法；adapter 可以从 Run/Event/StageEvent/ObservabilityEvent/WorkspaceEvent/AuditEvent 转成同一个 normalized row，再进入查询层。当前 reference implementation 已将 Run Store、Event Store、structured log/audit sink 与显式 ingest 的 workspace/audit 事件一起合并进 timeline/tools/errors/traces 查询；PostgreSQL adapter 持久化同一个 normalized row，不要求 Studio 或 SDK 感知数据库差异。
+
+已落地的查询入口：
+
+- `/internal/observability/runs`：按 agent/session/response/time window/limit 查询 response-run 历史。
+- `/internal/observability/summary`：查询单个 response 的 token、latency、tool/MCP/skill、turn/字符数摘要。
+- `/internal/observability/timeline`：把 run、stage event、structured observability event 归一成时间线，支持 `trace_id` 过滤。
+- `/internal/observability/metrics`：聚合 run_count、event_count、tool/MCP/error count、tokens、平均/最大 latency。
+- `/internal/observability/tools`：按 tool name 聚合 planned/result/error、duration 与 audit refs。
+- `/internal/observability/errors`：归一化 run error、stage error、structured log error。
+- `/internal/observability/traces/{trace_id}`：按 trace 串起 response ids、audit refs 与时间线事件。
+
+Studio Observability 页面现已消费 runs/summary/metrics/tools/errors/timeline/trace：顶部展示 agent/session 级聚合指标，History 可选择具体 response/run 做 drill-down，也可按 `trace_id` 拉取跨 response 时间线；Aggregation 区提供 source/status/tool 过滤、工具聚合、错误列表与 telemetry timeline。`/internal/events/list` 仍作为 Debug 页和单 run 回放的低层入口，不再是 Studio 聚合观测的唯一来源。
+
+AnyAgent SDK 也提供 `client.observability` namespace，覆盖 runs、summary、timeline、metrics、tools、errors 与 trace 查询，用于业务 demo、验收脚本和外部控制台复用同一 typed API。
 
 ## 3. Enable / Disable 配置语义
 
@@ -73,7 +89,7 @@ v0 可以从已有 SSE / internal events / session-run-event store 聚合；Stud
 
 ## 5. 后续实现切片
 
-1. Core observability drill-down：在现有 summary/runs 之上继续补服务器端 turn/event 分页与按指标排序。
+1. Core observability persistence：PostgreSQL `telemetry_events` 已作为第一版持久化 adapter；后续再评估 ClickHouse/Loki/ES 等分析后端与审计报告导出。
 2. Iteration loop：Studio 已基于 latency、token、tool/MCP 调用数、skill 披露数和 turn 长度生成初版迭代建议并跳转到对应页；后续可把建议持久化为优化任务。
 3. Apps Studio page split：Build 模式已提供独立 Skills / MCP / Tools / Files tab，Configure 仍保留总览与常用配置入口。
 4. Evaluation handoff：把观测到的高价值 session/run 转成 dataset/evaluation seed。
@@ -84,4 +100,4 @@ v0 可以从已有 SSE / internal events / session-run-event store 聚合；Stud
 - 折叠侧边栏后所有菜单仍能通过图标和 tooltip 访问。
 - 任一 skill/MCP/tool 的胶囊开关保存后，源码文件可见等价变化。
 - 任一源码文件手工修改后，表单重新加载能回填或明确进入 invalid/recovery 状态。
-- Observability 页面能从一个 response id 追到完整事件历史，并聚合出 token、latency、tool/MCP/skill 指标。
+- Observability 页面能从 agent/session 聚合指标追到具体 response/run、tool、error、audit_ref、trace_id 与事件历史，并聚合出 token、latency、tool/MCP/skill 指标。
