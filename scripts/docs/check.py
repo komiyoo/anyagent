@@ -39,6 +39,7 @@ _SKIP_DIR_NAMES = {
     "build",
     "dist",
     "node_modules",
+    "Python",
 }
 _REPO_TOP_LEVEL_NAMES = {
     ".agents",

@@ -61,6 +61,11 @@ stages:
                 - docs/release-checklist.md
                 - .yunxiao/flow.anyagent.yml
               includePathInArtifact: false
+          sync_gitlab_step:
+            name: 同步对应分支到 GitLab
+            step: Command
+            with:
+              run: bash scripts/sync-codeup-to-gitlab.sh
           publish_step:
             name: 发布到云效 PyPI
             step: Command

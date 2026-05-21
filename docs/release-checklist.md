@@ -29,8 +29,11 @@ installation docs change.
 8. Let Yunxiao build and publish to Yunxiao Packages PyPI:
    - Yunxiao pipeline: `4972656` (`anyagent build`) builds and verifies `packages/anyagent/dist/`
    - the pipeline sends a Feishu notification before tests/build via `scripts/notify_release_start.py`
-   - publishing uses the Packages PyPI repository `lyriktrip`
+   - publishing uses the dedicated Packages PyPI repository `anyagent`
+   - create the dedicated Yunxiao Packages PyPI repository before enabling publish; do not reuse the existing `lyriktrip` / `lyra-python-sdk` repository
+   - set `ANYAGENT_PYPI_REPOSITORY_URL` to the repository URL if the repo id is not exactly `anyagent`
    - keep `TWINE_PASSWORD` as an encrypted pipeline variable
+   - keep `GITLAB_TOKEN` as an encrypted pipeline variable when GitLab mirror sync is required
    - set `FEISHU_RELEASE_WEBHOOK_URL` as an encrypted pipeline variable when notifications are required
    - set `FEISHU_RELEASE_WEBHOOK_SECRET` as an encrypted pipeline variable when the Feishu bot enables signature verification
    - the publish step calls `scripts/publish-yunxiao-pypi.sh`; it probes whether the exact target version already exists before uploading
@@ -46,10 +49,12 @@ installation docs change.
 ## Notes
 
 - Source of truth is Codeup: `https://codeup.aliyun.com/63d476f8d14a7f379aa798da/anyagent.git`.
-- Yunxiao pipeline `4972656` sends a Feishu pre-build notification, builds and verifies distributions from Codeup, uploads `packages/anyagent/dist/` as a Flow artifact, and publishes to Yunxiao Packages PyPI when `TWINE_PASSWORD` is configured.
+- Yunxiao pipeline `4972656` sends a Feishu pre-build notification, builds and verifies distributions from Codeup, uploads `packages/anyagent/dist/` as a Flow artifact, syncs the current branch to GitLab when mirror variables are configured, and publishes to Yunxiao Packages PyPI when `TWINE_PASSWORD` is configured.
 - `scripts/notify_release_start.py` skips notification when `FEISHU_RELEASE_WEBHOOK_URL` is unset; when it is set, a failed Feishu response fails the build before package construction.
 - `anyagent-apps` consumes the installed/published `anyagent` package; it does not publish the SDK.
 - Yunxiao build uses the Aliyun PyPI mirror only for third-party dependency downloads.
 - Consumers install from the PyPI-compatible Yunxiao Packages repository using the distribution name `anyagent`.
 - Twine upload uses `TWINE_REPOSITORY_URL`, `TWINE_USERNAME`, and encrypted `TWINE_PASSWORD`; the pipeline provides defaults for the first two.
+- GitLab mirror sync uses `ANYAGENT_GITLAB_REMOTE_URL` or `GITLAB_REMOTE_URL`, encrypted `GITLAB_TOKEN`, optional `GITLAB_USERNAME`, and optional standard HTTP proxy variables.
+- The Cloudflare Open Proxy Worker at `proxy.cbotomo.com` is URL-forwarding style (`https://proxy.cbotomo.com/https://target/...`), not a standard Git HTTPS `CONNECT` proxy. Use it for HTTP downloads only; use a standard proxy URL in `GIT_STANDARD_PROXY_URL`, `HTTPS_PROXY`, or `HTTP_PROXY` if GitLab push needs proxying.
 - `scripts/publish-yunxiao-pypi.sh` is the canonical publish command for the pipeline.
