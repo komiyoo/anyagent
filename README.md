@@ -2,6 +2,30 @@
 
 anyagent 是一个**配置即服务**的 AI Agent 基础设施：通过 `AGENTS.md`、`agent.yaml`、`mcp.json` 等配置文件即可启动一个兼容 OpenAI Responses API 的 Agent Server，无需编写任何服务端代码。
 
+PyPI distribution name: `anyagent`.
+Python import package: `anyagent`.
+
+## Install from Yunxiao Packages PyPI
+
+```bash
+pip install anyagent
+```
+
+Consumers should configure their package installer to read from the Yunxiao
+Packages PyPI repository `lyriktrip`. Keep repository passwords in local,
+server, or pipeline secrets, not in source-controlled dependency files.
+
+## Package Source
+
+Source code and release tags live in Codeup:
+`https://codeup.aliyun.com/63d476f8d14a7f379aa798da/anyagent.git`.
+
+The Yunxiao pipeline `4972656` (`anyagent build`) builds and verifies
+`packages/anyagent/dist/` from Codeup, stores the built files as a Flow artifact,
+and publishes them to the Yunxiao Packages PyPI repository when
+`TWINE_PASSWORD` is configured as an encrypted pipeline variable. Detailed
+release steps live in `docs/release-checklist.md`.
+
 ```bash
 cd my-workspace   # 包含 .agents/ 配置目录
 anyagent serve     # 一条命令启动 Agent Server

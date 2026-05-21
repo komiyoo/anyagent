@@ -1,0 +1,68 @@
+sources:
+  main_repo:
+    type: codeup
+    name: anyagent
+    endpoint: https://codeup.aliyun.com/63d476f8d14a7f379aa798da/anyagent.git
+    branch: main
+    triggerEvents:
+      - push
+    branchesFilter: ^main$
+    certificate:
+      type: serviceConnection
+      serviceConnection: dtrcgsysymyh6jgt
+
+defaultWorkspace: main_repo
+
+stages:
+  build_stage:
+    name: 构建阶段
+    jobs:
+      build_job:
+        name: 构建并发布 anyagent SDK
+        runsOn:
+          group: public/cn-beijing
+          container: build-steps-public-registry.cn-beijing.cr.aliyuncs.com/build-steps/alinux3:latest
+        steps:
+          setup_python_step:
+            name: 安装 Python
+            step: SetupPython
+            with:
+              pythonVersion: "3.12"
+          notify_step:
+            name: 构建前飞书通知
+            step: Command
+            with:
+              run: python3 scripts/notify_release_start.py --project anyagent
+          command_step:
+            name: 测试并构建 SDK
+            step: Command
+            with:
+              run: |
+                set -eu
+                export PIP_DISABLE_PIP_VERSION_CHECK=1
+                export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+                export PIP_TRUSTED_HOST=mirrors.aliyun.com
+                python -m pip cache purge || true
+                python -m pip install --no-cache-dir --upgrade build pytest twine uv
+                bash scripts/ci/run_docs_guardrails.sh
+                bash scripts/ci/run_pytest_regressions.sh
+                bash scripts/ci/run_offline_smokes.sh
+                rm -rf packages/anyagent/dist
+                python -m build packages/anyagent
+                python -m twine check packages/anyagent/dist/*
+          upload_step:
+            step: ArtifactUpload
+            name: 上传 SDK 发行包
+            with:
+              uploadType: flowPublic
+              artifact: anyagent-sdk-dist
+              filePath:
+                - packages/anyagent/dist/
+                - docs/release-checklist.md
+                - .yunxiao/flow.anyagent.yml
+              includePathInArtifact: false
+          publish_step:
+            name: 发布到云效 PyPI
+            step: Command
+            with:
+              run: bash scripts/publish-yunxiao-pypi.sh
