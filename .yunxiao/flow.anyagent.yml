@@ -45,13 +45,13 @@ stages:
                 if command -v yum >/dev/null 2>&1; then
                   yum install -y libffi libffi-devel >/dev/null 2>&1 || true
                 fi
-                if ! python -c "import ctypes"
-                then
-                  libffi_path="$(ldconfig -p 2>/dev/null | awk '/libffi.so/{print $NF; exit}')"
-                  if [ -n "$libffi_path" ] && [ ! -e /usr/lib64/libffi.so.7 ]; then
-                    ln -s "$libffi_path" /usr/lib64/libffi.so.7
-                  fi
-                  python -c "import ctypes"
+                libffi_path="$(ldconfig -p 2>/dev/null | awk '/libffi.so/{print $NF; exit}')"
+                if [ -n "$libffi_path" ] && [ ! -e /usr/lib64/libffi.so.7 ]; then
+                  ln -s "$libffi_path" /usr/lib64/libffi.so.7 || true
+                fi
+                if ! python -c "import ctypes" >/dev/null 2>&1; then
+                  echo "Python ctypes is unavailable after libffi setup; check libffi runtime." >&2
+                  exit 1
                 fi
                 python -m pip cache purge || true
                 python -m pip install --no-cache-dir --upgrade build pytest twine uv
@@ -72,11 +72,11 @@ stages:
                 - docs/release-checklist.md
                 - .yunxiao/flow.anyagent.yml
               includePathInArtifact: false
-          sync_gitlab_step:
-            name: 同步对应分支到 GitLab
+          sync_github_step:
+            name: 同步对应分支到 GitHub
             step: Command
             with:
-              run: bash scripts/sync-codeup-to-gitlab.sh
+              run: bash scripts/mirror-codeup-to-github.sh
           publish_step:
             name: 发布到云效 PyPI
             step: Command
