@@ -123,13 +123,13 @@ def sign(secret: str, timestamp: int) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", default="anyagent")
-    parser.add_argument("--branch", default=os.environ.get("CI_COMMIT_BRANCH") or os.environ.get("BRANCH_NAME") or "main")
-    parser.add_argument("--previous-ref", default=os.environ.get("ANYAGENT_RELEASE_PREVIOUS_REF") or "HEAD~1")
-    parser.add_argument("--target-ref", default=os.environ.get("ANYAGENT_RELEASE_TARGET_REF") or "HEAD")
+    parser.add_argument("--branch", default=os.environ.get("CI_COMMIT_REF_NAME") or os.environ.get("CI_COMMIT_BRANCH") or os.environ.get("BRANCH_NAME") or "main")
+    parser.add_argument("--previous-ref", default=os.environ.get("ANYAGENT_RELEASE_PREVIOUS_REF") or os.environ.get("CI_COMMIT_BEFORE_SHA") or "HEAD~1")
+    parser.add_argument("--target-ref", default=os.environ.get("ANYAGENT_RELEASE_TARGET_REF") or os.environ.get("CI_COMMIT_SHA") or "HEAD")
     args = parser.parse_args()
 
     webhook_url = os.environ.get("FEISHU_RELEASE_WEBHOOK_URL", "").strip()
-    if not webhook_url:
+    if not webhook_url or webhook_url == "REPLACE_ME":
         print("FEISHU_RELEASE_WEBHOOK_URL is not set; skipping release notification.", file=sys.stderr)
         return 0
 
@@ -140,7 +140,7 @@ def main() -> int:
     }
 
     secret = os.environ.get("FEISHU_RELEASE_WEBHOOK_SECRET", "").strip()
-    if secret:
+    if secret and secret != "REPLACE_ME":
         timestamp = int(time.time())
         payload["timestamp"] = str(timestamp)
         payload["sign"] = sign(secret, timestamp)
