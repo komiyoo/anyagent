@@ -827,6 +827,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
             created=created,
             skipped=skipped,
         )
+    _write_demo_plugin_files(workspace=workspace, force=force, created=created, skipped=skipped)
 
     payload = {
         "ok": True,
@@ -921,6 +922,7 @@ def _cmd_config_init(args: argparse.Namespace) -> int:
         _write_file(main_dir / "AGENTS.md", str(main_spec["instructions"]), force=force, created=created, skipped=skipped)
         _write_file(main_dir / "mcp.json", _DEFAULT_MCP_JSON, force=force, created=created, skipped=skipped)
     _write_file(workspace / ".agents" / "skills" / ".gitkeep", "", force=force, created=created, skipped=skipped)
+    _write_demo_plugin_files(workspace=workspace, force=force, created=created, skipped=skipped)
 
     config = WorkspaceModelsConfig.model_validate(yaml.safe_load(models_yaml))
     payload = {
@@ -1062,6 +1064,12 @@ def _write_file(path: Path, text: str, *, force: bool, created: list[str], skipp
     created.append(str(path))
 
 
+def _write_demo_plugin_files(*, workspace: Path, force: bool, created: list[str], skipped: list[str]) -> None:
+    plugin_dir = workspace / "plugins" / "demo"
+    for rel, text in _DEMO_PLUGIN_FILES.items():
+        _write_file(plugin_dir / rel, text, force=force, created=created, skipped=skipped)
+
+
 def _render_agent_yaml(
     *,
     selected_skills: list[str],
@@ -1087,17 +1095,35 @@ def _render_agent_yaml(
         if not spawn_ids
         else "  spawn_allow_agent_ids:\n" + "".join(f"    - {agent_id}\n" for agent_id in spawn_ids)
     )
-    model_block = "" if not model_default else f"model:\n  default: {model_default}\n"
+    model_block = (
+        ""
+        if not model_default
+        else "# Model alias from workspace-root models.yaml. Request body `model` can still override it.\n"
+        f"model:\n  default: {model_default}\n"
+    )
     return (
+        "# AnyAgent agent pack configuration.\n"
+        "# This file controls what the server may expose to the model. AGENTS.md gives behavior instructions,\n"
+        "# but tool access, sandbox mode, selected skills, and child-agent boundaries are enforced here.\n"
         "exposed: true\n"
+        "# exposed=true means external callers may select this agent via metadata.agent_id / x-agent-id.\n"
+        "# Set false for worker agents that should only be spawned by another agent.\n"
         f"{model_block}"
         "tools:\n"
+        "  # requested_tool_names is the default tool allowlist request for this agent.\n"
+        "  # Tools must also be registered by Core / MCP / Tool Runtime plugins before they become visible.\n"
+        "  # Plugin demo note: generated plugins/demo registers app.demo.echo, but it stays inactive until\n"
+        "  # you start standalone Tool Runtime with --plugin-root plugins and add app.demo.echo below.\n"
         f"{tools_block}"
         "skills:\n"
+        "  # default_selected names workspace or agent-local skills selected for every run of this agent.\n"
+        "  # Skills can add instructions and may request additional tools via their agents/openai.yaml metadata.\n"
         f"{skills_block}"
         "sandbox:\n"
+        "  # disabled: no command execution. local-unsafe: local development only. opensandbox/external: production isolation.\n"
         f"  mode: {sandbox_mode}\n"
         "multiagent:\n"
+        "  # Child agents this agent is allowed to spawn. Keep empty unless you intentionally build a multi-agent flow.\n"
         f"{spawn_block}"
     )
 
@@ -1125,12 +1151,56 @@ def _render_models_yaml(
         provider["base_url"] = base_url
     if base_url_env:
         provider["base_url_env"] = base_url_env
-    payload = {
-        "default_model": model_alias,
-        "providers": {provider_name: provider},
-        "models": {model_alias: {"provider": provider_name, "model": model}},
-    }
-    return yaml.safe_dump(payload, sort_keys=False)
+    provider_lines = [
+        "# Workspace model/provider catalog.",
+        "# Agent packs reference models by alias through `.agents/agents/<agent_id>/agent.yaml`:",
+        f"#   model.default: {model_alias}",
+        "# Keep credentials in environment variables or a secret manager; do not commit plaintext keys.",
+        f"default_model: {_yaml_scalar(model_alias)}",
+        "",
+        "providers:",
+        f"  {provider_name}:",
+        f"    # kind selects the provider adapter: openai | anthropic | gemini.",
+        f"    kind: {_yaml_scalar(provider['kind'])}",
+    ]
+    if "api_key_env" in provider:
+        provider_lines.extend(
+            [
+                "    # api_key_env names the environment variable read at runtime.",
+                f"    api_key_env: {_yaml_scalar(provider['api_key_env'])}",
+            ]
+        )
+    if "base_url" in provider:
+        provider_lines.extend(
+            [
+                "    # Optional literal provider base URL. Prefer base_url_env for per-environment overrides.",
+                f"    base_url: {_yaml_scalar(provider['base_url'])}",
+            ]
+        )
+    if "base_url_env" in provider:
+        provider_lines.extend(
+            [
+                "    # Optional env var for OpenAI-compatible or proxy base URL.",
+                f"    base_url_env: {_yaml_scalar(provider['base_url_env'])}",
+            ]
+        )
+    provider_lines.extend(
+        [
+            "",
+            "models:",
+            f"  {model_alias}:",
+            "    # provider points to one entry under providers.",
+            f"    provider: {_yaml_scalar(provider_name)}",
+            "    # model is the upstream provider model name sent to the model API.",
+            f"    model: {_yaml_scalar(model)}",
+            "",
+        ]
+    )
+    return "\n".join(provider_lines)
+
+
+def _yaml_scalar(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _workspace_instructions_for_template(template: str) -> str:
@@ -1289,6 +1359,27 @@ You coordinate work across specialized agents.
 
 
 _DEFAULT_MCP_JSON = """{
+  "_comment": "AnyAgent MCP configuration. Keep this file free of plaintext secrets; use auth.credential_id and the Admin Credential API. Add servers under mcpServers when needed.",
+  "_example_streamable_http_server": {
+    "enabled": false,
+    "url": "https://example.com/mcp",
+    "transport": "streamable_http",
+    "auth": {
+      "credential_id": "cred_example_mcp",
+      "ref_kind": "bearer_token",
+      "injection": "header:Authorization",
+      "format": "Bearer {value}"
+    },
+    "tool_filter": {
+      "allowed_tool_names": ["example.tool_name"]
+    }
+  },
+  "_example_stdio_server": {
+    "enabled": false,
+    "command": "npx",
+    "args": ["-y", "example-mcp-server"],
+    "cwd": "."
+  },
   "mcpServers": {}
 }
 """
@@ -1305,6 +1396,186 @@ metadata:
 
 Use this skill when the user asks for a simple demonstration of workspace-local skills.
 """
+
+
+_DEMO_PLUGIN_FILES = {
+    "plugin.json": """{
+  "_comment": "Demo plugin manifest. This file is valid JSON, so comments are stored in _comment fields and ignored by AnyAgent.",
+  "plugin_id": "demo",
+  "_plugin_id_comment": "Stable plugin id. Keep it short and unique under this workspace.",
+  "description": "Inactive demo Tool Runtime plugin generated by anyagent init.",
+  "_channels_comment": "Logical channel labels for discovery only; this demo registers an app.* tool, not a chat channel connector.",
+  "channels": ["demo"],
+  "_entrypoint_comment": "Relative Python entrypoint loaded as file.py:function. The function receives an AnyAgent plugin API.",
+  "entrypoint": "plugin.py:register",
+  "_refs_comment": "docs/schemas/tests are returned by plugin catalog so agents and humans can trace this plugin back to its sources.",
+  "docs": ["README.md"],
+  "schemas": ["schemas/config.schema.json"],
+  "tests": ["tests/smoke.py"]
+}
+""",
+    "plugin.py": '''"""Demo AnyAgent Tool Runtime plugin.
+
+This file is generated as a learning scaffold. It is intentionally inactive by
+default:
+
+1. `anyagent serve` does not load workspace plugins automatically yet.
+2. Even when a standalone Tool Runtime loads this plugin, the tool is invisible
+   until an agent requests `app.demo.echo` in `.agents/agents/<agent_id>/agent.yaml`.
+
+To try it locally:
+
+    anyagent tool-runtime serve --workspace . --plugin-root plugins --internal-key dev-internal --admin-key anyagent-dev-key
+    anyagent agent-api serve --workspace . --api-key anyagent-dev-key --tool-runtime-internal-key dev-internal
+
+Then add `app.demo.echo` to an agent's `tools.requested_tool_names`.
+"""
+
+from anyagent.tool_runtime.models import ToolDefinition
+
+
+async def echo(args, context):
+    """Return the provided text with small execution metadata.
+
+    Handlers receive validated JSON arguments plus a context dict containing
+    agent_id/session_key/response_id/tool_call_id and trace/audit metadata. Do
+    not read plaintext secrets from files or env here; declare credentials on
+    ToolDefinition.credentials and read injected values from context["_credentials"].
+    """
+
+    text = args["text"]
+    agent_id = context.get("agent_id", "unknown-agent")
+    session_key = context.get("session_key", "unknown-session")
+    return f"[demo plugin] {text} (agent={agent_id}, session={session_key})"
+
+
+def register(api):
+    """Register plugin capabilities for the current host.
+
+    `api.host_kind` lets one plugin support multiple hosts in the future. This
+    demo only registers a Tool Runtime tool.
+    """
+
+    if api.host_kind != "tool_runtime":
+        return
+
+    api.registerTool(
+        ToolDefinition(
+            name="app.demo.echo",
+            description="Echo text through the generated demo plugin.",
+            category="app",
+            kind="command",
+            parameters={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["text"],
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Text to echo back from the demo plugin.",
+                    }
+                },
+            },
+        ),
+        echo,
+    )
+''',
+    "README.md": """# Demo AnyAgent Plugin
+
+This plugin is generated as a safe, inactive example.
+
+It registers one Tool Runtime tool:
+
+- `app.demo.echo`
+
+The tool is not visible to agents by default. Two things must happen before a
+model can call it:
+
+1. Start a standalone Tool Runtime with this plugin root:
+
+   ```bash
+   anyagent tool-runtime serve \\
+     --workspace . \\
+     --plugin-root plugins \\
+     --internal-key dev-internal \\
+     --admin-key anyagent-dev-key
+   ```
+
+2. Add the tool name to the target agent:
+
+   ```yaml
+   tools:
+     requested_tool_names:
+       - app.demo.echo
+   ```
+
+Then start the Agent API against that Tool Runtime:
+
+```bash
+anyagent agent-api serve \\
+  --workspace . \\
+  --api-key anyagent-dev-key \\
+  --tool-runtime-internal-key dev-internal
+```
+
+Useful checks:
+
+```bash
+anyagent plugin catalog --admin-url http://127.0.0.1:8788 --admin-key anyagent-dev-key
+```
+
+```python
+from anyagent import AnyAgent
+
+client = AnyAgent(base_url="http://127.0.0.1:8787", api_key="anyagent-dev-key")
+explain = await client.tools.explain("app.demo.echo", agent_id="main")
+print(explain.visible, explain.notes)
+```
+""",
+    "schemas/config.schema.json": """{
+  "$comment": "Optional config.json schema for this plugin. The generated demo has no configurable fields; add properties here before adding plugins/demo/config.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {}
+}
+""",
+    "tests/smoke.py": '''"""Smoke test for the generated demo plugin.
+
+Run from the workspace root after installing anyagent:
+
+    python plugins/demo/tests/smoke.py
+"""
+
+from pathlib import Path
+import importlib.util
+
+
+def test_registers_demo_tool():
+    plugin_path = Path(__file__).resolve().parents[1] / "plugin.py"
+    spec = importlib.util.spec_from_file_location("demo_plugin_smoke", plugin_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)
+
+    class Api:
+        host_kind = "tool_runtime"
+
+        def __init__(self):
+            self.tools = []
+
+        def registerTool(self, tool, handler):
+            self.tools.append((tool, handler))
+
+    api = Api()
+    module.register(api)
+    assert api.tools[0][0].name == "app.demo.echo"
+
+
+if __name__ == "__main__":
+    test_registers_demo_tool()
+    print("ok: demo plugin smoke")
+''',
+}
 
 
 def _add_common_admin_flags(p: argparse.ArgumentParser) -> None:

@@ -354,6 +354,39 @@ class AdminToolCatalogResponse(BaseModel):
     tools: list[InternalToolCatalogItem] = Field(default_factory=list)
 
 
+class ToolRequestSource(BaseModel):
+    """One config source that requests a tool name or pattern."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["agent", "skill", "probe"]
+    pattern: str
+    skill_id: str | None = None
+    skill_name: str | None = None
+    selected: bool | None = None
+
+
+class ToolVisibilityExplanation(BaseModel):
+    """SDK-composed explanation for one agent/tool visibility check."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    session_key: str
+    tool_name: str
+    visible: bool
+    visible_without_probe: bool
+    requested_patterns: list[str] = Field(default_factory=list)
+    request_sources: list[ToolRequestSource] = Field(default_factory=list)
+    effective_tool: InternalToolCatalogItem | None = None
+    visible_tools: list[str] = Field(default_factory=list)
+    policy_allow_tools: list[str] | None = None
+    policy_deny_tools: list[str] | None = None
+    selected_skill_ids: list[str] = Field(default_factory=list)
+    load_errors: list[InternalSkillLoadError] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class InternalAgentPromptRef(BaseModel):
     """Prompt source metadata for an agent or workspace AGENTS.md."""
 

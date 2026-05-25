@@ -40,6 +40,10 @@ def test_sdk_admin_plugin_catalog_matches_tool_runtime(tmp_path: Path) -> None:
     asyncio.run(_run_sdk_admin_plugin_catalog_matches_tool_runtime(tmp_path))
 
 
+def test_sdk_tools_explain_composes_agent_skill_and_probe_context(tmp_path: Path) -> None:
+    asyncio.run(_run_sdk_tools_explain_composes_agent_skill_and_probe_context(tmp_path))
+
+
 def test_sdk_admin_skill_update_helpers_match_server(tmp_path: Path, monkeypatch) -> None:
     asyncio.run(_run_sdk_admin_skill_update_helpers_match_server(tmp_path, monkeypatch))
 
@@ -244,6 +248,79 @@ def register(api):
         assert loaded.docs == [str(plugin_dir / "README.md")]
         assert loaded.schemas == [str(plugin_dir / "schemas" / "config.schema.json")]
         assert loaded.tests == [str(plugin_dir / "tests" / "smoke.py")]
+
+
+async def _run_sdk_tools_explain_composes_agent_skill_and_probe_context(tmp_path: Path) -> None:
+    _write_workspace(tmp_path)
+    agent_yaml = tmp_path / ".agents" / "agents" / "main" / "agent.yaml"
+    agent_yaml.write_text(
+        """
+exposed: true
+tools:
+  requested_tool_names:
+    - core.web_fetch
+skills:
+  default_selected:
+    - demo-skill
+sandbox:
+  mode: local-unsafe
+multiagent:
+  spawn_allow_agent_ids: []
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    skill_dir = tmp_path / ".agents" / "skills" / "demo-skill"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        """
+---
+name: demo-skill
+description: Demo skill
+---
+
+Use this skill for command tasks.
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (skill_dir / "agents").mkdir(parents=True, exist_ok=True)
+    (skill_dir / "agents" / "openai.yaml").write_text(
+        """
+dependencies:
+  tools:
+    - transport: core
+      value: core.web_search
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+
+        search_explanation = await client.tools.explain("core.web_search", agent_id="main", include_probe=False)
+        assert search_explanation.visible is True
+        assert search_explanation.visible_without_probe is True
+        assert any("demo-skill" in skill_id for skill_id in search_explanation.selected_skill_ids)
+        assert search_explanation.requested_patterns == ["core.web_fetch", "core.web_search"]
+        assert [source.source for source in search_explanation.request_sources] == ["agent", "skill"]
+        assert search_explanation.effective_tool is not None
+        assert search_explanation.effective_tool.name == "core.web_search"
+        assert "visible_by_default" in search_explanation.notes
+
+        exec_explanation = await client.tools.explain("exec", agent_id="main")
+        assert exec_explanation.visible is False
+        assert exec_explanation.effective_tool is None
+        assert exec_explanation.request_sources[-1].source == "probe"
+        assert exec_explanation.requested_patterns == ["core.web_fetch", "core.web_search", "exec"]
+        assert "tool_not_visible" in exec_explanation.notes
+
+        missing_explanation = await client.tools.explain("missing.tool", agent_id="main")
+        assert missing_explanation.visible is False
+        assert missing_explanation.effective_tool is None
+        assert "tool_not_visible" in missing_explanation.notes
 
 
 async def _run_sdk_admin_skill_update_helpers_match_server(tmp_path: Path, monkeypatch) -> None:

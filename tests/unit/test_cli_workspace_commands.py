@@ -21,6 +21,18 @@ def test_init_creates_minimal_workspace_with_example_skill(tmp_path, capsys) -> 
     assert (tmp_path / ".agents" / "agents" / "main" / "AGENTS.md").is_file()
     assert (tmp_path / ".agents" / "agents" / "main" / "mcp.json").is_file()
     assert (tmp_path / ".agents" / "skills" / "example-skill" / "SKILL.md").is_file()
+    assert (tmp_path / "plugins" / "demo" / "plugin.json").is_file()
+    assert (tmp_path / "plugins" / "demo" / "plugin.py").is_file()
+    assert (tmp_path / "plugins" / "demo" / "README.md").is_file()
+    assert (tmp_path / "plugins" / "demo" / "schemas" / "config.schema.json").is_file()
+    assert (tmp_path / "plugins" / "demo" / "tests" / "smoke.py").is_file()
+    agent_yaml = (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
+    agent_config = yaml.safe_load(agent_yaml)
+    plugin_py = (tmp_path / "plugins" / "demo" / "plugin.py").read_text(encoding="utf-8")
+    plugin_readme = (tmp_path / "plugins" / "demo" / "README.md").read_text(encoding="utf-8")
+    assert "app.demo.echo" not in agent_config["tools"]["requested_tool_names"]
+    assert "intentionally inactive by" in plugin_py
+    assert "not visible to agents by default" in plugin_readme
     assert (tmp_path / ".gitignore").is_file()
     gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert ".run/\n" in gitignore
@@ -157,6 +169,9 @@ def test_config_init_creates_models_config_and_agent_selection(tmp_path, capsys)
     assert "    - delivery-agent\n" in main_yaml
     assert "    - core.web_fetch\n" in main_yaml
     assert "    - exec\n" in main_yaml
+    assert (tmp_path / "plugins" / "demo" / "plugin.json").is_file()
+    assert (tmp_path / "plugins" / "demo" / "plugin.py").is_file()
+    assert "app.demo.echo" not in yaml.safe_load(agent_yaml)["tools"]["requested_tool_names"]
     assert (tmp_path / ".gitignore").read_text(encoding="utf-8").startswith(".venv/\n")
 
 

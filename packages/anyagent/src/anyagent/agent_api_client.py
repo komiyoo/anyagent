@@ -19,6 +19,7 @@ anyagent Client SDK — 资源型命名空间入口。
 """
 
 from pathlib import Path
+import fnmatch
 from typing import TYPE_CHECKING, Any, AsyncIterator, TypeVar
 
 import httpx
@@ -84,6 +85,8 @@ from anyagent.types import (
     PluginCatalogResponse,
     StorageHealthResponse,
     ToolContext,
+    ToolRequestSource,
+    ToolVisibilityExplanation,
     TraceContext,
 )
 from anyagent.protocol.openai_responses import build_minimal_openai_response_json
@@ -623,6 +626,117 @@ class Tools(_Namespace):
         data = await self._get("/internal/tools/catalog", params=params)
         return _validate_response(InternalToolCatalogResponse, data)
 
+    async def explain(
+        self,
+        tool_name: str,
+        *,
+        agent_id: str = "main",
+        session_key: str = "sdk-tool-explain",
+        include_probe: bool = True,
+    ) -> ToolVisibilityExplanation:
+        """Explain why one tool is or is not visible to an agent.
+
+        This is an SDK-side composition over typed discovery endpoints. It
+        keeps the server API small while giving application code one object that
+        ties together agent requested tools, selected skills, policy, and the
+        effective manifest probe for a specific tool.
+        """
+
+        target = tool_name.strip()
+        if not target:
+            raise ValueError("tool_name must be non-empty")
+
+        agent = await Agents(base_url=self._base_url, api_key=self._api_key, http=self._http).get(agent_id)
+        skills = await Skills(base_url=self._base_url, api_key=self._api_key, http=self._http).list(agent_id=agent_id)
+        default_selected = set(agent.skills.default_selected or [])
+        selected_skills = [
+            skill
+            for skill in skills.skills
+            if skill.selected or skill.stable_id in default_selected or skill.name in default_selected
+        ]
+
+        request_sources: list[ToolRequestSource] = []
+        requested_patterns: list[str] = []
+        for pattern in agent.tools.requested_tool_names:
+            _append_tool_request_source(
+                request_sources,
+                requested_patterns,
+                ToolRequestSource(source="agent", pattern=pattern),
+            )
+        for skill in selected_skills:
+            for pattern in skill.requested_tool_names:
+                _append_tool_request_source(
+                    request_sources,
+                    requested_patterns,
+                    ToolRequestSource(
+                        source="skill",
+                        pattern=pattern,
+                        skill_id=skill.stable_id,
+                        skill_name=skill.name,
+                        selected=True,
+                    ),
+                )
+
+        base_catalog = await self.catalog(
+            agent_id=agent_id,
+            session_key=session_key,
+            requested_tool_names=requested_patterns,
+        )
+        base_visible_names = [tool.name for tool in base_catalog.tools]
+        base_effective = next((tool for tool in base_catalog.tools if tool.name == target), None)
+        effective_tool = base_effective
+        visible_tools = list(base_visible_names)
+        visible_without_probe = base_effective is not None
+        probe_catalog: InternalToolCatalogResponse | None = None
+
+        if include_probe and base_effective is None:
+            _append_tool_request_source(
+                request_sources,
+                requested_patterns,
+                ToolRequestSource(source="probe", pattern=target),
+            )
+            probe_patterns = _dedupe_strs([*requested_patterns, target])
+            probe_catalog = await self.catalog(
+                agent_id=agent_id,
+                session_key=session_key,
+                requested_tool_names=probe_patterns,
+            )
+            visible_tools = [tool.name for tool in probe_catalog.tools]
+            effective_tool = next((tool for tool in probe_catalog.tools if tool.name == target), None)
+
+        notes: list[str] = []
+        if effective_tool is None:
+            notes.append("tool_not_visible")
+            if not _matches_any(target, requested_patterns):
+                notes.append("not_requested_by_agent_or_selected_skills")
+        elif not visible_without_probe:
+            notes.append("visible_when_requested")
+        else:
+            notes.append("visible_by_default")
+        if agent.tools.allow_tools and not _matches_any(target, agent.tools.allow_tools):
+            notes.append("outside_agent_allow_policy")
+        if agent.tools.deny_tools and _matches_any(target, agent.tools.deny_tools):
+            notes.append("blocked_by_agent_deny_policy")
+        if skills.load_errors:
+            notes.append("skill_load_errors_present")
+
+        return ToolVisibilityExplanation(
+            agent_id=agent_id,
+            session_key=session_key,
+            tool_name=target,
+            visible=effective_tool is not None,
+            visible_without_probe=visible_without_probe,
+            requested_patterns=requested_patterns,
+            request_sources=request_sources,
+            effective_tool=effective_tool,
+            visible_tools=visible_tools,
+            policy_allow_tools=agent.tools.allow_tools,
+            policy_deny_tools=agent.tools.deny_tools,
+            selected_skill_ids=[skill.stable_id for skill in selected_skills],
+            load_errors=skills.load_errors,
+            notes=notes,
+        )
+
 
 class Prompts(_Namespace):
     """Prompt debug / explain helpers (`/internal/prompt/*`)."""
@@ -672,6 +786,55 @@ class Prompts(_Namespace):
         """List built-in local example run-bundle scenarios."""
 
         return list(_EXAMPLE_SCENARIO_CATALOG)
+
+
+def _append_tool_request_source(
+    sources: list[ToolRequestSource],
+    patterns: list[str],
+    source: ToolRequestSource,
+) -> None:
+    pattern = source.pattern.strip() if isinstance(source.pattern, str) else ""
+    if not pattern:
+        return
+    sources.append(source.model_copy(update={"pattern": pattern}))
+    if pattern not in patterns:
+        patterns.append(pattern)
+
+
+def _matches_any(tool_name: str, patterns: list[str] | None) -> bool:
+    for pattern in patterns or []:
+        if not isinstance(pattern, str) or not pattern.strip():
+            continue
+        pat = pattern.strip()
+        if "*" in pat or "?" in pat or "[" in pat:
+            if fnmatch.fnmatchcase(tool_name, pat):
+                return True
+            continue
+        if pat.endswith("."):
+            if tool_name.startswith(pat):
+                return True
+            continue
+        if pat.endswith(".*"):
+            if tool_name.startswith(pat[:-1]):
+                return True
+            continue
+        if tool_name == pat:
+            return True
+    return False
+
+
+def _dedupe_strs(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        item = value.strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
 
 
 class Admin(_Namespace):

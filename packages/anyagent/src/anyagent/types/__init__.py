@@ -57,6 +57,8 @@ from anyagent.protocol.agent_api_internal import (
     PromptRunBundleScenario,
     PromptRunBundleScenarioDescriptor,
     PromptRunBundleToolLoopItem,
+    ToolRequestSource,
+    ToolVisibilityExplanation,
     WorkspaceAgentFileKind,
 )
 from anyagent.protocol.credential_vault import (
@@ -178,6 +180,8 @@ __all__ = [
     "StorageHealthResponse",
     "TelemetrySource",
     "ToolContext",
+    "ToolRequestSource",
+    "ToolVisibilityExplanation",
     "TraceContext",
     "WorkspaceAgentFileKind",
 ]
