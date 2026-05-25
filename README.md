@@ -31,6 +31,14 @@ cd my-workspace   # 包含 .agents/ 配置目录
 anyagent serve     # 一条命令启动 Agent Server
 ```
 
+本地开发可用带默认 dev key 与启动信息的快捷入口：
+
+```bash
+anyagent dev --workspace ./my-workspace
+# API:    http://127.0.0.1:8787/v1
+# Studio: http://127.0.0.1:8787/studio/
+```
+
 ## 核心特性
 
 - **配置即服务**：通过 `.agents/` 目录定义 agent 行为、工具、技能、MCP server，零代码启动
@@ -50,9 +58,10 @@ anyagent serve     # 一条命令启动 Agent Server
 ```bash
 anyagent init --workspace ./my-workspace --with-example-skill
 anyagent doctor --workspace ./my-workspace
+anyagent agent list --workspace ./my-workspace
 ```
 
-`init` 会生成一个最小可启动 workspace；`doctor` 会在启动前检查 agent pack、skills、MCP 配置和常见安全边界问题。`--with-example-skill` 会额外创建一个本地示例 skill，并把它加入默认选择。
+`init` 会生成一个最小可启动 workspace；`doctor` 会在启动前检查 agent pack、skills、MCP 配置和常见安全边界问题；`agent list` 会列出 workspace 里的 agent、exposed 状态、sandbox、默认模型、工具和 spawn 边界。`--with-example-skill` 会额外创建一个本地示例 skill，并把它加入默认选择。
 
 常用参数：
 
@@ -208,8 +217,11 @@ uv pip install 'anyagent[postgres,redis]'
 # 启动（自动发现 .agents/ 配置）
 anyagent serve --workspace ./my-workspace --port 8787
 
-# 默认在同一服务挂载内置 Studio：/studio
-anyagent serve --workspace ./my-workspace --port 8787
+# 本地开发快捷启动：默认挂载 Studio，并在未配置 key 时使用 anyagent-dev-key
+anyagent dev --workspace ./my-workspace
+
+# 显示 agent pack 概览
+anyagent agent list --workspace ./my-workspace
 
 # 仅启动 API，不挂载 Studio
 anyagent serve --workspace ./my-workspace --no-studio

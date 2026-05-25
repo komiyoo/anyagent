@@ -31,7 +31,7 @@ from anyagent.storage.runtime import create_storage_runtime
 from anyagent.storage.settings import StorageSettings
 from anyagent.storage.retention import run_retention_from_args
 from anyagent.storage.rollout_replay import ReplayFilters, replay_rollout_records, resolve_rollout_root_dir
-from anyagent.tool_runtime import create_tool_runtime_app, create_tool_runtime_app_async
+from anyagent.tool_runtime import create_tool_runtime_app_async
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +118,12 @@ def main(argv: list[str] | None = None) -> int:
     doctor = sub.add_parser("doctor", help="Validate an anyagent workspace before serving it.")
     doctor.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
     doctor.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+
+    agent = sub.add_parser("agent", help="Inspect local workspace agent packs.")
+    agent_sub = agent.add_subparsers(dest="agent_cmd", required=True)
+    agent_list = agent_sub.add_parser("list", help="List configured agent packs for a workspace.")
+    agent_list.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    agent_list.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     config = sub.add_parser("config", help="Business workspace configuration operations.")
     config_sub = config.add_subparsers(dest="config_cmd", required=True)
@@ -208,6 +214,56 @@ def main(argv: list[str] | None = None) -> int:
         help="Session lease backend (default: $SESSION_LOCK_BACKEND or inmemory).",
     )
     serve.add_argument(
+        "--session-lease-ttl-s",
+        type=float,
+        default=None,
+        help="Session lease TTL seconds (default: $SESSION_LEASE_TTL_S or 30).",
+    )
+
+    dev = sub.add_parser("dev", help="Start a local development server with Studio-friendly defaults.")
+    dev.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    dev.add_argument("--host", default="127.0.0.1")
+    dev.add_argument("--port", type=int, default=8787)
+    dev.add_argument("--api-key", default=None, help="Bearer token for `/v1/*` and `/internal/*` APIs.")
+    dev.add_argument("--admin-key", default=None, help="Bearer token for `/admin/*` APIs.")
+    dev.add_argument(
+        "--cors-origin",
+        action="append",
+        default=None,
+        help="Allowed browser origin for CORS. May be repeated.",
+    )
+    dev.add_argument("--sandbox-root", default=None, help="Optional root dir for local sandbox sessions.")
+    dev.add_argument(
+        "--storage-mode",
+        choices=["none", "external"],
+        default=None,
+        help="Unified server storage mode (default: $STORAGE_MODE or none).",
+    )
+    dev.add_argument(
+        "--event-store-backend",
+        choices=["inmemory", "external", "redis"],
+        default=None,
+        help="Event Store backend override (default resolved from storage mode).",
+    )
+    dev.add_argument(
+        "--run-store-backend",
+        choices=["inmemory", "external", "redis"],
+        default=None,
+        help="Run Store backend override (default resolved from storage mode).",
+    )
+    dev.add_argument(
+        "--session-store-backend",
+        choices=["inmemory", "external", "redis"],
+        default=None,
+        help="Session Store backend override (default resolved from storage mode).",
+    )
+    dev.add_argument(
+        "--session-lock-backend",
+        choices=["inmemory", "external", "redis"],
+        default=None,
+        help="Session lease backend (default: $SESSION_LOCK_BACKEND or inmemory).",
+    )
+    dev.add_argument(
         "--session-lease-ttl-s",
         type=float,
         default=None,
@@ -348,11 +404,22 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_init(args)
     if args.cmd == "doctor":
         return _cmd_doctor(args)
+    if args.cmd == "agent":
+        if args.agent_cmd == "list":
+            return _cmd_agent_list(args)
+        parser.error("unsupported agent command")
     if args.cmd == "config":
         if args.config_cmd == "init":
             return _cmd_config_init(args)
         parser.error("unsupported config command")
     if args.cmd == "serve":
+        return _cmd_serve(args)
+    if args.cmd == "dev":
+        args.no_studio = False
+        if not args.api_key and not os.getenv("ANYAGENT_API_KEY"):
+            args.api_key = "anyagent-dev-key"
+        if not args.admin_key and not os.getenv("ADMIN_API_KEY"):
+            args.admin_key = args.api_key or "anyagent-dev-key"
         return _cmd_serve(args)
     if args.cmd == "agent-api":
         if args.agent_api_cmd == "serve":
@@ -502,10 +569,12 @@ def _cmd_storage_replay(args: argparse.Namespace) -> int:
 
 def _cmd_serve(args: argparse.Namespace) -> int:
     configure_observability_from_env()
+    workspace = Path(args.workspace).expanduser().resolve()
     api_key = args.api_key or os.getenv("ANYAGENT_API_KEY")
     admin_key = args.admin_key or os.getenv("ADMIN_API_KEY")
+    enable_studio = not bool(args.no_studio)
     app = create_app(
-        workspace_dir=args.workspace,
+        workspace_dir=str(workspace),
         api_key=api_key,
         admin_api_key=admin_key,
         sandbox_root_dir=args.sandbox_root,
@@ -516,10 +585,105 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         session_lock_backend=args.session_lock_backend,
         session_lease_ttl_s=args.session_lease_ttl_s,
         cors_origins=args.cors_origin,
-        enable_studio=not bool(args.no_studio),
+        enable_studio=enable_studio,
+    )
+    _print_serve_banner(
+        workspace=workspace,
+        host=str(args.host),
+        port=int(args.port),
+        api_key=api_key,
+        admin_key=admin_key,
+        enable_studio=enable_studio,
     )
     uvicorn.run(app, host=args.host, port=int(args.port), log_level="info")
     return 0
+
+
+def _cmd_agent_list(args: argparse.Namespace) -> int:
+    workspace = Path(args.workspace).expanduser().resolve()
+    catalog = load_agent_catalog(workspace_dir=workspace)
+    agents = _agent_catalog_rows(catalog)
+    payload = {
+        "workspace": str(workspace),
+        "agents_root": str(catalog.root_dir),
+        "agents": agents,
+    }
+    if bool(args.json):
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
+    print(f"workspace: {workspace}")
+    print(f"agents_root: {catalog.root_dir}")
+    for agent in agents:
+        tools = ", ".join(agent["requested_tool_names"]) or "-"
+        spawn = ", ".join(agent["spawn_allow_agent_ids"]) or "-"
+        model = agent["model_default"] or "-"
+        print(
+            f"- {agent['agent_id']} "
+            f"exposed={agent['exposed']} "
+            f"sandbox={agent['sandbox_mode']} "
+            f"model={model} "
+            f"tools={tools} "
+            f"spawn={spawn}"
+        )
+    return 0
+
+
+def _print_serve_banner(
+    *,
+    workspace: Path,
+    host: str,
+    port: int,
+    api_key: str | None,
+    admin_key: str | None,
+    enable_studio: bool,
+) -> None:
+    base_url = _format_local_base_url(host=host, port=port)
+    print("anyagent serve")
+    print(f"workspace: {workspace}")
+    print(f"api: {base_url}/v1")
+    print(f"openapi: {base_url}/openapi.json")
+    if enable_studio:
+        print(f"studio: {base_url}/studio/")
+    else:
+        print("studio: disabled")
+    print(f"api_key: {'set' if api_key else 'unset'}")
+    print(f"admin_key: {'set' if admin_key else 'unset'}")
+    try:
+        catalog = load_agent_catalog(workspace_dir=workspace)
+    except Exception as exc:  # noqa: BLE001
+        print(f"agents: unavailable ({exc})")
+        return
+    rows = _agent_catalog_rows(catalog)
+    exposed = [row["agent_id"] for row in rows if row["exposed"]]
+    hidden = [row["agent_id"] for row in rows if not row["exposed"]]
+    print(f"agents: {', '.join(exposed) if exposed else '-'}")
+    if hidden:
+        print(f"hidden_agents: {', '.join(hidden)}")
+
+
+def _format_local_base_url(*, host: str, port: int) -> str:
+    display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    if ":" in display_host and not display_host.startswith("["):
+        display_host = f"[{display_host}]"
+    return f"http://{display_host}:{port}"
+
+
+def _agent_catalog_rows(catalog: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for pack in sorted(catalog.packs.values(), key=lambda item: item.agent_id):
+        rows.append(
+            {
+                "agent_id": pack.agent_id,
+                "exposed": bool(pack.spec.exposed),
+                "sandbox_mode": pack.spec.sandbox.mode,
+                "model_default": pack.spec.model.default,
+                "requested_tool_names": list(pack.spec.tools.requested_tool_names),
+                "default_selected_skills": list(pack.spec.skills.default_selected or []),
+                "spawn_allow_agent_ids": list(pack.spec.multiagent.spawn_allow_agent_ids or []),
+                "path": str(pack.root_dir),
+            }
+        )
+    return rows
 
 
 def _cmd_tool_runtime_serve(args: argparse.Namespace) -> int:
@@ -984,6 +1148,7 @@ _DEFAULT_WORKSPACE_GITIGNORE = """.venv/
 .env
 .env.local
 .env.*.local
+.run/
 .runs/
 .pip/
 __pycache__/

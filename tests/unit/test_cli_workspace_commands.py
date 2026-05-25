@@ -22,6 +22,9 @@ def test_init_creates_minimal_workspace_with_example_skill(tmp_path, capsys) -> 
     assert (tmp_path / ".agents" / "agents" / "main" / "mcp.json").is_file()
     assert (tmp_path / ".agents" / "skills" / "example-skill" / "SKILL.md").is_file()
     assert (tmp_path / ".gitignore").is_file()
+    gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert ".run/\n" in gitignore
+    assert ".runs/\n" in gitignore
 
 
 def test_init_coding_template_enables_exec_sandbox(tmp_path, capsys) -> None:
@@ -62,6 +65,58 @@ def test_doctor_accepts_initialized_workspace(tmp_path, capsys) -> None:
     payload = WorkspaceDoctorReport.model_validate_json(capsys.readouterr().out)
     assert payload.ok is True
     assert any(item.code == "agent_loaded" for item in payload.findings)
+
+
+def test_agent_list_prints_workspace_catalog(tmp_path, capsys) -> None:
+    assert main(["init", "--workspace", str(tmp_path), "--agent-id", "worker", "--template", "coding-agent"]) == 0
+    capsys.readouterr()
+
+    rc = main(["agent", "list", "--workspace", str(tmp_path), "--json"])
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["workspace"] == str(tmp_path)
+    assert [item["agent_id"] for item in payload["agents"]] == ["main", "worker"]
+    worker = next(item for item in payload["agents"] if item["agent_id"] == "worker")
+    assert worker["exposed"] is True
+    assert worker["sandbox_mode"] == "local-unsafe"
+    assert worker["requested_tool_names"] == ["exec"]
+
+
+def test_dev_serve_uses_local_defaults_and_prints_urls(monkeypatch, tmp_path, capsys) -> None:
+    assert main(["init", "--workspace", str(tmp_path), "--with-example-skill"]) == 0
+    capsys.readouterr()
+    calls: dict[str, object] = {}
+
+    def fake_create_app(**kwargs):
+        calls["app_kwargs"] = kwargs
+        return object()
+
+    def fake_uvicorn_run(app, *, host, port, log_level):
+        calls["uvicorn"] = {"app": app, "host": host, "port": port, "log_level": log_level}
+
+    monkeypatch.delenv("ANYAGENT_API_KEY", raising=False)
+    monkeypatch.delenv("ADMIN_API_KEY", raising=False)
+    monkeypatch.setattr("anyagent.cli.create_app", fake_create_app)
+    monkeypatch.setattr("anyagent.cli.uvicorn.run", fake_uvicorn_run)
+
+    rc = main(["dev", "--workspace", str(tmp_path)])
+
+    assert rc == 0
+    app_kwargs = calls["app_kwargs"]
+    assert isinstance(app_kwargs, dict)
+    assert app_kwargs["workspace_dir"] == str(tmp_path)
+    assert app_kwargs["api_key"] == "anyagent-dev-key"
+    assert app_kwargs["admin_api_key"] == "anyagent-dev-key"
+    assert app_kwargs["enable_studio"] is True
+    uvicorn_call = calls["uvicorn"]
+    assert isinstance(uvicorn_call, dict)
+    assert uvicorn_call["host"] == "127.0.0.1"
+    assert uvicorn_call["port"] == 8787
+    out = capsys.readouterr().out
+    assert "api: http://127.0.0.1:8787/v1" in out
+    assert "studio: http://127.0.0.1:8787/studio/" in out
+    assert "agents: main" in out
 
 
 def test_config_init_creates_models_config_and_agent_selection(tmp_path, capsys) -> None:
