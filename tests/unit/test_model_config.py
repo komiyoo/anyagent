@@ -87,3 +87,15 @@ def test_load_workspace_models_config_reads_only_workspace_root(tmp_path: Path) 
 
     assert config.default_model == "root"
     assert set(config.models) == {"root"}
+
+
+def test_load_workspace_models_config_expands_env_placeholders(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5.5")
+    (tmp_path / "models.yaml").write_text(
+        "default_model: root\nmodels:\n  root:\n    provider: openai\n    model: ${OPENAI_MODEL}\n",
+        encoding="utf-8",
+    )
+
+    config = load_workspace_models_config(tmp_path)
+
+    assert config.models["root"].model == "gpt-5.5"

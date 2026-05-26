@@ -16,6 +16,7 @@ class InfisicalResolverConfig:
     project_id: str
     environment: str
     credential_root_path: str
+    path_layout: str = "scoped"
     cache_ttl_seconds: int = 60
 
 
@@ -47,10 +48,13 @@ class InfisicalCredentialResolver:
             agent_id = scope_context["agent_id"].strip()
 
         await self._ensure_login()
-        candidate_paths = []
-        if agent_id:
-            candidate_paths.append(self._agent_path(agent_id=agent_id, kind=kind))
-        candidate_paths.append(self._global_path(kind=kind))
+        if self._is_flat_layout():
+            candidate_paths = [self._normalized_root_path()]
+        else:
+            candidate_paths = []
+            if agent_id:
+                candidate_paths.append(self._agent_path(agent_id=agent_id, kind=kind))
+            candidate_paths.append(self._global_path(kind=kind))
 
         for secret_path in candidate_paths:
             try:
@@ -103,6 +107,9 @@ class InfisicalCredentialResolver:
     def _agent_path(self, *, agent_id: str, kind: str) -> str:
         return f"{self._normalized_root_path()}/agents/{agent_id.strip()}/{kind.strip()}"
 
+    def _is_flat_layout(self) -> bool:
+        return (self._config.path_layout or "").strip().lower() == "flat"
+
 
 def build_mcp_credential_resolver(
     *,
@@ -116,6 +123,7 @@ def build_mcp_credential_resolver(
     infisical_environment: str | None = None,
     infisical_cache_ttl_seconds: int = 60,
     infisical_credential_root_path: str = "/anyagent/credentials",
+    infisical_path_layout: str = "scoped",
 ) -> CredentialResolver | None:
     mode = (backend or "").strip().lower()
     if mode in {"", "none"}:
@@ -137,6 +145,7 @@ def build_mcp_credential_resolver(
                 project_id=infisical_project_id,
                 environment=infisical_environment,
                 credential_root_path=infisical_credential_root_path,
+                path_layout=infisical_path_layout,
                 cache_ttl_seconds=int(infisical_cache_ttl_seconds),
             )
         )

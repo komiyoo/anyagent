@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -26,6 +27,7 @@ class ModelConfigError(Exception):
 
 
 ModelProviderKind = Literal["openai", "anthropic", "gemini"]
+_ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 class WorkspaceModelProviderConfig(BaseModel):
@@ -95,6 +97,7 @@ def load_workspace_models_config(workspace_dir: str | Path) -> WorkspaceModelsCo
         obj = {}
     if not isinstance(obj, dict):
         raise ModelConfigError(f"models config must be an object: {path}")
+    obj = _expand_env_placeholders(obj, os.environ)
     try:
         return WorkspaceModelsConfig.model_validate(obj)
     except Exception as e:  # noqa: BLE001
@@ -222,6 +225,16 @@ def _env_value(name: str | None) -> str | None:
         return None
     value = os.getenv(name)
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _expand_env_placeholders(value: Any, environ: dict[str, str]) -> Any:
+    if isinstance(value, str):
+        return _ENV_VAR_RE.sub(lambda match: environ.get(match.group(1), ""), value)
+    if isinstance(value, list):
+        return [_expand_env_placeholders(item, environ) for item in value]
+    if isinstance(value, dict):
+        return {key: _expand_env_placeholders(item, environ) for key, item in value.items()}
+    return value
 
 
 def _clean(value: str | None) -> str | None:

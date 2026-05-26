@@ -54,6 +54,43 @@ ManifestRefresher = Callable[[], Awaitable[tuple[list[dict[str, Any]], int]]]
 ManifestResolver = Callable[[], Awaitable[tuple[list[dict[str, Any]], int]]]
 
 
+def _strip_anyagent_request_metadata(body: dict[str, Any]) -> dict[str, Any]:
+    provider_body = dict(body)
+    provider_body.pop("metadata", None)
+    provider_body.pop("tenant_id", None)
+    return provider_body
+
+
+def _is_previous_response_not_found(error: ModelProviderUpstreamError) -> bool:
+    body = error.body
+    if not isinstance(body, dict):
+        return False
+    code = body.get("code")
+    param = body.get("param")
+    message = body.get("message")
+    return (
+        code == "InvalidParameter.PreviousResponseNotFound"
+        or param == "previous_response_id"
+        and isinstance(message, str)
+        and "not found" in message.lower()
+    )
+
+
+def _build_stateless_tool_followup_body(
+    *,
+    response: Response,
+    next_body: dict[str, Any],
+    tool_outputs: list[FunctionCallOutput],
+) -> dict[str, Any]:
+    fallback_body = dict(next_body)
+    fallback_body.pop("previous_response_id", None)
+    prior_output = response.model_dump(exclude_none=True, by_alias=True).get("output")
+    input_items = list(prior_output) if isinstance(prior_output, list) else []
+    input_items.extend(tool_outputs)
+    fallback_body["input"] = input_items
+    return fallback_body
+
+
 def _extract_function_calls(response: Response) -> list[ResponseFunctionToolCall]:
     out: list[ResponseFunctionToolCall] = []
     for item in response.output:
@@ -412,7 +449,7 @@ async def run_tool_loop_nonstream(
     if err is not None:
         return 400, {"error": {"message": err, "type": "invalid_request_error"}}
 
-    body = dict(body)
+    body = _strip_anyagent_request_metadata(body)
     body["tools"] = strip_internal_tool_fields(manifest_tools)
     body["stream"] = False
     if selected_skills and not prompt_envelope_applied:
@@ -489,12 +526,23 @@ async def run_tool_loop_nonstream(
             model=body.get("model") if isinstance(body.get("model"), str) else None,
             prompt_cache_key=body.get("prompt_cache_key") if isinstance(body.get("prompt_cache_key"), str) else None,
         )
+        next_body = _strip_anyagent_request_metadata(next_body)
         try:
             resp = await model_provider.create_response(body=next_body, idempotency_key=None)
         except ModelProviderInvalidRequestError:
             break
-        except ModelProviderUpstreamError:
-            break
+        except ModelProviderUpstreamError as e:
+            if not _is_previous_response_not_found(e):
+                break
+            fallback_body = _build_stateless_tool_followup_body(
+                response=resp,
+                next_body=next_body,
+                tool_outputs=tool_outputs,
+            )
+            try:
+                resp = await model_provider.create_response(body=fallback_body, idempotency_key=None)
+            except (ModelProviderInvalidRequestError, ModelProviderUpstreamError, ModelProviderTransportError):
+                break
         except ModelProviderTransportError:
             break
 
@@ -542,7 +590,7 @@ async def run_tool_loop_stream_buffered(
     if err is not None:
         return 400, [encode_sse_event("error", json.dumps({"error": {"message": err, "type": "invalid_request_error"}}))]
 
-    body = dict(body)
+    body = _strip_anyagent_request_metadata(body)
     body["tools"] = strip_internal_tool_fields(manifest_tools)
     body["stream"] = True
     if selected_skills and not prompt_envelope_applied:
@@ -688,7 +736,7 @@ async def run_tool_loop_stream_live(
     if err is not None:
         raise ModelProviderInvalidRequestError(err)
 
-    current_body = dict(body)
+    current_body = _strip_anyagent_request_metadata(body)
     current_body["tools"] = strip_internal_tool_fields(manifest_tools)
     current_body["stream"] = True
     if selected_skills and not prompt_envelope_applied:

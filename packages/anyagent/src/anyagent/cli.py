@@ -733,6 +733,7 @@ def _cmd_agent_api_serve(args: argparse.Namespace) -> int:
             infisical_environment=os.getenv("INFISICAL_ENVIRONMENT"),
             infisical_cache_ttl_seconds=int(os.getenv("INFISICAL_CACHE_TTL_SECONDS", "60")),
             infisical_credential_root_path=os.getenv("INFISICAL_CREDENTIAL_ROOT_PATH", "/anyagent/credentials"),
+            infisical_path_layout=os.getenv("INFISICAL_PATH_LAYOUT", "scoped"),
         ),
         storage_factory=lambda: create_storage_runtime(storage_settings, workspace_dir=workspace_dir),
         settings=storage_settings,

@@ -103,6 +103,7 @@ from anyagent.server.streaming import (
     build_external_response_stream_response,
     persist_sse_run as persist_streaming_sse_run,
 )
+from anyagent.server.workspace_env import load_workspace_runtime_environment
 from anyagent.server.runs import RunRegistry
 from anyagent.server.runtime import InProcessToolRuntimeService
 from anyagent.server.sandbox import SandboxManager
@@ -145,21 +146,6 @@ _SKILL_INSTALL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _GITHUB_REPO_RE = re.compile(r"^(?:https://github\.com/)?([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
 _GITHUB_REF_RE = re.compile(r"^[A-Za-z0-9_./@+-]{1,128}$")
 _GITHUB_PATH_RE = re.compile(r"^[A-Za-z0-9_./@+-]{1,256}$")
-
-
-def _load_workspace_env_defaults(workspace_dir: Path) -> None:
-    for candidate in (workspace_dir / ".env", workspace_dir / ".env.local"):
-        if not candidate.is_file():
-            continue
-        for raw_line in candidate.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip()
-            if key and key not in os.environ:
-                os.environ[key] = value
 
 
 def _emit_server_response_event(
@@ -264,7 +250,7 @@ def create_app(
     enable_studio: bool = True,
 ) -> FastAPI:
     workspace = Path(workspace_dir).expanduser().resolve()
-    _load_workspace_env_defaults(workspace)
+    load_workspace_runtime_environment(workspace)
     server_settings = ServerSettings()
     resolved_storage = server_settings.resolve(
         storage_mode=storage_mode if isinstance(storage_mode, str) else None,
@@ -301,6 +287,7 @@ def create_app(
             infisical_environment=server_settings.infisical_environment,
             infisical_cache_ttl_seconds=server_settings.infisical_cache_ttl_seconds,
             infisical_credential_root_path=server_settings.infisical_credential_root_path,
+            infisical_path_layout=server_settings.infisical_path_layout,
         ),
         fallback_to_memory=False,
     )

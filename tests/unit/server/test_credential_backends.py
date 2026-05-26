@@ -259,3 +259,45 @@ def test_infisical_backend_resolve_list_and_read_only(monkeypatch: pytest.Monkey
             await backend.delete("cred_api")
 
     asyncio.run(_run())
+
+
+def test_infisical_backend_flat_layout_resolves_secret_key_at_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("anyagent.server.security.credential_backends._load_infisical_sdk_client", lambda: _FakeClient)
+    backend = InfisicalBackend(
+        config=InfisicalBackendConfig(
+            host="https://app.infisical.test",
+            client_id="client-id",
+            client_secret="client-secret",
+            project_id="project-id",
+            environment="dev",
+            credential_root_path="/travel-planner-service",
+            path_layout="flat",
+            cache_ttl_seconds=30,
+        )
+    )
+    fake_client = backend._client
+    fake_client.secrets.values[("/travel-planner-service", "OPENAI_API_KEY")] = "openai-token"
+    fake_client.secrets.list_items = [
+        SimpleNamespace(secretKey="OPENAI_API_KEY", secretPath="/travel-planner-service"),
+    ]
+
+    async def _run() -> None:
+        resolved = await backend.resolve(AuthRef(kind="api_key", ref="OPENAI_API_KEY"), scope_context={"agent_id": "main"})
+        refs = await backend.list_refs()
+
+        assert resolved == "openai-token"
+        assert refs == [
+            {
+                "credential_id": "OPENAI_API_KEY",
+                "kind": "secret",
+                "scope": {"level": "global"},
+                "metadata": {
+                    "provider": "infisical",
+                    "secret_path": "/travel-planner-service",
+                    "environment": "dev",
+                    "project_id": "project-id",
+                },
+            }
+        ]
+
+    asyncio.run(_run())

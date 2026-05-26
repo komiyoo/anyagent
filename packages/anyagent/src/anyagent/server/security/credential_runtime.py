@@ -23,6 +23,7 @@ class CredentialRuntimeConfig:
     infisical_environment: str | None = None
     infisical_cache_ttl_seconds: int = 60
     infisical_credential_root_path: str = "/anyagent/credentials"
+    infisical_path_layout: str = "scoped"
 
 
 def build_credential_store_from_config(
@@ -66,6 +67,7 @@ def build_credential_resolver_from_config(
         infisical_environment=config.infisical_environment,
         infisical_cache_ttl_seconds=config.infisical_cache_ttl_seconds,
         infisical_credential_root_path=config.infisical_credential_root_path,
+        infisical_path_layout=config.infisical_path_layout,
     )
     if resolver is not None:
         return resolver
@@ -97,6 +99,6 @@ def _build_infisical_backend_config(config: CredentialRuntimeConfig) -> Infisica
         project_id=project_id,
         environment=environment,
         credential_root_path=config.infisical_credential_root_path,
+        path_layout=config.infisical_path_layout,
         cache_ttl_seconds=int(config.infisical_cache_ttl_seconds),
     )
-

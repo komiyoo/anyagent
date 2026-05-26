@@ -281,6 +281,7 @@ class InfisicalBackendConfig:
     project_id: str
     environment: str
     credential_root_path: str
+    path_layout: str = "scoped"
     cache_ttl_seconds: int = 60
 
 
@@ -327,10 +328,13 @@ class InfisicalBackend(CredentialStore):
             agent_id = scope_context["agent_id"].strip()
 
         await self._ensure_login()
-        candidate_paths = []
-        if agent_id:
-            candidate_paths.append(self._agent_path(agent_id=agent_id, kind=kind))
-        candidate_paths.append(self._global_path(kind=kind))
+        if self._is_flat_layout():
+            candidate_paths = [self._normalized_root_path()]
+        else:
+            candidate_paths = []
+            if agent_id:
+                candidate_paths.append(self._agent_path(agent_id=agent_id, kind=kind))
+            candidate_paths.append(self._global_path(kind=kind))
 
         for secret_path in candidate_paths:
             try:
@@ -378,7 +382,10 @@ class InfisicalBackend(CredentialStore):
             if not isinstance(secret_key, str) or not isinstance(secret_path, str):
                 continue
 
-            parsed_scope, kind = self._parse_scope_and_kind(secret_path)
+            if self._is_flat_layout():
+                parsed_scope, kind = CredentialScope(level="global"), "secret"
+            else:
+                parsed_scope, kind = self._parse_scope_and_kind(secret_path)
             if parsed_scope is None or kind is None:
                 continue
             if scope is not None and not _scope_matches(filter_scope=scope, entry_scope=parsed_scope):
@@ -440,6 +447,9 @@ class InfisicalBackend(CredentialStore):
         if len(parts) == 3 and parts[0] == "agents":
             return CredentialScope(level="agent", agent_id=parts[1]), parts[2]
         return None, None
+
+    def _is_flat_layout(self) -> bool:
+        return (self._config.path_layout or "").strip().lower() == "flat"
 
 
 def _validate_credential_id(credential_id: str) -> None:

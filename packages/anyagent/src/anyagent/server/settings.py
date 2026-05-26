@@ -59,6 +59,7 @@ class ServerSettings(BaseSettings):
     infisical_environment: str | None = Field(default=None, alias="INFISICAL_ENVIRONMENT")
     infisical_cache_ttl_seconds: int = Field(default=60, alias="INFISICAL_CACHE_TTL_SECONDS")
     infisical_credential_root_path: str = Field(default="/anyagent/credentials", alias="INFISICAL_CREDENTIAL_ROOT_PATH")
+    infisical_path_layout: str = Field(default="scoped", alias="INFISICAL_PATH_LAYOUT")
 
     def resolve(
         self,

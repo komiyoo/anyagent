@@ -42,6 +42,7 @@ from anyagent.server.security import (
     build_credential_backend_capability_matrix,
     build_credential_resolver_from_config,
 )
+from anyagent.server.workspace_env import load_workspace_runtime_environment
 from anyagent.tool_runtime.plugins import ToolRuntimePluginAPI
 from anyagent.tool_runtime.settings import ToolRuntimeServerConfig, build_tool_runtime_server_config
 
@@ -63,7 +64,7 @@ def create_tool_runtime_app(
     config: ToolRuntimeServerConfig | None = None,
 ) -> FastAPI:
     if config is None:
-        _load_workspace_env_defaults(Path(workspace_dir).expanduser().resolve())
+        load_workspace_runtime_environment(Path(workspace_dir).expanduser().resolve())
         server_config = build_tool_runtime_server_config(
             workspace_dir=workspace_dir,
             internal_key=internal_key,
@@ -75,7 +76,7 @@ def create_tool_runtime_app(
     else:
         server_config = config
     workspace = Path(server_config.workspace_dir).expanduser().resolve()
-    _load_workspace_env_defaults(workspace)
+    load_workspace_runtime_environment(workspace)
     credential_config = server_config.credential
     if credential_config is None:
         from anyagent.server.security.credential_runtime import CredentialRuntimeConfig
@@ -373,7 +374,7 @@ async def create_tool_runtime_app_async(
     config: ToolRuntimeServerConfig | None = None,
 ) -> FastAPI:
     if config is None:
-        _load_workspace_env_defaults(Path(workspace_dir).expanduser().resolve())
+        load_workspace_runtime_environment(Path(workspace_dir).expanduser().resolve())
         server_config = build_tool_runtime_server_config(
             workspace_dir=workspace_dir,
             internal_key=internal_key,
@@ -678,18 +679,3 @@ def _require_credential_store(store: CredentialResolver | None) -> CredentialSto
     if not isinstance(store, CredentialStore):
         raise HTTPException(status_code=501, detail="credential store does not support admin operations")
     return store
-
-
-def _load_workspace_env_defaults(workspace_dir: Path) -> None:
-    for candidate in (workspace_dir / ".env", workspace_dir / ".env.local"):
-        if not candidate.is_file():
-            continue
-        for raw_line in candidate.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip()
-            if key and key not in os.environ:
-                os.environ[key] = value

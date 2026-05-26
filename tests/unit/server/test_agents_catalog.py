@@ -164,6 +164,7 @@ async def _run_workspace_model_alias_applies_to_non_main_agent_request(tmp_path:
 
     assert provider.seen_bodies
     assert provider.seen_bodies[0]["model"] == "gpt-5.5"
+    assert "metadata" not in provider.seen_bodies[0]
 
 
 async def _run_studio_static_is_mounted_by_default_and_can_be_disabled(tmp_path: Path) -> None:

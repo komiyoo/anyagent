@@ -111,6 +111,47 @@ class AuthRef(BaseModel):
     Agent API / Model  ←── 全程只看到 auth_ref (kind+ref)，看不到明文
 ```
 
+### 2.1.1 Workspace runtime env projection
+
+Credential Vault 解决的是 tool handler 执行期的凭证解析与注入；另一个常见场景是第三方 stdio MCP、CLI 或模型 provider 只能从环境变量读取凭证。Core 支持 workspace 启动期按白名单把 Credential Vault 引用一次性投影成 runtime env：
+
+```text
+<workspace>/.agents/secrets.yaml
+        → AnyAgent Agent API / Tool Runtime 启动时读取
+        → 通过 Credential Vault resolver 解析 runtime_env 白名单中的 AuthRef
+        → 写入当前服务进程 os.environ
+        → MCP stdio 子进程、CLI、模型 provider、业务脚本按普通环境变量读取
+```
+
+示例：
+
+```yaml
+credential_vault:
+  backend: infisical
+  infisical_host: https://app.infisical.com
+  infisical_universal_auth_client_id_env: INFISICAL_UNIVERSAL_AUTH_CLIENT_ID
+  infisical_universal_auth_client_secret_env: INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
+  infisical_project_id_env: INFISICAL_PROJECT_ID
+  infisical_environment_env: INFISICAL_ENVIRONMENT
+  infisical_credential_root_path: /anyagent/credentials
+
+runtime_env:
+  - name: OPENAI_API_KEY
+    credential_id: openai_api_key
+    kind: api_key
+  - name: AMAP_MAPS_API_KEY
+    credential_id: amap_maps_api_key
+    kind: api_key
+```
+
+约束：
+
+- 只投影 `runtime_env` 明确列出的 Credential Vault 引用，不全量倾倒 provider 下所有 secret。
+- `.agents/secrets.yaml` 只应保存 Credential Vault 后端、项目、环境、路径和变量白名单，不保存明文 secret。
+- 默认不覆盖进程里已存在的环境变量；需要覆盖时在条目上显式设置 `overwrite: true`。
+- 该机制适用于 MCP stdio `env`、CLI、模型 provider 和业务脚本；tool handler 内部凭证注入仍优先使用 Credential Vault / `ToolDefinition.credentials`。
+- Agent sandbox 不应挂载宿主凭证环境；需要让 agent 执行 CLI 时，应通过受控 sandbox/runner 提供最小必要环境和网络出口。
+
 ### 2.2 凭证流转路径
 
 ```
