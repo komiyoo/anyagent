@@ -4,7 +4,7 @@ set -euo pipefail
 export PIP_DISABLE_PIP_VERSION_CHECK="${PIP_DISABLE_PIP_VERSION_CHECK:-1}"
 export PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
 export PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST:-mirrors.aliyun.com}"
-export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$PWD/.cache/pip}"
+export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/root/.cache/pip}"
 mkdir -p "$PIP_CACHE_DIR"
 
 export TWINE_REPOSITORY_URL="${TWINE_REPOSITORY_URL:-${ANYAGENT_PYPI_REPOSITORY_URL:-https://packages.aliyun.com/63d476f8d14a7f379aa798da/pypi/anyagent}}"

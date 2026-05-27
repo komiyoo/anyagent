@@ -42,8 +42,8 @@ stages:
                 export PIP_DISABLE_PIP_VERSION_CHECK=1
                 export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
                 export PIP_TRUSTED_HOST=mirrors.aliyun.com
-                export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$PWD/.cache/pip}"
-                export UV_CACHE_DIR="${UV_CACHE_DIR:-$PWD/.cache/uv}"
+                export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/root/.cache/pip}"
+                export UV_CACHE_DIR="${UV_CACHE_DIR:-/root/.cache/uv}"
                 mkdir -p "$PIP_CACHE_DIR" "$UV_CACHE_DIR"
                 if command -v yum >/dev/null 2>&1; then
                   yum install -y libffi libffi-devel >/dev/null 2>&1 || true
