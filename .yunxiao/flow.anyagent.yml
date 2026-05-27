@@ -27,7 +27,7 @@ stages:
             name: 安装 Python
             step: SetupPython
             with:
-              pythonVersion: "3.12"
+              pythonVersion: "3.12.13"
           notify_step:
             name: 构建前飞书通知
             step: Command
