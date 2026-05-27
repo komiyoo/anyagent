@@ -538,6 +538,7 @@ anyagent (本仓库)           anyagent-apps (同级项目)
 - [docs/architecture/](docs/architecture/README.md) — 架构设计
   - [apps-packages-boundary.md](docs/architecture/apps-packages-boundary.md) — anyagent vs anyagent-apps 职责边界
   - [responses-api-sdk-and-server.md](docs/architecture/responses-api-sdk-and-server.md) — SDK + Server 泳道与模块边界
+  - [sdk-public-surface.md](docs/architecture/sdk-public-surface.md) — AnyAgent SDK public surface、typed model facade 与验证入口
   - [roadmap.md](docs/architecture/roadmap.md) — Phase 1-4 演进路线图
   - [stateless-agent-service-architecture.md](docs/architecture/stateless-agent-service-architecture.md) — 无状态服务并发架构
   - [storage-minimal-design.md](docs/architecture/storage-minimal-design.md) — 存储最小设计

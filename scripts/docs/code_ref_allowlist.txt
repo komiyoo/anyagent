@@ -1,0 +1,32 @@
+# Inline code references that are intentionally illustrative, generated in a
+# user workspace, historical migration markers, or cross-repo references.
+#
+# Patterns use fnmatch against normalized repo-relative paths.
+
+# Generated workspace examples from README / docs.
+.agents/agents/*
+.agents/credentials
+.agents/secrets.yaml
+plugins/demo
+plugins/demo/*
+tests/smoke.py
+
+# Removed anyagent-apps service shells kept in docs as migration markers.
+apps/agent-api
+apps/tool-runtime
+apps/studio
+anyagent-apps/apps/agent-api
+anyagent-apps/apps/tool-runtime
+anyagent-apps/apps/studio
+
+# Cross-repo anyagent-apps references.
+anyagent-apps/docs/*
+anyagent-apps/plugins/*
+scripts/dev/start_services.sh
+tests/acceptance/agent_api/_core_app.py
+
+# Planned test-suite folders referenced by strategy docs.
+tests/contract/events
+tests/contract/responses
+tests/integration/runtime
+tests/live

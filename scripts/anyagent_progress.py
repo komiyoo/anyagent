@@ -168,6 +168,7 @@ class TodoItem:
     line_no: int
     checked: bool
     text: str
+    block_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -296,10 +297,38 @@ def parse_todo_progress(root: str) -> list[dict[str, object]]:
         in_tasks_section = False
         tasks_level: Optional[int] = None
 
+        def append_item(item: TodoItem, *, belongs_to_tasks_section: bool) -> None:
+            all_items.append(item)
+            if belongs_to_tasks_section:
+                tasks_items.append(item)
+
+        current_item: Optional[TodoItem] = None
+        current_block: list[str] = []
+        current_in_tasks_section = False
+
+        def flush_current() -> None:
+            nonlocal current_item, current_block, current_in_tasks_section
+            if current_item is None:
+                return
+            append_item(
+                TodoItem(
+                    file=current_item.file,
+                    line_no=current_item.line_no,
+                    checked=current_item.checked,
+                    text=current_item.text,
+                    block_text="\n".join(current_block),
+                ),
+                belongs_to_tasks_section=current_in_tasks_section,
+            )
+            current_item = None
+            current_block = []
+            current_in_tasks_section = False
+
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             for line_no, line in enumerate(f, start=1):
                 m_heading = heading_re.match(line)
                 if m_heading:
+                    flush_current()
                     level = len(m_heading.group(1))
                     title = m_heading.group(2)
                     is_tasks = "任务" in title or "Tasks" in title
@@ -314,19 +343,23 @@ def parse_todo_progress(root: str) -> list[dict[str, object]]:
                             tasks_level = None
 
                 m = checkbox_re.match(line)
-                if not m:
+                if m:
+                    flush_current()
+                    checked = m.group(1).lower() == "x"
+                    current_item = TodoItem(
+                        file=os.path.relpath(path, root),
+                        line_no=line_no,
+                        checked=checked,
+                        text=redact(line).strip(),
+                    )
+                    current_block = [redact(line).strip()]
+                    current_in_tasks_section = in_tasks_section
                     continue
 
-                checked = m.group(1).lower() == "x"
-                item = TodoItem(
-                    file=os.path.relpath(path, root),
-                    line_no=line_no,
-                    checked=checked,
-                    text=redact(line).strip(),
-                )
-                all_items.append(item)
-                if in_tasks_section:
-                    tasks_items.append(item)
+                if current_item is not None:
+                    current_block.append(redact(line).strip())
+
+        flush_current()
 
         return tasks_items, all_items
 
@@ -362,7 +395,8 @@ def parse_todo_progress(root: str) -> list[dict[str, object]]:
         for it in active:
             if not it.checked:
                 continue
-            if not impl_re.search(it.text) or not module_re.search(it.text):
+            evidence_text = it.block_text or it.text
+            if not impl_re.search(evidence_text) or not module_re.search(evidence_text):
                 missing_evidence.append(it)
 
         try:

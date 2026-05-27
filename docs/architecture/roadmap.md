@@ -109,9 +109,10 @@ cd my-workspace && anyagent serve
 
 #### 2.2 AnyAgent Client 增强
 
-- `client.events.stream_typed()` — 类型化事件流
-- `client.events.list()` — 事件回放
-- 断线续传（`last_seq`）
+- 已落地 `client.events.stream_typed()`、`client.events.list_typed()`、`client.events.latest_prompt_context()` 与 `client.events.replay_summary()`。
+- 已补齐 resource namespace：`client.agents`、`client.skills`、`client.tools`、`client.prompts`、`client.observability`、`client.admin` 与 `client.health()`。
+- SDK public model facade 已集中到 `anyagent.types`；模块归属、公开 surface 与验证入口见 [sdk-public-surface.md](sdk-public-surface.md)。
+- 断线续传主路径使用 `last_seq` / `next_last_seq`，并由 internal events list/stream 共享序号语义。
 
 #### 2.3 安全加固
 
@@ -129,10 +130,11 @@ cd my-workspace && anyagent serve
 
 ### 交付物
 
-- [ ] Stage Events 完整覆盖
-- [ ] `client.events.stream_typed()` 可用
-- [ ] Tool policy + credential scope 完善
-- [ ] Audit logging 结构化输出
+- [x] Stage Events 覆盖 prompt context、model stream、tool planned/result、command planned/result 与 done 主路径
+- [x] `client.events.stream_typed()` / `list_typed()` / replay helpers 可用
+- [x] SDK public model facade 与 control-plane namespace 可用
+- [ ] Tool policy + credential scope 继续完善
+- [ ] Audit logging 结构化输出继续完善
 
 ---
 

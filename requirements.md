@@ -79,6 +79,8 @@ cd my-workspace && anyagent serve
 - **Client SDK（AnyAgent）**
   - OpenAI 兼容面：`client.openai.responses.create()`
   - anyagent 精细面：`client.events.stream_typed()` / `client.events.list_typed()` / `client.events.latest_prompt_context()` / `client.events.replay_summary()`
+  - 资源型控制面：`client.health()`、`client.agents.*`、`client.tools.*`、`client.skills.*`、`client.prompts.*`、`client.observability.*`、`client.admin.*`
+  - SDK public model facade：业务侧 typed model 优先从 `anyagent.types` 导入，wire contract 仍以 `anyagent.protocol.*` 为 SSOT
   - 断线续传（`last_seq`）
 
 - **分布式 / 生产部署模式**（Core 真源，按需启用）
@@ -278,7 +280,7 @@ v0 推荐的最小方案与关键 schema/生命周期/一致性边界见：`docs
 - `POST /v1/responses`
   - 请求体尽量兼容 OpenAI Responses API
   - `stream=true` 时返回 SSE（`Content-Type: text/event-stream`）
-- 外部接入基线以 OpenAI 官方 SDK（Responses API）为主；anyagent Client SDK（`AnyAgent` 入口类）以资源型命名空间模式提供超集能力：`client.responses.*`（委托 OpenAI 官方 SDK）、`client.events.*`（内部观测/replay）、`client.skills.*`（技能发现），但不得破坏 OpenAI 主兼容面。设计决策见 `docs/architecture/decisions/openai-first-api-surface.md`
+- 外部接入基线以 OpenAI 官方 SDK（Responses API）为主；anyagent Client SDK（`AnyAgent` 入口类）以资源型命名空间模式提供超集能力：`client.openai` / `client.async_openai` 承载 OpenAI 兼容主路径，`client.responses.*` 只保留 anyagent 补充的 retrieve/cancel helper，`client.events.*`、`client.observability.*`、`client.agents.*`、`client.tools.*`、`client.skills.*`、`client.prompts.*`、`client.admin.*` 承载内部观测、发现、prompt explain 与管理面，但不得破坏 OpenAI 主兼容面。设计决策见 `docs/architecture/decisions/openai-first-api-surface.md`，SDK surface map 见 `docs/architecture/sdk-public-surface.md`
 
 #### 4.1.1 请求处理模式：同步 SSE vs 内部异步
 

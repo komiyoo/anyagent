@@ -9,6 +9,7 @@ mechanical guardrail to reduce doc entropy over time.
 """
 
 import argparse
+import fnmatch
 import re
 import sys
 from pathlib import Path
@@ -25,6 +26,7 @@ _CODE_PATH_LINE_RE = re.compile(
     r"(?![A-Za-z0-9_])"
 )
 _MANIFEST_REL = Path("docs/_manifest.txt")
+_CODE_REF_ALLOWLIST_REL = Path("scripts/docs/code_ref_allowlist.txt")
 _SKIP_DIR_NAMES = {
     ".cache",
     ".git",
@@ -123,6 +125,36 @@ def _load_manifest_paths(root: Path) -> set[str]:
         if first:
             paths.add(first)
     return paths
+
+
+def _load_code_ref_allowlist(root: Path, allowlist_path: Path | None) -> list[str]:
+    if allowlist_path is None:
+        allowlist_path = root / _CODE_REF_ALLOWLIST_REL
+    elif not allowlist_path.is_absolute():
+        allowlist_path = root / allowlist_path
+
+    if not allowlist_path.exists():
+        return []
+
+    try:
+        lines = allowlist_path.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        return []
+
+    patterns: list[str] = []
+    for line in lines:
+        item = line.strip()
+        if not item or item.startswith("#"):
+            continue
+        patterns.append(item)
+    return patterns
+
+
+def _is_code_ref_allowlisted(raw_path: str, patterns: list[str]) -> bool:
+    normalized = raw_path.strip()
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    return any(fnmatch.fnmatchcase(normalized, pattern) for pattern in patterns)
 
 
 def _check_docs_manifest(root: Path, include_notes: bool) -> list[str]:
@@ -287,6 +319,12 @@ def _validate_reference(
 
 
 def _check_inline_code_references(root: Path, md_path: Path) -> list[str]:
+    return _check_inline_code_references_with_allowlist(root, md_path, allowlist_patterns=[])
+
+
+def _check_inline_code_references_with_allowlist(
+    root: Path, md_path: Path, *, allowlist_patterns: list[str]
+) -> list[str]:
     errors: list[str] = []
     try:
         lines = md_path.read_text(encoding="utf-8").splitlines()
@@ -314,6 +352,8 @@ def _check_inline_code_references(root: Path, md_path: Path) -> list[str]:
                 if path_match.start() >= 2 and inline_code[path_match.start() - 2 : path_match.start()] == "//":
                     continue
                 if any(ch in raw_path for ch in "<>$"):
+                    continue
+                if _is_code_ref_allowlisted(raw_path, allowlist_patterns):
                     continue
 
                 errors.extend(
@@ -390,6 +430,14 @@ def main() -> int:
         action="store_true",
         help="also validate inline `path` / `path:line` references in markdown",
     )
+    parser.add_argument(
+        "--code-ref-allowlist",
+        default=str(_CODE_REF_ALLOWLIST_REL),
+        help=(
+            "newline-delimited fnmatch allowlist for illustrative/generated "
+            "inline paths (default: scripts/docs/code_ref_allowlist.txt)"
+        ),
+    )
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -398,10 +446,17 @@ def main() -> int:
         return 2
 
     errors: list[str] = []
+    code_ref_allowlist = _load_code_ref_allowlist(root, Path(args.code_ref_allowlist))
     for md_path in _iter_markdown_files(root):
         errors.extend(_check_markdown_links(root, md_path))
         if args.check_code_refs:
-            errors.extend(_check_inline_code_references(root, md_path))
+            errors.extend(
+                _check_inline_code_references_with_allowlist(
+                    root,
+                    md_path,
+                    allowlist_patterns=code_ref_allowlist,
+                )
+            )
 
     errors.extend(_check_todo_impl_evidence(root))
     if args.check_manifest:
