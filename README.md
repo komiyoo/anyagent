@@ -5,6 +5,8 @@ anyagent 是一个**配置即服务**的 AI Agent 基础设施：通过 `AGENTS.
 PyPI distribution name: `anyagent`.
 Python import package: `anyagent`.
 
+Public documentation: https://lyriktrip.mintlify.app/
+
 ## Install from Yunxiao Packages PyPI
 
 ```bash
@@ -458,7 +460,7 @@ cp -R ./my-workspace/.anyagent/agents/main ./my-workspace/.anyagent/agents/resea
 anyagent doctor --workspace ./my-workspace
 ```
 
-应用层 demo、生产级部署模板和平台 connector 会逐步放到同级项目 `anyagent-apps`；本仓库保持为 Server Core + SDK + Protocol 的真源。
+应用层 demo、生产级部署模板和平台 connector 会逐步放到同级项目 `anyagent-apps`；本仓库保持为 Server Core + SDK + Protocol 的真源。server、client SDK 与 Studio 初期继续在同一个仓库内协作，通过 protocol-first、多包边界和 contract tests 演进；暂不拆成独立 repo。详细决策见 [single-repo-multi-package-boundary.md](docs/architecture/decisions/single-repo-multi-package-boundary.md)。
 
 ## 安全边界
 
@@ -477,8 +479,8 @@ anyagent 的核心安全原则：**沙箱内自由，沙箱外隔离**。
 ## 项目结构
 
 ```text
-anyagent/                            # 本仓库：Server Core + SDK
-  packages/anyagent/
+anyagent/                            # 本仓库：Server Core + SDK + Protocol + bundled Studio
+  packages/anyagent/                 # 当前 Python distribution（过渡期单包）
     src/anyagent/
       protocol/                      # 协议 SSOT（Responses/Tool Runtime/SSE/Multi-Agent）
         sandbox.py                   # Sandbox 策略模型（SandboxPolicy/NetworkSandboxPolicy/ResourceLimits）
@@ -497,7 +499,19 @@ anyagent/                            # 本仓库：Server Core + SDK
       agent_packs.py                 # Agent Packs 配置加载
       agent_api_client.py            # Client SDK（AnyAgent 资源型命名空间）
       cli.py                         # CLI 入口（serve / tool-runtime serve / init / doctor / storage）
+    studio/                          # Studio React/Vite 源码，可独立 dev/build
+  sdks/                              # 目标位置：多语言 SDK（有真实需求后添加）
+    typescript/                      # 首个 scaffold：消费 protocol schema bundle
+    go/
+  tests/contract/                    # 协议/SDK/server 兼容契约
 ```
+
+组织原则：
+
+- `protocol/` 是 wire contract 真源；server、SDK、Studio 只消费它，不各自复制 shape。
+- Python SDK 的业务模型从 `anyagent.types` 暴露；未来多语言 SDK 从同一份 spec/schema 生成基础模型，再补语言惯用 helper。
+- Studio 只通过 OpenAI Responses API、`/internal/*` 与 `/admin/*` typed API 访问 Core；生产路径可继续由 `anyagent serve` 内嵌静态资源。
+- 当 protocol/spec、SDK 兼容矩阵、发布节奏和 ownership 都稳定后，再评估是否拆出独立 repo。
 
 ## 两层 API 输出
 
@@ -537,6 +551,7 @@ anyagent (本仓库)           anyagent-apps (同级项目)
 - [requirements.md](requirements.md) — 系统需求文档
 - [docs/architecture/](docs/architecture/README.md) — 架构设计
   - [apps-packages-boundary.md](docs/architecture/apps-packages-boundary.md) — anyagent vs anyagent-apps 职责边界
+  - [single-repo-multi-package-boundary.md](docs/architecture/decisions/single-repo-multi-package-boundary.md) — server/client/studio 单仓多包边界与多语言 SDK 演进策略
   - [responses-api-sdk-and-server.md](docs/architecture/responses-api-sdk-and-server.md) — SDK + Server 泳道与模块边界
   - [sdk-public-surface.md](docs/architecture/sdk-public-surface.md) — AnyAgent SDK public surface、typed model facade 与验证入口
   - [roadmap.md](docs/architecture/roadmap.md) — Phase 1-4 演进路线图
