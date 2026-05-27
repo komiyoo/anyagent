@@ -54,6 +54,7 @@ installation docs change.
 - `anyagent-apps` consumes the installed/published `anyagent` package; it does not publish the SDK.
 - Yunxiao build uses the Aliyun PyPI mirror only for third-party dependency downloads.
 - Yunxiao build and publish steps reuse dependency caches under `/root/.cache` (`/root/.cache/pip` and `/root/.cache/uv`), matching Yunxiao's default pipeline cache paths; avoid purging pip cache in the pipeline unless diagnosing a corrupted cache.
+- The SDK pipeline runs on the prebuilt `linux/amd64` image `registry.cn-beijing.aliyuncs.com/lyriktrip/python:anyagent-ci-py312-amd64`, based on the current `python:3.12-slim-bookworm` patch release with build tooling and warm pip/uv caches for the anyagent test dependency set.
 - Consumers install from the PyPI-compatible Yunxiao Packages repository using the distribution name `anyagent`.
 - Twine upload uses `TWINE_REPOSITORY_URL`, `TWINE_USERNAME`, and encrypted `TWINE_PASSWORD`; the pipeline provides defaults for the first two.
 - GitHub mirror sync uses `ANYAGENT_GITHUB_MIRROR_REPO` or `GITHUB_MIRROR_REPO`, encrypted `GITHUB_TOKEN`, optional `GITHUB_MIRROR_URL_PREFIX`, and optional branch/tag controls.

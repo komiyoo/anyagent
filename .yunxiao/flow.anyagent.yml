@@ -21,13 +21,8 @@ stages:
         name: 构建并发布 anyagent SDK
         runsOn:
           group: public/cn-beijing
-          container: build-steps-public-registry.cn-beijing.cr.aliyuncs.com/build-steps/alinux3:latest
+          container: registry.cn-beijing.aliyuncs.com/lyriktrip/python:anyagent-ci-py312-amd64
         steps:
-          setup_python_step:
-            name: 安装 Python
-            step: SetupPython
-            with:
-              pythonVersion: "3.12"
           notify_step:
             name: 构建前飞书通知
             step: Command
@@ -45,18 +40,21 @@ stages:
                 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/root/.cache/pip}"
                 export UV_CACHE_DIR="${UV_CACHE_DIR:-/root/.cache/uv}"
                 mkdir -p "$PIP_CACHE_DIR" "$UV_CACHE_DIR"
-                if command -v yum >/dev/null 2>&1; then
-                  yum install -y libffi libffi-devel >/dev/null 2>&1 || true
-                fi
-                libffi_path="$(ldconfig -p 2>/dev/null | awk '/libffi.so/{print $NF; exit}')"
-                if [ -n "$libffi_path" ] && [ ! -e /usr/lib64/libffi.so.7 ]; then
-                  ln -s "$libffi_path" /usr/lib64/libffi.so.7 || true
-                fi
                 if ! python -c "import ctypes" >/dev/null 2>&1; then
                   echo "Python ctypes is unavailable after libffi setup; check libffi runtime." >&2
                   exit 1
                 fi
-                python -m pip install --upgrade build hatchling pytest twine uv
+                python - <<'PY' || python -m pip install --upgrade build hatchling pytest twine uv
+                import importlib.util
+
+                missing = [
+                    module
+                    for module in ("build", "hatchling", "pytest", "twine", "uv")
+                    if importlib.util.find_spec(module) is None
+                ]
+                if missing:
+                    raise SystemExit(f"missing build tools: {', '.join(missing)}")
+                PY
                 bash scripts/ci/run_docs_guardrails.sh
                 bash scripts/ci/run_pytest_regressions.sh
                 bash scripts/ci/run_offline_smokes.sh
