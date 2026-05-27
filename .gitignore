@@ -7,6 +7,8 @@ plugins/**/config.json
 .cloud/
 .runs/
 .cache/
+docs/_manifest.txt
+docs/.generated/
 .vscode/
 .pytest_cache/
 .coverage

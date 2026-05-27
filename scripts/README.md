@@ -5,8 +5,8 @@
 ## 目录
 
 - `scripts/docs/`：文档系统工具。
-  - `index.py` 生成 `docs/_manifest.txt`。
-  - `check.py` 检查 Markdown 链接、TODO `Impl:` 证据、manifest 覆盖和可选 inline code refs。
+  - `index.py` 从 Markdown front matter 与目录结构生成派生 docs index，默认输出到 stdout。
+  - `check.py` 检查 Markdown 链接、TODO `Impl:` 证据、docs 可索引性和可选 inline code refs。
   - `pack.py` 按 tags 输出最小文档上下文包。
   - `code_ref_allowlist.txt` 标注 generated / illustrative / cross-repo inline refs，供 `check.py --check-code-refs` 使用。
 - `scripts/ci/`：CI/本地质量门入口，详见 [ci/README.md](ci/README.md)。
@@ -25,8 +25,8 @@
 ```bash
 python3 scripts/anyagent_progress.py --root .
 python3 scripts/docs/index.py --root .
-python3 scripts/docs/check.py --root . --check-manifest
-python3 scripts/docs/check.py --root . --check-manifest --check-code-refs
+python3 scripts/docs/check.py --root . --check-index
+python3 scripts/docs/check.py --root . --check-index --check-code-refs
 python3 scripts/docs/pack.py --root . --tags sdk
 bash scripts/ci/run_offline_smokes.sh
 bash scripts/ci/run_pytest_regressions.sh

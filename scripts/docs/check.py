@@ -25,7 +25,6 @@ _CODE_PATH_LINE_RE = re.compile(
     r"(?::([0-9]{1,9}))?"
     r"(?![A-Za-z0-9_])"
 )
-_MANIFEST_REL = Path("docs/_manifest.txt")
 _CODE_REF_ALLOWLIST_REL = Path("scripts/docs/code_ref_allowlist.txt")
 _SKIP_DIR_NAMES = {
     ".cache",
@@ -79,7 +78,7 @@ def _iter_markdown_files(root: Path) -> list[Path]:
     return sorted(set(candidates))
 
 
-def _iter_docs_for_manifest(root: Path, include_notes: bool) -> list[Path]:
+def _iter_docs_for_index(root: Path, include_notes: bool) -> list[Path]:
     docs_dir = root / "docs"
     if not docs_dir.exists():
         return []
@@ -104,27 +103,6 @@ def _iter_docs_for_manifest(root: Path, include_notes: bool) -> list[Path]:
             candidates.extend(p for p in prefix.rglob("*.md") if p.is_file())
 
     return sorted(set(candidates))
-
-
-def _load_manifest_paths(root: Path) -> set[str]:
-    manifest_path = root / _MANIFEST_REL
-    if not manifest_path.exists():
-        return set()
-
-    try:
-        lines = manifest_path.read_text(encoding="utf-8").splitlines()
-    except UnicodeDecodeError:
-        return set()
-
-    paths: set[str] = set()
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        first = line.split("\t", 1)[0].strip()
-        if first:
-            paths.add(first)
-    return paths
 
 
 def _load_code_ref_allowlist(root: Path, allowlist_path: Path | None) -> list[str]:
@@ -157,32 +135,19 @@ def _is_code_ref_allowlisted(raw_path: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatchcase(normalized, pattern) for pattern in patterns)
 
 
-def _check_docs_manifest(root: Path, include_notes: bool) -> list[str]:
+def _check_docs_indexability(root: Path, include_notes: bool) -> list[str]:
     errors: list[str] = []
-    manifest_path = root / _MANIFEST_REL
-    if not manifest_path.exists():
-        errors.append(f"docs manifest missing -> {_MANIFEST_REL}")
-        return errors
-
-    manifest_paths = _load_manifest_paths(root)
-    if not manifest_paths:
-        errors.append(f"docs manifest unreadable/empty -> {_MANIFEST_REL}")
-        return errors
-
-    # 1) every manifest entry must exist
-    for p in sorted(manifest_paths):
-        if p == "docs/_manifest.txt":
-            continue
-        if not (root / p).exists():
-            errors.append(f"docs manifest path missing -> {p}")
-
-    # 2) every relevant docs/*.md should be present in manifest
-    for doc in _iter_docs_for_manifest(root, include_notes=include_notes):
+    seen: set[str] = set()
+    for doc in _iter_docs_for_index(root, include_notes=include_notes):
         rel = doc.relative_to(root).as_posix()
-        if rel == "docs/_manifest.txt":
+        if rel in seen:
+            errors.append(f"docs index duplicate path -> {rel}")
             continue
-        if rel not in manifest_paths:
-            errors.append(f"docs manifest missing entry -> {rel}")
+        seen.add(rel)
+        try:
+            doc.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            errors.append(f"docs index unreadable (non-utf8?) -> {rel}")
 
     return errors
 
@@ -412,18 +377,18 @@ def _check_todo_impl_evidence(root: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Check docs links, TODO evidence, and optional docs manifest coverage."
+        description="Check docs links, TODO evidence, and docs indexability."
     )
     parser.add_argument("--root", default=".", help="repo root (default: .)")
     parser.add_argument(
-        "--check-manifest",
+        "--check-index",
         action="store_true",
-        help="also verify docs/_manifest.txt covers docs files",
+        help="also verify docs files are readable/indexable",
     )
     parser.add_argument(
         "--include-notes",
         action="store_true",
-        help="when --check-manifest, require docs/_notes entries too",
+        help="when checking the docs index, include docs/_notes too",
     )
     parser.add_argument(
         "--check-code-refs",
@@ -459,8 +424,8 @@ def main() -> int:
             )
 
     errors.extend(_check_todo_impl_evidence(root))
-    if args.check_manifest:
-        errors.extend(_check_docs_manifest(root, include_notes=args.include_notes))
+    if args.check_index:
+        errors.extend(_check_docs_indexability(root, include_notes=args.include_notes))
 
     if errors:
         print("docs_check: FAIL")

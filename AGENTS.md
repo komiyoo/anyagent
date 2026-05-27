@@ -6,7 +6,7 @@
 
 本仓库按 **Agentic Engineering** 方式组织，围绕五个支柱：上下文工程、验证闭环、工具化、Agentic 代码库、复合式工程。
 
-本文件是 agent harness，不是项目百科。它约束 agent 如何阅读上下文、判断边界、修改代码、同步文档和完成验证；具体接口字段、运行手册、架构决策、验收矩阵和迁移记录应保留在 `requirements.md`、`todo/*.md`、`docs/**`、README 或代码真源中。
+本文件是 agent harness，不是项目百科。它约束 agent 如何阅读上下文、判断边界、修改代码、同步文档和完成验证；具体接口字段、运行手册、架构决策、验收矩阵和迁移记录应保留在 `requirements.md`、`todo/*.md`、`docs/`**、README 或代码真源中。
 
 ---
 
@@ -16,7 +16,7 @@ anyagent = **配置即服务的 Agent Server 内核 + SDK**：
 
 - **Server Core**：内置 Agent API + Tool Runtime，`anyagent serve` 一条命令从 `.agents/` 配置启动 OpenAI Responses API 兼容服务
 - **SDK**：`AnyAgent` Client SDK 提供 OpenAI 兼容层 + anyagent 精细层（tool/command 级 Stage Events）
-- **Protocol SSOT**：`anyagent.protocol.*` 是所有 wire-level 协议的单一真源
+- **Protocol SSOT**：`anyagent.protocol.`* 是所有 wire-level 协议的单一真源
 - **安全边界**：Agent 可见资源但不可直接操作——密钥、凭证、tool policy 由 server 代理管理
 
 同级项目 `../anyagent-apps` 消费本仓库，展示业务示例、模板与示例平台接线；迁移期仍保留历史 Agent API / Tool Runtime / Studio 接线用于回归参照，但 production runtime、PG/MySQL/Redis storage、独立 Tool Runtime、ops CLI 与插件 contract 的真源应逐步收敛到本仓库。
@@ -29,12 +29,12 @@ anyagent = **配置即服务的 Agent Server 内核 + SDK**：
 
 1. 阅读 `README.md` 与 `docs/architecture/roadmap.md` 了解项目定位与当前阶段
 2. 运行 `python3 scripts/anyagent_progress.py --root .` 定位下一条 TODO
-3. 从 `todo/*.md` 定位任务条目，回溯到 `requirements.md#req-*`
+3. 从 `todo/*.md` 定位任务条目，回溯到 `requirements.md#req-`*
 4. 不清晰时：向用户追问要改哪个模块
 
 ### 1.2 SSOT 地图
 
-- **需求真源（What/Why）**：`requirements.md`（锚点 `requirements.md#req-*`）
+- **需求真源（What/Why）**：`requirements.md`（锚点 `requirements.md#req-`*）
 - **任务真源（When/Who/Progress）**：`todo/*.md`
 - **行为真源（How/Truth）**：仓库代码以 `packages/anyagent/` 为主
 - **长期维护文档（How/Contract）**：`docs/architecture|security|acceptance|performance/`
@@ -126,7 +126,7 @@ packages/anyagent/src/anyagent/
 ### 2.3 交付输出约定
 
 - **结论一句话**
-- **证据链**：`requirements.md#req-*` + `todo/<module>.md` + `Impl: path:line`
+- **证据链**：`requirements.md#req-`* + `todo/<module>.md` + `Impl: path:line`
 - **如何复现**：最小命令 + 必要 env
 - **如何验证**：最小验收脚本
 
@@ -139,7 +139,7 @@ packages/anyagent/src/anyagent/
 - `python3 scripts/anyagent_progress.py --root .` — 进度定位
 - `python3 scripts/docs/check.py --root .` — 文档断链检查
 - `python3 scripts/docs/pack.py --tags <topic>` — 渐进式上下文筛选
-- `python3 scripts/docs/index.py` — docs manifest 生成
+- `python3 scripts/docs/index.py --root .` — docs 派生索引查看（默认 stdout）
 
 ### 3.2 工具化意识
 
@@ -153,9 +153,9 @@ packages/anyagent/src/anyagent/
 
 ### 4.1 协议与类型系统
 
-- **Protocol-First**：新增/修改协议必须先更新 `anyagent.protocol.*`
+- **Protocol-First**：新增/修改协议必须先更新 `anyagent.protocol.`*
 - **Boundary Data Parsing**：HTTP/CLI/SDK/存储/文件/第三方工具输出进入系统边界时要做一次校验和归一化，内部主路径尽量只传已知形状的数据。
-- **SDK/示例强类型**：输入/输出/事件必须有 typed model；SDK 业务边界模型集中从 `anyagent.types` 导出，`anyagent.protocol.*` 仍是 wire-level SSOT。
+- **SDK/示例强类型**：输入/输出/事件必须有 typed model；SDK 业务边界模型集中从 `anyagent.types` 导出，`anyagent.protocol.`* 仍是 wire-level SSOT。
 - **外部接口策略**：OpenAI Responses API 兼容为第一优先级，`AnyAgent` SDK 承载超集能力
 
 ### 4.2 代码组织
@@ -244,16 +244,18 @@ Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → �
 
 ### 标识与关联键
 
-| 键 | 用途 |
-|---|---|
-| `agent_id` | 同一套服务内不同 agent 的稳定标识 |
-| `session_key` | 外部平台线程/会话键 |
-| `session_partition_key` | 并发分片键 `"{agent_id}::{session_key}"` |
-| `response_id` / `run_id` | 一次 `POST /v1/responses` 的执行实例 |
-| `idempotency_key` | 幂等去重键 |
-| `tool_call_id` | 单次工具调用标识 |
-| `credential_id` | 凭证引用标识（agent 不见原值） |
-| `seq` | run 内事件序号（单调递增） |
+
+| 键                        | 用途                                  |
+| ------------------------ | ----------------------------------- |
+| `agent_id`               | 同一套服务内不同 agent 的稳定标识                |
+| `session_key`            | 外部平台线程/会话键                          |
+| `session_partition_key`  | 并发分片键 `"{agent_id}::{session_key}"` |
+| `response_id` / `run_id` | 一次 `POST /v1/responses` 的执行实例       |
+| `idempotency_key`        | 幂等去重键                               |
+| `tool_call_id`           | 单次工具调用标识                            |
+| `credential_id`          | 凭证引用标识（agent 不见原值）                  |
+| `seq`                    | run 内事件序号（单调递增）                     |
+
 
 ---
 

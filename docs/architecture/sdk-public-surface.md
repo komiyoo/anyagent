@@ -88,11 +88,11 @@ SDK 文档入口按用途分层：
 
 | 改动 | 命令 |
 |---|---|
-| 文档链接、manifest、TODO 证据 | `python3 scripts/docs/check.py --root . --check-manifest` |
-| 文档 inline repo refs 大清理 | `python3 scripts/docs/check.py --root . --check-manifest --check-code-refs` |
+| 文档链接、index、TODO 证据 | `python3 scripts/docs/check.py --root . --check-index` |
+| 文档 inline repo refs 大清理 | `python3 scripts/docs/check.py --root . --check-index --check-code-refs` |
 | SDK/control-plane 离线 smoke | `bash scripts/ci/run_offline_smokes.sh` |
 | SDK/server pytest 回归 | `bash scripts/ci/run_pytest_regressions.sh` |
-| docs manifest 刷新 | `python3 scripts/docs/index.py --root .` |
+| docs index 查看 | `python3 scripts/docs/index.py --root .` |
 | context pack 筛选 | `python3 scripts/docs/pack.py --root . --tags sdk` |
 
 验收脚本和测试位置：
@@ -101,4 +101,3 @@ SDK 文档入口按用途分层：
 - `tests/contract/test_events_sdk_contract.py`
 - `tests/acceptance/sdk/acceptance_prompt_context_sdk_smoke.py`
 - `tests/acceptance/server/acceptance_prompt_envelope_smoke.py`
-

@@ -48,13 +48,16 @@
 
 配套工具：
 
-- 生成/刷新 docs manifest（纯文本）：`python3 scripts/docs/index.py --root .`
+- 查看派生 docs index（纯文本，默认 stdout）：`python3 scripts/docs/index.py --root .`
+- 需要临时缓存/CI 产物时显式写出：`python3 scripts/docs/index.py --root . --write .cache/docs/index.tsv`
 - 生成/筛选“最小上下文包”：`python3 scripts/docs/pack.py --tags stateless,storage`
+
+`docs/_manifest.txt` 不作为文档真源；docs index 由脚本从 Markdown front matter 与目录结构实时生成。
 
 ## 快速自检（推荐）
 
 - 跑断链与 TODO 证据检查：`python3 scripts/docs/check.py --root .`
-- 校验 manifest 覆盖面：`python3 scripts/docs/check.py --root . --check-manifest`
+- 校验 docs 可索引性：`python3 scripts/docs/check.py --root . --check-index`
 
 ## `docs/_dev/` 草案元信息（推荐）
 

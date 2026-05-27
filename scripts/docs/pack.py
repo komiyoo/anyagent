@@ -34,9 +34,6 @@ _RAW_FRONT_MATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 _HTML_COMMENT_FRONT_MATTER_RE = re.compile(
     r"\A<!--\s*\n---\s*\n(.*?)\n---\s*\n-->\s*\n", re.DOTALL
 )
-_MANIFEST_REL = Path("docs/_manifest.txt")
-
-
 @dataclass(frozen=True)
 class DocEntry:
     path: Path
@@ -159,13 +156,16 @@ def _normalize_tags(value: Any) -> set[str]:
     return set()
 
 
-def _load_manifest_entries(root: Path, include_notes: bool) -> list[DocEntry]:
-    manifest_path = root / _MANIFEST_REL
-    if not manifest_path.exists():
+def _load_index_entries(
+    root: Path, include_notes: bool, index_path: Path
+) -> list[DocEntry]:
+    if not index_path.is_absolute():
+        index_path = root / index_path
+    if not index_path.exists():
         return []
 
     try:
-        lines = manifest_path.read_text(encoding="utf-8").splitlines()
+        lines = index_path.read_text(encoding="utf-8").splitlines()
     except UnicodeDecodeError:
         return []
 
@@ -183,7 +183,7 @@ def _load_manifest_entries(root: Path, include_notes: bool) -> list[DocEntry]:
         if not raw_path:
             continue
 
-        # manifest may include notes; allow caller to exclude them
+        # Generated indexes may include notes; allow caller to exclude them.
         if not include_notes and (
             raw_path.startswith("docs/_notes/") or doc_kind.strip().lower() == "notes"
         ):
@@ -380,9 +380,9 @@ def main() -> int:
         help="include docs/_notes in candidates",
     )
     parser.add_argument(
-        "--no-manifest",
-        action="store_true",
-        help="do not use docs/_manifest.txt even if present",
+        "--index",
+        default="",
+        help="optional generated docs index TSV to read instead of scanning docs",
     )
     parser.add_argument(
         "--include-untagged",
@@ -419,10 +419,14 @@ def main() -> int:
     statuses = set(_split_csv(args.statuses.lower())) if args.statuses else set()
 
     entries: list[DocEntry] = []
-    if not args.no_manifest:
-        entries = _load_manifest_entries(root, include_notes=args.include_notes)
+    if args.index:
+        entries = _load_index_entries(
+            root,
+            include_notes=args.include_notes,
+            index_path=Path(args.index),
+        )
 
-    # Fallback to scanning files when manifest is missing or intentionally disabled.
+    # Default to scanning files so generated indexes never become docs SSOT.
     if not entries:
         for path in _iter_candidate_docs(root, include_notes=args.include_notes):
             entry = _load_entry(root, path)

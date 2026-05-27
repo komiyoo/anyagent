@@ -31,3 +31,4 @@
 - 进度以 `todo/*.md` 为真源
 - 新增文档优先放在最贴近其"职责边界"的目录
 - 维护/移动文档后，跑 `python3 scripts/docs/check.py --root .` 检查断链
+- 文档索引是派生视图，不维护手写 manifest；用 `python3 scripts/docs/index.py --root .` 查看，用 `python3 scripts/docs/pack.py --root . --tags <topic>` 按需筛选上下文

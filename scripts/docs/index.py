@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 """
-Builds a minimal, plain-text manifest for docs progressive disclosure.
+Builds a minimal, plain-text docs index for progressive disclosure.
 
 Output format (TSV, comment lines start with '#'):
   path<TAB>doc_kind<TAB>status<TAB>tags(comma)<TAB>summary<TAB>req(comma)
 
-The manifest is designed to be:
+The index is designed to be:
 - extremely small and agent-friendly (no JSON brackets/quotes noise)
 - mechanically checkable (file coverage, broken paths)
 - usable as a "docs harness" entrypoint before loading full documents
+
+By default this command writes to stdout. Use --write when a temporary cache or
+CI artifact is explicitly needed; generated indexes are not docs SSOT.
 """
 
 import argparse
@@ -206,9 +209,6 @@ def _build_lines(
     lines: list[str] = []
     for path in _iter_docs_markdown(root, include_notes=include_notes):
         rel = path.relative_to(root)
-        if rel.as_posix() == "docs/_manifest.txt":
-            continue
-
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -243,12 +243,17 @@ def _build_lines(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build docs manifest (plain text).")
+    parser = argparse.ArgumentParser(description="Build docs index (plain text).")
     parser.add_argument("--root", default=".", help="repo root (default: .)")
     parser.add_argument(
         "--output",
-        default="docs/_manifest.txt",
-        help="output path, relative to root (default: docs/_manifest.txt)",
+        default="",
+        help="deprecated alias for --write; output path relative to root",
+    )
+    parser.add_argument(
+        "--write",
+        default="",
+        help="optional output path relative to root; default prints to stdout",
     )
     parser.add_argument(
         "--include-notes",
@@ -264,7 +269,7 @@ def main() -> int:
     parser.add_argument(
         "--stdout",
         action="store_true",
-        help="print to stdout instead of writing file",
+        help="deprecated no-op; stdout is the default",
     )
     args = parser.parse_args()
 
@@ -273,12 +278,15 @@ def main() -> int:
         print(f"root does not exist: {root}", file=sys.stderr)
         return 2
 
-    out_path = (root / args.output).resolve()
-    try:
-        out_path.relative_to(root)
-    except ValueError:
-        print(f"output must be inside repo: {out_path}", file=sys.stderr)
-        return 2
+    output = args.write or args.output
+    out_path: Path | None = None
+    if output:
+        out_path = (root / output).resolve()
+        try:
+            out_path.relative_to(root)
+        except ValueError:
+            print(f"output must be inside repo: {out_path}", file=sys.stderr)
+            return 2
 
     body = _build_lines(
         root=root,
@@ -287,14 +295,14 @@ def main() -> int:
     )
 
     header = [
-        "# anyagent docs manifest v1",
+        "# anyagent docs index v1",
         "# fields: path<TAB>doc_kind<TAB>status<TAB>tags(comma)<TAB>summary<TAB>req(comma)",
-        "# regenerate: python3 scripts/docs/index.py --root .",
+        "# generated: python3 scripts/docs/index.py --root .",
         "",
     ]
     content = "\n".join(header + body) + "\n"
 
-    if args.stdout:
+    if out_path is None:
         sys.stdout.write(content)
         return 0
 
