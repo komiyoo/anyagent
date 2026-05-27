@@ -42,6 +42,9 @@ stages:
                 export PIP_DISABLE_PIP_VERSION_CHECK=1
                 export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
                 export PIP_TRUSTED_HOST=mirrors.aliyun.com
+                export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$PWD/.cache/pip}"
+                export UV_CACHE_DIR="${UV_CACHE_DIR:-$PWD/.cache/uv}"
+                mkdir -p "$PIP_CACHE_DIR" "$UV_CACHE_DIR"
                 if command -v yum >/dev/null 2>&1; then
                   yum install -y libffi libffi-devel >/dev/null 2>&1 || true
                 fi
@@ -53,13 +56,12 @@ stages:
                   echo "Python ctypes is unavailable after libffi setup; check libffi runtime." >&2
                   exit 1
                 fi
-                python -m pip cache purge || true
-                python -m pip install --no-cache-dir --upgrade build pytest twine uv
+                python -m pip install --upgrade build hatchling pytest twine uv
                 bash scripts/ci/run_docs_guardrails.sh
                 bash scripts/ci/run_pytest_regressions.sh
                 bash scripts/ci/run_offline_smokes.sh
                 rm -rf packages/anyagent/dist
-                python -m build packages/anyagent
+                python -m build --no-isolation packages/anyagent
                 python -m twine check packages/anyagent/dist/*
           upload_step:
             step: ArtifactUpload

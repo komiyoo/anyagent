@@ -53,6 +53,7 @@ installation docs change.
 - `scripts/notify_release_start.py` skips notification when `FEISHU_RELEASE_WEBHOOK_URL` is unset; when it is set, a failed Feishu response fails the build before package construction.
 - `anyagent-apps` consumes the installed/published `anyagent` package; it does not publish the SDK.
 - Yunxiao build uses the Aliyun PyPI mirror only for third-party dependency downloads.
+- Yunxiao build and publish steps reuse workspace-local dependency caches (`.cache/pip` and `.cache/uv`); avoid purging pip cache in the pipeline unless diagnosing a corrupted cache.
 - Consumers install from the PyPI-compatible Yunxiao Packages repository using the distribution name `anyagent`.
 - Twine upload uses `TWINE_REPOSITORY_URL`, `TWINE_USERNAME`, and encrypted `TWINE_PASSWORD`; the pipeline provides defaults for the first two.
 - GitHub mirror sync uses `ANYAGENT_GITHUB_MIRROR_REPO` or `GITHUB_MIRROR_REPO`, encrypted `GITHUB_TOKEN`, optional `GITHUB_MIRROR_URL_PREFIX`, and optional branch/tag controls.

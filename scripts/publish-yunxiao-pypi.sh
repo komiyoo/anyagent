@@ -4,6 +4,8 @@ set -euo pipefail
 export PIP_DISABLE_PIP_VERSION_CHECK="${PIP_DISABLE_PIP_VERSION_CHECK:-1}"
 export PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
 export PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST:-mirrors.aliyun.com}"
+export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$PWD/.cache/pip}"
+mkdir -p "$PIP_CACHE_DIR"
 
 export TWINE_REPOSITORY_URL="${TWINE_REPOSITORY_URL:-${ANYAGENT_PYPI_REPOSITORY_URL:-https://packages.aliyun.com/63d476f8d14a7f379aa798da/pypi/anyagent}}"
 export TWINE_USERNAME="${TWINE_USERNAME:-${ANYAGENT_PYPI_USERNAME:-63c537efbb097da55ff323e3}}"
@@ -13,7 +15,9 @@ if [[ -z "${TWINE_PASSWORD:-}" || "${TWINE_PASSWORD:-}" == "REPLACE_ME" ]]; then
   exit 0
 fi
 
-python -m pip install --no-cache-dir --upgrade twine
+if ! python -m twine --version >/dev/null 2>&1; then
+  python -m pip install twine
+fi
 
 package_dir="packages/anyagent"
 package_name="$(
