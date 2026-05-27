@@ -9,7 +9,7 @@ from anyagent import AnyAgent
 from anyagent.agent_api_client import Admin, Agents, Prompts, Responses
 from anyagent.protocol.admin_storage import StorageHealthResponse
 from anyagent.protocol.agent_api_internal import InternalAgentDetailResponse, InternalAgentsListResponse, InternalPromptBundlePreviewResponse
-from anyagent.protocol.credential_vault import AdminCredentialListResponse, AdminCredentialRef
+from anyagent.protocol.credential_vault import AdminCredentialDeleteResponse, AdminCredentialListResponse, AdminCredentialRef
 from anyagent.protocol.health import HealthResponse
 from anyagent.protocol.openai_responses import build_minimal_openai_response_json
 
@@ -126,9 +126,9 @@ def main() -> int:
             }
         )
 
-    async def _fake_delete_credential(self: Admin, credential_id: str) -> dict:
+    async def _fake_delete_credential(self: Admin, credential_id: str) -> AdminCredentialDeleteResponse:
         _ = self
-        return {"ok": True, "deleted": credential_id == "search_api_key", "credential_id": credential_id}
+        return AdminCredentialDeleteResponse(ok=True, deleted=credential_id == "search_api_key", credential_id=credential_id)
 
     with (
         patch.object(Admin, "set_credential", _fake_set_credential),
@@ -149,7 +149,7 @@ def main() -> int:
         creds = asyncio.run(client.admin.list_credentials())
         _assert(creds.credentials[0].credential_id == "search_api_key", "`client.admin.list_credentials()` parsing mismatch")
         deleted = asyncio.run(client.admin.delete_credential("search_api_key"))
-        _assert(deleted["deleted"] is True and deleted["credential_id"] == "search_api_key", "`client.admin.delete_credential()` delete payload mismatch")
+        _assert(deleted.deleted is True and deleted.credential_id == "search_api_key", "`client.admin.delete_credential()` delete payload mismatch")
 
     async def _fake_agents_list(self: Agents, *, include_unexposed: bool = False) -> InternalAgentsListResponse:
         _ = self, include_unexposed

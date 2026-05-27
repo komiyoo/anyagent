@@ -76,9 +76,62 @@ stages:
             name: 同步对应分支到 GitHub
             step: Command
             with:
-              run: bash scripts/mirror-codeup-to-github.sh
+              run: GITHUB_MIRROR_FORCE="${GITHUB_MIRROR_FORCE:-true}" bash scripts/mirror-codeup-to-github.sh
           publish_step:
             name: 发布到云效 PyPI
             step: Command
             with:
               run: bash scripts/publish-yunxiao-pypi.sh
+          publish_typescript_step:
+            name: 发布 TypeScript SDK 到云效 NPM
+            step: Command
+            with:
+              run: |
+                set -eu
+                export PIP_DISABLE_PIP_VERSION_CHECK=1
+                export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+                export PIP_TRUSTED_HOST=mirrors.aliyun.com
+                export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/root/.cache/pip}"
+                export UV_CACHE_DIR="${UV_CACHE_DIR:-/root/.cache/uv}"
+                mkdir -p "$PIP_CACHE_DIR" "$UV_CACHE_DIR"
+                ensure_node22() {
+                  if command -v node >/dev/null 2>&1 && [ "$(node -p 'Number(process.versions.node.split(".")[0])')" -ge 22 ]; then
+                    return 0
+                  fi
+                  node_version="${NODE_VERSION:-22.13.1}"
+                  case "$(uname -m)" in
+                    x86_64|amd64) node_arch="linux-x64" ;;
+                    aarch64|arm64) node_arch="linux-arm64" ;;
+                    *) echo "unsupported node install arch: $(uname -m)" >&2; exit 1 ;;
+                  esac
+                  node_url="https://npmmirror.com/mirrors/node/v${node_version}/node-v${node_version}-${node_arch}.tar.xz"
+                  python - "$node_url" <<'PY'
+                import shutil
+                import sys
+                import tarfile
+                import urllib.request
+                from pathlib import Path
+
+                url = sys.argv[1]
+                archive = Path("/tmp/node.tar.xz")
+                target = Path("/tmp/node")
+                urllib.request.urlretrieve(url, archive)
+                shutil.rmtree(target, ignore_errors=True)
+                target.mkdir(parents=True, exist_ok=True)
+                with tarfile.open(archive, "r:xz") as tar:
+                    for member in tar.getmembers():
+                        parts = Path(member.name).parts[1:]
+                        if not parts:
+                            continue
+                        member.name = str(Path(*parts))
+                        tar.extract(member, target)
+                PY
+                  export PATH="/tmp/node/bin:$PATH"
+                }
+                ensure_node22
+                node --version
+                npm --version
+                npm --prefix sdks/typescript ci
+                npm --prefix sdks/typescript run smoke
+                npm --prefix sdks/typescript run pack:check
+                bash scripts/publish-yunxiao-npm.sh

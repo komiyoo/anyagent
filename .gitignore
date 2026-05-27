@@ -1,30 +1,41 @@
-.venv
-__pycache__
-*.pyc
+# Local environment and secrets
 .env
 .env.local
+.venv/
+.vscode/
 plugins/**/config.json
+
+# Runtime state and local caches
+.cache/
 .cloud/
 .runs/
-.cache/
-docs/_manifest.txt
-docs/.generated/
-.vscode/
-.pytest_cache/
+
+# Python caches and reports
+__pycache__/
+*.pyc
 .coverage
 .coverage.*
-htmlcov/
-dist/
-build/
-.mypy_cache/
-.ruff_cache/
 .hypothesis/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
 
-# Node / frontend build artifacts
+# Build outputs
+build/
+dist/
+
+# Node / frontend / SDK build artifacts
 node_modules/
 **/node_modules/
-**/dist/
 **/.vite/
+**/dist/
+**/dist-codegen/
+*.tgz
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+
+# Generated docs indexes
+docs/_manifest.txt
+docs/.generated/

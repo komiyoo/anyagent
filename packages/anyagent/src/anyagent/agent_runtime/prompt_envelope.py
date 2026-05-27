@@ -7,15 +7,15 @@ import os
 from pathlib import Path
 
 from anyagent.agent_packs import AgentPack
-from anyagent.mcp.models import MCPServerConfig
-from anyagent.protocol.context_fragments import ContextFragment, ContextFragmentRole, render_context_fragment
-from anyagent.protocol.openai_responses import inject_text_into_responses_body
+from anyagent.protocol.context_fragments import ContextFragment, ContextFragmentRole
+from anyagent.protocol.mcp import MCPServerConfig
 from anyagent.protocol.prompt_context import (
     PromptContextAudit,
     PromptEnvelope,
-    PromptFragmentSummary,
     RenderedPromptFragment,
-    build_prompt_context_audit,
+    apply_prompt_envelope_to_body as _apply_prompt_envelope_to_body,
+    build_prompt_audit_metadata as _build_prompt_audit_metadata,
+    render_prompt_envelope_fragments as _render_prompt_envelope_fragments,
 )
 from anyagent.protocol.tool_runtime import ToolContext
 from anyagent.skills import requested_tool_names_for_skill
@@ -224,16 +224,7 @@ def build_prompt_envelope(
 
 
 def apply_prompt_envelope_to_body(*, body: dict, envelope: PromptEnvelope) -> dict:
-    body2 = dict(body)
-    for fragment in envelope.fragments:
-        body2 = inject_text_into_responses_body(
-            body=body2,
-            text=render_context_fragment(fragment),
-            role=fragment.role,
-        )
-    if isinstance(envelope.prompt_cache_key, str) and envelope.prompt_cache_key.strip():
-        body2["prompt_cache_key"] = envelope.prompt_cache_key
-    return body2
+    return _apply_prompt_envelope_to_body(body=body, envelope=envelope)
 
 
 def build_prompt_cache_key(
@@ -290,38 +281,11 @@ def _sha256_text(text: str) -> str:
 
 
 def build_prompt_audit_metadata(*, envelope: PromptEnvelope) -> PromptContextAudit:
-    return build_prompt_context_audit(
-        prompt_cache_key=envelope.prompt_cache_key,
-        fragments=[
-            PromptFragmentSummary(
-                kind=fragment.kind,
-                cache_class=fragment.cache_class,
-                stable_id=fragment.stable_id,
-                source_path=fragment.source_path,
-                source_hash=fragment.source_hash,
-                scope=fragment.scope,
-            )
-            for fragment in envelope.fragments
-        ],
-    )
+    return _build_prompt_audit_metadata(envelope=envelope)
 
 
 def render_prompt_envelope_fragments(*, envelope: PromptEnvelope) -> list[RenderedPromptFragment]:
-    return [
-        RenderedPromptFragment(
-            kind=fragment.kind,
-            role=fragment.role,
-            cache_class=fragment.cache_class,
-            label=fragment.label,
-            stable_id=fragment.stable_id,
-            source_path=fragment.source_path,
-            source_hash=fragment.source_hash,
-            scope=fragment.scope,
-            metadata=dict(fragment.metadata),
-            rendered_text=render_context_fragment(fragment),
-        )
-        for fragment in envelope.fragments
-    ]
+    return _render_prompt_envelope_fragments(envelope=envelope)
 
 
 def _sandbox_exec_enabled(pack: AgentPack) -> bool:

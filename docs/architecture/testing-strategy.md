@@ -11,7 +11,7 @@ audience: ["developer", "agent"]
 
 # anyagent 测试分层策略
 
-本文档定义 `anyagent` 仓库的测试分层与默认补齐顺序，目标是把当前偏 acceptance/smoke 的验证方式，逐步收敛为“快速回归 + 契约守护 + 最小闭环验收”并存的体系。
+本文档定义 `anyagent` 仓库的测试分层与选择原则。目标是让快速回归、契约守护和最小闭环验收各自承担清晰职责。
 
 ## 目标
 
@@ -124,7 +124,7 @@ flowchart TD
 位置：
 
 - 仍可放在 `tests/acceptance/server/`，通过环境变量 gating
-- 或在后续演进中单独收口到 `tests/live/`
+- 也可按独立目录约定收口到 `tests/live/`
 
 适用对象：
 
@@ -138,39 +138,17 @@ flowchart TD
 - 默认本地和 CI 不强制
 - 失败时要能区分“代码问题”和“环境问题”
 
-## 当前缺口判断
+## 当前覆盖边界
 
 当前仓库已有：
 
-- 一批离线 acceptance/smoke
-- 一个较大的 `tests/acceptance/server/acceptance_builtin_server_smoke.py`
+- `tests/unit/` 覆盖 session runtime、manifest cache、credential store、exec handler、request validation、prompt envelope、observability 等快速回归。
+- `tests/contract/` 覆盖 Responses SSE、Stage Events typed decoding、protocol schema export 与 SDK import boundary。
+- `tests/integration/server/` 覆盖 server/runtime/events/store 主路径、manifest cache、request validation、retrieve/cancel、session resume 与事件终态。
+- `tests/acceptance/**` 保留 SDK、MCP、built-in server 与 prompt envelope 的离线闭环。
+- CI 入口已收敛为 docs guardrails、pytest regressions、offline smokes 与可选 live storage matrix。
 
-当前主要缺口：
-
-- `tests/unit/` 几乎为空
-- `tests/integration/` 与 `tests/contract/` 尚未成型
-- 性能、鲁棒性、安全回归尚未形成单独层次
-
-## 首批补齐顺序
-
-### P0
-
-- `session_runtime`：请求/会话合并、fallback transcript、snapshot 构造
-- `manifest_cache`：key 稳定性、clone 语义、缓存失效
-- `credential_store`：scope/kind 解析、agent 覆盖 global、delete 语义
-- `exec_handler`：UTF-8 截断、stderr 预算传递、输出截断标记
-
-### P1
-
-- Responses API / SSE / Stage Events contract fixtures
-- in-process app/runtime/event-store integration tests
-- tool policy / credential scope / secret redaction 的负向测试
-
-### P2
-
-- 并发与压力
-- Redis / PG / MCP / provider 的鲁棒性与故障注入
-- 更系统的 security regression matrix
+新增 wire contract、Pydantic-only validator 或 SDK helper 时，需要同步扩展 schema/conformance fixture，避免 SDK 漂移。
 
 ## 运行约定
 

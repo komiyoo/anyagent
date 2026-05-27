@@ -1,0 +1,216 @@
+{
+  "schema_version": "2026-05-27",
+  "description": "Minimum SDK conformance surface for the single-repo multi-package boundary.",
+  "operations": [
+    {
+      "name": "health",
+      "kind": "protocol_model",
+      "fixture": "health.ok"
+    },
+    {
+      "name": "responses.create",
+      "kind": "openai_response",
+      "fixture": "responses.create.completed"
+    },
+    {
+      "name": "responses.stream",
+      "kind": "sse_stream",
+      "fixture": "response_stream_sse_blocks"
+    },
+    {
+      "name": "responses.retrieve",
+      "kind": "openai_response",
+      "fixture": "responses.retrieve.in_progress"
+    },
+    {
+      "name": "responses.cancel",
+      "kind": "openai_response",
+      "fixture": "responses.cancel.cancelled"
+    },
+    {
+      "name": "events.list",
+      "kind": "protocol_model",
+      "fixture": "events.list.empty_done"
+    },
+    {
+      "name": "agents.list",
+      "kind": "protocol_model",
+      "fixture": "agents.list.main"
+    },
+    {
+      "name": "agents.get",
+      "kind": "protocol_model",
+      "fixture": "agents.detail.main"
+    },
+    {
+      "name": "tools.catalog",
+      "kind": "protocol_model",
+      "fixture": "tools.catalog.exec"
+    },
+    {
+      "name": "skills.list",
+      "kind": "protocol_model",
+      "fixture": "skills.list.repo_helper"
+    },
+    {
+      "name": "prompts.preview",
+      "kind": "protocol_model",
+      "fixture": "prompt.bundle.preview"
+    },
+    {
+      "name": "observability.summary",
+      "kind": "protocol_model",
+      "fixture": "observability.summary"
+    },
+    {
+      "name": "observability.runs",
+      "kind": "protocol_model",
+      "fixture": "observability.runs"
+    },
+    {
+      "name": "observability.timeline",
+      "kind": "protocol_model",
+      "fixture": "observability.timeline"
+    },
+    {
+      "name": "observability.metrics",
+      "kind": "protocol_model",
+      "fixture": "observability.metrics"
+    },
+    {
+      "name": "observability.tools",
+      "kind": "protocol_model",
+      "fixture": "observability.tools"
+    },
+    {
+      "name": "observability.errors",
+      "kind": "protocol_model",
+      "fixture": "observability.errors"
+    },
+    {
+      "name": "observability.trace",
+      "kind": "protocol_model",
+      "fixture": "observability.trace"
+    },
+    {
+      "name": "admin.storage.health",
+      "kind": "protocol_model",
+      "fixture": "admin.storage.health"
+    },
+    {
+      "name": "admin.tools.catalog",
+      "kind": "protocol_model",
+      "fixture": "admin.tools.catalog"
+    },
+    {
+      "name": "admin.plugins.catalog",
+      "kind": "protocol_model",
+      "fixture": "admin.plugins.catalog"
+    },
+    {
+      "name": "admin.credentials.list",
+      "kind": "protocol_model",
+      "fixture": "admin.credentials.list"
+    },
+    {
+      "name": "admin.credentials.set",
+      "kind": "protocol_model",
+      "fixture": "admin.credentials.set"
+    },
+    {
+      "name": "admin.credentials.delete",
+      "kind": "protocol_model",
+      "fixture": "admin.credentials.delete"
+    },
+    {
+      "name": "admin.workspace.agent.create",
+      "kind": "protocol_model",
+      "fixture": "admin.workspace.agent.create"
+    },
+    {
+      "name": "admin.workspace.agent.files",
+      "kind": "protocol_model",
+      "fixture": "admin.workspace.agent.files"
+    },
+    {
+      "name": "admin.workspace.agent.file.update",
+      "kind": "protocol_model",
+      "fixture": "admin.workspace.agent.file.update"
+    },
+    {
+      "name": "admin.skill.import",
+      "kind": "protocol_model",
+      "fixture": "admin.skill.import"
+    },
+    {
+      "name": "admin.skill.install",
+      "kind": "protocol_model",
+      "fixture": "admin.skill.install"
+    },
+    {
+      "name": "admin.skill.update.check",
+      "kind": "protocol_model",
+      "fixture": "admin.skill.update.check"
+    },
+    {
+      "name": "admin.skill.update.apply",
+      "kind": "protocol_model",
+      "fixture": "admin.skill.update.apply"
+    },
+    {
+      "name": "admin.agent.skills.update",
+      "kind": "protocol_model",
+      "fixture": "admin.agent.skills.update"
+    },
+    {
+      "name": "admin.agent.config.update",
+      "kind": "protocol_model",
+      "fixture": "admin.agent.config.update"
+    },
+    {
+      "name": "mcp.config",
+      "kind": "protocol_model",
+      "fixture": "mcp.config.http"
+    },
+    {
+      "name": "tool.context",
+      "kind": "protocol_model",
+      "fixture": "tool.context.auth_ref"
+    },
+    {
+      "name": "stage_event.tool.planned",
+      "kind": "type_adapter",
+      "fixture": "stage_event.tool.planned"
+    },
+    {
+      "name": "stage_event.command.result",
+      "kind": "type_adapter",
+      "fixture": "stage_event.command.result"
+    },
+    {
+      "name": "tool_runtime.execute.response",
+      "kind": "type_adapter",
+      "fixture": "tool_runtime.execute.response"
+    },
+    {
+      "name": "negative.credential.scope",
+      "kind": "request_negative",
+      "fixture": "credential.agent_scope_missing_agent_id"
+    },
+    {
+      "name": "negative.stage_event.seq",
+      "kind": "type_adapter_negative",
+      "fixture": "stage_event.seq_zero"
+    }
+  ],
+  "language_checks": [
+    {
+      "language": "python",
+      "command": "rtk uv run --with pytest --project packages/anyagent python -m pytest tests/contract -q"
+    },
+    {
+      "language": "typescript",
+      "command": "rtk npm --prefix sdks/typescript run smoke"
+    }
+  ]
+}

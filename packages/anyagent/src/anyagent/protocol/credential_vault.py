@@ -45,6 +45,14 @@ class AdminCredentialListResponse(BaseModel):
     credentials: list[AdminCredentialRef]
 
 
+class AdminCredentialDeleteResponse(BaseModel):
+    """Confirms deletion of one credential reference without exposing plaintext."""
+
+    ok: bool
+    deleted: bool
+    credential_id: str
+
+
 class CredentialBackendCapability(BaseModel):
     """Describes one credential backend mode without exposing secrets."""
 

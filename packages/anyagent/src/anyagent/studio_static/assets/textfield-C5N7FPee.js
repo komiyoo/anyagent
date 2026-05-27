@@ -1,0 +1,1 @@
+import{D as e,k as t,t as n}from"./index-q9RN5jBk.js";var r=t(e(),1);n();var i=(0,r.createContext)({});export{i as t};

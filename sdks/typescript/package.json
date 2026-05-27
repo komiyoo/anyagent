@@ -1,0 +1,35 @@
+{
+  "name": "anyagent",
+  "version": "0.1.5",
+  "description": "TypeScript SDK for AnyAgent typed APIs and generated protocol schemas",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./generated/protocol-schema.json": "./dist/generated/protocol-schema.json",
+    "./generated/protocol-types": {
+      "types": "./dist/generated/protocol-types.d.ts",
+      "default": "./dist/generated/protocol-types.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "generated/",
+    "README.md"
+  ],
+  "scripts": {
+    "generate:schema": "uv run --project ../../packages/anyagent python ../../scripts/export_protocol_schema.py --out generated/protocol-schema.json",
+    "generate:types": "npm run generate:schema && tsc -p tsconfig.codegen.json && node dist-codegen/generateTypes.js generated/protocol-types.ts",
+    "build": "tsc -p tsconfig.json",
+    "pack:check": "npm pack --dry-run",
+    "smoke": "npm run generate:types && npm run build && node dist/src/smoke/schema-smoke.js && node dist/src/smoke/client-smoke.js"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "typescript": "^5.7.2"
+  }
+}

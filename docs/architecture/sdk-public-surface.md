@@ -25,7 +25,7 @@ req: ["requirements.md#req-4", "requirements.md#req-9"]
 维护规则：
 
 - 公开 SDK 输入/输出类型优先从 `anyagent.types` 暴露；业务文档不要要求调用方直接拼 `anyagent.protocol.*` 的内部模块路径。
-- 新增 SDK namespace 或 helper 时，同步更新本文档、`docs/architecture/responses-api-sdk-and-server.md` 的主路径说明，以及 `todo/sdk.md` 的证据。
+- 新增 SDK namespace 或 helper 时，同步更新本文档与 `docs/architecture/responses-api-sdk-and-server.md` 的主路径说明；未完成工作记录在 `todo/sdk.md`。
 - 新增或修改 wire contract 时，先改 `anyagent.protocol.*`，再改 SDK facade、server endpoint 与测试。
 
 ## 2. SDK Namespace Map
@@ -67,19 +67,17 @@ SDK 文档入口按用途分层：
 
 - 总入口：[../README.md](../README.md)
 - 架构入口：[README.md](README.md)
-- Roadmap：[roadmap.md](roadmap.md)
 - Responses + Server 泳道：[responses-api-sdk-and-server.md](responses-api-sdk-and-server.md)
 - Stage Events 设计：[agent-api-client-stage-events.md](agent-api-client-stage-events.md)
 - OpenAI-first ADR：[decisions/openai-first-api-surface.md](decisions/openai-first-api-surface.md)
 - 测试策略：[testing-strategy.md](testing-strategy.md)
-- 任务证据：`todo/sdk.md`
+- SDK TODO：`todo/sdk.md`
 
-不要在 README、roadmap、TODO 和本文档之间复制同一段完整 API 说明。推荐分工：
+不要在 README、架构文档、TODO 和本文档之间复制同一段完整 API 说明。推荐分工：
 
 - README：用户主路径和最短示例。
-- Roadmap：阶段状态、剩余方向和关键里程碑。
 - 本文档：SDK surface map、模块归属、引用入口。
-- TODO：任务状态、需求锚点、实现证据和验证记录。
+- TODO：未完成工作、需求锚点和验证入口。
 - Protocol / code：字段与行为真源。
 
 ## 5. 验证入口
@@ -88,7 +86,7 @@ SDK 文档入口按用途分层：
 
 | 改动 | 命令 |
 |---|---|
-| 文档链接、index、TODO 证据 | `python3 scripts/docs/check.py --root . --check-index` |
+| 文档链接与 index | `python3 scripts/docs/check.py --root . --check-index` |
 | 文档 inline repo refs 大清理 | `python3 scripts/docs/check.py --root . --check-index --check-code-refs` |
 | SDK/control-plane 离线 smoke | `bash scripts/ci/run_offline_smokes.sh` |
 | SDK/server pytest 回归 | `bash scripts/ci/run_pytest_regressions.sh` |

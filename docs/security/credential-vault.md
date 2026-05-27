@@ -35,7 +35,7 @@ hiclaw 的安全模型关键设计点（本方案借鉴但不照搬）：
 | Higress AI Gateway Consumer + Bearer key-auth | Credential Vault + Tool Runtime 内部注入 |
 | MCP Server 配置中注入 `accessToken`，Worker 不可见 | ToolCredentialSpec 声明 + handler context 注入 |
 | Worker 只传业务参数，Gateway 自动附加 Authorization | Agent 只传 `auth_ref`（引用），Tool Runtime resolve 明文 |
-| `/data/worker-creds/<name>.env`（chmod 600）| CredentialStore 抽象（env / file / DB / Vault） |
+| `/data/worker-creds/<name>.env`（chmod 600）| CredentialStore 抽象（env / file / Infisical / DB / Vault） |
 | Consumer 三层权限（网关→路由→MCP Server） | Policy + CredentialScope 二层权限 |
 
 ## 1. 核心概念
@@ -63,6 +63,8 @@ class CredentialScope(BaseModel):
 - `global`：全局凭证，所有 Agent 共享（企业级预配置场景）
 - `agent`：Agent 级凭证，仅指定 Agent 可用（多 Agent 隔离场景）
 - ~~`session`~~：会话级临时凭据（**v2 规划，暂不实现**）
+
+当前协议层 `CredentialScope` 已强制校验 `level=agent` 时必须带 `agent_id`、`level=global` 时不得带 `agent_id`；schema bundle 会把该 Pydantic-only 语义导出给多语言 SDK scaffold。`DatabaseBackend` 加密列存储、Vault/Secrets Manager adapter、session 级临时凭据、轮转过期与持久化合规审计表仍作为 v2 规划跟踪。
 
 ### 1.3 CredentialRef（凭证引用）
 
@@ -92,7 +94,8 @@ class AuthRef(BaseModel):
                     │   ┌───────────────────────┐ │
                     │   │ EnvBackend (v1 默认)   │ │
                     │   │ FileBackend            │ │
-                    │   │ DatabaseBackend        │ │
+                    │   │ InfisicalBackend       │ │
+                    │   │ DatabaseBackend (v2)   │ │
                     │   │ VaultBackend (v2)      │ │
                     │   └───────────────────────┘ │
                     └──────────┬─────────────────┘

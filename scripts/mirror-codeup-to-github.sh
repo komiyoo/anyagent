@@ -24,6 +24,7 @@ mirror_url_prefix="${GITHUB_MIRROR_URL_PREFIX:-}"
 mirror_token="${GITHUB_TOKEN:-}"
 mirror_branches="${GITHUB_MIRROR_BRANCHES:-${CI_COMMIT_REF_NAME:-main}}"
 mirror_push_tags="${GITHUB_MIRROR_PUSH_TAGS:-false}"
+mirror_force="${GITHUB_MIRROR_FORCE:-${ANYAGENT_GITHUB_MIRROR_FORCE:-false}}"
 mirror_dry_run="${GITHUB_MIRROR_DRY_RUN:-false}"
 mirror_required="${GITHUB_MIRROR_REQUIRED:-0}"
 mirror_push_retries="${GITHUB_MIRROR_PUSH_RETRIES:-3}"
@@ -103,6 +104,13 @@ fi
 [[ "${mirror_push_retries}" =~ ^[1-9][0-9]*$ ]] || fail "GITHUB_MIRROR_PUSH_RETRIES must be a positive integer."
 [[ "${mirror_push_retry_sleep}" =~ ^[0-9]+$ ]] || fail "GITHUB_MIRROR_PUSH_RETRY_SLEEP_SECONDS must be a non-negative integer."
 [[ "${mirror_push_timeout}" =~ ^[1-9][0-9]*$ ]] || fail "GITHUB_MIRROR_PUSH_TIMEOUT_SECONDS must be a positive integer."
+case "${mirror_force}" in
+  true|false)
+    ;;
+  *)
+    fail "GITHUB_MIRROR_FORCE must be 'true' or 'false'."
+    ;;
+esac
 
 git remote add "${remote_name}" "${mirror_remote_url}"
 
@@ -157,7 +165,11 @@ for branch in "${branches[@]}"; do
   fi
 
   echo "Mirroring branch ${branch} to GitHub..."
-  mirror_git_push_with_retry "${remote_name}" "${source_ref}:refs/heads/${branch}"
+  if [[ "${mirror_force}" == "true" ]]; then
+    mirror_git_push_with_retry "${remote_name}" "+${source_ref}:refs/heads/${branch}"
+  else
+    mirror_git_push_with_retry "${remote_name}" "${source_ref}:refs/heads/${branch}"
+  fi
 done
 
 case "${mirror_push_tags}" in

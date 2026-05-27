@@ -16,12 +16,12 @@ req: ["requirements.md#req-3-1"]
 
 - 本文描述的 `Session/Run/Event/Dedupe/Lock` 语义属于 `anyagent` Core 的长期边界。
 - `PostgreSQL + Redis` 的 typed runtime adapter 已进入 `packages/anyagent/src/anyagent/storage/external/`；deployment wiring 与生产运行手册由 `anyagent-apps` 的示例配置和服务栈文档消费，storage retention / rollout replay 运维语义由 Core CLI 承载。
-- 后续收敛方向不是把整套 production deployment 搬进 Core，而是把 store interfaces、状态模型、一致性语义、reference external adapters 与基础运维入口回收到 Core，再让 `anyagent-apps` 继续承载示例配置和运行手册。
+- Core 边界不是整套 production deployment，而是 store interfaces、状态模型、一致性语义、reference external adapters 与基础运维入口；`anyagent-apps` 承载示例配置和运行手册。
 - 当前已落地的共享抽象位于 `packages/anyagent/src/anyagent/storage/`，业务示例通过已发布 SDK/CLI 消费这些 records / contracts / runtime bundle。
 - `/internal/events/*` 的 replay/list/stream helper 也已开始收敛到 `packages/anyagent/src/anyagent/storage/replay.py`。
 - 会话准备与 snapshot 写回相关的共享编排 helper 已开始收敛到 `packages/anyagent/src/anyagent/agent_runtime/session_runtime.py`。
 - 当前 `anyagent` 也已通过 `packages/anyagent/src/anyagent/storage/capabilities.py` 与 `/admin/storage/health` 暴露 reference/external backend capability matrix，用来明确 Core reference backend 边界与长期归属。
-- MySQL 当前已先作为 typed contract (`MySQLDsn` / `ExternalSqlBackendConfig`) 进入 Core，为后续多 SQL backend 接入预留协议位。
+- MySQL 当前已先作为 typed contract (`MySQLDsn` / `ExternalSqlBackendConfig`) 进入 Core，为多 SQL backend 接入预留协议位。
 - 共享 schema apply helper 当前已开始进入 `packages/anyagent/src/anyagent/storage/external/migrations.py`；Core CLI 已提供 `anyagent storage migrate`、`anyagent storage retention` 与 `anyagent storage replay` 等基础运维入口。
 - 外置存储驱动已拆为可选 extras：`anyagent[postgres]`、`anyagent[mysql]`、`anyagent[redis]` 与聚合 `anyagent[external-storage]`。默认安装必须能启动内存模式；PG/MySQL/Redis 驱动只在选择对应外置 backend 或运维命令时成为必需依赖。
 
@@ -34,7 +34,7 @@ req: ["requirements.md#req-3-1"]
 
 非目标（v0）：
 
-- 不追求跨地域强一致的“分布式 actor”语义（未来可演进）。
+- 不追求跨地域强一致的“分布式 actor”语义。
 - 不强制引入 Kafka/日志系统等重依赖（>1000 users 仍可先用 Postgres + Redis 组合跑稳）。
 
 ## 2. 逻辑组件与职责（What）
@@ -179,7 +179,7 @@ CREATE INDEX sessions_updated_at_idx ON sessions (updated_at);
 
 字段语义：
 
-- `runtime_config`：会话级默认运行参数；后续请求默认复用，仅在调用方显式传对应字段时做字段级 merge 更新。
+- `runtime_config`：会话级默认运行参数；同一会话的后继请求默认复用，仅在调用方显式传对应字段时做字段级 merge 更新。
 - `resume_cursor.last_response_id`：OpenAI Responses 的首选恢复游标；下一次请求优先用 `previous_response_id + 本次增量 input` 继续会话。
 - `resume_cursor.fallback_transcript_items`：当 `last_response_id` 不可用时的兜底重建材料（可按保留策略裁剪）。
 - `last_run.*`：用于排障、验收与一致性检查，不参与业务语义判断。

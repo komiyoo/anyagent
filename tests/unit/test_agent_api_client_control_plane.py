@@ -98,7 +98,8 @@ async def _run_sdk_health_and_admin_credentials_match_server(tmp_path: Path) -> 
         assert listed.credentials[0].credential_id == "search_api_key"
 
         deleted = await client.admin.delete_credential("search_api_key")
-        assert deleted == {"ok": True, "deleted": True, "credential_id": "search_api_key"}
+        assert deleted.deleted is True
+        assert deleted.credential_id == "search_api_key"
 
         listed_after = await client.admin.list_credentials()
         assert listed_after.credentials == []

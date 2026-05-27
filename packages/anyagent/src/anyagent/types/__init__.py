@@ -7,7 +7,7 @@ boundaries.
 """
 
 from anyagent.protocol.admin_storage import StorageHealthResponse
-from anyagent.mcp.models import MCPConfig, MCPServerConfig
+from anyagent.protocol.mcp import MCPConfig, MCPServerConfig
 from anyagent.protocol.agent_api_internal import (
     AdminAgentConfigUpdateRequest,
     AdminAgentCreateRequest,
@@ -62,6 +62,7 @@ from anyagent.protocol.agent_api_internal import (
     WorkspaceAgentFileKind,
 )
 from anyagent.protocol.credential_vault import (
+    AdminCredentialDeleteResponse,
     AdminCredentialListResponse,
     AdminCredentialRef,
     AdminCredentialSetRequest,
@@ -82,6 +83,7 @@ from anyagent.protocol.plugins import (
     PluginLoadErrorItem,
     PluginToolRef,
 )
+from anyagent.protocol.responses_optional import AnyAgentResponseStatusPayload
 from anyagent.protocol.sandbox import FileSystemSandboxPolicy, SandboxPolicy
 from anyagent.protocol.sse import SSEBlock
 from anyagent.protocol.stage_events import (
@@ -103,6 +105,7 @@ __all__ = [
     "AdminAgentCreateResponse",
     "AdminAgentSkillsUpdateRequest",
     "AdminCredentialListResponse",
+    "AdminCredentialDeleteResponse",
     "AdminCredentialRef",
     "AdminCredentialSetRequest",
     "AdminSkillImportRequest",
@@ -120,6 +123,7 @@ __all__ = [
     "AnyAgentFunctionToolParam",
     "AnyAgentModelStreamEvent",
     "AnyAgentPromptContextEvent",
+    "AnyAgentResponseStatusPayload",
     "AnyAgentToolPlannedEvent",
     "AnyAgentToolResultEvent",
     "AnyAgentWorkspaceLifecycleEvent",

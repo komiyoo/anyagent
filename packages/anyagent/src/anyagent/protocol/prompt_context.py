@@ -4,7 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from anyagent.protocol.context_fragments import ContextFragment
+from anyagent.protocol.context_fragments import ContextFragment, render_context_fragment
+from anyagent.protocol.openai_responses import inject_text_into_responses_body
 
 
 class PromptFragmentSummary(BaseModel):
@@ -45,18 +46,12 @@ class PromptEnvelope(BaseModel):
     fragments: tuple[ContextFragment, ...] = Field(default_factory=tuple)
 
     def apply_to_body(self, *, body: dict[str, Any]) -> dict[str, Any]:
-        from anyagent.agent_runtime.prompt_envelope import apply_prompt_envelope_to_body
-
         return apply_prompt_envelope_to_body(body=body, envelope=self)
 
     def audit_metadata(self) -> PromptContextAudit:
-        from anyagent.agent_runtime.prompt_envelope import build_prompt_audit_metadata
-
         return build_prompt_audit_metadata(envelope=self)
 
     def rendered_fragments(self) -> list["RenderedPromptFragment"]:
-        from anyagent.agent_runtime.prompt_envelope import render_prompt_envelope_fragments
-
         return render_prompt_envelope_fragments(envelope=self)
 
 
@@ -150,6 +145,60 @@ def build_prompt_context_audit(
         fragment_kinds=fragment_kinds,
         compacted=len(retained) < len(valid_fragments),
     )
+
+
+def apply_prompt_envelope_to_body(*, body: dict[str, Any], envelope: PromptEnvelope) -> dict[str, Any]:
+    """Apply a protocol prompt envelope to an OpenAI-compatible request body."""
+
+    body2 = dict(body)
+    for fragment in envelope.fragments:
+        body2 = inject_text_into_responses_body(
+            body=body2,
+            text=render_context_fragment(fragment),
+            role=fragment.role,
+        )
+    if isinstance(envelope.prompt_cache_key, str) and envelope.prompt_cache_key.strip():
+        body2["prompt_cache_key"] = envelope.prompt_cache_key
+    return body2
+
+
+def build_prompt_audit_metadata(*, envelope: PromptEnvelope) -> PromptContextAudit:
+    """Build compact prompt audit metadata from an envelope."""
+
+    return build_prompt_context_audit(
+        prompt_cache_key=envelope.prompt_cache_key,
+        fragments=[
+            PromptFragmentSummary(
+                kind=fragment.kind,
+                cache_class=fragment.cache_class,
+                stable_id=fragment.stable_id,
+                source_path=fragment.source_path,
+                source_hash=fragment.source_hash,
+                scope=fragment.scope,
+            )
+            for fragment in envelope.fragments
+        ],
+    )
+
+
+def render_prompt_envelope_fragments(*, envelope: PromptEnvelope) -> list[RenderedPromptFragment]:
+    """Render prompt envelope fragments for debug / preview surfaces."""
+
+    return [
+        RenderedPromptFragment(
+            kind=fragment.kind,
+            role=fragment.role,
+            cache_class=fragment.cache_class,
+            label=fragment.label,
+            stable_id=fragment.stable_id,
+            source_path=fragment.source_path,
+            source_hash=fragment.source_hash,
+            scope=fragment.scope,
+            metadata=dict(fragment.metadata),
+            rendered_text=render_context_fragment(fragment),
+        )
+        for fragment in envelope.fragments
+    ]
 
 
 def _coerce_prompt_fragment_summary(raw: PromptFragmentSummary | dict[str, Any]) -> PromptFragmentSummary | None:

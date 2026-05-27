@@ -9,6 +9,7 @@ import yaml
 from anyagent.agent_packs import AgentPackError, load_agent_catalog
 from anyagent.cli import main
 from anyagent.model_config import WorkspaceModelsConfig
+from anyagent.protocol.admin_storage import StorageHealthResponse
 from anyagent.protocol.plugins import PluginCatalogResponse
 from anyagent.protocol.workspace import WorkspaceDoctorReport, WorkspaceInitResult
 
@@ -278,6 +279,72 @@ def test_plugin_catalog_cli_reads_admin_api(monkeypatch, capsys) -> None:
     assert payload.loaded[0].plugin_id == "demo"
     assert payload.loaded[0].tools[0].name == "demo.echo"
     assert payload.loaded[0].docs == ["/workspace/plugins/demo/README.md"]
+
+
+def test_storage_health_cli_reads_typed_admin_api(monkeypatch, capsys) -> None:
+    calls = []
+
+    class _Response:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {
+                "ok": True,
+                "storage_mode": "none",
+                "backends": {
+                    "event_store": "memory",
+                    "run_store": "memory",
+                    "session_store": "memory",
+                    "session_lock": "local",
+                },
+                "retention_s": {"events": 86400, "runs": 86400, "sessions": 86400},
+                "stores": {"events": {"type": "memory", "layers": ["process"]}},
+                "capabilities": {
+                    "events": {
+                        "tier": "reference",
+                        "long_term_owner": "anyagent",
+                        "source_of_truth": "packages/anyagent/src/anyagent/storage",
+                        "requires_services": [],
+                        "restart_recovery": False,
+                        "cross_instance": False,
+                        "supports_replay": True,
+                        "supports_live_tail": True,
+                    }
+                },
+                "postgres": {"configured": False, "reachable": None, "schema": None},
+                "redis": {"configured": False, "reachable": None, "namespace": None},
+            }
+
+    def fake_get(url, *, headers, timeout):
+        calls.append({"url": url, "headers": headers, "timeout": timeout})
+        return _Response()
+
+    monkeypatch.setattr("anyagent.cli.httpx.get", fake_get)
+
+    rc = main(
+        [
+            "storage",
+            "health",
+            "--admin-url",
+            "http://agent-api.local",
+            "--admin-key",
+            "admin-key",
+        ]
+    )
+
+    assert rc == 0
+    assert calls == [
+        {
+            "url": "http://agent-api.local/admin/storage/health",
+            "headers": {"Authorization": "Bearer admin-key"},
+            "timeout": 15.0,
+        }
+    ]
+    payload = StorageHealthResponse.model_validate(json.loads(capsys.readouterr().out))
+    assert payload.ok is True
+    assert payload.backends.event_store == "memory"
+    assert payload.postgres.configured is False
 
 
 def test_agent_api_serve_cli_builds_core_distributed_app(monkeypatch, tmp_path: Path) -> None:

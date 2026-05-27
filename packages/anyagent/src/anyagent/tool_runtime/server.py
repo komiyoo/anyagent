@@ -21,7 +21,12 @@ from anyagent.protocol.admin_storage import (
     AdminSandboxWorkspaceRef,
     AdminSandboxWorkspaceRequest,
 )
-from anyagent.protocol.credential_vault import AdminCredentialListResponse, AdminCredentialRef, AdminCredentialSetRequest
+from anyagent.protocol.credential_vault import (
+    AdminCredentialDeleteResponse,
+    AdminCredentialListResponse,
+    AdminCredentialRef,
+    AdminCredentialSetRequest,
+)
 from anyagent.protocol.health import HealthResponse
 from anyagent.protocol.plugins import LoadedPluginCatalogItem, PluginCatalogResponse, PluginLoadErrorItem, PluginToolRef
 from anyagent.protocol.sandbox import FileSystemSandboxPolicy
@@ -120,7 +125,7 @@ def create_tool_runtime_app(
             else:
                 await resolved_workspace_event_store.aclose()
 
-    app = FastAPI(title="anyagent-tool-runtime", version="0.1.1", lifespan=_lifespan)
+    app = FastAPI(title="anyagent-tool-runtime", version="0.1.5", lifespan=_lifespan)
     app.state.anyagent_tool_runtime = runtime
     app.state.anyagent_tool_runtime_workspace = workspace
     app.state.anyagent_tool_runtime_internal_key = resolved_internal_key
@@ -356,7 +361,8 @@ def create_tool_runtime_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ReadOnlyCredentialStoreError as exc:
             raise HTTPException(status_code=501, detail=str(exc)) from exc
-        return JSONResponse({"ok": True, "deleted": deleted, "credential_id": credential_id})
+        resp = AdminCredentialDeleteResponse(ok=True, deleted=deleted, credential_id=credential_id)
+        return JSONResponse(resp.model_dump())
 
     return app
 

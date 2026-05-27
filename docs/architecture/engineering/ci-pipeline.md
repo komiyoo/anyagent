@@ -24,8 +24,8 @@ req: ["requirements.md#req-9", "requirements.md#req-7"]
 
 目的：
 
-- 防止 Markdown 断链、TODO 证据漂移。
-- 保持 TODO 进度可机械读取。
+- 防止 Markdown 断链与任务锚点漂移。
+- 保持任务文档结构可机械读取。
 
 ### Gate 2：离线 SDK / MCP smoke（必须）
 
@@ -34,10 +34,11 @@ req: ["requirements.md#req-9", "requirements.md#req-7"]
 - `tests/acceptance/sdk/acceptance_anyagent_client_surface_smoke.py`
 - `tests/acceptance/sdk/acceptance_command_stage_derivation_smoke.py`
 - `tests/acceptance/mcp/acceptance_mcp_federation_smoke.py`
+- `npm --prefix sdks/typescript run smoke`
 
 目的：
 
-- 覆盖 SDK 协议稳定性、Client surface 与 MCP manifest 合并等关键链路。
+- 覆盖 Python / TypeScript SDK 协议稳定性、Client surface 与 MCP manifest 合并等关键链路。
 
 ### Gate 2.5：正式 pytest regressions（必须）
 

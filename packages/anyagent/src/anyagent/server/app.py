@@ -52,7 +52,7 @@ from anyagent.gateway.sequencer import KeyedSequencer
 from anyagent.gateway.session import session_partition_key
 from anyagent.mcp.manager import MCPManagerRegistry
 from anyagent.observability import emit_observability_event, get_observability_emitter
-from anyagent.protocol.credential_vault import AdminCredentialSetRequest
+from anyagent.protocol.credential_vault import AdminCredentialDeleteResponse, AdminCredentialSetRequest
 from anyagent.protocol.health import HealthResponse
 from anyagent.protocol.agent_api_internal import (
     AdminAgentCreateRequest,
@@ -379,7 +379,7 @@ def create_app(
                     if asyncio.iscoroutine(result):
                         await result
 
-    app = FastAPI(title="anyagent", version="0.1.1", lifespan=_lifespan)
+    app = FastAPI(title="anyagent", version="0.1.5", lifespan=_lifespan)
     if enable_studio:
         studio_dir = Path(__file__).resolve().parents[1] / "studio_static"
         if studio_dir.is_dir():
@@ -478,7 +478,8 @@ def create_app(
     async def admin_delete_credential(credential_id: str, authorization: str | None = Header(default=None)) -> JSONResponse:
         _require_admin_auth(state, authorization)
         deleted = await state.credentials.delete(credential_id)
-        return JSONResponse({"ok": True, "deleted": bool(deleted), "credential_id": credential_id})
+        resp = AdminCredentialDeleteResponse(ok=True, deleted=bool(deleted), credential_id=credential_id)
+        return JSONResponse(resp.model_dump())
 
     @app.get("/admin/workspace/agents/{agent_id}")
     async def admin_workspace_agent_detail(

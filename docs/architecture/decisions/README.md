@@ -4,15 +4,16 @@
 
 - 为什么这么做（约束/目标）
 - 不这么做会有什么代价
-- 当前阶段（v0/v1/v2）的边界
+- 当前实现边界和兼容口径
 
 当前决策：
 
 1. [openai-first-api-surface.md](openai-first-api-surface.md)：对外接口以 OpenAI Responses API 为主，AnyAgent Client SDK 以单一 `AnyAgent` 入口 + `client.openai/client.async_openai` 主路径 + `responses`/`events`/`skills` 超集命名空间作为收敛方案。
 2. [skills-selection-policy.md](skills-selection-policy.md)：skills 选择策略（显式优先、隐式默认关闭）。
 3. [tool-runtime-federation-v0.md](tool-runtime-federation-v0.md)：Tool Runtime 联邦边界、热更新控制面与 Admin API 形态。
+4. [single-repo-multi-package-boundary.md](single-repo-multi-package-boundary.md)：保持单仓库协作，通过协议真源、多包边界和 contract tests 支撑 server/client/studio 与多语言 SDK，暂不拆独立 repo。
 
 维护约定：
 
 - 新增 ADR 时，命名建议 `<topic>.md`，并补充 `Status/Date/Req/Scope`。
-- ADR 的结论必须同步回 `todo/*.md` 的“决策 & 争议点”条目（带 `Impl: path:line`）。
+- ADR 只记录已接受的架构决策、约束和事实；任务状态和执行记录放在对应 `todo/*.md`。

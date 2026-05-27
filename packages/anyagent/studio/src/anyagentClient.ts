@@ -93,6 +93,16 @@ export type CredentialList = {
   credentials: CredentialRef[];
 };
 
+export type HealthStatus = {
+  status?: string;
+  [key: string]: unknown;
+};
+
+export type AdminStatus = {
+  status?: string;
+  [key: string]: unknown;
+};
+
 export type SkillChannel = "skills.sh" | "registry" | "github" | "local_upload";
 
 export type McpServerDraft = {
@@ -343,6 +353,18 @@ export async function listAgents(settings: StudioSettings, includeUnexposed = fa
   const suffix = includeUnexposed ? "?include_unexposed=true" : "";
   const payload = await fetchJson<{ agents?: AgentSummary[] }>(settings, `/internal/agents${suffix}`);
   return payload.agents ?? [];
+}
+
+export async function getHealth(settings: StudioSettings): Promise<HealthStatus> {
+  return fetchJson<HealthStatus>(settings, "/healthz");
+}
+
+export async function getStorageHealth(settings: StudioSettings): Promise<AdminStatus> {
+  return fetchJson<AdminStatus>({ ...settings, apiKey: settings.adminKey || settings.apiKey }, "/admin/storage/health");
+}
+
+export async function getCredentialCapabilities(settings: StudioSettings): Promise<AdminStatus> {
+  return fetchJson<AdminStatus>({ ...settings, apiKey: settings.adminKey || settings.apiKey }, "/admin/credentials/capabilities");
 }
 
 export async function createAgent(

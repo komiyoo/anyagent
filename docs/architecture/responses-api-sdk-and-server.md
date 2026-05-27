@@ -140,6 +140,8 @@ sequenceDiagram
 - Credential Vault（EnvBackend 默认）
 - Tool Policy enforcement
 
+分布式 Agent API 与 built-in server 共享同一套 Core helper：主编排、manifest cache / requested tool names、request validation、stream/nonstream event persistence 与 terminal finalizer 均归属 `anyagent.server.*`。同级项目 `anyagent-apps` 不再保留 `apps/agent-api` 服务壳，消费侧验收通过 Core distributed app 或已发布 SDK/CLI 入口验证。
+
 ### 3.4 Client SDK（`AnyAgent`）
 
 ```python

@@ -21,20 +21,20 @@ Core truth:
 - SDK `AnyAgent.admin.plugin_catalog()`
 - CLI `anyagent plugin catalog`
 
-Connector packages should live outside `anyagent-apps` unless they are only example
+Connector packages live outside `anyagent-apps` unless they are only example
 documentation. A platform connector can be:
 
 - an official upstream package or CLI integrated through skills
 - an optional AnyAgent plugin package loaded with `--plugin-root`
-- a future gateway connector package for inbound platform events
+- a gateway connector package for inbound platform events
 
 ## Current Status
 
 | Platform | Current Core stance | Package / path | Notes |
 |---|---|---|---|
-| Lark / Feishu | Use official CLI and skills for outbound actions | `larksuite/cli`, `@larksuite/cli`, `lark-cli` | `anyagent-apps/plugins/lark-cli/README.md` is documentation only. Any future inbound webhook / gateway connector should be a separate plugin or package loaded through the Core plugin contract. |
-| Discord | No in-repo framework implementation | future optional connector package | Keep out of `anyagent-apps` until there is a real package with manifest, docs, schema, tests, and smoke validation. |
-| Telegram | No in-repo framework implementation | future optional connector package | Keep out of `anyagent-apps` until there is a real package with manifest, docs, schema, tests, and smoke validation. |
+| Lark / Feishu | Use official CLI and skills for outbound actions | `larksuite/cli`, `@larksuite/cli`, `lark-cli` | `anyagent-apps/plugins/lark-cli/README.md` is documentation only. Inbound webhook / gateway connectors are separate plugins or packages loaded through the Core plugin contract. |
+| Discord | No in-repo framework implementation | optional connector package | Keep out of `anyagent-apps` until there is a real package with manifest, docs, schema, tests, and smoke validation. |
+| Telegram | No in-repo framework implementation | optional connector package | Keep out of `anyagent-apps` until there is a real package with manifest, docs, schema, tests, and smoke validation. |
 
 ## Connector Acceptance
 

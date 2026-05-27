@@ -1,0 +1,901 @@
+{
+  "schema_version": "2026-05-27",
+  "openai_response_cases": [
+    {
+      "name": "responses.create.completed",
+      "payload": {
+        "id": "resp_create",
+        "object": "response",
+        "status": "completed"
+      }
+    },
+    {
+      "name": "responses.retrieve.in_progress",
+      "payload": {
+        "id": "resp_1",
+        "object": "response",
+        "status": "in_progress"
+      }
+    },
+    {
+      "name": "responses.cancel.cancelled",
+      "payload": {
+        "id": "resp_1",
+        "object": "response",
+        "status": "cancelled"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "health.ok",
+      "schema": "anyagent.protocol.health.HealthResponse",
+      "payload": {
+        "ok": true,
+        "workspace": "/tmp/workspace",
+        "agent_ids": [
+          "main"
+        ]
+      }
+    },
+    {
+      "name": "events.list.empty_done",
+      "schema": "anyagent.protocol.agent_api_internal.InternalEventsListResponse",
+      "payload": {
+        "response_id": "resp_1",
+        "requested_last_seq": 2,
+        "next_last_seq": 3,
+        "events": [],
+        "done": true
+      }
+    },
+    {
+      "name": "agents.list.main",
+      "schema": "anyagent.protocol.agent_api_internal.InternalAgentsListResponse",
+      "payload": {
+        "agents": [
+          {
+            "agent_id": "main",
+            "name": "main",
+            "exposed": true,
+            "root_dir": "/tmp/workspace/.anyagent/agents/main",
+            "prompt_sha256": "abc",
+            "workspace_prompt_sha256": null,
+            "sandbox_mode": "disabled",
+            "model_default": "test-model",
+            "model_provider": "openai",
+            "model_base_url_env": null,
+            "model_api_key_env": null,
+            "requested_tool_names": [
+              "exec"
+            ],
+            "default_selected_skill_ids": [
+              "repo-helper"
+            ],
+            "spawn_allow_agent_ids": [],
+            "has_mcp": false,
+            "mcp_server_labels": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "agents.detail.main",
+      "schema": "anyagent.protocol.agent_api_internal.InternalAgentDetailResponse",
+      "payload": {
+        "agent_id": "main",
+        "name": "main",
+        "exposed": true,
+        "root_dir": "/tmp/workspace/.anyagent/agents/main",
+        "agents_md": {
+          "path": "/tmp/workspace/.anyagent/agents/main/AGENTS.md",
+          "sha256": "abc"
+        },
+        "tools": {
+          "requested_tool_names": [
+            "exec"
+          ]
+        },
+        "skills": {
+          "default_selected": []
+        },
+        "mcp": {
+          "server_labels": []
+        },
+        "multiagent": {
+          "spawn_allow_agent_ids": []
+        }
+      }
+    },
+    {
+      "name": "tools.catalog.exec",
+      "schema": "anyagent.protocol.agent_api_internal.InternalToolCatalogResponse",
+      "payload": {
+        "agent_id": "main",
+        "session_key": "session_1",
+        "toolset_version": 1,
+        "requested_tool_names": [
+          "exec"
+        ],
+        "tools": []
+      }
+    },
+    {
+      "name": "skills.list.repo_helper",
+      "schema": "anyagent.protocol.agent_api_internal.InternalSkillsListResponse",
+      "payload": {
+        "agent_id": "main",
+        "disabled_paths": [],
+        "load_errors": [],
+        "skills": [
+          {
+            "stable_id": "repo-helper",
+            "name": "repo-helper",
+            "path": "/tmp/workspace/.anyagent/agents/main/skills/repo-helper/SKILL.md",
+            "scope": "agent",
+            "enabled": true,
+            "selected": true,
+            "requested_tool_names": [
+              "exec"
+            ],
+            "source_hash": "hash_repo_helper"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prompt.bundle.preview",
+      "schema": "anyagent.protocol.agent_api_internal.InternalPromptBundlePreviewResponse",
+      "payload": {
+        "agent_id": "main",
+        "session_key": "sess_prompt",
+        "model": "test-model",
+        "prompt_cache_key": "prompt-cache-demo",
+        "instruction_role": "developer",
+        "selected_skill_ids": [
+          "repo-helper"
+        ],
+        "manifest_tools": [],
+        "manifest_tool_names": [],
+        "mcp_servers": [],
+        "tool_context": {},
+        "prompt_context": {
+          "prompt_cache_key": "prompt-cache-demo",
+          "fragments": [],
+          "fragment_count": 0,
+          "retained_fragment_count": 0,
+          "stable_prefix_count": 0,
+          "contextual_count": 0,
+          "dynamic_count": 0,
+          "fragment_kinds": [],
+          "compacted": false
+        },
+        "rendered_fragments": [],
+        "effective_body": {
+          "model": "test-model",
+          "input": "hello"
+        },
+        "applied_body": {
+          "model": "test-model",
+          "input": "hello"
+        }
+      }
+    },
+    {
+      "name": "observability.summary",
+      "schema": "anyagent.protocol.agent_api_internal.InternalObservabilitySummaryResponse",
+      "payload": {
+        "response_id": "resp_obs",
+        "agent_id": "main",
+        "session_key": "session_1",
+        "run_status": "completed",
+        "effective_run_status": "completed",
+        "event_count": 3,
+        "typed_event_count": 2,
+        "tool_call_count": 1,
+        "mcp_call_count": 0,
+        "skill_view_count": 1,
+        "input_chars": 5,
+        "output_chars": 7,
+        "turn_count": 1,
+        "turns": [
+          {
+            "index": 1,
+            "input_chars": 5,
+            "output_chars": 7
+          }
+        ]
+      }
+    },
+    {
+      "name": "observability.runs",
+      "schema": "anyagent.protocol.agent_api_internal.InternalObservabilityRunsResponse",
+      "payload": {
+        "agent_id": "main",
+        "session_key": "session_1",
+        "response_id": "resp_obs",
+        "runs": [
+          {
+            "response_id": "resp_obs",
+            "agent_id": "main",
+            "session_key": "session_1",
+            "status": "completed",
+            "effective_status": "completed",
+            "stream": false,
+            "created_at_ms": 1,
+            "updated_at_ms": 2,
+            "ended_at_ms": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "observability.timeline",
+      "schema": "anyagent.protocol.agent_api_internal.InternalObservabilityTimelineResponse",
+      "payload": {
+        "trace_id": "trace_1",
+        "events": [
+          {
+            "type": "anyagent.response.completed",
+            "source": "run",
+            "response_id": "resp_obs",
+            "agent_id": "main",
+            "session_key": "session_1",
+            "trace_id": "trace_1",
+            "ts_ms": 2,
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "observability.metrics",
+      "schema": "anyagent.protocol.agent_api_internal.InternalObservabilityMetricsResponse",
+      "payload": {
+        "agent_id": "main",
+        "run_count": 1,
+        "event_count": 3,
+        "tool_call_count": 1,
+        "mcp_call_count": 0,
+        "error_count": 0
+      }
+    },
+    {
+      "name": "observability.tools",
+      "schema": "anyagent.protocol.agent_api_internal.InternalObservabilityToolsResponse",
+      "payload": {
+        "response_id": "resp_obs",
+        "tools": [
+          {
+            "tool_name": "exec",
+            "planned_count": 1,
+            "result_count": 1,
+            "error_count": 0,
+            "last_status": "completed",
+            "audit_refs": [
+              "audit_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "observability.errors",
+      "schema": "anyagent.protocol.agent_api_internal.InternalObservabilityErrorsResponse",
+      "payload": {
+        "errors": [
+          {
+            "type": "tool.error",
+            "source": "event",
+            "response_id": "resp_obs",
+            "agent_id": "main",
+            "session_key": "session_1",
+            "trace_id": "trace_1",
+            "message": "demo error",
+            "retryable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "observability.trace",
+      "schema": "anyagent.protocol.agent_api_internal.InternalObservabilityTraceResponse",
+      "payload": {
+        "trace_id": "trace_1",
+        "response_ids": [
+          "resp_obs"
+        ],
+        "audit_refs": [
+          "audit_1"
+        ],
+        "events": [
+          {
+            "type": "anyagent.response.completed",
+            "source": "run",
+            "trace_id": "trace_1",
+            "response_id": "resp_obs",
+            "ts_ms": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "admin.storage.health",
+      "schema": "anyagent.protocol.admin_storage.StorageHealthResponse",
+      "payload": {
+        "ok": true,
+        "storage_mode": "memory",
+        "backends": {
+          "event_store": "memory",
+          "run_store": "memory",
+          "session_lock": "memory",
+          "session_store": "memory"
+        },
+        "postgres": {
+          "configured": false
+        },
+        "redis": {
+          "configured": false
+        },
+        "retention_s": {
+          "events": 3600,
+          "runs": 3600,
+          "sessions": 3600
+        },
+        "stores": {
+          "events": {
+            "type": "memory",
+            "layers": [
+              "process"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "admin.tools.catalog",
+      "schema": "anyagent.protocol.agent_api_internal.AdminToolCatalogResponse",
+      "payload": {
+        "toolset_version": 1,
+        "tools": [
+          {
+            "name": "exec",
+            "description": "Run command",
+            "kind": "command"
+          }
+        ]
+      }
+    },
+    {
+      "name": "admin.plugins.catalog",
+      "schema": "anyagent.protocol.plugins.PluginCatalogResponse",
+      "payload": {
+        "plugin_roots": [
+          "/tmp/workspace/plugins"
+        ],
+        "loaded": [
+          {
+            "plugin_id": "demo",
+            "plugin_dir": "/tmp/workspace/plugins/demo",
+            "entrypoint": "plugin.py",
+            "tools": [
+              {
+                "name": "app.demo.echo",
+                "category": "demo"
+              }
+            ]
+          }
+        ],
+        "errors": []
+      }
+    },
+    {
+      "name": "admin.credentials.list",
+      "schema": "anyagent.protocol.credential_vault.AdminCredentialListResponse",
+      "payload": {
+        "credentials": [
+          {
+            "credential_id": "cred_demo",
+            "kind": "bearer_token",
+            "scope": {
+              "level": "global"
+            },
+            "metadata": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "admin.credentials.set",
+      "schema": "anyagent.protocol.credential_vault.AdminCredentialRef",
+      "payload": {
+        "credential_id": "cred_demo",
+        "kind": "bearer_token",
+        "scope": {
+          "level": "global"
+        },
+        "metadata": {}
+      }
+    },
+    {
+      "name": "admin.credentials.delete",
+      "schema": "anyagent.protocol.credential_vault.AdminCredentialDeleteResponse",
+      "payload": {
+        "ok": true,
+        "deleted": true,
+        "credential_id": "cred_demo"
+      }
+    },
+    {
+      "name": "admin.workspace.agent.create",
+      "schema": "anyagent.protocol.agent_api_internal.AdminAgentCreateResponse",
+      "payload": {
+        "agent": {
+          "agent_id": "worker",
+          "name": "worker",
+          "exposed": false,
+          "root_dir": "/tmp/workspace/.anyagent/agents/worker",
+          "agents_md": {
+            "path": "/tmp/workspace/.anyagent/agents/worker/AGENTS.md",
+            "sha256": "worker-sha"
+          },
+          "tools": {
+            "requested_tool_names": [
+              "exec"
+            ]
+          },
+          "skills": {
+            "default_selected": []
+          },
+          "mcp": {
+            "server_labels": []
+          },
+          "multiagent": {
+            "spawn_allow_agent_ids": []
+          }
+        },
+        "reloaded_agent_ids": [
+          "worker"
+        ]
+      }
+    },
+    {
+      "name": "admin.workspace.agent.files",
+      "schema": "anyagent.protocol.agent_api_internal.AdminWorkspaceAgentFilesResponse",
+      "payload": {
+        "agent_id": "main",
+        "files": [
+          {
+            "kind": "agents_md",
+            "path": "/tmp/workspace/.anyagent/agents/main/AGENTS.md",
+            "exists": true,
+            "sha256": "old-sha",
+            "text": "old instructions"
+          }
+        ]
+      }
+    },
+    {
+      "name": "admin.workspace.agent.file.update",
+      "schema": "anyagent.protocol.agent_api_internal.AdminWorkspaceAgentFileUpdateResponse",
+      "payload": {
+        "agent_id": "main",
+        "file": {
+          "kind": "agents_md",
+          "path": "/tmp/workspace/.anyagent/agents/main/AGENTS.md",
+          "exists": true,
+          "sha256": "new-sha",
+          "text": "new instructions"
+        },
+        "reloaded_agent_ids": [
+          "main"
+        ]
+      }
+    },
+    {
+      "name": "admin.skill.import",
+      "schema": "anyagent.protocol.agent_api_internal.AdminSkillImportResponse",
+      "payload": {
+        "agent_id": "main",
+        "stable_id": "local-helper",
+        "name": "local-helper",
+        "path": "/tmp/workspace/.anyagent/agents/main/skills/local-helper/SKILL.md",
+        "sha256": "skill-import-sha",
+        "reloaded_agent_ids": [
+          "main"
+        ]
+      }
+    },
+    {
+      "name": "admin.skill.install",
+      "schema": "anyagent.protocol.agent_api_internal.AdminSkillImportResponse",
+      "payload": {
+        "agent_id": "main",
+        "stable_id": "repo-helper",
+        "name": "repo-helper",
+        "path": "/tmp/workspace/.anyagent/agents/main/skills/repo-helper/SKILL.md",
+        "sha256": "skill-install-sha",
+        "reloaded_agent_ids": [
+          "main"
+        ]
+      }
+    },
+    {
+      "name": "admin.skill.update.check",
+      "schema": "anyagent.protocol.agent_api_internal.AdminSkillUpdateCheckResponse",
+      "payload": {
+        "agent_id": "main",
+        "directory_name": "repo-helper",
+        "channel": "skills.sh",
+        "source_ref": "repo-helper",
+        "current_hash": "old",
+        "latest_hash": "new",
+        "update_available": true,
+        "updatable": true
+      }
+    },
+    {
+      "name": "admin.skill.update.apply",
+      "schema": "anyagent.protocol.agent_api_internal.AdminSkillImportResponse",
+      "payload": {
+        "agent_id": "main",
+        "stable_id": "repo-helper",
+        "name": "repo-helper",
+        "path": "/tmp/workspace/.anyagent/agents/main/skills/repo-helper/SKILL.md",
+        "sha256": "skill-update-sha",
+        "reloaded_agent_ids": [
+          "main"
+        ]
+      }
+    },
+    {
+      "name": "admin.agent.skills.update",
+      "schema": "anyagent.protocol.agent_api_internal.AdminAgentCreateResponse",
+      "payload": {
+        "agent": {
+          "agent_id": "main",
+          "name": "main",
+          "exposed": true,
+          "root_dir": "/tmp/workspace/.anyagent/agents/main",
+          "agents_md": {
+            "path": "/tmp/workspace/.anyagent/agents/main/AGENTS.md",
+            "sha256": "abc"
+          },
+          "tools": {
+            "requested_tool_names": [
+              "exec"
+            ]
+          },
+          "skills": {
+            "default_selected": [
+              "repo-helper"
+            ]
+          },
+          "mcp": {
+            "server_labels": []
+          },
+          "multiagent": {
+            "spawn_allow_agent_ids": []
+          }
+        },
+        "reloaded_agent_ids": [
+          "main"
+        ]
+      }
+    },
+    {
+      "name": "admin.agent.config.update",
+      "schema": "anyagent.protocol.agent_api_internal.AdminAgentCreateResponse",
+      "payload": {
+        "agent": {
+          "agent_id": "main",
+          "name": "main",
+          "exposed": false,
+          "root_dir": "/tmp/workspace/.anyagent/agents/main",
+          "agents_md": {
+            "path": "/tmp/workspace/.anyagent/agents/main/AGENTS.md",
+            "sha256": "abc"
+          },
+          "tools": {
+            "requested_tool_names": [
+              "core.web_fetch"
+            ]
+          },
+          "skills": {
+            "default_selected": []
+          },
+          "mcp": {
+            "server_labels": []
+          },
+          "multiagent": {
+            "spawn_allow_agent_ids": []
+          }
+        },
+        "reloaded_agent_ids": [
+          "main"
+        ]
+      }
+    },
+    {
+      "name": "mcp.config.http",
+      "schema": "anyagent.protocol.mcp.MCPConfig",
+      "payload": {
+        "mcpServers": {
+          "docs": {
+            "enabled": true,
+            "url": "https://mcp.example.test",
+            "transport": "streamable_http",
+            "auth": {
+              "credential_id": "cred_demo",
+              "ref_kind": "bearer_token",
+              "injection": "header:Authorization",
+              "format": "Bearer {value}"
+            },
+            "tool_filter": {
+              "allowed_tool_names": [
+                "search_docs"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "tool.context.auth_ref",
+      "schema": "anyagent.protocol.tool_runtime.ToolContext",
+      "payload": {
+        "trace": {
+          "trace_id": "trace_1"
+        },
+        "requester": {
+          "id": "user_demo",
+          "display_name": "Demo User",
+          "is_owner": true
+        },
+        "auth_ref": {
+          "kind": "credential_id",
+          "ref": "cred_demo"
+        },
+        "policy": {
+          "allow_tools": [
+            "exec"
+          ],
+          "deny_tools": [
+            "admin.*"
+          ]
+        }
+      }
+    }
+  ],
+  "type_adapter_cases": [
+    {
+      "name": "stage_event.tool.planned",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.tool.planned",
+        "response_id": "resp_stage",
+        "seq": 1,
+        "trace_id": "trace_stage",
+        "ts_ms": 111,
+        "tool_call_id": "call_1",
+        "tool_name": "exec",
+        "arguments": {
+          "bytes": 2,
+          "sha256": "ab",
+          "preview": null,
+          "preview_truncated": false
+        }
+      }
+    },
+    {
+      "name": "stage_event.command.result",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.command.result",
+        "response_id": "resp_stage",
+        "seq": 2,
+        "ts_ms": 222,
+        "source_tool_call_id": "call_1",
+        "source_tool_name": "exec",
+        "exit_code": 0,
+        "duration_ms": 42,
+        "stdout": {
+          "bytes": 0,
+          "sha256": "stdout",
+          "preview": null,
+          "preview_truncated": false
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "stderr",
+          "preview": null,
+          "preview_truncated": false
+        }
+      }
+    },
+    {
+      "name": "tool_runtime.execute.response",
+      "schema": "anyagent.protocol.tool_runtime.ExecuteResponse",
+      "payload": {
+        "status": "completed",
+        "output": "done",
+        "meta": {
+          "duration_ms": 7,
+          "output_truncated": false,
+          "audit_ref": "audit_1"
+        }
+      }
+    }
+  ],
+  "response_stream_sse_blocks": [
+    "id: 1\nevent: response.created\ndata: {\"response\":{\"id\":\"resp_stream\",\"object\":\"response\",\"status\":\"in_progress\"}}",
+    "id: 2\nevent: response.completed\ndata: {\"response\":{\"id\":\"resp_stream\",\"object\":\"response\",\"status\":\"completed\"}}",
+    "data: [DONE]"
+  ],
+  "type_adapter_negative_cases": [
+    {
+      "name": "stage_event.seq_zero",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "error_path": "seq",
+      "pydantic_error_path": "anyagent.tool.planned.seq",
+      "payload": {
+        "type": "anyagent.tool.planned",
+        "response_id": "resp_stage",
+        "seq": 0,
+        "tool_call_id": "call_1",
+        "tool_name": "exec",
+        "arguments": {
+          "bytes": 2,
+          "sha256": "ab",
+          "preview": null,
+          "preview_truncated": false
+        }
+      }
+    },
+    {
+      "name": "tool_runtime.execute.invalid_status",
+      "schema": "anyagent.protocol.tool_runtime.ExecuteResponse",
+      "error_path": "status",
+      "pydantic_error_path": "ExecuteResponseCompleted.status",
+      "payload": {
+        "status": "ok",
+        "output": "done",
+        "meta": {
+          "duration_ms": 7,
+          "output_truncated": false,
+          "audit_ref": "audit_1"
+        }
+      }
+    }
+  ],
+  "request_negative_cases": [
+    {
+      "name": "credential.agent_scope_missing_agent_id",
+      "schema": "anyagent.protocol.credential_vault.AdminCredentialSetRequest",
+      "error_path": "scope.agent_id",
+      "pydantic_error_path": "scope",
+      "payload": {
+        "credential_id": "cred_invalid",
+        "kind": "bearer_token",
+        "value": "secret-value",
+        "scope": {
+          "level": "agent"
+        },
+        "metadata": {}
+      }
+    },
+    {
+      "name": "credential.global_scope_forbids_agent_id",
+      "schema": "anyagent.protocol.credential_vault.AdminCredentialSetRequest",
+      "error_path": "scope.agent_id",
+      "pydantic_error_path": "scope",
+      "payload": {
+        "credential_id": "cred_invalid_global",
+        "kind": "bearer_token",
+        "value": "secret-value",
+        "scope": {
+          "level": "global",
+          "agent_id": "main"
+        },
+        "metadata": {}
+      }
+    },
+    {
+      "name": "admin.file_update_missing_text",
+      "schema": "anyagent.protocol.agent_api_internal.AdminWorkspaceAgentFileUpdateRequest",
+      "error_path": "text",
+      "payload": {
+        "expected_sha256": "old-sha"
+      }
+    },
+    {
+      "name": "admin.create_agent_missing_agent_id",
+      "schema": "anyagent.protocol.agent_api_internal.AdminAgentCreateRequest",
+      "error_path": "agent_id",
+      "payload": {
+        "instructions": "missing agent id"
+      }
+    },
+    {
+      "name": "admin.skill_import_missing_skill_md",
+      "schema": "anyagent.protocol.agent_api_internal.AdminSkillImportRequest",
+      "error_path": "skill_md",
+      "payload": {
+        "directory_name": "invalid-skill"
+      }
+    },
+    {
+      "name": "admin.config_invalid_sandbox_mode",
+      "schema": "anyagent.protocol.agent_api_internal.AdminAgentConfigUpdateRequest",
+      "error_path": "sandbox_mode",
+      "payload": {
+        "sandbox_mode": "invalid-mode"
+      }
+    },
+    {
+      "name": "mcp.server_config_url_and_command",
+      "schema": "anyagent.protocol.mcp.MCPServerConfig",
+      "error_path": "",
+      "pydantic_error_path": "",
+      "payload": {
+        "url": "https://example.test/mcp",
+        "command": "mcp-server"
+      }
+    },
+    {
+      "name": "mcp.server_config_url_stdio",
+      "schema": "anyagent.protocol.mcp.MCPServerConfig",
+      "error_path": "transport",
+      "pydantic_error_path": "",
+      "payload": {
+        "url": "https://example.test/mcp",
+        "transport": "stdio"
+      }
+    },
+    {
+      "name": "multi_agent.spawn_missing_agent_id",
+      "schema": "anyagent.protocol.multi_agent.SpawnAgentArgs",
+      "error_path": "agent_id",
+      "pydantic_error_path": "",
+      "payload": {}
+    },
+    {
+      "name": "multi_agent.spawn_agent_type_mismatch",
+      "schema": "anyagent.protocol.multi_agent.SpawnAgentArgs",
+      "error_path": "agent_type",
+      "pydantic_error_path": "",
+      "payload": {
+        "agent_id": "worker",
+        "agent_type": "other"
+      }
+    },
+    {
+      "name": "multi_agent.send_input_empty",
+      "schema": "anyagent.protocol.multi_agent.SendInputArgs",
+      "error_path": "",
+      "payload": {
+        "id": "thread_1"
+      }
+    },
+    {
+      "name": "tool_context_plaintext_token",
+      "schema": "anyagent.protocol.tool_runtime.ToolContext",
+      "error_path": "token",
+      "pydantic_error_path": "",
+      "payload": {
+        "token": "secret"
+      }
+    },
+    {
+      "name": "tool_context_nested_api_key",
+      "schema": "anyagent.protocol.tool_runtime.ToolContext",
+      "error_path": "nested.api_key",
+      "pydantic_error_path": "",
+      "payload": {
+        "nested": {
+          "api_key": "secret"
+        }
+      }
+    }
+  ]
+}

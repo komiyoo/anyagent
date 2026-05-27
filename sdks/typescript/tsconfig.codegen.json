@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist-codegen"
+  },
+  "include": ["src/generateTypes.ts", "src/schemaBundle.ts"],
+  "exclude": ["generated/**/*.ts"]
+}

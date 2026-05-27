@@ -28,12 +28,10 @@ anyagent/                        # Server Core + SDK（本仓库）
       cli.py                     # CLI (anyagent serve)
 
 anyagent-apps/                   # 示例与模板（同级项目）
-  apps/
-    agent-api/                   # 迁移期历史 Agent API 接线与回归参照
-    tool-runtime/                # 迁移期历史 Tool Runtime 接线与回归参照
-  plugins/                       # 示例平台接线与官方 CLI/插件使用说明
   examples/                      # 示例 workspace
   templates/                     # 业务项目脚手架
+  docs/acceptance/               # 消费侧验收与示例平台联调入口
+  plugins/                       # 示例平台接线与官方 CLI/插件使用说明
 ```
 
 ### 0.2 交付形态（配置即服务）
@@ -52,7 +50,9 @@ cd my-workspace && anyagent serve
 
 无需 fork 代码，无需编写服务端逻辑，无需部署基础设施（零外部依赖）。
 
-需要生产级部署时，仍以 `anyagent` 为 production runtime、PG/MySQL/Redis storage、独立 Tool Runtime、ops CLI 与插件 contract 的真源；`anyagent-apps` 负责给出示例配置、业务模板、迁移期接线和消费侧验收。
+需要生产级部署时，仍以 `anyagent` 为 production runtime、PG/MySQL/Redis storage、独立 Tool Runtime、ops CLI 与插件 contract 的真源；`anyagent-apps` 负责给出示例配置、业务模板和消费侧验收。
+
+历史 `anyagent-apps/apps/agent-api`、`anyagent-apps/apps/tool-runtime`、`anyagent-apps/apps/studio` 服务壳已删除，不再作为框架级生产能力、兼容入口或需求真源。分布式 Agent API、独立 Tool Runtime、内置 Studio、storage/replay/observability 等共享 contract 归属本仓 `anyagent`；`anyagent-apps` 只消费已发布或本地构建的 `anyagent` 制品。
 
 ### 0.3 协议治理
 
@@ -1093,7 +1093,7 @@ v0 允许多种策略并存，但必须做到“可解释、可审计”：
 - Phase 1（最小可用链路）
   - Agent API：完成 responses + streaming + tool loop
   - Tool Runtime：完成 `manifest + execute`（含 `toolset_version`/幂等/取消的最小语义）
-  - Gateway：完成一个平台 connector（推荐飞书）+ 一个工具 + 基本会话映射
+  - Gateway：在消费侧示例或 optional connector 中完成一个平台 connector（推荐飞书）+ 一个工具 + 基本会话映射；平台 Gateway 不回收到本仓生产 core
   - Storage：落地最小 Session/Run/Event + Dedupe + Lock（先单租户即可）
 - Phase 2（扩展与稳定）
   - skills 动态披露完整链路（internal skills/list、依赖推导、UI/审计联动）

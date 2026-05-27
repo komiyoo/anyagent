@@ -16,7 +16,9 @@ import yaml
 from anyagent.agent_packs import AgentPackError, load_agent_catalog, preferred_agents_root, preferred_config_root, resolve_agents_root
 from anyagent.model_config import WorkspaceModelsConfig, workspace_models_config_path
 from anyagent.observability import configure_observability_from_env
+from anyagent.protocol.admin_storage import StorageHealthResponse
 from anyagent.protocol.credential_vault import (
+    AdminCredentialDeleteResponse,
     AdminCredentialListResponse,
     AdminCredentialRef,
     AdminCredentialSetRequest,
@@ -61,29 +63,23 @@ class _AdminClient:
         _raise_for_status(r)
         return AdminCredentialListResponse.model_validate(r.json())
 
-    def delete_credential(self, credential_id: str) -> dict[str, Any]:
+    def delete_credential(self, credential_id: str) -> AdminCredentialDeleteResponse:
         r = httpx.delete(
             f"{self.url}/admin/credentials/{credential_id}",
             headers=self._headers(),
             timeout=15.0,
         )
         _raise_for_status(r)
-        obj = r.json()
-        if not isinstance(obj, dict):
-            raise ValueError("unexpected delete response (not an object)")
-        return obj
+        return AdminCredentialDeleteResponse.model_validate(r.json())
 
-    def storage_health(self) -> dict[str, Any]:
+    def storage_health(self) -> StorageHealthResponse:
         r = httpx.get(
             f"{self.url}/admin/storage/health",
             headers=self._headers(),
             timeout=15.0,
         )
         _raise_for_status(r)
-        obj = r.json()
-        if not isinstance(obj, dict):
-            raise ValueError("unexpected storage health response (not an object)")
-        return obj
+        return StorageHealthResponse.model_validate(r.json())
 
     def plugin_catalog(self) -> PluginCatalogResponse:
         r = httpx.get(
@@ -431,7 +427,12 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("unsupported tool-runtime command")
     if args.cmd == "storage-health":
         client = _admin_client_from_args(args)
-        print(json.dumps(client.storage_health(), ensure_ascii=False))
+        print(
+            json.dumps(
+                client.storage_health().model_dump(exclude_none=True, by_alias=True),
+                ensure_ascii=False,
+            )
+        )
         return 0
     if args.cmd == "storage-migrate":
         result = apply_storage_migrations(
@@ -448,7 +449,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "storage":
         if args.storage_cmd == "health":
             client = _admin_client_from_args(args)
-            print(json.dumps(client.storage_health(), ensure_ascii=False))
+            print(
+                json.dumps(
+                    client.storage_health().model_dump(exclude_none=True, by_alias=True),
+                    ensure_ascii=False,
+                )
+            )
             return 0
         if args.storage_cmd == "migrate":
             result = apply_storage_migrations(
@@ -501,8 +507,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cred_cmd == "delete":
-        obj = client.delete_credential(args.credential_id)
-        print(json.dumps(obj, ensure_ascii=False))
+        resp = client.delete_credential(args.credential_id)
+        print(json.dumps(resp.model_dump(exclude_none=True), ensure_ascii=False))
         return 0
 
     if args.cred_cmd == "import":

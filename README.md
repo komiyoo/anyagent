@@ -4,6 +4,7 @@ anyagent 是一个**配置即服务**的 AI Agent 基础设施：通过 `AGENTS.
 
 PyPI distribution name: `anyagent`.
 Python import package: `anyagent`.
+Yunxiao Packages NPM package name: `anyagent`.
 
 Public documentation: https://lyriktrip.mintlify.app/
 
@@ -25,8 +26,11 @@ Source code and release tags live in Codeup:
 The Yunxiao pipeline `4972656` (`anyagent build`) builds and verifies
 `packages/anyagent/dist/` from Codeup, stores the built files as a Flow artifact,
 and publishes them to the Yunxiao Packages PyPI repository when
-`TWINE_PASSWORD` is configured as an encrypted pipeline variable. Detailed
-release steps live in `docs/release-checklist.md`.
+`TWINE_PASSWORD` is configured as an encrypted pipeline variable. The same
+pipeline verifies the TypeScript SDK from `sdks/typescript` and publishes it to
+the Yunxiao Packages NPM repository `npm-registry` when npm credentials are
+configured as encrypted pipeline variables. Detailed release steps live in
+`docs/release-checklist.md`.
 
 ```bash
 cd my-workspace   # 包含 .anyagent/ 配置目录
@@ -48,8 +52,8 @@ anyagent dev --workspace ./my-workspace
 - **细粒度观测**：anyagent SDK 提供 tool/command 级别的阶段性事件流（Stage Events）
 - **安全边界**：Agent 只能"看到"和"使用"资源，不能"访问"和"操作"资源——密钥、凭证、tool policy 由 server 代理管理
 - **零外部依赖启动**：内置 in-memory 存储 + 进程内 Tool Runtime，开箱即用
-- **可扩展至生产级**：PG/MySQL/Redis、独立 Tool Runtime、Credential backend 与运维入口逐步收敛在 Core，通过 extras、插件和子命令按需启用
-- **共享服务层收敛**：Session / Run / Event / replay / resume 等共享语义应逐步回收到 Core，而不是长期散落在应用层
+- **可扩展至生产级**：PG/MySQL/Redis、独立 Tool Runtime、Credential backend 与运维入口归属 Core，通过 extras、插件和子命令按需启用
+- **共享服务层**：Session / Run / Event / replay / resume 等共享语义归属 Core，不由应用层重复维护
 
 ## 快速开始
 
@@ -460,7 +464,7 @@ cp -R ./my-workspace/.anyagent/agents/main ./my-workspace/.anyagent/agents/resea
 anyagent doctor --workspace ./my-workspace
 ```
 
-应用层 demo、生产级部署模板和平台 connector 会逐步放到同级项目 `anyagent-apps`；本仓库保持为 Server Core + SDK + Protocol 的真源。server、client SDK 与 Studio 初期继续在同一个仓库内协作，通过 protocol-first、多包边界和 contract tests 演进；暂不拆成独立 repo。详细决策见 [single-repo-multi-package-boundary.md](docs/architecture/decisions/single-repo-multi-package-boundary.md)。
+应用层 demo、生产级部署模板和平台 connector 由同级项目 `anyagent-apps` 消费；本仓库保持为 Server Core + SDK + Protocol 的真源。server、client SDK 与 Studio 继续在同一个仓库内协作，通过 protocol-first、多包边界和 contract tests 保持兼容；暂不拆成独立 repo。详细决策见 [single-repo-multi-package-boundary.md](docs/architecture/decisions/single-repo-multi-package-boundary.md)。
 
 ## 安全边界
 
@@ -480,7 +484,7 @@ anyagent 的核心安全原则：**沙箱内自由，沙箱外隔离**。
 
 ```text
 anyagent/                            # 本仓库：Server Core + SDK + Protocol + bundled Studio
-  packages/anyagent/                 # 当前 Python distribution（过渡期单包）
+  packages/anyagent/                 # 当前 Python distribution
     src/anyagent/
       protocol/                      # 协议 SSOT（Responses/Tool Runtime/SSE/Multi-Agent）
         sandbox.py                   # Sandbox 策略模型（SandboxPolicy/NetworkSandboxPolicy/ResourceLimits）
@@ -500,9 +504,8 @@ anyagent/                            # 本仓库：Server Core + SDK + Protocol 
       agent_api_client.py            # Client SDK（AnyAgent 资源型命名空间）
       cli.py                         # CLI 入口（serve / tool-runtime serve / init / doctor / storage）
     studio/                          # Studio React/Vite 源码，可独立 dev/build
-  sdks/                              # 目标位置：多语言 SDK（有真实需求后添加）
+  sdks/                              # 多语言 SDK 目录
     typescript/                      # 首个 scaffold：消费 protocol schema bundle
-    go/
   tests/contract/                    # 协议/SDK/server 兼容契约
 ```
 
@@ -544,17 +547,17 @@ anyagent (本仓库)           anyagent-apps (同级项目)
 ```
 
 - **anyagent**：框架本体，包含 Agent Server 内核、SDK/Protocol、共享服务语义层、基础生产 runtime、ops 入口、in-memory reference path，以及 `storage.external` 的 typed SQL/Redis reference adapters 与迁移 helper。
-- **anyagent-apps**：示例与模板仓；迁移期历史 Agent API / Tool Runtime / Studio 只作为消费侧接线和回归参照，不再是 Core 协议、runtime、storage、Tool Runtime 或 ops CLI 的真源。
+- **anyagent-apps**：示例与模板仓；不再承载历史 Agent API / Tool Runtime / Studio 服务壳，也不是 Core 协议、runtime、storage、Tool Runtime 或 ops CLI 的真源。
 
 ## 文档
 
 - [requirements.md](requirements.md) — 系统需求文档
 - [docs/architecture/](docs/architecture/README.md) — 架构设计
   - [apps-packages-boundary.md](docs/architecture/apps-packages-boundary.md) — anyagent vs anyagent-apps 职责边界
-  - [single-repo-multi-package-boundary.md](docs/architecture/decisions/single-repo-multi-package-boundary.md) — server/client/studio 单仓多包边界与多语言 SDK 演进策略
+  - [single-repo-multi-package-boundary.md](docs/architecture/decisions/single-repo-multi-package-boundary.md) — server/client/studio 单仓多包边界与多语言 SDK 兼容策略
   - [responses-api-sdk-and-server.md](docs/architecture/responses-api-sdk-and-server.md) — SDK + Server 泳道与模块边界
   - [sdk-public-surface.md](docs/architecture/sdk-public-surface.md) — AnyAgent SDK public surface、typed model facade 与验证入口
-  - [roadmap.md](docs/architecture/roadmap.md) — Phase 1-4 演进路线图
+  - [roadmap.md](docs/architecture/roadmap.md) — architecture direction 与当前架构锚点
   - [stateless-agent-service-architecture.md](docs/architecture/stateless-agent-service-architecture.md) — 无状态服务并发架构
   - [storage-minimal-design.md](docs/architecture/storage-minimal-design.md) — 存储最小设计
 - [docs/security/](docs/security/README.md) — 安全设计
