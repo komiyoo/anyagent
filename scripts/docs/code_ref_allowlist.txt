@@ -4,9 +4,10 @@
 # Patterns use fnmatch against normalized repo-relative paths.
 
 # Generated workspace examples from README / docs.
-.agents/agents/*
-.agents/credentials
-.agents/secrets.yaml
+.anyagent/agents/*
+.anyagent/credentials
+.anyagent/secrets.yaml
+docs/_manifest.txt
 plugins/demo
 plugins/demo/*
 tests/smoke.py

@@ -25,7 +25,7 @@ def _write_workspace(
     sandbox_mode: str = "disabled",
     tool_policy_lines: list[str] | None = None,
 ) -> None:
-    agent_dir = root / ".agents" / "agents" / "main"
+    agent_dir = root / ".anyagent" / "agents" / "main"
     agent_dir.mkdir(parents=True, exist_ok=True)
     requested_tool_values = [name.strip() for name in (requested_tool_names or []) if isinstance(name, str) and name.strip()]
     requested_tool_block = (

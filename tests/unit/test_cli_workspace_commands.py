@@ -17,16 +17,16 @@ def test_init_creates_minimal_workspace_with_example_skill(tmp_path, capsys) -> 
     assert rc == 0
     payload = WorkspaceInitResult.model_validate_json(capsys.readouterr().out)
     assert payload.ok is True
-    assert (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").is_file()
-    assert (tmp_path / ".agents" / "agents" / "main" / "AGENTS.md").is_file()
-    assert (tmp_path / ".agents" / "agents" / "main" / "mcp.json").is_file()
-    assert (tmp_path / ".agents" / "skills" / "example-skill" / "SKILL.md").is_file()
+    assert (tmp_path / ".anyagent" / "agents" / "main" / "agent.yaml").is_file()
+    assert (tmp_path / ".anyagent" / "agents" / "main" / "AGENTS.md").is_file()
+    assert (tmp_path / ".anyagent" / "agents" / "main" / "mcp.json").is_file()
+    assert (tmp_path / ".anyagent" / "skills" / "example-skill" / "SKILL.md").is_file()
     assert (tmp_path / "plugins" / "demo" / "plugin.json").is_file()
     assert (tmp_path / "plugins" / "demo" / "plugin.py").is_file()
     assert (tmp_path / "plugins" / "demo" / "README.md").is_file()
     assert (tmp_path / "plugins" / "demo" / "schemas" / "config.schema.json").is_file()
     assert (tmp_path / "plugins" / "demo" / "tests" / "smoke.py").is_file()
-    agent_yaml = (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
+    agent_yaml = (tmp_path / ".anyagent" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
     agent_config = yaml.safe_load(agent_yaml)
     plugin_py = (tmp_path / "plugins" / "demo" / "plugin.py").read_text(encoding="utf-8")
     plugin_readme = (tmp_path / "plugins" / "demo" / "README.md").read_text(encoding="utf-8")
@@ -44,10 +44,10 @@ def test_init_coding_template_enables_exec_sandbox(tmp_path, capsys) -> None:
 
     assert rc == 0
     WorkspaceInitResult.model_validate_json(capsys.readouterr().out)
-    agent_yaml = (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
+    agent_yaml = (tmp_path / ".anyagent" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
     assert "    - exec\n" in agent_yaml
     assert "  mode: local-unsafe\n" in agent_yaml
-    assert "Coding Agent" in (tmp_path / ".agents" / "agents" / "main" / "AGENTS.md").read_text(encoding="utf-8")
+    assert "Coding Agent" in (tmp_path / ".anyagent" / "agents" / "main" / "AGENTS.md").read_text(encoding="utf-8")
 
 
 def test_init_multi_agent_template_creates_independent_agent_packs(tmp_path, capsys) -> None:
@@ -55,12 +55,12 @@ def test_init_multi_agent_template_creates_independent_agent_packs(tmp_path, cap
 
     assert rc == 0
     WorkspaceInitResult.model_validate_json(capsys.readouterr().out)
-    assert (tmp_path / ".agents" / "agents" / "main").is_dir()
-    assert (tmp_path / ".agents" / "agents" / "researcher").is_dir()
-    assert (tmp_path / ".agents" / "agents" / "coder").is_dir()
-    main_yaml = (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
-    coder_yaml = (tmp_path / ".agents" / "agents" / "coder" / "agent.yaml").read_text(encoding="utf-8")
-    researcher_yaml = (tmp_path / ".agents" / "agents" / "researcher" / "agent.yaml").read_text(encoding="utf-8")
+    assert (tmp_path / ".anyagent" / "agents" / "main").is_dir()
+    assert (tmp_path / ".anyagent" / "agents" / "researcher").is_dir()
+    assert (tmp_path / ".anyagent" / "agents" / "coder").is_dir()
+    main_yaml = (tmp_path / ".anyagent" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
+    coder_yaml = (tmp_path / ".anyagent" / "agents" / "coder" / "agent.yaml").read_text(encoding="utf-8")
+    researcher_yaml = (tmp_path / ".anyagent" / "agents" / "researcher" / "agent.yaml").read_text(encoding="utf-8")
     assert "    - researcher\n" in main_yaml
     assert "    - coder\n" in main_yaml
     assert "    - exec\n" in coder_yaml
@@ -159,12 +159,12 @@ def test_config_init_creates_models_config_and_agent_selection(tmp_path, capsys)
     )
     assert models.default_model == "fast"
     assert models.models["fast"].model == "gpt-4.1-mini"
-    agent_yaml = (tmp_path / ".agents" / "agents" / "delivery-agent" / "agent.yaml").read_text(encoding="utf-8")
+    agent_yaml = (tmp_path / ".anyagent" / "agents" / "delivery-agent" / "agent.yaml").read_text(encoding="utf-8")
     assert "model:\n  default: fast\n" in agent_yaml
     assert "    - core.web_fetch\n" in agent_yaml
     assert "    - exec\n" in agent_yaml
     assert "  mode: local-unsafe\n" in agent_yaml
-    main_yaml = (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
+    main_yaml = (tmp_path / ".anyagent" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
     assert "model:\n  default: fast\n" in main_yaml
     assert "    - delivery-agent\n" in main_yaml
     assert "    - core.web_fetch\n" in main_yaml
@@ -180,9 +180,9 @@ def test_init_non_main_agent_creates_default_main_entrypoint(tmp_path, capsys) -
 
     assert rc == 0
     WorkspaceInitResult.model_validate_json(capsys.readouterr().out)
-    assert (tmp_path / ".agents" / "agents" / "reddit-collector" / "agent.yaml").is_file()
-    main_yaml = (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
-    main_instructions = (tmp_path / ".agents" / "agents" / "main" / "AGENTS.md").read_text(encoding="utf-8")
+    assert (tmp_path / ".anyagent" / "agents" / "reddit-collector" / "agent.yaml").is_file()
+    main_yaml = (tmp_path / ".anyagent" / "agents" / "main" / "agent.yaml").read_text(encoding="utf-8")
+    main_instructions = (tmp_path / ".anyagent" / "agents" / "main" / "AGENTS.md").read_text(encoding="utf-8")
     assert "    - reddit-collector\n" in main_yaml
     assert "reddit-collector" in main_instructions
 

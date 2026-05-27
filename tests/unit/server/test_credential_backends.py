@@ -148,7 +148,7 @@ def test_credential_store_builder_selects_env_file_and_validates_infisical(tmp_p
     file_store = build_credential_store_from_config(
         CredentialRuntimeConfig(
             backend="file",
-            file_root=".agents/credentials",
+            file_root=".anyagent/credentials",
             workspace_dir=tmp_path,
         )
     )
@@ -158,10 +158,10 @@ def test_credential_store_builder_selects_env_file_and_validates_infisical(tmp_p
     assert resolve_credential_file_root(
         CredentialRuntimeConfig(
             backend="file",
-            file_root=".agents/credentials",
+            file_root=".anyagent/credentials",
             workspace_dir=tmp_path,
         )
-    ) == tmp_path / ".agents" / "credentials"
+    ) == tmp_path / ".anyagent" / "credentials"
     with pytest.raises(RuntimeError, match="INFISICAL_UNIVERSAL_AUTH_CLIENT_ID"):
         build_credential_store_from_config(CredentialRuntimeConfig(backend="infisical"))
     with pytest.raises(RuntimeError, match="unsupported credential store backend"):
@@ -178,7 +178,7 @@ def test_credential_resolver_builder_keeps_core_write_alias_and_memory_fallback(
     writable = build_credential_resolver_from_config(
         CredentialRuntimeConfig(
             backend="file-write",
-            file_root=".agents/credentials",
+            file_root=".anyagent/credentials",
             workspace_dir=tmp_path,
         )
     )

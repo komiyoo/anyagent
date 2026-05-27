@@ -8,6 +8,12 @@ from typing import Any
 
 import yaml
 
+from anyagent.agent_packs import (
+    ANYAGENT_SECRETS_FILE,
+    DEFAULT_CREDENTIAL_FILE_ROOT,
+    legacy_config_root,
+    preferred_config_root,
+)
 from anyagent.protocol.tool_runtime import AuthRef
 from anyagent.server.security.credential_runtime import CredentialRuntimeConfig, build_credential_resolver_from_config
 
@@ -87,7 +93,10 @@ def _run_sync(coro):
 
 
 def _load_workspace_secrets_payload(workspace_dir: Path) -> dict[str, Any] | None:
-    path = workspace_dir / ".agents" / "secrets.yaml"
+    path = preferred_config_root(workspace_dir) / ANYAGENT_SECRETS_FILE
+    if not path.is_file():
+        legacy_path = legacy_config_root(workspace_dir) / ANYAGENT_SECRETS_FILE
+        path = legacy_path if legacy_path.is_file() else path
     if not path.is_file():
         return None
     try:
@@ -139,7 +148,7 @@ def _credential_runtime_config_from_payload(workspace_dir: Path, payload: dict[s
     obj = raw if isinstance(raw, dict) else {}
     return CredentialRuntimeConfig(
         backend=str(obj.get("backend") or "none"),
-        file_root=str(obj.get("file_root") or ".agents/credentials"),
+        file_root=str(obj.get("file_root") or DEFAULT_CREDENTIAL_FILE_ROOT),
         workspace_dir=workspace_dir,
         infisical_host=_config_value(obj, "infisical_host", "infisical_host_env") or "https://app.infisical.com",
         infisical_universal_auth_client_id=_config_value(obj, "infisical_universal_auth_client_id", "infisical_universal_auth_client_id_env"),

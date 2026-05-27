@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from anyagent.agent_packs import ANYAGENT_CONFIG_DIR, ANYAGENT_SKILLS_SUBDIR, LEGACY_ANYAGENT_CONFIG_DIR
+
 from .loader import SkillLoadError, load_skill_package
 from .models import SkillPackage, SkillScope
 
@@ -46,14 +48,18 @@ def dedupe_skills_by_name(skills: list[SkillPackage]) -> tuple[list[SkillPackage
 def default_skill_roots(*, workspace_dir: Path) -> list[SkillRoot]:
     """
     v0 建议的默认 roots（可由调用方覆盖）：
-    - Repo: <workspace>/.agents/skills
-    - User: ~/.agents/skills
+    - Repo: <workspace>/.anyagent/skills
+    - Legacy repo: <workspace>/.agents/skills
+    - User: ~/.anyagent/skills
+    - Legacy user: ~/.agents/skills
     - System: /opt/agents/skills
     - Admin: <tenant_shared_dir>/skills（v0 先不在 SDK 内硬编码）
     """
     return [
-        SkillRoot(scope="repo", root=Path(workspace_dir) / ".agents" / "skills"),
-        SkillRoot(scope="user", root=Path.home() / ".agents" / "skills"),
+        SkillRoot(scope="repo", root=Path(workspace_dir) / ANYAGENT_CONFIG_DIR / ANYAGENT_SKILLS_SUBDIR),
+        SkillRoot(scope="repo", root=Path(workspace_dir) / LEGACY_ANYAGENT_CONFIG_DIR / ANYAGENT_SKILLS_SUBDIR),
+        SkillRoot(scope="user", root=Path.home() / ANYAGENT_CONFIG_DIR / ANYAGENT_SKILLS_SUBDIR),
+        SkillRoot(scope="user", root=Path.home() / LEGACY_ANYAGENT_CONFIG_DIR / ANYAGENT_SKILLS_SUBDIR),
         SkillRoot(scope="system", root=Path("/opt/agents/skills")),
     ]
 

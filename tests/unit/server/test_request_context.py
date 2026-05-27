@@ -30,7 +30,7 @@ def _catalog() -> AgentCatalog:
         "worker": _pack("worker"),
         "hidden": _pack("hidden", exposed=False),
     }
-    return AgentCatalog(packs=packs, root_dir=Path("/tmp/.agents/agents"))
+    return AgentCatalog(packs=packs, root_dir=Path("/tmp/.anyagent/agents"))
 
 
 def test_prepare_responses_request_context_resolves_agent_session_and_thread() -> None:

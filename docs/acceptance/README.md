@@ -1,6 +1,6 @@
 # Acceptance 文档索引
 
-当前仓库已收敛为配置化 built-in Agent Server + SDK：`anyagent serve` 从 workspace `.agents/` 配置启动 OpenAI Responses API 兼容服务，内置 in-process Tool Runtime 与最小存储；生产级分布式实践模板仍在同级项目 `../anyagent-apps/`。
+当前仓库已收敛为配置化 built-in Agent Server + SDK：`anyagent serve` 从 workspace `.anyagent/` 配置启动 OpenAI Responses API 兼容服务，内置 in-process Tool Runtime 与最小存储；生产级分布式实践模板仍在同级项目 `../anyagent-apps/`。
 
 当前可执行的最小验收入口：
 

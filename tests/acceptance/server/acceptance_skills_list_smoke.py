@@ -10,7 +10,7 @@ from anyagent.server.app import create_app
 
 
 def _write_workspace_with_skill(root: Path) -> Path:
-    agent_dir = root / ".agents" / "agents" / "main"
+    agent_dir = root / ".anyagent" / "agents" / "main"
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "AGENTS.md").write_text("你是一个测试 agent。\n", encoding="utf-8")
     (agent_dir / "agent.yaml").write_text(
@@ -28,7 +28,7 @@ multiagent:
         + "\n",
         encoding="utf-8",
     )
-    skill_dir = root / ".agents" / "skills" / "demo-skill"
+    skill_dir = root / ".anyagent" / "skills" / "demo-skill"
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_md = skill_dir / "SKILL.md"
     skill_md.write_text(

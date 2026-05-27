@@ -90,7 +90,7 @@ class _FakeProvider:
 
 
 def _write_workspace(root: Path) -> None:
-    agent_dir = root / ".agents" / "agents" / "main"
+    agent_dir = root / ".anyagent" / "agents" / "main"
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "AGENTS.md").write_text("你是一个测试 agent。\n", encoding="utf-8")
     (agent_dir / "agent.yaml").write_text(

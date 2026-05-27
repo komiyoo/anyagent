@@ -15,7 +15,7 @@ from anyagent.server.request_validation import (
 
 
 def _write_workspace(root: Path) -> None:
-    agent_dir = root / ".agents" / "agents" / "main"
+    agent_dir = root / ".anyagent" / "agents" / "main"
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "agent.yaml").write_text(
         "\n".join(

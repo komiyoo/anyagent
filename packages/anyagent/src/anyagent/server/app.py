@@ -20,7 +20,15 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 import yaml
 
-from anyagent.agent_packs import AgentCatalog, AgentPack, AgentSpec, load_agent_catalog
+from anyagent.agent_packs import (
+    ANYAGENT_CONFIG_DIR,
+    ANYAGENT_SKILLS_SUBDIR,
+    AgentCatalog,
+    AgentPack,
+    AgentSpec,
+    load_agent_catalog,
+    preferred_agents_root,
+)
 from anyagent.model_config import (
     ModelConfigError,
     WorkspaceModelsConfig,
@@ -1721,7 +1729,7 @@ def _create_agent_pack(*, state: AnyAgentServerApp, request: AdminAgentCreateReq
     agent_id = request.agent_id.strip()
     if not _SKILL_DIRECTORY_RE.fullmatch(agent_id):
         raise HTTPException(status_code=400, detail="invalid agent_id")
-    agent_dir = state.workspace_dir / ".agents" / "agents" / agent_id
+    agent_dir = preferred_agents_root(state.workspace_dir) / agent_id
     if agent_dir.exists():
         raise HTTPException(status_code=409, detail="agent already exists")
     spec = AgentSpec.model_validate(
@@ -2104,7 +2112,7 @@ def _install_agent_local_skill_from_registry(*, pack: AgentPack, request: AdminS
         )
         if result.returncode != 0:
             raise HTTPException(status_code=400, detail=f"skills install failed: {_text_preview(result.stdout, limit=800)}")
-        installed_dir = Path(tmp) / ".agents" / "skills" / skill_name
+        installed_dir = Path(tmp) / ANYAGENT_CONFIG_DIR / ANYAGENT_SKILLS_SUBDIR / skill_name
         if not installed_dir.is_dir():
             raise HTTPException(status_code=400, detail="skills install did not produce expected skill directory")
         return _copy_skill_dir_into_agent(

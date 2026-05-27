@@ -6,6 +6,8 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from anyagent.agent_packs import DEFAULT_CREDENTIAL_FILE_ROOT
+
 
 @dataclass(slots=True, frozen=True)
 class ResolvedServerStorageSettings:
@@ -49,7 +51,7 @@ class ServerSettings(BaseSettings):
         alias="MCP_CREDENTIAL_STORE_BACKEND",
     )
     mcp_credential_store_file_root: str = Field(
-        default=".agents/credentials",
+        default=DEFAULT_CREDENTIAL_FILE_ROOT,
         alias="MCP_CREDENTIAL_STORE_FILE_ROOT",
     )
     infisical_host: str = Field(default="https://app.infisical.com", alias="INFISICAL_HOST")

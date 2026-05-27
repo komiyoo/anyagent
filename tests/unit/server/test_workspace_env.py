@@ -14,7 +14,7 @@ def test_workspace_runtime_env_projects_only_listed_credentials(tmp_path: Path, 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("UNLISTED_SECRET", raising=False)
 
-    secrets_path = tmp_path / ".agents" / "secrets.yaml"
+    secrets_path = tmp_path / ".anyagent" / "secrets.yaml"
     secrets_path.parent.mkdir(parents=True)
     secrets_path.write_text(
         "\n".join(
@@ -45,7 +45,7 @@ def test_workspace_runtime_env_keeps_existing_env_without_overwrite(tmp_path: Pa
     monkeypatch.setenv("CREDENTIAL__AMAP_MAPS_API_KEY", "vault-secret")
     monkeypatch.setenv("AMAP_MAPS_API_KEY", "existing")
 
-    secrets_path = tmp_path / ".agents" / "secrets.yaml"
+    secrets_path = tmp_path / ".anyagent" / "secrets.yaml"
     secrets_path.parent.mkdir(parents=True)
     secrets_path.write_text(
         "\n".join(

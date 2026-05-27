@@ -213,7 +213,7 @@ anyagent 通过 `mcp.json` 配置 MCP server 连接：
 
 ```text
 Agent Pack 配置:
-  .agents/agents/<agent_id>/mcp.json
+  .anyagent/agents/<agent_id>/mcp.json
     → MCPServerManager 加载
     → 工具发现 → 合并到 manifest
     → 执行时通过 MCP 连接池调用

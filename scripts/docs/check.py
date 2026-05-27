@@ -43,6 +43,7 @@ _SKIP_DIR_NAMES = {
     "Python",
 }
 _REPO_TOP_LEVEL_NAMES = {
+    ".anyagent",
     ".agents",
     ".github",
     "apps",

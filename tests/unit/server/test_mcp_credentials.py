@@ -10,7 +10,7 @@ from anyagent.server.app import create_app
 
 
 def _write_main_agent(root: Path) -> None:
-    agent_dir = root / ".agents" / "agents" / "main"
+    agent_dir = root / ".anyagent" / "agents" / "main"
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "AGENTS.md").write_text("You are main.\n", encoding="utf-8")
     (agent_dir / "agent.yaml").write_text(
@@ -60,7 +60,7 @@ def test_mcp_credentials_file_backend_uses_workspace_relative_root(tmp_path: Pat
     async def _run() -> None:
         _write_main_agent(tmp_path)
         monkeypatch.setenv("MCP_CREDENTIAL_STORE_BACKEND", "file")
-        credential_dir = tmp_path / ".agents" / "credentials" / "agents" / "main"
+        credential_dir = tmp_path / ".anyagent" / "credentials" / "agents" / "main"
         credential_dir.mkdir(parents=True, exist_ok=True)
         (credential_dir / "cred_api.json").write_text(
             json.dumps({"kind": "bearer_token", "value": "file-secret"}),

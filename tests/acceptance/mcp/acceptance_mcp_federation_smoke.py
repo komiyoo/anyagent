@@ -53,7 +53,7 @@ def _smoke_agent_pack_mcp_loading() -> None:
     """Validates optional `mcp.json` loading for one agent pack."""
     with tempfile.TemporaryDirectory(prefix="anyagent_mcp_pack_") as td:
         ws = Path(td)
-        agent_dir = ws / ".agents" / "agents" / "main"
+        agent_dir = ws / ".anyagent" / "agents" / "main"
         agent_dir.mkdir(parents=True, exist_ok=True)
 
         (agent_dir / "agent.yaml").write_text(

@@ -12,7 +12,7 @@ from anyagent.types import AdminCredentialSetRequest, HealthResponse, Normalized
 
 
 def _write_workspace(root: Path) -> None:
-    agent_dir = root / ".agents" / "agents" / "main"
+    agent_dir = root / ".anyagent" / "agents" / "main"
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "AGENTS.md").write_text("你是一个测试 agent。\n", encoding="utf-8")
     (agent_dir / "agent.yaml").write_text(
@@ -155,7 +155,7 @@ async def _run_sdk_observability_namespace_matches_server(tmp_path: Path) -> Non
 
 async def _run_sdk_admin_plugin_catalog_matches_tool_runtime(tmp_path: Path) -> None:
     _write_workspace(tmp_path)
-    agent_yaml = tmp_path / ".agents" / "agents" / "main" / "agent.yaml"
+    agent_yaml = tmp_path / ".anyagent" / "agents" / "main" / "agent.yaml"
     agent_yaml.write_text(
         """
 exposed: true
@@ -252,7 +252,7 @@ def register(api):
 
 async def _run_sdk_tools_explain_composes_agent_skill_and_probe_context(tmp_path: Path) -> None:
     _write_workspace(tmp_path)
-    agent_yaml = tmp_path / ".agents" / "agents" / "main" / "agent.yaml"
+    agent_yaml = tmp_path / ".anyagent" / "agents" / "main" / "agent.yaml"
     agent_yaml.write_text(
         """
 exposed: true
@@ -270,7 +270,7 @@ multiagent:
         + "\n",
         encoding="utf-8",
     )
-    skill_dir = tmp_path / ".agents" / "skills" / "demo-skill"
+    skill_dir = tmp_path / ".anyagent" / "skills" / "demo-skill"
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "SKILL.md").write_text(
         """
@@ -330,7 +330,7 @@ async def _run_sdk_admin_skill_update_helpers_match_server(tmp_path: Path, monke
 
     def fake_run(cmd: list[str], *, cwd: str, **_: object) -> object:
         calls.append(cmd)
-        skill_dir = Path(cwd) / ".agents" / "skills" / "demo-skill"
+        skill_dir = Path(cwd) / ".anyagent" / "skills" / "demo-skill"
         skill_dir.mkdir(parents=True, exist_ok=True)
         version = "v1" if len(calls) == 1 else "v2"
         (skill_dir / "SKILL.md").write_text(
@@ -366,6 +366,6 @@ async def _run_sdk_admin_skill_update_helpers_match_server(tmp_path: Path, monke
 
         applied = await client.admin.apply_agent_skill_update("main", "demo-skill")
         assert applied.name == "demo-skill"
-        assert "registry v2" in (tmp_path / ".agents" / "agents" / "main" / "skills" / "demo-skill" / "SKILL.md").read_text(
+        assert "registry v2" in (tmp_path / ".anyagent" / "agents" / "main" / "skills" / "demo-skill" / "SKILL.md").read_text(
             encoding="utf-8"
         )

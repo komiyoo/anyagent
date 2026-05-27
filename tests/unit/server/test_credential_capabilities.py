@@ -12,7 +12,7 @@ from anyagent.tool_runtime import create_tool_runtime_app
 
 
 def _write_main_agent(root: Path) -> None:
-    agent_dir = root / ".agents" / "agents" / "main"
+    agent_dir = root / ".anyagent" / "agents" / "main"
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "AGENTS.md").write_text("You are main.\n", encoding="utf-8")
     (agent_dir / "agent.yaml").write_text(
@@ -64,7 +64,7 @@ def test_tool_runtime_admin_credentials_capabilities_endpoint(tmp_path: Path) ->
 async def _run_core_server_admin_credentials_capabilities_endpoint(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
     monkeypatch.setenv("MCP_CREDENTIAL_STORE_BACKEND", "file-write")
-    monkeypatch.setenv("MCP_CREDENTIAL_STORE_FILE_ROOT", ".agents/credentials")
+    monkeypatch.setenv("MCP_CREDENTIAL_STORE_FILE_ROOT", ".anyagent/credentials")
     app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
     assert isinstance(app.state.anyagent.mcp_credentials, FileBackend)
     transport = httpx.ASGITransport(app=app)

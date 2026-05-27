@@ -7,6 +7,8 @@ from typing import Annotated, Any, Literal
 from pydantic import AnyUrl, Field, PostgresDsn, RedisDsn, UrlConstraints
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from anyagent.agent_packs import DEFAULT_CREDENTIAL_FILE_ROOT
+
 
 MySQLDsn = Annotated[AnyUrl, UrlConstraints(allowed_schemes=["mysql", "mysql+asyncmy", "mysql+aiomysql", "mysql+pymysql"])]
 
@@ -87,7 +89,7 @@ class ToolRuntimeSettings(BaseSettings):
     postgres_schema: str = Field(default="public", alias="POSTGRES_SCHEMA")
 
     credential_backend: str = Field(default="none", alias="MCP_CREDENTIAL_STORE_BACKEND")
-    credential_file_root: str = Field(default=".agents/credentials", alias="MCP_CREDENTIAL_STORE_FILE_ROOT")
+    credential_file_root: str = Field(default=DEFAULT_CREDENTIAL_FILE_ROOT, alias="MCP_CREDENTIAL_STORE_FILE_ROOT")
     infisical_host: str = Field(default="https://app.infisical.com", alias="INFISICAL_HOST")
     infisical_universal_auth_client_id: str | None = Field(default=None, alias="INFISICAL_UNIVERSAL_AUTH_CLIENT_ID")
     infisical_universal_auth_client_secret: str | None = Field(default=None, alias="INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET")

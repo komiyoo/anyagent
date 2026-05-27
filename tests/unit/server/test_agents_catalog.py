@@ -78,7 +78,7 @@ def _write_agent(
     requested_tool_names: list[str] | None = None,
     spawn_allow_agent_ids: list[str] | None = None,
 ) -> Path:
-    agent_dir = root / ".agents" / "agents" / agent_id
+    agent_dir = root / ".anyagent" / "agents" / agent_id
     agent_dir.mkdir(parents=True, exist_ok=True)
     agents_md = agent_dir / "AGENTS.md"
     agents_md.write_text(prompt, encoding="utf-8")
@@ -146,7 +146,7 @@ async def _run_workspace_model_alias_applies_to_non_main_agent_request(tmp_path:
         ),
         encoding="utf-8",
     )
-    agent_yaml = tmp_path / ".agents" / "agents" / "delivery-agent" / "agent.yaml"
+    agent_yaml = tmp_path / ".anyagent" / "agents" / "delivery-agent" / "agent.yaml"
     agent_yaml.write_text(
         agent_yaml.read_text(encoding="utf-8").replace("tools:", "model:\n  default: travel-default\ntools:"),
         encoding="utf-8",
@@ -377,7 +377,7 @@ Use this skill when testing the Studio import flow.
         assert isinstance(imported, AdminSkillImportResponse)
         assert imported.name == "imported-skill"
         assert imported.sha256 == hashlib.sha256(skill_md.encode("utf-8")).hexdigest()
-        imported_dir = tmp_path / ".agents" / "agents" / "main" / "skills" / "imported-skill"
+        imported_dir = tmp_path / ".anyagent" / "agents" / "main" / "skills" / "imported-skill"
         assert (imported_dir / "SKILL.md").is_file()
         source_meta = json.loads((imported_dir / ".anyagent-skill-source.json").read_text(encoding="utf-8"))
         assert source_meta["channel"] == "local_upload"
@@ -407,7 +407,7 @@ Use this skill when testing the Studio import flow.
             json={"directory_name": "invalid-skill", "skill_md": "no frontmatter"},
         )
         assert invalid.status_code == 400, invalid.text
-        assert not (tmp_path / ".agents" / "agents" / "main" / "skills" / "invalid-skill" / "SKILL.md").exists()
+        assert not (tmp_path / ".anyagent" / "agents" / "main" / "skills" / "invalid-skill" / "SKILL.md").exists()
 
 
 async def _run_admin_install_agent_skill_from_registry(tmp_path: Path, monkeypatch) -> None:
@@ -426,7 +426,7 @@ async def _run_admin_install_agent_skill_from_registry(tmp_path: Path, monkeypat
         assert cmd[:5] == ["npx", "--yes", "skills", "add", "demo/package"]
         assert "--channel" in cmd and "skills.sh" in cmd
         assert "--agent" in cmd and "universal" in cmd
-        skill_dir = Path(cwd) / ".agents" / "skills" / "demo-skill"
+        skill_dir = Path(cwd) / ".anyagent" / "skills" / "demo-skill"
         skill_dir.mkdir(parents=True)
         install_count["value"] += 1
         description = "Installed from registry" if install_count["value"] == 1 else "Installed from registry v2"
@@ -457,7 +457,7 @@ Use this skill for registry install tests.
         )
         assert isinstance(installed, AdminSkillImportResponse)
         assert installed.name == "demo-skill"
-        target = tmp_path / ".agents" / "agents" / "main" / "skills" / "demo-skill"
+        target = tmp_path / ".anyagent" / "agents" / "main" / "skills" / "demo-skill"
         assert (target / "SKILL.md").is_file()
         assert (target / "references" / "note.md").read_text(encoding="utf-8") == "kept"
         source_meta = json.loads((target / ".anyagent-skill-source.json").read_text(encoding="utf-8"))
@@ -541,7 +541,7 @@ Use this skill for github install tests.
             },
         )
         assert installed.name == "github-skill"
-        target = tmp_path / ".agents" / "agents" / "main" / "skills" / "github-skill"
+        target = tmp_path / ".anyagent" / "agents" / "main" / "skills" / "github-skill"
         assert (target / "SKILL.md").is_file()
         source_meta = json.loads((target / ".anyagent-skill-source.json").read_text(encoding="utf-8"))
         assert source_meta["channel"] == "github"
@@ -581,7 +581,7 @@ async def _run_admin_create_agent_pack(tmp_path: Path) -> None:
         assert created.agent.agent_id == "sales-agent"
         assert created.agent.agents_md.text == "你是销售助手。\n"
         assert "sales-agent" in created.reloaded_agent_ids
-        agent_dir = tmp_path / ".agents" / "agents" / "sales-agent"
+        agent_dir = tmp_path / ".anyagent" / "agents" / "sales-agent"
         assert (agent_dir / "agent.yaml").is_file()
         assert (agent_dir / "AGENTS.md").read_text(encoding="utf-8") == "你是销售助手。\n"
         assert (agent_dir / "mcp.json").read_text(encoding="utf-8") == '{"mcpServers": {}}\n'
@@ -615,7 +615,7 @@ async def _run_admin_update_agent_default_skills(tmp_path: Path) -> None:
         sandbox_mode="disabled",
         requested_tool_names=[],
     )
-    skill_dir = tmp_path / ".agents" / "agents" / "main" / "skills" / "demo-skill"
+    skill_dir = tmp_path / ".anyagent" / "agents" / "main" / "skills" / "demo-skill"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
         """---
@@ -639,7 +639,7 @@ Use this skill for selection tests.
         skills = await user_client.skills.list(agent_id="main")
         demo = next(skill for skill in skills.skills if skill.name == "demo-skill")
         assert demo.selected is True
-        assert "default_selected:\n  - demo-skill\n" in (tmp_path / ".agents" / "agents" / "main" / "agent.yaml").read_text(
+        assert "default_selected:\n  - demo-skill\n" in (tmp_path / ".anyagent" / "agents" / "main" / "agent.yaml").read_text(
             encoding="utf-8"
         )
 
@@ -692,7 +692,7 @@ async def _run_admin_update_agent_config(tmp_path: Path) -> None:
         assert updated.agent.multiagent["spawn_allow_agent_ids"] == ["main"]
         assert updated.agent.skills.disabled_paths == ["skills/alpha/SKILL.md"]
 
-        worker_yaml = (tmp_path / ".agents" / "agents" / "worker" / "agent.yaml").read_text(encoding="utf-8")
+        worker_yaml = (tmp_path / ".anyagent" / "agents" / "worker" / "agent.yaml").read_text(encoding="utf-8")
         assert "exposed: true" in worker_yaml
         assert "requested_tool_names:\n  - exec\n  - core.web_fetch\n" in worker_yaml
         assert "mode: local-unsafe" in worker_yaml
@@ -701,7 +701,7 @@ async def _run_admin_update_agent_config(tmp_path: Path) -> None:
         listed = await user_client.agents.list()
         assert [item.agent_id for item in listed.agents] == ["main", "worker"]
 
-        main_yaml_path = tmp_path / ".agents" / "agents" / "main" / "agent.yaml"
+        main_yaml_path = tmp_path / ".anyagent" / "agents" / "main" / "agent.yaml"
         before = main_yaml_path.read_text(encoding="utf-8")
         bad = await http.put(
             "/admin/workspace/agents/worker/config",
@@ -777,7 +777,7 @@ async def _run_admin_workspace_agent_files_update_and_reload(tmp_path: Path) -> 
             json={"text": ""},
         )
         assert blank_mcp.status_code == 400, blank_mcp.text
-        assert (tmp_path / ".agents" / "main" / "mcp.json").exists() is False
+        assert (tmp_path / ".anyagent" / "main" / "mcp.json").exists() is False
 
         mcp = await admin_client.admin.update_agent_file(
             "main",

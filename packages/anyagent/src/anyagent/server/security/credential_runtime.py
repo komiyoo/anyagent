@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Mapping
 
 from anyagent.mcp.auth import CredentialResolver
+from anyagent.agent_packs import DEFAULT_CREDENTIAL_FILE_ROOT
 
 from .credential_backends import CredentialStore, EnvBackend, FileBackend, InfisicalBackend, InfisicalBackendConfig
 from .credential_store import InMemoryCredentialStore
@@ -14,7 +15,7 @@ from .mcp_credentials import build_mcp_credential_resolver
 @dataclass(frozen=True, slots=True)
 class CredentialRuntimeConfig:
     backend: str = "none"
-    file_root: str = ".agents/credentials"
+    file_root: str = DEFAULT_CREDENTIAL_FILE_ROOT
     workspace_dir: str | Path | None = None
     infisical_host: str = "https://app.infisical.com"
     infisical_universal_auth_client_id: str | None = None
@@ -75,7 +76,7 @@ def build_credential_resolver_from_config(
 
 
 def resolve_credential_file_root(config: CredentialRuntimeConfig) -> Path:
-    file_root = Path(str(config.file_root or ".agents/credentials")).expanduser()
+    file_root = Path(str(config.file_root or DEFAULT_CREDENTIAL_FILE_ROOT)).expanduser()
     if file_root.is_absolute():
         return file_root
     if config.workspace_dir is None:

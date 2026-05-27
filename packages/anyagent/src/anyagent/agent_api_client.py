@@ -1104,7 +1104,7 @@ def _build_example_run_bundle(
 
     pack = AgentPack(
         agent_id=agent_id,
-        root_dir=Path(f"/example-workspace/.agents/agents/{agent_id}"),
+        root_dir=Path(f"/example-workspace/.anyagent/agents/{agent_id}"),
         spec=AgentSpec(
             exposed=True,
             tools=AgentToolsSpec(requested_tool_names=list(scenario_spec["requested_tool_names"])),
@@ -1121,7 +1121,7 @@ def _build_example_run_bundle(
             ),
             multiagent=MultiAgentSpec(),
         ),
-        agents_md_path=Path(f"/example-workspace/.agents/agents/{agent_id}/AGENTS.md"),
+        agents_md_path=Path(f"/example-workspace/.anyagent/agents/{agent_id}/AGENTS.md"),
         agents_md_text="你是一个 coding agent，优先解释上下文，再在沙箱里执行命令。\n",
         agents_md_sha256="example-agent-sha256",
         workspace_agents_md_path=Path("/example-workspace/AGENTS.md"),
@@ -1139,8 +1139,8 @@ def _build_example_run_bundle(
 
     skills = [
         SkillPackage(
-            skill_dir=Path(f"/example-workspace/.agents/skills/{item['slug']}"),
-            skill_md_path=Path(f"/example-workspace/.agents/skills/{item['slug']}/SKILL.md"),
+            skill_dir=Path(f"/example-workspace/.anyagent/skills/{item['slug']}"),
+            skill_md_path=Path(f"/example-workspace/.anyagent/skills/{item['slug']}/SKILL.md"),
             scope=item["scope"],
             frontmatter=SkillFrontMatter(name=item["name"], description=item["description"]),
             body_markdown=item["body_markdown"],

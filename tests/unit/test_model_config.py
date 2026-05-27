@@ -73,8 +73,8 @@ def test_request_model_is_not_overwritten_by_agent_default() -> None:
 
 
 def test_load_workspace_models_config_reads_only_workspace_root(tmp_path: Path) -> None:
-    (tmp_path / ".agents").mkdir()
-    (tmp_path / ".agents" / "models.yaml").write_text(
+    (tmp_path / ".anyagent").mkdir()
+    (tmp_path / ".anyagent" / "models.yaml").write_text(
         "default_model: old\nmodels:\n  old:\n    provider: openai\n    model: gpt-4o-mini\n",
         encoding="utf-8",
     )

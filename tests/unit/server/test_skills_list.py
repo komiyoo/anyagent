@@ -14,7 +14,7 @@ from anyagent.skills import load_skills_from_root
 
 
 def _write_workspace_with_skill(root: Path) -> Path:
-    agent_dir = root / ".agents" / "agents" / "main"
+    agent_dir = root / ".anyagent" / "agents" / "main"
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "AGENTS.md").write_text("你是一个测试 agent。\n", encoding="utf-8")
     (agent_dir / "agent.yaml").write_text(
@@ -32,7 +32,7 @@ multiagent:
         + "\n",
         encoding="utf-8",
     )
-    skill_dir = root / ".agents" / "skills" / "demo-skill"
+    skill_dir = root / ".anyagent" / "skills" / "demo-skill"
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_md = skill_dir / "SKILL.md"
     skill_md.write_text(
@@ -94,7 +94,7 @@ def test_internal_skills_router_lists_catalog_fields(tmp_path: Path) -> None:
     app.state.agent_catalog = load_agent_catalog(workspace_dir=tmp_path)
     app.state.agent_skills = {}
     app.state.global_skills, app.state.global_skill_errors = load_skills_from_root(
-        tmp_path / ".agents" / "skills",
+        tmp_path / ".anyagent" / "skills",
         scope="repo",
     )
     app.state.agent_skill_errors = {}

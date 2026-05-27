@@ -18,6 +18,14 @@ class AgentPackError(Exception):
     pass
 
 
+ANYAGENT_CONFIG_DIR = ".anyagent"
+LEGACY_ANYAGENT_CONFIG_DIR = ".agents"
+ANYAGENT_AGENTS_SUBDIR = "agents"
+ANYAGENT_SKILLS_SUBDIR = "skills"
+ANYAGENT_SECRETS_FILE = "secrets.yaml"
+ANYAGENT_CREDENTIALS_DIR = "credentials"
+DEFAULT_CREDENTIAL_FILE_ROOT = f"{ANYAGENT_CONFIG_DIR}/{ANYAGENT_CREDENTIALS_DIR}"
+
 _AGENT_ID_RE = re.compile(r"^[a-zA-Z0-9_.-]{1,64}$")
 _ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
@@ -110,6 +118,32 @@ class AgentCatalog:
         return self.packs.get(agent_id)
 
 
+def preferred_config_root(workspace_dir: Path) -> Path:
+    return Path(workspace_dir) / ANYAGENT_CONFIG_DIR
+
+
+def legacy_config_root(workspace_dir: Path) -> Path:
+    return Path(workspace_dir) / LEGACY_ANYAGENT_CONFIG_DIR
+
+
+def preferred_agents_root(workspace_dir: Path) -> Path:
+    return preferred_config_root(workspace_dir) / ANYAGENT_AGENTS_SUBDIR
+
+
+def legacy_agents_root(workspace_dir: Path) -> Path:
+    return legacy_config_root(workspace_dir) / ANYAGENT_AGENTS_SUBDIR
+
+
+def resolve_agents_root(workspace_dir: Path) -> Path:
+    preferred = preferred_agents_root(workspace_dir)
+    if preferred.is_dir():
+        return preferred
+    legacy = legacy_agents_root(workspace_dir)
+    if legacy.is_dir():
+        return legacy
+    return preferred
+
+
 def _read_text_with_limit(path: Path, *, max_bytes: int) -> tuple[str, str]:
     raw = path.read_bytes()
     if len(raw) > max_bytes:
@@ -168,7 +202,7 @@ def load_agent_catalog(
 ) -> AgentCatalog:
     """
     v0：只支持单 root：
-    - `<workspace_dir>/.agents/agents/`
+    - `<workspace_dir>/.anyagent/agents/`
 
     要求：
     - 每个 `<agent_id>/` 目录必须包含 `agent.yaml` 与 `AGENTS.md`
@@ -178,7 +212,7 @@ def load_agent_catalog(
     workspace_env = _load_workspace_env(workspace_dir)
     expand_env = dict(workspace_env)
     expand_env.update({key: value for key, value in os.environ.items() if isinstance(value, str)})
-    root_dir = workspace_dir / ".agents" / "agents"
+    root_dir = resolve_agents_root(workspace_dir)
     if not root_dir.is_dir():
         raise AgentPackError(f"missing agent packs root: {root_dir}")
 

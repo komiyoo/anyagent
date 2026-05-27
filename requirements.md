@@ -46,8 +46,8 @@ cd my-workspace && anyagent serve
 
 业务项目只需要：
 
-- 放入 `.agents/agents/<agent_id>/` 配置（`agent.yaml` + `AGENTS.md` + `mcp.json`）
-- （可选）放入共享技能 `.agents/skills/`
+- 放入 `.anyagent/agents/<agent_id>/` 配置（`agent.yaml` + `AGENTS.md` + `mcp.json`）
+- （可选）放入共享技能 `.anyagent/skills/`
 - 设置环境变量（模型 API Key、工具凭证等）
 
 无需 fork 代码，无需编写服务端逻辑，无需部署基础设施（零外部依赖）。
@@ -108,7 +108,7 @@ Phase 2+ 的能力会提前定义契约与边界，但不阻塞 Phase 1 交付�
 ## 2. 核心概念与术语
 
 - `Agent Server`：anyagent 内置的 HTTP 服务，对外暴露 `POST /v1/responses`，在服务端执行完整 agent loop。通过 `anyagent serve` 启动。
-- `Agent Packs`：`.agents/agents/<agent_id>/` 配置目录，定义 agent 的行为、工具、技能、MCP 连接。
+- `Agent Packs`：`.anyagent/agents/<agent_id>/` 配置目录，定义 agent 的行为、工具、技能、MCP 连接。
 - `AgentId / AgentSpec`：区分同一套服务里不同 agent 的标识与配置集合。
   - `agent_id`：稳定标识（如 `main`、`legal`、`sales`）
   - `AgentSpec`：该 agent 的配置（`agent.yaml` 解析产物）
@@ -139,12 +139,12 @@ anyagent v0 必须支持通过“配置目录”定义可对外提供服务的 a
 
 约定：业务项目/工作区内存在一个公共配置根目录：
 
-- `<workspace_dir>/.agents/agents/`
+- `<workspace_dir>/.anyagent/agents/`
 
 其下每个一级子目录代表一个 agent pack（目录名即 `agent_id`）：
 
 ```text
-<workspace_dir>/.agents/agents/
+<workspace_dir>/.anyagent/agents/
   <agent_id>/
     agent.yaml     # 结构化 AgentSpec（见 2.2）
     AGENTS.md      # 行为指令（注入到本次 run 的 developer/system message）
@@ -165,7 +165,7 @@ anyagent v0 必须支持通过“配置目录”定义可对外提供服务的 a
   - 推荐注入为 `developer` message（或等价层级），并且必须发生在该次 run 的第一条 user 输入之前。
   - 注入内容必须带来源标记（至少包含 `agent_id` 与文件路径），便于审计与复现。
   - 推荐使用可识别的结构化片段格式，而不是裸文本块；例如 `# AGENTS.md instructions for ...` + `<INSTRUCTIONS>` 包裹，并附带 `path` / `sha256` 等元信息。
-  - v0 先冻结为 `workspace + agent-pack` 两层 stack：`<workspace_dir>/AGENTS.md` 作为低优先级全局层，`<workspace_dir>/.agents/agents/<agent_id>/AGENTS.md` 作为高优先级 agent 层。
+  - v0 先冻结为 `workspace + agent-pack` 两层 stack：`<workspace_dir>/AGENTS.md` 作为低优先级全局层，`<workspace_dir>/.anyagent/agents/<agent_id>/AGENTS.md` 作为高优先级 agent 层。
 - 若底层模型 API 不支持 `developer` role，可退化为 system prompt 的独立区块，但必须保持清晰分隔与来源标记，避免与用户输入混淆。
   - 退化方式应通过统一的 `instruction_role` 开关实现，而不是在各 provider adapter 中各写一套注入逻辑。
 - 多智能体场景：child thread 的 prompt 必须按其目标 `agent_id` 注入对应的 `AGENTS.md`，默认不继承父 thread 的 `AGENTS.md`。
@@ -176,8 +176,8 @@ anyagent v0 必须支持通过“配置目录”定义可对外提供服务的 a
 可选增强（部署形态，v0 可后置实现但协议需要预留）：
 
 - 支持多层 roots（类似第 12.2 节 skills roots）：
-  - Repo：`<workspace_dir>/.agents/agents/`
-  - User：`~/.agents/agents/`
+  - Repo：`<workspace_dir>/.anyagent/agents/`
+  - User：`~/.anyagent/agents/`
   - System：`/opt/agents/agents/`
   - Admin：`<tenant_shared_dir>/agents/`
 - 当同名 `agent_id` 在多个 roots 中出现时，必须有清晰的优先级（建议：Repo > Admin > System > User），且结果可审计（记录来自哪个 root/path）。
@@ -1156,13 +1156,13 @@ v0 允许多种策略并存，但必须做到“可解释、可审计”：
 anyagent 需要定义 skills 搜索路径（roots），并在加载时标注 scope，用于优先级与治理：
 
 - `Agent` scope：agent pack 内技能（每个 agent 的私有 skills）
-  - 建议路径：`<workspace_dir>/.agents/agents/<agent_id>/skills/**/SKILL.md`
+  - 建议路径：`<workspace_dir>/.anyagent/agents/<agent_id>/skills/**/SKILL.md`
   - 说明：用于让 agent 拥有“私有技能集合”；其优先级应高于 Repo/User/System（避免同名 skill 被意外覆盖）
 - `Repo` scope：工作区内技能（每个 agent workspace / repo）
-  - 建议路径：`<workspace_dir>/.agents/skills/**/SKILL.md`
-  - 说明：`.agents/skills` 是通用约定，便于多种 agent/gateway 共享同一技能目录结构
+  - 建议路径：`<workspace_dir>/.anyagent/skills/**/SKILL.md`
+  - 说明：`.anyagent/skills` 是通用约定，便于多种 agent/gateway 共享同一技能目录结构
 - `User` scope：用户级技能（部署机或控制平面）
-  - 建议路径：`~/.agents/skills/**/SKILL.md`
+  - 建议路径：`~/.anyagent/skills/**/SKILL.md`
 - `System` scope：系统内置技能（镜像随服务发布）
   - 建议路径：`/opt/agents/skills/**/SKILL.md`（或容器内路径）
 - `Admin` scope：管理员下发技能（多租户未来扩展）

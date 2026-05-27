@@ -86,7 +86,7 @@ def test_create_distributed_agent_app_rejects_invalid_catalog(tmp_path: Path) ->
 
 
 def _write_workspace(root: Path, *, exposed: bool = True) -> None:
-    agent_dir = root / ".agents" / "agents" / "main"
+    agent_dir = root / ".anyagent" / "agents" / "main"
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "AGENTS.md").write_text("You are a test agent.\n", encoding="utf-8")
     (agent_dir / "agent.yaml").write_text(

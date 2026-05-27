@@ -13,7 +13,7 @@ import httpx
 import uvicorn
 import yaml
 
-from anyagent.agent_packs import AgentPackError, load_agent_catalog
+from anyagent.agent_packs import AgentPackError, load_agent_catalog, preferred_agents_root, preferred_config_root, resolve_agents_root
 from anyagent.model_config import WorkspaceModelsConfig, workspace_models_config_path
 from anyagent.observability import configure_observability_from_env
 from anyagent.protocol.credential_vault import (
@@ -112,17 +112,17 @@ def main(argv: list[str] | None = None) -> int:
     init.add_argument(
         "--with-example-skill",
         action="store_true",
-        help="Create `.agents/skills/example-skill/SKILL.md` and select it by default.",
+        help="Create `.anyagent/skills/example-skill/SKILL.md` and select it by default.",
     )
 
     doctor = sub.add_parser("doctor", help="Validate an anyagent workspace before serving it.")
-    doctor.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    doctor.add_argument("--workspace", default=".", help="Workspace root containing `.anyagent/`.")
     doctor.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     agent = sub.add_parser("agent", help="Inspect local workspace agent packs.")
     agent_sub = agent.add_subparsers(dest="agent_cmd", required=True)
     agent_list = agent_sub.add_parser("list", help="List configured agent packs for a workspace.")
-    agent_list.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    agent_list.add_argument("--workspace", default=".", help="Workspace root containing `.anyagent/`.")
     agent_list.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     config = sub.add_parser("config", help="Business workspace configuration operations.")
@@ -167,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     config_init.add_argument("--force", action="store_true", help="Overwrite files created by this command.")
 
     serve = sub.add_parser("serve", help="Start the built-in anyagent server.")
-    serve.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    serve.add_argument("--workspace", default=".", help="Workspace root containing `.anyagent/`.")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8787)
     serve.add_argument("--api-key", default=None, help="Bearer token for `/v1/*` and `/internal/*` APIs.")
@@ -221,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     dev = sub.add_parser("dev", help="Start a local development server with Studio-friendly defaults.")
-    dev.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    dev.add_argument("--workspace", default=".", help="Workspace root containing `.anyagent/`.")
     dev.add_argument("--host", default="127.0.0.1")
     dev.add_argument("--port", type=int, default=8787)
     dev.add_argument("--api-key", default=None, help="Bearer token for `/v1/*` and `/internal/*` APIs.")
@@ -273,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
     agent_api = sub.add_parser("agent-api", help="Distributed Agent API operations.")
     agent_api_sub = agent_api.add_subparsers(dest="agent_api_cmd", required=True)
     agent_api_serve = agent_api_sub.add_parser("serve", help="Start the distributed Agent API service.")
-    agent_api_serve.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    agent_api_serve.add_argument("--workspace", default=".", help="Workspace root containing `.anyagent/`.")
     agent_api_serve.add_argument("--host", default="127.0.0.1")
     agent_api_serve.add_argument("--port", type=int, default=8787)
     agent_api_serve.add_argument(
@@ -306,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
     tool_runtime = sub.add_parser("tool-runtime", help="Tool Runtime operations.")
     tool_runtime_sub = tool_runtime.add_subparsers(dest="tool_runtime_cmd", required=True)
     tool_runtime_serve = tool_runtime_sub.add_parser("serve", help="Start the standalone Tool Runtime service.")
-    tool_runtime_serve.add_argument("--workspace", default=".", help="Workspace root containing `.agents/`.")
+    tool_runtime_serve.add_argument("--workspace", default=".", help="Workspace root containing `.anyagent/`.")
     tool_runtime_serve.add_argument("--host", default="127.0.0.1")
     tool_runtime_serve.add_argument("--port", type=int, default=8788)
     tool_runtime_serve.add_argument(
@@ -767,7 +767,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
         skipped=skipped,
     )
     for spec in _init_agent_specs(template=template, primary_agent_id=agent_id, selected_skills=selected_skills):
-        agent_dir = workspace / ".agents" / "agents" / spec["agent_id"]
+        agent_dir = preferred_agents_root(workspace) / spec["agent_id"]
         _write_file(
             agent_dir / "agent.yaml",
             _render_agent_yaml(
@@ -797,7 +797,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
         )
     if agent_id != "main":
         main_spec = _default_main_agent_spec(primary_agent_id=agent_id)
-        main_dir = workspace / ".agents" / "agents" / "main"
+        main_dir = preferred_agents_root(workspace) / "main"
         _write_file(
             main_dir / "agent.yaml",
             _render_agent_yaml(
@@ -814,7 +814,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
         _write_file(main_dir / "AGENTS.md", str(main_spec["instructions"]), force=force, created=created, skipped=skipped)
         _write_file(main_dir / "mcp.json", _DEFAULT_MCP_JSON, force=force, created=created, skipped=skipped)
     _write_file(
-        workspace / ".agents" / "skills" / ".gitkeep",
+        preferred_config_root(workspace) / "skills" / ".gitkeep",
         "",
         force=force,
         created=created,
@@ -822,7 +822,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
     )
     if bool(args.with_example_skill) or template in {"coding-agent", "research-agent", "multi-agent-team"}:
         _write_file(
-            workspace / ".agents" / "skills" / "example-skill" / "SKILL.md",
+            preferred_config_root(workspace) / "skills" / "example-skill" / "SKILL.md",
             _DEFAULT_EXAMPLE_SKILL,
             force=force,
             created=created,
@@ -888,7 +888,7 @@ def _cmd_config_init(args: argparse.Namespace) -> int:
         created=created,
         skipped=skipped,
     )
-    agent_dir = workspace / ".agents" / "agents" / agent_id
+    agent_dir = preferred_agents_root(workspace) / agent_id
     _write_file(
         agent_dir / "agent.yaml",
         _render_agent_yaml(
@@ -906,7 +906,7 @@ def _cmd_config_init(args: argparse.Namespace) -> int:
     _write_file(agent_dir / "mcp.json", _DEFAULT_MCP_JSON, force=force, created=created, skipped=skipped)
     if agent_id != "main":
         main_spec = _default_main_agent_spec(primary_agent_id=agent_id)
-        main_dir = workspace / ".agents" / "agents" / "main"
+        main_dir = preferred_agents_root(workspace) / "main"
         _write_file(
             main_dir / "agent.yaml",
             _render_agent_yaml(
@@ -922,7 +922,7 @@ def _cmd_config_init(args: argparse.Namespace) -> int:
         )
         _write_file(main_dir / "AGENTS.md", str(main_spec["instructions"]), force=force, created=created, skipped=skipped)
         _write_file(main_dir / "mcp.json", _DEFAULT_MCP_JSON, force=force, created=created, skipped=skipped)
-    _write_file(workspace / ".agents" / "skills" / ".gitkeep", "", force=force, created=created, skipped=skipped)
+    _write_file(preferred_config_root(workspace) / "skills" / ".gitkeep", "", force=force, created=created, skipped=skipped)
     _write_demo_plugin_files(workspace=workspace, force=force, created=created, skipped=skipped)
 
     config = WorkspaceModelsConfig.model_validate(yaml.safe_load(models_yaml))
@@ -961,7 +961,7 @@ def _doctor_workspace(workspace: Path) -> list[WorkspaceDoctorFinding]:
     def add(level: str, code: str, message: str) -> None:
         findings.append(WorkspaceDoctorFinding.model_validate({"level": level, "code": code, "message": message}))
 
-    root = workspace / ".agents" / "agents"
+    root = resolve_agents_root(workspace)
     if not root.is_dir():
         add("error", "missing_agent_root", f"missing agent packs root: {root}")
         return findings
@@ -1154,7 +1154,7 @@ def _render_models_yaml(
         provider["base_url_env"] = base_url_env
     provider_lines = [
         "# Workspace model/provider catalog.",
-        "# Agent packs reference models by alias through `.agents/agents/<agent_id>/agent.yaml`:",
+        "# Agent packs reference models by alias through `.anyagent/agents/<agent_id>/agent.yaml`:",
         f"#   model.default: {model_alias}",
         "# Keep credentials in environment variables or a secret manager; do not commit plaintext keys.",
         f"default_model: {_yaml_scalar(model_alias)}",
@@ -1209,7 +1209,7 @@ def _workspace_instructions_for_template(template: str) -> str:
 
 This workspace was generated by `anyagent init --template {template}`.
 
-- Agent behavior lives in `.agents/agents/<agent_id>/AGENTS.md`.
+- Agent behavior lives in `.anyagent/agents/<agent_id>/AGENTS.md`.
 - Tool, skill, sandbox, MCP, and multi-agent boundaries live in `agent.yaml` and `mcp.json`.
 - Do not store plaintext credentials in repository files; use the Admin Credential API.
 """
@@ -1318,7 +1318,7 @@ _DEFAULT_MAIN_AGENT_INSTRUCTIONS = """# Main Agent
 You are the default entrypoint for this workspace.
 
 - Use `{primary_agent_id}` as the primary business agent when the user request belongs to that configured workflow.
-- Keep default-entrypoint behavior thin; business-specific behavior belongs in `.agents/agents/{primary_agent_id}/AGENTS.md`.
+- Keep default-entrypoint behavior thin; business-specific behavior belongs in `.anyagent/agents/{primary_agent_id}/AGENTS.md`.
 - Use configured skills when they apply.
 - Use configured MCP tools only through their exposed tool names.
 - Do not treat AGENTS.md as a permission source; tool access is controlled by agent.yaml and the server.
@@ -1422,7 +1422,7 @@ default:
 
 1. `anyagent serve` does not load workspace plugins automatically yet.
 2. Even when a standalone Tool Runtime loads this plugin, the tool is invisible
-   until an agent requests `app.demo.echo` in `.agents/agents/<agent_id>/agent.yaml`.
+   until an agent requests `app.demo.echo` in `.anyagent/agents/<agent_id>/agent.yaml`.
 
 To try it locally:
 

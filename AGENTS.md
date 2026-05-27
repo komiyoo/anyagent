@@ -14,7 +14,7 @@
 
 anyagent = **配置即服务的 Agent Server 内核 + SDK**：
 
-- **Server Core**：内置 Agent API + Tool Runtime，`anyagent serve` 一条命令从 `.agents/` 配置启动 OpenAI Responses API 兼容服务
+- **Server Core**：内置 Agent API + Tool Runtime，`anyagent serve` 一条命令从 `.anyagent/` 配置启动 OpenAI Responses API 兼容服务
 - **SDK**：`AnyAgent` Client SDK 提供 OpenAI 兼容层 + anyagent 精细层（tool/command 级 Stage Events）
 - **Protocol SSOT**：`anyagent.protocol.`* 是所有 wire-level 协议的单一真源
 - **安全边界**：Agent 可见资源但不可直接操作——密钥、凭证、tool policy 由 server 代理管理
