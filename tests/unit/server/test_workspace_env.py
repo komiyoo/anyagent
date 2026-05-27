@@ -65,3 +65,29 @@ def test_workspace_runtime_env_keeps_existing_env_without_overwrite(tmp_path: Pa
     load_workspace_runtime_environment(tmp_path)
 
     assert os.environ["AMAP_MAPS_API_KEY"] == "existing"
+
+
+def test_workspace_runtime_env_ignores_legacy_agents_secrets(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CREDENTIAL__AMAP_MAPS_API_KEY", "vault-secret")
+    monkeypatch.delenv("AMAP_MAPS_API_KEY", raising=False)
+
+    secrets_path = tmp_path / ".agents" / "secrets.yaml"
+    secrets_path.parent.mkdir(parents=True)
+    secrets_path.write_text(
+        "\n".join(
+            [
+                "credential_vault:",
+                "  backend: env",
+                "runtime_env:",
+                "  - name: AMAP_MAPS_API_KEY",
+                "    credential_id: amap_maps_api_key",
+                "    kind: api_key",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    load_workspace_runtime_environment(tmp_path)
+
+    assert "AMAP_MAPS_API_KEY" not in os.environ

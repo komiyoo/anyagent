@@ -11,7 +11,6 @@ import yaml
 from anyagent.agent_packs import (
     ANYAGENT_SECRETS_FILE,
     DEFAULT_CREDENTIAL_FILE_ROOT,
-    legacy_config_root,
     preferred_config_root,
 )
 from anyagent.protocol.tool_runtime import AuthRef
@@ -94,9 +93,6 @@ def _run_sync(coro):
 
 def _load_workspace_secrets_payload(workspace_dir: Path) -> dict[str, Any] | None:
     path = preferred_config_root(workspace_dir) / ANYAGENT_SECRETS_FILE
-    if not path.is_file():
-        legacy_path = legacy_config_root(workspace_dir) / ANYAGENT_SECRETS_FILE
-        path = legacy_path if legacy_path.is_file() else path
     if not path.is_file():
         return None
     try:

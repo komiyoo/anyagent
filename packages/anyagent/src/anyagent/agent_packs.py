@@ -19,7 +19,6 @@ class AgentPackError(Exception):
 
 
 ANYAGENT_CONFIG_DIR = ".anyagent"
-LEGACY_ANYAGENT_CONFIG_DIR = ".agents"
 ANYAGENT_AGENTS_SUBDIR = "agents"
 ANYAGENT_SKILLS_SUBDIR = "skills"
 ANYAGENT_SECRETS_FILE = "secrets.yaml"
@@ -122,26 +121,12 @@ def preferred_config_root(workspace_dir: Path) -> Path:
     return Path(workspace_dir) / ANYAGENT_CONFIG_DIR
 
 
-def legacy_config_root(workspace_dir: Path) -> Path:
-    return Path(workspace_dir) / LEGACY_ANYAGENT_CONFIG_DIR
-
-
 def preferred_agents_root(workspace_dir: Path) -> Path:
     return preferred_config_root(workspace_dir) / ANYAGENT_AGENTS_SUBDIR
 
 
-def legacy_agents_root(workspace_dir: Path) -> Path:
-    return legacy_config_root(workspace_dir) / ANYAGENT_AGENTS_SUBDIR
-
-
 def resolve_agents_root(workspace_dir: Path) -> Path:
-    preferred = preferred_agents_root(workspace_dir)
-    if preferred.is_dir():
-        return preferred
-    legacy = legacy_agents_root(workspace_dir)
-    if legacy.is_dir():
-        return legacy
-    return preferred
+    return preferred_agents_root(workspace_dir)
 
 
 def _read_text_with_limit(path: Path, *, max_bytes: int) -> tuple[str, str]:

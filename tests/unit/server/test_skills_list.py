@@ -11,6 +11,7 @@ from anyagent.agent_packs import load_agent_catalog
 from anyagent.server.app import create_app
 from anyagent.server.internal_skills import create_internal_skills_router
 from anyagent.skills import load_skills_from_root
+from anyagent.skills.discovery import default_skill_roots
 
 
 def _write_workspace_with_skill(root: Path) -> Path:
@@ -65,6 +66,16 @@ dependencies:
 
 def test_runtime_skills_list_includes_catalog_fields(tmp_path: Path) -> None:
     asyncio.run(_run_runtime_skills_list_includes_catalog_fields(tmp_path))
+
+
+def test_default_skill_roots_use_anyagent_directory_only(tmp_path: Path) -> None:
+    roots = default_skill_roots(workspace_dir=tmp_path)
+
+    root_paths = [root.root for root in roots]
+    assert tmp_path / ".anyagent" / "skills" in root_paths
+    assert tmp_path / ".agents" / "skills" not in root_paths
+    assert Path.home() / ".anyagent" / "skills" in root_paths
+    assert Path.home() / ".agents" / "skills" not in root_paths
 
 
 async def _run_runtime_skills_list_includes_catalog_fields(tmp_path: Path) -> None:

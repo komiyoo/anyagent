@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
+import pytest
 import yaml
 
+from anyagent.agent_packs import AgentPackError, load_agent_catalog
 from anyagent.cli import main
 from anyagent.model_config import WorkspaceModelsConfig
 from anyagent.protocol.plugins import PluginCatalogResponse
@@ -194,6 +196,19 @@ def test_doctor_rejects_missing_workspace(tmp_path, capsys) -> None:
     payload = WorkspaceDoctorReport.model_validate_json(capsys.readouterr().out)
     assert payload.ok is False
     assert payload.findings[0].code == "missing_agent_root"
+
+
+def test_agent_catalog_ignores_legacy_agents_directory(tmp_path: Path) -> None:
+    legacy_agent_dir = tmp_path / ".agents" / "agents" / "main"
+    legacy_agent_dir.mkdir(parents=True)
+    (legacy_agent_dir / "AGENTS.md").write_text("legacy prompt\n", encoding="utf-8")
+    (legacy_agent_dir / "agent.yaml").write_text(
+        "exposed: true\ntools:\n  requested_tool_names: []\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AgentPackError, match=r"missing agent packs root: .*\.anyagent/agents"):
+        load_agent_catalog(workspace_dir=tmp_path)
 
 
 def test_plugin_catalog_cli_reads_admin_api(monkeypatch, capsys) -> None:
