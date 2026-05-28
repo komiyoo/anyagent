@@ -557,15 +557,8 @@ def compute_overall_next(todo_progress: list[dict[str, object]]) -> list[dict[st
 
     def rank(path: str) -> int:
         order = [
-            "todo/agent-api.md",
-            "todo/tool-runtime.md",
-            "todo/gateway.md",
-            "todo/concurrency-reliability.md",
             "todo/security-compliance.md",
-            "todo/tests-acceptance.md",
-            "todo/skills-disclosure.md",
-            "todo/multi-agent.md",
-            "todo/backlog.md",
+            "todo/sdk.md",
         ]
         try:
             return order.index(path)

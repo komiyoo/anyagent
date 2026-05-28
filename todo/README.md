@@ -17,19 +17,12 @@
 
 ### 3) 分流规则
 
-- 新想法先落 `todo/backlog.md`
-- 确定归属模块后迁移到 `todo/<module>.md`
+- 新想法如果能立即归属，直接落到对应 `todo/<module>.md`。
+- 如果没有现成模块文件，先用 `_template.md` 新建一个聚焦的模块 TODO；不要保留没有待办事项的空模块文件。
 
-## 模块文件
+## 活跃模块文件
 
-- `todo/backlog.md`：未分配事项
-- `todo/agent-api.md`：Responses API 兼容 + 内置 Server（`requirements.md#req-4`）
-- `todo/tool-runtime.md`：Tool Runtime 协议与执行（`requirements.md#req-5`）
-- `todo/storage.md`：存储层（`requirements.md#req-3-1`）
-- `todo/gateway.md`：平台接入（`requirements.md#req-6`）
-- `todo/concurrency-reliability.md`：并发与可靠性（`requirements.md#req-7`）
 - `todo/security-compliance.md`：安全与合规，含 Credential Vault（`requirements.md#req-8`）
-- `todo/tests-acceptance.md`：测试与验收（`requirements.md#req-9`）
-- `todo/skills-disclosure.md`：Skills 加载与动态披露（`requirements.md#req-12`）
-- `todo/multi-agent.md`：Multi-Agent（`requirements.md#req-13`）
 - `todo/sdk.md`：Client SDK + CLI（`requirements.md#req-4`）
+
+已完成或暂无待办的模块不保留空 TODO 文件；历史记录请查看 Git，稳定设计请优先查看 `docs/architecture/`、`docs/security/`、`docs/acceptance/`。

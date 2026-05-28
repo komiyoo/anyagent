@@ -66,7 +66,7 @@ anyagent 的目标是成为配置化、服务化的 AI Agent 基础设施：
 - Studio 是 typed API consumer，不读取 server 内部 Python 模块。
 - Studio 只能消费 OpenAI Responses API、`/internal/*` 与 `/admin/*` typed API。
 - Studio 连接、agent catalog、workspace files、skills、MCP、tools、credentials、observability 和 debug 均通过 shared typed client facade 收口。
-- Studio 页面职责、观测面与 skill/MCP/tool enablement 见 [studio-control-plane-and-observability.md](studio-control-plane-and-observability.md)。
+- Studio 页面职责、观测面与 skill/MCP/tool enablement 见 [studio-control-plane-and-observability.md](../control-plane/studio-control-plane-and-observability.md)。
 
 ### Apps Boundary
 

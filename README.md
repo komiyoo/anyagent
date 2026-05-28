@@ -551,15 +551,20 @@ anyagent (本仓库)           anyagent-apps (同级项目)
 
 ## 文档
 
-- [requirements.md](requirements.md) — 系统需求文档
+- [requirements.md](requirements.md) — 活跃需求索引与稳定锚点；已完成设计沉淀在模块化 docs
 - [docs/architecture/](docs/architecture/README.md) — 架构设计
-  - [apps-packages-boundary.md](docs/architecture/apps-packages-boundary.md) — anyagent vs anyagent-apps 职责边界
+  - [apps-packages-boundary.md](docs/architecture/overview/apps-packages-boundary.md) — anyagent vs anyagent-apps 职责边界
   - [single-repo-multi-package-boundary.md](docs/architecture/decisions/single-repo-multi-package-boundary.md) — server/client/studio 单仓多包边界与多语言 SDK 兼容策略
-  - [responses-api-sdk-and-server.md](docs/architecture/responses-api-sdk-and-server.md) — SDK + Server 泳道与模块边界
-  - [sdk-public-surface.md](docs/architecture/sdk-public-surface.md) — AnyAgent SDK public surface、typed model facade 与验证入口
-  - [roadmap.md](docs/architecture/roadmap.md) — architecture direction 与当前架构锚点
-  - [stateless-agent-service-architecture.md](docs/architecture/stateless-agent-service-architecture.md) — 无状态服务并发架构
-  - [storage-minimal-design.md](docs/architecture/storage-minimal-design.md) — 存储最小设计
+  - [responses-api-sdk-and-server.md](docs/architecture/api/responses-api-sdk-and-server.md) — SDK + Server 泳道与模块边界
+  - [agent-packs-and-runtime-config.md](docs/architecture/runtime/agent-packs-and-runtime-config.md) — Agent Packs、AGENTS.md 注入、AgentSpec 与 session runtime config
+  - [tool-runtime-contract.md](docs/architecture/tool-runtime/tool-runtime-contract.md) — Tool Runtime manifest/execute、registry、命名、context、幂等与取消
+  - [sdk-public-surface.md](docs/architecture/api/sdk-public-surface.md) — AnyAgent SDK public surface、typed model facade 与验证入口
+  - [roadmap.md](docs/architecture/overview/roadmap.md) — architecture direction 与当前架构锚点
+  - [stateless-agent-service-architecture.md](docs/architecture/runtime/stateless-agent-service-architecture.md) — 无状态服务并发架构
+  - [storage-minimal-design.md](docs/architecture/storage/storage-minimal-design.md) — 存储最小设计
+  - [skills-dynamic-disclosure.md](docs/architecture/skills/skills-dynamic-disclosure.md) — Skills 动态披露
+  - [gateway-platform-routing.md](docs/architecture/integrations/gateway-platform-routing.md) — Gateway 平台路由与 session 绑定
+  - [multi-agent-collaboration.md](docs/architecture/multi-agent/multi-agent-collaboration.md) — Multi-Agent 编排与隔离
 - [docs/security/](docs/security/README.md) — 安全设计
   - [credential-vault.md](docs/security/credential-vault.md) — 凭证管理
   - [sandbox-security.md](docs/security/sandbox-security.md) — Sandbox 安全边界

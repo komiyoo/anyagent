@@ -13,7 +13,6 @@
 
 ## 待处理
 
-- [x] P1 完成单仓多包边界审计：`docs/architecture/decisions/single-repo-multi-package-boundary.md` 已核对边界规则、contract surface 与可执行验证入口。
 - [ ] P1 继续扩大跨语言 conformance fixture 的覆盖面；新增 fixture 时同步更新 `tests/fixtures/sdk_conformance/minimum_matrix.json`。
 - [ ] P2 按真实集成需求添加 Go / Rust / Java 等 SDK scaffold；没有真实发布渠道前不创建空壳包。
 
@@ -28,5 +27,5 @@ rtk npm --prefix sdks/typescript run smoke
 ## 参考
 
 - `docs/architecture/decisions/single-repo-multi-package-boundary.md`
-- `docs/architecture/sdk-compatibility-matrix.md`
-- `docs/architecture/sdk-public-surface.md`
+- `docs/architecture/api/sdk-compatibility-matrix.md`
+- `docs/architecture/api/sdk-public-surface.md`

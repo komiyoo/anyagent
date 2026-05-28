@@ -19,7 +19,7 @@
 
 ## 引用格式（推荐统一）
 
-- `docs/**` 内部引用：优先用 **相对路径** Markdown 链接（可点击），例如 `[storage-minimal-design.md](architecture/storage-minimal-design.md)`。
+- `docs/**` 内部引用：优先用 **相对路径** Markdown 链接（可点击），例如 `[storage-minimal-design.md](architecture/storage/storage-minimal-design.md)`。
 - 仓库根目录（如 `README.md`）引用 docs：用 `docs/...` 形式的仓库相对路径链接，例如 `docs/README.md`。
 - “证据引用”（面向可复盘的实现证据）：使用 `path:line`（例如 `packages/anyagent/src/...:42`），放在反引号里，避免与文档链接混淆。
 

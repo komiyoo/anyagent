@@ -82,7 +82,7 @@ summary: 定义会话分片串行、幂等、事件补发与慢消费者治理�
 - `Lock Service`：按 `session_partition_key` 加租约锁（TTL + 续租）。
 - `Event Bus`：把 Worker 产生的增量事件广播给网关（也可与事件存储合并为“事件日志 + 订阅”）。
 
-存储落地（选型、schema、TTL/保留策略、一致性边界）见：[storage-minimal-design.md](storage-minimal-design.md)。
+存储落地（选型、schema、TTL/保留策略、一致性边界）见：[storage-minimal-design.md](../storage/storage-minimal-design.md)。
 
 ### 3.2.1 组件归属
 

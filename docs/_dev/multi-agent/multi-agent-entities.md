@@ -62,7 +62,7 @@ v0 默认单实例实现建议使用内存存储（in-memory），在 Agent API 
 
 ## 4) 迁移到持久化存储（后续）
 
-当 `todo/storage.md` 的选型完成后，可将 InMemoryThreadStore 的数据结构映射到表结构（示意）：
+当 `docs/architecture/storage/storage-minimal-design.md` 的存储选型继续演进后，可将 InMemoryThreadStore 的数据结构映射到表结构（示意）：
 
 - `threads`（主表）：`thread_id` 主键，包含上述 ThreadRecord 字段
 - `thread_edges`（关系表，可选）：`parent_thread_id -> child_thread_id`
@@ -72,4 +72,3 @@ v0 先保证接口稳定：
 - `thread_id` 语义稳定
 - `wait` 返回状态字段稳定
 - 审计/事件对齐可在持久化后补强
-

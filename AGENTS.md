@@ -27,7 +27,7 @@ anyagent = **配置即服务的 Agent Server 内核 + SDK**：
 
 ### 1.1 Agent-Naive Quickstart（首条消息 / 任务不明确时）
 
-1. 阅读 `README.md` 与 `docs/architecture/roadmap.md` 了解项目定位与当前阶段
+1. 阅读 `README.md` 与 `docs/architecture/overview/roadmap.md` 了解项目定位与当前阶段
 2. 运行 `python3 scripts/anyagent_progress.py --root .` 定位下一条 TODO
 3. 从 `todo/*.md` 定位任务条目，回溯到 `requirements.md#req-`*
 4. 不清晰时：向用户追问要改哪个模块

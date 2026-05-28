@@ -25,7 +25,7 @@ req: ["requirements.md#req-4", "requirements.md#req-9"]
 维护规则：
 
 - 公开 SDK 输入/输出类型优先从 `anyagent.types` 暴露；业务文档不要要求调用方直接拼 `anyagent.protocol.*` 的内部模块路径。
-- 新增 SDK namespace 或 helper 时，同步更新本文档与 `docs/architecture/responses-api-sdk-and-server.md` 的主路径说明；未完成工作记录在 `todo/sdk.md`。
+- 新增 SDK namespace 或 helper 时，同步更新本文档与 `docs/architecture/api/responses-api-sdk-and-server.md` 的主路径说明；未完成工作记录在 `todo/sdk.md`。
 - 新增或修改 wire contract 时，先改 `anyagent.protocol.*`，再改 SDK facade、server endpoint 与测试。
 
 ## 2. SDK Namespace Map
@@ -66,11 +66,11 @@ Facade 约束：
 SDK 文档入口按用途分层：
 
 - 总入口：[../README.md](../README.md)
-- 架构入口：[README.md](README.md)
+- 架构入口：[../README.md](../README.md)
 - Responses + Server 泳道：[responses-api-sdk-and-server.md](responses-api-sdk-and-server.md)
 - Stage Events 设计：[agent-api-client-stage-events.md](agent-api-client-stage-events.md)
-- OpenAI-first ADR：[decisions/openai-first-api-surface.md](decisions/openai-first-api-surface.md)
-- 测试策略：[testing-strategy.md](testing-strategy.md)
+- OpenAI-first ADR：[../decisions/openai-first-api-surface.md](../decisions/openai-first-api-surface.md)
+- 测试策略：[../testing/testing-strategy.md](../testing/testing-strategy.md)
 - SDK TODO：`todo/sdk.md`
 
 不要在 README、架构文档、TODO 和本文档之间复制同一段完整 API 说明。推荐分工：

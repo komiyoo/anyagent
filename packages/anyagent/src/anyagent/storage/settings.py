@@ -15,7 +15,7 @@ class StorageSettings(BaseSettings):
 
     Notes:
     - Keep fields optional until storage is actually wired into runtime paths.
-    - Env var names are frozen as part of req-3-1 / todo/storage.md.
+    - Env var names are frozen as part of req-3-1 / docs/architecture/storage/storage-minimal-design.md.
     """
 
     model_config = SettingsConfigDict(env_file=None, extra="ignore")

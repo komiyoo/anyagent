@@ -10,7 +10,7 @@ req: ["requirements.md#req-3-1"]
 
 # 存储层最小设计（v0）
 
-本文补齐 anyagent 在“无状态入口 + 可恢复执行”模式下所需的最小存储设计：技术选型、关键实体 schema、生命周期与一致性边界。它是 `requirements.md#req-3-1` 与 [stateless-agent-service-architecture.md](stateless-agent-service-architecture.md) 的落地补充。
+本文补齐 anyagent 在“无状态入口 + 可恢复执行”模式下所需的最小存储设计：技术选型、关键实体 schema、生命周期与一致性边界。它是 `requirements.md#req-3-1` 与 [stateless-agent-service-architecture.md](../runtime/stateless-agent-service-architecture.md) 的落地补充。
 
 当前口径补充：
 
@@ -373,5 +373,5 @@ v0 推荐用 Redis 实现 lease lock：
 
 ## 8. 与并发架构的关系
 
-- `docs/architecture/stateless-agent-service-architecture.md` 描述的是“并发模型与执行路径”；本文提供“这些组件落到存储上如何设计”。
+- [stateless-agent-service-architecture.md](../runtime/stateless-agent-service-architecture.md) 描述的是“并发模型与执行路径”；本文提供“这些组件落到存储上如何设计”。
 - v0 的关键验收点是：**命中幂等不会重复执行**、**断线可补发**、**会话内严格串行**。

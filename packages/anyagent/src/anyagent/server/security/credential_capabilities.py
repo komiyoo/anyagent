@@ -140,7 +140,7 @@ def build_credential_backend_capability_matrix() -> CredentialBackendCapabilityM
                 supports_list_refs=False,
                 read_only=True,
                 requires_extras=["postgres"],
-                source="docs/architecture/apps-packages-boundary.md",
+                source="docs/architecture/overview/apps-packages-boundary.md",
             ),
             CredentialBackendCapability(
                 mode="vault",
@@ -153,7 +153,7 @@ def build_credential_backend_capability_matrix() -> CredentialBackendCapabilityM
                 supports_delete=False,
                 supports_list_refs=False,
                 read_only=True,
-                source="docs/architecture/apps-packages-boundary.md",
+                source="docs/architecture/overview/apps-packages-boundary.md",
             ),
         ],
     )

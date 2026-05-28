@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 已完成条目已清理；历史记录请查看 Git。
-- 当前仓库已补回最小安全主路径：`SandboxPolicy` 协议、会话级 exec 沙箱、Credential Admin API 与统一 observability/audit envelope。长期口径见 `docs/security/`、`docs/architecture/sandbox-session-filesystem-design.md`、`docs/architecture/studio-control-plane-and-observability.md`。
+- 当前仓库已补回最小安全主路径：`SandboxPolicy` 协议、会话级 exec 沙箱、Credential Admin API 与统一 observability/audit envelope。长期口径见 `docs/security/`、`docs/architecture/runtime/sandbox-session-filesystem-design.md`、`docs/architecture/control-plane/studio-control-plane-and-observability.md`。
 
 ## 待处理
 
