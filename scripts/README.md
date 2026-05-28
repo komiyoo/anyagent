@@ -11,6 +11,7 @@
   - `code_ref_allowlist.txt` 标注 generated / illustrative / cross-repo inline refs，供 `check.py --check-code-refs` 使用。
 - `scripts/ci/`：CI/本地质量门入口，详见 [ci/README.md](ci/README.md)。
 - release / 镜像同步：
+  - `ci/build_release_artifacts.sh`
   - `publish-yunxiao-pypi.sh`
   - `publish-yunxiao-npm.sh`
   - `notify_release_start.py`
@@ -36,6 +37,7 @@ uv run --project packages/anyagent python scripts/export_protocol_schema.py --fo
 npm --prefix sdks/typescript run smoke
 bash scripts/ci/run_offline_smokes.sh
 bash scripts/ci/run_pytest_regressions.sh
+bash scripts/ci/build_release_artifacts.sh
 ```
 
 ## 维护规则

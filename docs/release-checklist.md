@@ -36,8 +36,9 @@ installation docs change.
    - `git tag -f vX.Y.Z`
    - `git push --force codeup vX.Y.Z`
 9. Let Yunxiao build and publish to Yunxiao Packages:
-   - Yunxiao pipeline: `4972656` (`anyagent build`) builds and verifies `packages/anyagent/dist/`
+   - Yunxiao pipeline: `4972656` (`anyagent build`) builds `packages/anyagent/dist/` with `bash scripts/ci/build_release_artifacts.sh`
    - the pipeline sends a Feishu notification before tests/build via `scripts/notify_release_start.py`
+   - the release build step should not run full pytest regressions; keep `scripts/ci/run_pytest_regressions.sh` and `scripts/ci/run_offline_smokes.sh` in the merge/CI gate before release
    - publishing uses the dedicated Packages PyPI repository `anyagent`
    - TypeScript SDK publishing uses the Packages NPM repository `npm-registry`
    - create the dedicated Yunxiao Packages PyPI repository before enabling publish; do not reuse the existing `lyriktrip` / `lyra-python-sdk` repository
@@ -64,7 +65,7 @@ installation docs change.
 ## Notes
 
 - Source of truth is Codeup: `https://codeup.aliyun.com/63d476f8d14a7f379aa798da/anyagent.git`.
-- Yunxiao pipeline `4972656` sends a Feishu pre-build notification, builds and verifies distributions from Codeup, uploads `packages/anyagent/dist/` as a Flow artifact, syncs the current branch to GitHub when mirror variables are configured, publishes to Yunxiao Packages PyPI when `TWINE_PASSWORD` is configured, and publishes the TypeScript SDK to Yunxiao Packages NPM when npm credentials are configured.
+- Yunxiao pipeline `4972656` sends a Feishu pre-build notification, builds and verifies distributions from Codeup with `scripts/ci/build_release_artifacts.sh`, uploads `packages/anyagent/dist/` as a Flow artifact, syncs the current branch to GitHub when mirror variables are configured, publishes to Yunxiao Packages PyPI when `TWINE_PASSWORD` is configured, and publishes the TypeScript SDK to Yunxiao Packages NPM when npm credentials are configured.
 - `scripts/notify_release_start.py` skips notification when `FEISHU_RELEASE_WEBHOOK_URL` is unset; when it is set, a failed Feishu response fails the build before package construction.
 - `anyagent-apps` consumes the installed/published `anyagent` package; it does not publish the SDK.
 - Yunxiao build uses the Aliyun PyPI mirror only for third-party dependency downloads.
