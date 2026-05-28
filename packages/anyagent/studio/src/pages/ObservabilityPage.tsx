@@ -51,8 +51,8 @@ type ObservabilityPageProps = {
   timeline: ObservabilityTimelineEvent[];
   trace: ObservabilityTrace | null;
   traceId: string;
-  source: "all" | ObservabilitySource;
-  status: "all" | "error" | "warning" | "success" | "denied";
+  sources: ObservabilitySource[];
+  statuses: Array<"error" | "warning" | "success" | "denied">;
   toolFilter: string;
   window: "all" | "hour" | "day";
   limit: number;
@@ -66,8 +66,8 @@ type ObservabilityPageProps = {
   onWindowChange: (value: "all" | "hour" | "day") => void;
   onLimitChange: (value: number) => void;
   onTraceIdChange: (value: string) => void;
-  onSourceChange: (value: "all" | ObservabilitySource) => void;
-  onStatusChange: (value: "all" | "error" | "warning" | "success" | "denied") => void;
+  onSourcesChange: (value: ObservabilitySource[]) => void;
+  onStatusesChange: (value: Array<"error" | "warning" | "success" | "denied">) => void;
   onToolFilterChange: (value: string) => void;
   onRefresh: () => void;
   onSelectRun: (responseId: string) => void;
@@ -87,8 +87,8 @@ export function ObservabilityPage({
   timeline,
   trace,
   traceId,
-  source,
-  status,
+  sources,
+  statuses,
   toolFilter,
   window,
   limit,
@@ -102,14 +102,17 @@ export function ObservabilityPage({
   onWindowChange,
   onLimitChange,
   onTraceIdChange,
-  onSourceChange,
-  onStatusChange,
+  onSourcesChange,
+  onStatusesChange,
   onToolFilterChange,
   onRefresh,
   onSelectRun,
   onInspectTrace,
   onNavigate,
 }: ObservabilityPageProps) {
+  const sourceOptions: ObservabilitySource[] = ["run", "event", "stage", "observability", "workspace", "audit"];
+  const statusOptions: Array<"error" | "warning" | "success" | "denied"> = ["error", "warning", "success", "denied"];
+
   return (
     <>
       <section className="section-block">
@@ -199,7 +202,14 @@ export function ObservabilityPage({
             ) : null}
             <div className="history-list">
               {runs.length === 0 ? (
-                <p className="empty">No run history available for the current agent/session.</p>
+                <div className="empty-state">
+                  <BarChart3 size={24} />
+                  <strong>No telemetry yet</strong>
+                  <p>No run history available for the current agent/session.</p>
+                  <Button size="sm" variant="primary" onPress={() => onNavigate("home")}>
+                    Start a request
+                  </Button>
+                </div>
               ) : (
                 runs.map((run) => (
                   <button
@@ -232,23 +242,43 @@ export function ObservabilityPage({
           </Card.Header>
           <Card.Content className="panel-content">
             <div className="filter-row">
-              <select className="native-select" aria-label="Telemetry source" value={source} onChange={(event) => onSourceChange(event.target.value as "all" | ObservabilitySource)}>
-                <option value="all">All sources</option>
-                <option value="run">Run</option>
-                <option value="event">Event</option>
-                <option value="stage">Stage</option>
-                <option value="observability">Log</option>
-                <option value="workspace">Workspace</option>
-                <option value="audit">Audit</option>
-              </select>
-              <select className="native-select" aria-label="Telemetry status" value={status} onChange={(event) => onStatusChange(event.target.value as "all" | "error" | "warning" | "success" | "denied")}>
-                <option value="all">All status</option>
-                <option value="error">Error</option>
-                <option value="warning">Warning</option>
-                <option value="success">Success</option>
-                <option value="denied">Denied</option>
-              </select>
               <Input aria-label="Telemetry filter" placeholder="tool, trace, audit" value={toolFilter} onChange={(event) => onToolFilterChange(event.target.value)} />
+            </div>
+            <div className="advanced-filter-grid">
+              <div>
+                <strong>Sources</strong>
+                <div className="filter-chip-row">
+                  {sourceOptions.map((option) => (
+                    <button
+                      className={`filter-chip ${sources.includes(option) ? "active" : ""}`}
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        onSourcesChange(sources.includes(option) ? sources.filter((item) => item !== option) : [...sources, option])
+                      }
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <strong>Status</strong>
+                <div className="filter-chip-row">
+                  {statusOptions.map((option) => (
+                    <button
+                      className={`filter-chip ${statuses.includes(option) ? "active" : ""}`}
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        onStatusesChange(statuses.includes(option) ? statuses.filter((item) => item !== option) : [...statuses, option])
+                      }
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="breakdown-list">
               {[

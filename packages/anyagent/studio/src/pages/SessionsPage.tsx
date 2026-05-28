@@ -1,6 +1,7 @@
 import { Button, Card } from "@heroui/react";
 import { MessageSquareText, RefreshCw } from "lucide-react";
 import { ObservabilityRunItem, StudioSettings } from "../anyagentClient";
+import { StudioTab } from "../navigation";
 import { formatCount } from "../studioUtils";
 
 type SessionsPageProps = {
@@ -11,9 +12,10 @@ type SessionsPageProps = {
   avgInputChars: number;
   onRefresh: () => void;
   onSelectRun: (responseId: string) => void;
+  onNavigate: (tab: StudioTab) => void;
 };
 
-export function SessionsPage({ settings, runs, selectedRun, turnCount, avgInputChars, onRefresh, onSelectRun }: SessionsPageProps) {
+export function SessionsPage({ settings, runs, selectedRun, turnCount, avgInputChars, onRefresh, onSelectRun, onNavigate }: SessionsPageProps) {
   return (
     <>
       <section className="section-block">
@@ -61,7 +63,14 @@ export function SessionsPage({ settings, runs, selectedRun, turnCount, avgInputC
         <Card.Content className="panel-content">
           <div className="history-list session-history">
             {runs.length === 0 ? (
-              <p className="empty">No response runs yet for this agent/session.</p>
+              <div className="empty-state">
+                <MessageSquareText size={24} />
+                <strong>Run your first session</strong>
+                <p>No response runs yet for this agent/session.</p>
+                <Button size="sm" variant="primary" onPress={() => onNavigate("home")}>
+                  Start session
+                </Button>
+              </div>
             ) : (
               runs.map((run) => (
                 <button

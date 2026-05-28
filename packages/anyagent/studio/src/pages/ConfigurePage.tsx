@@ -1,4 +1,6 @@
-import { FormEventHandler } from "react";
+import { Button, Card } from "@heroui/react";
+import { GitCompareArrows, History, RotateCcw } from "lucide-react";
+import { FormEventHandler, useMemo, useState } from "react";
 import {
   AgentDetail,
   AgentFileKind,
@@ -18,8 +20,9 @@ import { SkillsPage } from "./SkillsPage";
 import { ConnectionPanel } from "./configure/ConnectionPanel";
 import { CreateAgentPanel } from "./configure/CreateAgentPanel";
 import { EffectiveConfigPanel } from "./configure/EffectiveConfigPanel";
+import { AgentConfigDraftSnapshot, useConfigVersionStore } from "../stores/configVersionStore";
 
-type ConfigurePageProps = {
+export type ConfigurePageData = {
   activeBaseUrl: string;
   activeFileKind: AgentFileKind;
   agentConfigStatus: string;
@@ -76,6 +79,9 @@ type ConfigurePageProps = {
   skills: SkillSummary[];
   toolCatalog: ToolCatalog | null;
   toolCatalogStatus: string;
+};
+
+export type ConfigurePageActions = {
   onActiveFileKindChange: (kind: AgentFileKind) => void;
   onAddMcpDraft: () => void;
   onAgentExposedChange: (value: boolean) => void;
@@ -130,11 +136,21 @@ type ConfigurePageProps = {
   onToggleSkillEnabled: (skill: SkillSummary, enabled: boolean) => void;
   onToggleSkillSelection: (skill: SkillSummary, checked: boolean) => void;
   onUpdateMcpDraft: (index: number, patch: Partial<McpServerDraft>) => void;
+};
+
+export type ConfigurePageRefs = {
   skillDirectoryRef: (skill: SkillSummary) => string;
   skillDisableRef: (skill: SkillSummary) => string;
 };
 
-export function ConfigurePage({
+type ConfigurePageProps = {
+  actions: ConfigurePageActions;
+  data: ConfigurePageData;
+  refs: ConfigurePageRefs;
+};
+
+export function ConfigurePage({ actions, data, refs }: ConfigurePageProps) {
+  const {
   activeBaseUrl,
   activeFileKind,
   agentConfigStatus,
@@ -191,6 +207,8 @@ export function ConfigurePage({
   skills,
   toolCatalog,
   toolCatalogStatus,
+  } = data;
+  const {
   onActiveFileKindChange,
   onAddMcpDraft,
   onAgentExposedChange,
@@ -245,9 +263,72 @@ export function ConfigurePage({
   onToggleSkillEnabled,
   onToggleSkillSelection,
   onUpdateMcpDraft,
+  } = actions;
+  const {
   skillDirectoryRef,
   skillDisableRef,
-}: ConfigurePageProps) {
+  } = refs;
+  const [leftAgentId, setLeftAgentId] = useState(agentId);
+  const [rightAgentId, setRightAgentId] = useState(agents.find((agent) => agent.agent_id !== agentId)?.agent_id ?? agentId);
+  const { addSnapshot, removeSnapshot, snapshots } = useConfigVersionStore();
+  const currentConfig: AgentConfigDraftSnapshot = useMemo(
+    () => ({
+      agentId,
+      disabledSkillPaths,
+      exposed: agentExposed,
+      mcpJson,
+      modelApiKeyEnv: agentModelApiKeyEnv,
+      modelBaseUrlEnv: agentModelBaseUrlEnv,
+      modelDefault: agentModelDefault,
+      modelProvider: agentModelProvider,
+      sandboxMode: agentSandboxMode,
+      spawnText: agentSpawnText,
+      toolsText: agentToolsText,
+    }),
+    [
+      agentId,
+      agentExposed,
+      agentModelApiKeyEnv,
+      agentModelBaseUrlEnv,
+      agentModelDefault,
+      agentModelProvider,
+      agentSandboxMode,
+      agentSpawnText,
+      agentToolsText,
+      disabledSkillPaths,
+      mcpJson,
+    ],
+  );
+  const agentSnapshots = snapshots.filter((snapshot) => snapshot.agentId === agentId);
+  const baseline = agentSnapshots[0]?.config;
+  const configDiff = Object.entries(currentConfig).filter(([key, value]) => {
+    const previous = baseline?.[key as keyof AgentConfigDraftSnapshot];
+    return JSON.stringify(previous ?? "") !== JSON.stringify(value ?? "");
+  });
+  const leftAgent = agents.find((agent) => agent.agent_id === leftAgentId);
+  const rightAgent = agents.find((agent) => agent.agent_id === rightAgentId);
+  const compareRows = [
+    ["Exposed", String(leftAgent?.exposed ?? "-"), String(rightAgent?.exposed ?? "-")],
+    ["Model", leftAgent?.model_default ?? "-", rightAgent?.model_default ?? "-"],
+    ["Provider", leftAgent?.model_provider ?? "-", rightAgent?.model_provider ?? "-"],
+    ["Sandbox", leftAgent?.sandbox_mode ?? "-", rightAgent?.sandbox_mode ?? "-"],
+    ["Requested tools", String(leftAgent?.requested_tool_names?.length ?? 0), String(rightAgent?.requested_tool_names?.length ?? 0)],
+    ["Default skills", String(leftAgent?.default_selected_skills?.length ?? 0), String(rightAgent?.default_selected_skills?.length ?? 0)],
+  ];
+
+  function rollbackConfig(snapshot: AgentConfigDraftSnapshot) {
+    onAgentExposedChange(snapshot.exposed);
+    onAgentModelDefaultChange(snapshot.modelDefault);
+    onModelChange(snapshot.modelDefault);
+    onAgentModelProviderChange(snapshot.modelProvider);
+    onAgentModelApiKeyEnvChange(snapshot.modelApiKeyEnv);
+    onAgentModelBaseUrlEnvChange(snapshot.modelBaseUrlEnv);
+    onAgentSandboxModeChange(snapshot.sandboxMode);
+    onAgentToolsTextChange(snapshot.toolsText);
+    onAgentSpawnTextChange(snapshot.spawnText);
+    onDisabledSkillPathsChange(snapshot.disabledSkillPaths);
+  }
+
   return (
     <div className="main-grid configure-grid">
       <ConnectionPanel
@@ -329,6 +410,110 @@ export function ConfigurePage({
         onLoadAvailableTools={onLoadAvailableTools}
         onToggleRequestedTool={onToggleRequestedTool}
       />
+
+      <Card className="panel wide-panel">
+        <Card.Header className="panel-header">
+          <div className="panel-title">
+            <History size={18} />
+            <span>Config versions</span>
+          </div>
+          <Button size="sm" variant="secondary" onPress={() => addSnapshot(agentId, currentConfig)}>
+            Save snapshot
+          </Button>
+        </Card.Header>
+        <Card.Content className="panel-content">
+          <div className="version-grid">
+            <section className="version-column">
+              <div className="subsection-heading">
+                <span>Diff from latest snapshot</span>
+              </div>
+              <div className="breakdown-list">
+                {baseline ? (
+                  configDiff.length ? (
+                    configDiff.map(([key, value]) => (
+                      <div className="breakdown-row" key={key}>
+                        <span>{key}</span>
+                        <strong>{Array.isArray(value) ? value.join(", ") : String(value || "-")}</strong>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="breakdown-row">
+                      <span>No changes</span>
+                      <strong>clean</strong>
+                    </div>
+                  )
+                ) : (
+                  <div className="breakdown-row">
+                    <span>No baseline</span>
+                    <strong>save a snapshot</strong>
+                  </div>
+                )}
+              </div>
+            </section>
+            <section className="version-column">
+              <div className="subsection-heading">
+                <span>Snapshots</span>
+              </div>
+              <div className="snapshot-list">
+                {agentSnapshots.length ? (
+                  agentSnapshots.map((snapshot) => (
+                    <article className="snapshot-row" key={snapshot.id}>
+                      <div>
+                        <strong>{snapshot.name}</strong>
+                        <span>{new Date(snapshot.createdAt).toLocaleString()}</span>
+                      </div>
+                      <Button size="sm" variant="ghost" isIconOnly aria-label="Rollback snapshot" onPress={() => rollbackConfig(snapshot.config)}>
+                        <RotateCcw size={15} />
+                      </Button>
+                      <Button size="sm" variant="ghost" onPress={() => removeSnapshot(snapshot.id)}>
+                        Remove
+                      </Button>
+                    </article>
+                  ))
+                ) : (
+                  <p className="empty">Saved snapshots for the current agent appear here.</p>
+                )}
+              </div>
+            </section>
+          </div>
+        </Card.Content>
+      </Card>
+
+      <Card className="panel wide-panel">
+        <Card.Header className="panel-header">
+          <div className="panel-title">
+            <GitCompareArrows size={18} />
+            <span>Agent compare</span>
+          </div>
+        </Card.Header>
+        <Card.Content className="panel-content">
+          <div className="filter-row">
+            <select className="native-select" aria-label="Left agent" value={leftAgentId} onChange={(event) => setLeftAgentId(event.target.value)}>
+              {agents.map((agent) => (
+                <option key={`left-${agent.agent_id}`} value={agent.agent_id}>
+                  {agent.agent_id}
+                </option>
+              ))}
+            </select>
+            <select className="native-select" aria-label="Right agent" value={rightAgentId} onChange={(event) => setRightAgentId(event.target.value)}>
+              {agents.map((agent) => (
+                <option key={`right-${agent.agent_id}`} value={agent.agent_id}>
+                  {agent.agent_id}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="compare-table">
+            {compareRows.map(([label, left, right]) => (
+              <div className={left === right ? "" : "changed"} key={label}>
+                <span>{label}</span>
+                <strong>{left}</strong>
+                <strong>{right}</strong>
+              </div>
+            ))}
+          </div>
+        </Card.Content>
+      </Card>
 
       <SkillsPage
         skills={skills}

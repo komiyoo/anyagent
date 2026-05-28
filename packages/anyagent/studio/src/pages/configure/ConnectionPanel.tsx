@@ -44,6 +44,9 @@ export function ConnectionPanel({
   onRefresh,
   onResetStoredSettings,
 }: ConnectionPanelProps) {
+  const isTesting = connectionTestStatus === "Testing";
+  const serverError = connectionDraft.baseUrl.trim() ? "" : "Server URL is required.";
+
   return (
     <Card className="panel wide-panel compact-panel">
       <Card.Header className="panel-header">
@@ -53,11 +56,12 @@ export function ConnectionPanel({
         </div>
         <div className="editor-actions">
           <span>{hasDraftChanges ? "draft changes" : catalogStatus}</span>
-          <Button size="sm" variant="secondary" onPress={onTestConnection}>
+          <Button size="sm" variant="secondary" onPress={onTestConnection} isDisabled={isTesting || Boolean(serverError)}>
+            {isTesting ? <span className="button-spinner" aria-hidden="true" /> : null}
             <PlugZap size={15} />
             Test
           </Button>
-          <Button size="sm" variant="secondary" onPress={onApplyConnection} isDisabled={!hasDraftChanges}>
+          <Button size="sm" variant="secondary" onPress={onApplyConnection} isDisabled={!hasDraftChanges || Boolean(serverError)}>
             <Cable size={15} />
             Apply
           </Button>
@@ -94,6 +98,7 @@ export function ConnectionPanel({
               onChange={(event) => onConnectionDraftChange("baseUrl", event.target.value)}
               aria-label="Server"
             />
+            {serverError ? <small className="field-error">{serverError}</small> : null}
           </label>
           <label className="control-label">
             <span>API key</span>

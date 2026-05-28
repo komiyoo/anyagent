@@ -12,6 +12,7 @@ import {
   PackagePlus,
   Puzzle,
   Settings,
+  ShieldCheck,
   SlidersHorizontal,
   Wrench,
 } from "lucide-react";
@@ -33,6 +34,7 @@ export type StudioTab =
   | "mcp"
   | "tools"
   | "credentials"
+  | "audit"
   | "debug"
   | "files";
 
@@ -91,6 +93,7 @@ export const navGroupsByMode: Record<StudioMode, Array<{ label: string; items: N
       label: "Debug",
       items: [
         { icon: Bug, label: "Debug", target: "debug" },
+        { icon: ShieldCheck, label: "Audit", target: "audit" },
         { icon: FileText, label: "Files", target: "files" },
         { icon: Code2, label: "Settings", target: "settings" },
       ],
@@ -98,11 +101,54 @@ export const navGroupsByMode: Record<StudioMode, Array<{ label: string; items: N
   ],
 };
 
+const tabSet = new Set<StudioTab>([
+  "home",
+  "agents",
+  "sessions",
+  "observability",
+  "evaluations",
+  "prompts",
+  "settings",
+  "configure",
+  "skills",
+  "mcp",
+  "tools",
+  "credentials",
+  "audit",
+  "debug",
+  "files",
+]);
+
+const buildTabs = new Set<StudioTab>(["home", "agents", "settings", "configure", "skills", "mcp", "tools", "credentials", "audit", "debug", "files"]);
+
+export function defaultTabForMode(mode: StudioMode): StudioTab {
+  return mode === "build" ? "configure" : "home";
+}
+
+export function modeForTab(tab: StudioTab, fallback: StudioMode): StudioMode {
+  if (fallback === "build" && buildTabs.has(tab)) {
+    return "build";
+  }
+  return "use";
+}
+
+export function pathForTab(tab: StudioTab, mode: StudioMode): string {
+  return `/${mode}/${tab}`;
+}
+
+export function routeToStudioState(pathname: string): { mode: StudioMode; tab: StudioTab } {
+  const [first = "", second = ""] = pathname.split("/").filter(Boolean);
+  const mode: StudioMode = first === "build" ? "build" : "use";
+  const candidate = (second || first || defaultTabForMode(mode)) as StudioTab;
+  const tab = tabSet.has(candidate) ? candidate : defaultTabForMode(mode);
+  return { mode: modeForTab(tab, mode), tab };
+}
+
 export function sectionForTab(tab: StudioTab): StudioSection {
   if (tab === "observability" || tab === "sessions" || tab === "evaluations") {
     return "observability";
   }
-  if (tab === "debug" || tab === "prompts") {
+  if (tab === "debug" || tab === "prompts" || tab === "audit") {
     return "debug";
   }
   if (tab === "skills") {
@@ -137,6 +183,7 @@ export function titleForTab(tab: StudioTab): string {
     mcp: "MCP",
     tools: "Tools",
     credentials: "Credentials",
+    audit: "Audit",
     debug: "Debug",
     files: "Files",
   };
@@ -167,6 +214,7 @@ export function subtitleForTab(tab: StudioTab, mode: StudioMode): string {
     mcp: "Edit MCP server drafts and write mcp.json",
     tools: "Inspect effective and available tool catalogs",
     credentials: "Create and revoke Credential Vault references",
+    audit: "Review policy denials and audit-linked run records",
     debug: "Replay stage events and inspect low-level run payloads",
     files: "Edit agent pack source files",
   };

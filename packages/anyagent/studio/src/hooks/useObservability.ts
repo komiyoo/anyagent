@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChatMessage,
   ObservabilityErrorItem,
@@ -24,13 +24,14 @@ import { StudioTab } from "../navigation";
 import { eventType, firstNumber, formatCount, formatMs } from "../studioUtils";
 
 type ObservabilityStatus = "all" | "error" | "warning" | "success" | "denied";
+type ActiveObservabilityStatus = Exclude<ObservabilityStatus, "all">;
 
 type UseObservabilityOptions = {
   activeResponseId: string;
   messages: ChatMessage[];
   selectedSkillCount: number;
-  setActiveResponseId: Dispatch<SetStateAction<string>>;
-  setStageEvents: Dispatch<SetStateAction<StudioDebugEvent[]>>;
+  setActiveResponseId: (value: string) => void;
+  setStageEvents: (value: StudioDebugEvent[] | ((current: StudioDebugEvent[]) => StudioDebugEvent[])) => void;
   stageEvents: StudioDebugEvent[];
   streamEvents: StudioDebugEvent[];
 };
@@ -45,8 +46,8 @@ export function useObservability(settings: StudioSettings, options: UseObservabi
   const [observabilityTimeline, setObservabilityTimeline] = useState<ObservabilityTimelineEvent[]>([]);
   const [observabilityTrace, setObservabilityTrace] = useState<ObservabilityTrace | null>(null);
   const [observabilityTraceId, setObservabilityTraceId] = useState("");
-  const [observabilitySource, setObservabilitySource] = useState<"all" | ObservabilitySource>("all");
-  const [observabilityStatus, setObservabilityStatus] = useState<ObservabilityStatus>("all");
+  const [observabilitySources, setObservabilitySources] = useState<ObservabilitySource[]>([]);
+  const [observabilityStatuses, setObservabilityStatuses] = useState<ActiveObservabilityStatus[]>([]);
   const [observabilityToolFilter, setObservabilityToolFilter] = useState("");
   const [observabilityRefreshNonce, setObservabilityRefreshNonce] = useState(0);
   const [observabilityWindow, setObservabilityWindow] = useState<"all" | "hour" | "day">("all");
@@ -149,23 +150,23 @@ export function useObservability(settings: StudioSettings, options: UseObservabi
   const filteredObservabilityErrors = useMemo(() => {
     const needle = observabilityToolFilter.trim().toLowerCase();
     return observabilityErrors.filter((error) => {
-      if (observabilitySource !== "all" && error.source !== observabilitySource) return false;
-      if (observabilityStatus !== "all" && error.status !== observabilityStatus && error.payload?.status !== observabilityStatus) return false;
+      if (observabilitySources.length && !observabilitySources.includes(error.source)) return false;
+      if (observabilityStatuses.length && !observabilityStatuses.some((item) => error.status === item || error.payload?.status === item)) return false;
       if (!needle) return true;
       return [error.tool_name, error.type, error.message, error.trace_id].some((value) => String(value ?? "").toLowerCase().includes(needle));
     });
-  }, [observabilityErrors, observabilitySource, observabilityStatus, observabilityToolFilter]);
+  }, [observabilityErrors, observabilitySources, observabilityStatuses, observabilityToolFilter]);
   const filteredObservabilityTimeline = useMemo(() => {
     const needle = observabilityToolFilter.trim().toLowerCase();
     return observabilityTimeline.filter((event) => {
-      if (observabilitySource !== "all" && event.source !== observabilitySource) return false;
-      if (observabilityStatus !== "all" && event.status !== observabilityStatus && event.level !== observabilityStatus) return false;
+      if (observabilitySources.length && !observabilitySources.includes(event.source)) return false;
+      if (observabilityStatuses.length && !observabilityStatuses.some((item) => event.status === item || event.level === item)) return false;
       if (!needle) return true;
       return [event.tool_name, event.type, event.message, event.trace_id, event.audit_ref].some((value) =>
         String(value ?? "").toLowerCase().includes(needle),
       );
     });
-  }, [observabilitySource, observabilityStatus, observabilityTimeline, observabilityToolFilter]);
+  }, [observabilitySources, observabilityStatuses, observabilityTimeline, observabilityToolFilter]);
 
   const iterationSuggestions = useMemo(() => {
     const suggestions: Array<{ title: string; detail: string; target: StudioTab }> = [];
@@ -318,8 +319,8 @@ export function useObservability(settings: StudioSettings, options: UseObservabi
     observabilityMetrics,
     observabilityRefreshNonce,
     observabilityRuns,
-    observabilitySource,
-    observabilityStatus,
+    observabilitySources,
+    observabilityStatuses,
     observabilitySummary,
     observabilityTimeline,
     observabilityToolFilter,
@@ -332,8 +333,8 @@ export function useObservability(settings: StudioSettings, options: UseObservabi
     selectObservabilityRun,
     setObservabilityLimit,
     setObservabilityRefreshNonce,
-    setObservabilitySource,
-    setObservabilityStatus,
+    setObservabilitySources,
+    setObservabilityStatuses,
     setObservabilityToolFilter,
     setObservabilityTraceId,
     setObservabilityWindow,

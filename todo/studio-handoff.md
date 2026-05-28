@@ -4,7 +4,18 @@
 
 `packages/anyagent/studio/` 目录下的所有前端代码。这是 AnyAgent 的可视化管理控制台，一个 SPA，消费后端 typed API。
 
-任务清单：`todo/studio.md`（Phase S1–S8，共 36 个条目）
+任务清单：`todo/studio.md`（Phase S1–S8，共 36 个条目，当前已全部完成）
+
+## 当前状态（2026-05-28）
+
+- `todo/studio.md`：36/36 完成，Phase S1–S8 已落地
+- 新增前端依赖：`react-router-dom`、`zustand`、`react-markdown`
+- 新增本地持久化 store：chat、settings、agent config、UI/theme、toast、evaluation、config snapshots
+- 已完成验证：
+  - `rtk npm run build`（`packages/anyagent/studio`）
+  - `rtk python3 scripts/docs/check.py --root .`
+  - `rtk python3 scripts/anyagent_progress.py --root .` 显示 `todo/studio.md [all]: 36/36`
+- 本地 dev server 可通过 `http://127.0.0.1:5177/studio/` 返回 Vite HTML。当前环境未安装 Playwright package，且本轮未暴露 in-app Browser callable tool，因此浏览器级点击烟测未完整执行。
 
 ## 技术栈（已选定，不要更换）
 
@@ -28,9 +39,9 @@
 
 4. **性能预算**：首屏 LCP < 2s，交互 INP < 100ms
 
-## 执行顺序
+## 已执行顺序
 
-**必须先做 Phase S1**（架构治理），它阻塞后续所有功能迭代。
+已按 Phase S1 优先的顺序推进；S8 在末尾统一收口响应式与可访问性。
 
 ```
 S1 (架构治理) ──→ S2 (Chat) ──→ S5 (Eval/Playground)
@@ -44,7 +55,7 @@ S1 (架构治理) ──→ S2 (Chat) ──→ S5 (Eval/Playground)
 S8 (响应式/a11y) 可随时并行
 ```
 
-## Phase S1 技术方案（已决定，需在 S1 中落地）
+## Phase S1 技术方案（已落地）
 
 | 条目 | 方案 |
 |------|------|
@@ -59,7 +70,7 @@ S8 (响应式/a11y) 可随时并行
 - 浏览器前进/后退正常
 - `npm run build` 零 TS 错误
 
-## 开发流程
+## 后续开发流程
 
 1. 从 `main` 切分支，命名 `studio/<phase>-<简述>`（如 `studio/s1-state-refactor`）
 2. 每个 Phase 完成后提 PR，PR 描述里标注完成了 `todo/studio.md` 哪些条目

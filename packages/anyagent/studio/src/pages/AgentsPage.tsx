@@ -1,6 +1,6 @@
 import { Button, Card, Chip, Input, TextArea } from "@heroui/react";
 import { Bot, RefreshCw, Sparkles, SquarePen } from "lucide-react";
-import { FormEvent } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { AgentDetail, AgentSummary, McpServerDraft, StudioSettings, ToolCatalog } from "../anyagentClient";
 import { StudioMode, StudioTab } from "../navigation";
 import { formatCount } from "../studioUtils";
@@ -48,6 +48,20 @@ export function AgentsPage({
   onNewAgentToolsChange,
   onNewAgentInstructionsChange,
 }: AgentsPageProps) {
+  const [agentFilter, setAgentFilter] = useState("");
+  const visibleAgents = useMemo(() => {
+    const agentList = agents.length ? agents : [{ agent_id: settings.agentId }];
+    const needle = agentFilter.trim().toLowerCase();
+    if (!needle) {
+      return agentList;
+    }
+    return agentList.filter((agent) =>
+      [agent.agent_id, agent.model_default, agent.model_provider, agent.sandbox_mode].some((value) =>
+        String(value ?? "").toLowerCase().includes(needle),
+      ),
+    );
+  }, [agentFilter, agents, settings.agentId]);
+
   return (
     <>
       <section className="section-block">
@@ -56,8 +70,11 @@ export function AgentsPage({
           <h2>{mode === "use" ? "Choose an agent" : "Agent packs"}</h2>
           <span>{mode === "use" ? "Use an exposed workspace agent" : `${agents.length} workspace agents`}</span>
         </div>
+        <div className="filter-row">
+          <Input aria-label="Search agents" placeholder="Search agents by name, model, provider" value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)} />
+        </div>
         <div className="agent-directory">
-          {(agents.length ? agents : [{ agent_id: settings.agentId }]).map((agent) => (
+          {visibleAgents.map((agent) => (
             <button
               className={`agent-directory-row ${settings.agentId === agent.agent_id ? "active" : ""}`}
               key={agent.agent_id}

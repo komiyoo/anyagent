@@ -1,6 +1,6 @@
 import { Button, Card, Input, TextArea } from "@heroui/react";
 import { Sparkles } from "lucide-react";
-import { FormEvent } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { SkillChannel, SkillSummary } from "../anyagentClient";
 import { displayText } from "../studioUtils";
 
@@ -65,6 +65,28 @@ export function SkillsPage({
   skillDisableRef,
   skillDirectoryRef,
 }: SkillsPageProps) {
+  const [skillFilter, setSkillFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState<"all" | "selected" | "enabled" | "disabled" | "updates">("all");
+  const filteredSkills = useMemo(() => {
+    const needle = skillFilter.trim().toLowerCase();
+    return skills.filter((skill) => {
+      const directoryName = skillDirectoryRef(skill);
+      const disableRef = skillDisableRef(skill);
+      const skillLabel = displayText(skill.name, skill.stable_id ?? "skill");
+      const isSelected = skillSelection.includes(displayText(skill.name, skill.stable_id ?? ""));
+      const isDisabled = disabledSkillPaths.includes(disableRef);
+      const hasUpdateStatus = Boolean(skillUpdateStatus[directoryName]);
+      if (tagFilter === "selected" && !isSelected) return false;
+      if (tagFilter === "enabled" && isDisabled) return false;
+      if (tagFilter === "disabled" && !isDisabled) return false;
+      if (tagFilter === "updates" && !hasUpdateStatus) return false;
+      if (!needle) return true;
+      return [skillLabel, skill.stable_id, displayText(skill.path, ""), directoryName, skillUpdateStatus[directoryName]].some((value) =>
+        String(value ?? "").toLowerCase().includes(needle),
+      );
+    });
+  }, [disabledSkillPaths, skillDirectoryRef, skillDisableRef, skillFilter, skillSelection, skillUpdateStatus, skills, tagFilter]);
+
   return (
     <div className="main-grid configure-grid">
       <Card className="panel wide-panel">
@@ -114,11 +136,22 @@ export function SkillsPage({
             <span className="status-line">{skillImportStatus}</span>
           </form>
 
+          <div className="filter-row">
+            <Input aria-label="Search skills" placeholder="Search skills by name, path, status" value={skillFilter} onChange={(event) => setSkillFilter(event.target.value)} />
+            <select className="native-select" aria-label="Skill tag filter" value={tagFilter} onChange={(event) => setTagFilter(event.target.value as typeof tagFilter)}>
+              <option value="all">All tags</option>
+              <option value="selected">Selected</option>
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Disabled</option>
+              <option value="updates">Update checked</option>
+            </select>
+          </div>
+
           <div className="skill-list">
-            {skills.length === 0 ? (
+            {filteredSkills.length === 0 ? (
               <p className="empty">Installed skills from the selected workspace appear here.</p>
             ) : (
-              skills.map((skill) => {
+              filteredSkills.map((skill) => {
                 const directoryName = skillDirectoryRef(skill);
                 const disableRef = skillDisableRef(skill);
                 const skillLabel = displayText(skill.name, skill.stable_id ?? "skill");

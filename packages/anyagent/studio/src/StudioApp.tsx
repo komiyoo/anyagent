@@ -8,6 +8,7 @@ import {
   Home,
   KeyRound,
   Layers3,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   PackagePlus,
@@ -17,14 +18,13 @@ import {
   Search,
   Settings,
   Sparkles,
+  Sun,
 } from "lucide-react";
-import { FormEvent, lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
-  AgentDetail,
   ChatMessage,
-  AdminStatus,
-  StudioDebugEvent,
-  StudioSettings,
+  SkillSummary,
   createAgent,
   getCredentialCapabilities,
   getHealth,
@@ -45,69 +45,129 @@ import { useObservability } from "./hooks/useObservability";
 import { useSkillsManagement } from "./hooks/useSkillsManagement";
 import { useToolCatalog } from "./hooks/useToolCatalog";
 import { useWorkspaceCatalog } from "./hooks/useWorkspaceCatalog";
-import { navGroupsByMode, sectionForTab, StudioMode, StudioTab, subtitleForTab, titleForTab } from "./navigation";
-import { clearStoredSettings, ConnectionDraft, envSettings, normalizeBaseUrl, normalizeSettings, readStoredSettings, writeStoredSettings } from "./studioSettings";
+import {
+  modeForTab,
+  navGroupsByMode,
+  pathForTab,
+  routeToStudioState,
+  sectionForTab,
+  StudioMode,
+  StudioTab,
+  subtitleForTab,
+  titleForTab,
+} from "./navigation";
+import { PageErrorBoundary } from "./components/PageErrorBoundary";
+import { PageSkeleton } from "./components/PageSkeleton";
+import { ToastViewport } from "./components/ToastViewport";
+import {
+  AgentsPage,
+  AuditPage,
+  ConfigurePage,
+  CredentialsPage,
+  DebugPage,
+  EvaluationsPage,
+  FilesPage,
+  HomePage,
+  McpPage,
+  ObservabilityPage,
+  preloadStudioPage,
+  PromptsPage,
+  SessionsPage,
+  SettingsPage,
+  SkillsPage,
+  ToolsPage,
+} from "./pages/lazyPages";
+import { useAgentConfigStore } from "./stores/agentConfigStore";
+import { StudioConversation, useChatStore } from "./stores/chatStore";
+import { useSettingsStore } from "./stores/settingsStore";
+import { useToastStore } from "./stores/toastStore";
+import { useUiStore } from "./stores/uiStore";
+import { normalizeBaseUrl, normalizeSettings } from "./studioSettings";
 import {
   csvToList,
   shortHash,
 } from "./studioUtils";
 
-const AgentsPage = lazy(() => import("./pages/AgentsPage").then((module) => ({ default: module.AgentsPage })));
-const ConfigurePage = lazy(() => import("./pages/ConfigurePage").then((module) => ({ default: module.ConfigurePage })));
-const CredentialsPage = lazy(() => import("./pages/CredentialsPage").then((module) => ({ default: module.CredentialsPage })));
-const DebugPage = lazy(() => import("./pages/DebugPage").then((module) => ({ default: module.DebugPage })));
-const EvaluationsPage = lazy(() => import("./pages/EvaluationsPage").then((module) => ({ default: module.EvaluationsPage })));
-const FilesPage = lazy(() => import("./pages/FilesPage").then((module) => ({ default: module.FilesPage })));
-const HomePage = lazy(() => import("./pages/HomePage").then((module) => ({ default: module.HomePage })));
-const McpPage = lazy(() => import("./pages/McpPage").then((module) => ({ default: module.McpPage })));
-const ObservabilityPage = lazy(() => import("./pages/ObservabilityPage").then((module) => ({ default: module.ObservabilityPage })));
-const PromptsPage = lazy(() => import("./pages/PromptsPage").then((module) => ({ default: module.PromptsPage })));
-const SessionsPage = lazy(() => import("./pages/SessionsPage").then((module) => ({ default: module.SessionsPage })));
-const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })));
-const SkillsPage = lazy(() => import("./pages/SkillsPage").then((module) => ({ default: module.SkillsPage })));
-const ToolsPage = lazy(() => import("./pages/ToolsPage").then((module) => ({ default: module.ToolsPage })));
-
 export function StudioApp() {
-  const [settings, setSettings] = useState<StudioSettings>(() => readStoredSettings());
-  const [connectionDraft, setConnectionDraft] = useState<ConnectionDraft>(() => {
-    const initial = readStoredSettings();
-    return { baseUrl: initial.baseUrl, apiKey: initial.apiKey, adminKey: initial.adminKey };
-  });
-  const [settingsStatus, setSettingsStatus] = useState("Loaded");
-  const [connectionTestStatus, setConnectionTestStatus] = useState("Not tested");
-  const [studioMode, setStudioMode] = useState<StudioMode>("use");
-  const [activeTab, setActiveTab] = useState<StudioTab>("home");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content: "AnyAgent Studio is ready. Pick an agent, inspect its pack, then run a client session.",
-    },
-  ]);
-  const [input, setInput] = useState("用当前 agent 的配置介绍一下你能做什么。");
-  const [isRunning, setIsRunning] = useState(false);
-  const [activeResponseId, setActiveResponseId] = useState<string>("");
-  const [streamEvents, setStreamEvents] = useState<StudioDebugEvent[]>([]);
-  const [stageEvents, setStageEvents] = useState<StudioDebugEvent[]>([]);
-  const [promptBundle, setPromptBundle] = useState<Record<string, unknown> | null>(null);
-  const [newAgentId, setNewAgentId] = useState("sales-agent");
-  const [newAgentTools, setNewAgentTools] = useState("");
-  const [newAgentInstructions, setNewAgentInstructions] = useState("你是一个面向业务团队的 AnyAgent agent。");
-  const [agentCreateStatus, setAgentCreateStatus] = useState("Ready");
-  const [agentExposed, setAgentExposed] = useState(true);
-  const [agentModelDefault, setAgentModelDefault] = useState("");
-  const [agentModelProvider, setAgentModelProvider] = useState("openai");
-  const [agentModelBaseUrlEnv, setAgentModelBaseUrlEnv] = useState("OPENAI_BASE_URL");
-  const [agentModelApiKeyEnv, setAgentModelApiKeyEnv] = useState("OPENAI_API_KEY");
-  const [agentSandboxMode, setAgentSandboxMode] = useState("disabled");
-  const [agentToolsText, setAgentToolsText] = useState("");
-  const [agentSpawnText, setAgentSpawnText] = useState("");
-  const [agentConfigStatus, setAgentConfigStatus] = useState("Ready");
-  const [serverHealth, setServerHealth] = useState<AdminStatus | null>(null);
-  const [storageHealth, setStorageHealth] = useState<AdminStatus | null>(null);
-  const [credentialCapabilities, setCredentialCapabilities] = useState<AdminStatus | null>(null);
-  const [adminStatus, setAdminStatus] = useState("Not loaded");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { mode: studioMode, tab: activeTab } = useMemo(() => routeToStudioState(location.pathname), [location.pathname]);
+  const navigateToTab = (tab: StudioTab, mode: StudioMode = modeForTab(tab, studioMode)) => {
+    navigate(pathForTab(tab, mode));
+  };
+  const warmPage = (tab: StudioTab) => {
+    preloadStudioPage(tab);
+  };
+  const { sidebarCollapsed, setSidebarCollapsed, theme, toggleTheme } = useUiStore();
+  const showToast = useToastStore((state) => state.showToast);
+  const {
+    adminStatus,
+    applyConnectionDraft,
+    connectionDraft,
+    connectionTestStatus,
+    credentialCapabilities,
+    resetStoredSettings,
+    serverHealth,
+    setAdminHealth,
+    setAdminStatus,
+    setConnectionTestStatus,
+    settings,
+    settingsStatus,
+    storageHealth,
+    updateConnectionDraft,
+    updateSettings,
+  } = useSettingsStore();
+  const {
+    activeConversationId,
+    activeResponseId,
+    conversations,
+    input,
+    isRunning,
+    messages,
+    newConversation,
+    promptBundle,
+    renameConversation,
+    replaceMessage,
+    selectConversation,
+    setActiveResponseId,
+    setInput,
+    setIsRunning,
+    setMessages,
+    setPromptBundle,
+    setStageEvents,
+    setStreamEvents,
+    stageEvents,
+    streamEvents,
+  } = useChatStore();
+  const {
+    agentConfigStatus,
+    agentCreateStatus,
+    agentExposed,
+    agentModelApiKeyEnv,
+    agentModelBaseUrlEnv,
+    agentModelDefault,
+    agentModelProvider,
+    agentSandboxMode,
+    agentSpawnText,
+    agentToolsText,
+    newAgentId,
+    newAgentInstructions,
+    newAgentTools,
+    setAgentConfigStatus,
+    setAgentCreateStatus,
+    setAgentExposed,
+    setAgentModelApiKeyEnv,
+    setAgentModelBaseUrlEnv,
+    setAgentModelDefault,
+    setAgentModelProvider,
+    setAgentSandboxMode,
+    setAgentSpawnText,
+    setAgentToolsText,
+    setNewAgentId,
+    setNewAgentInstructions,
+    setNewAgentTools,
+    syncFromAgentDetail,
+  } = useAgentConfigStore();
   const { agents, agentDetail, skills, status, refresh } = useWorkspaceCatalog(settings);
   const {
     agentFiles,
@@ -195,6 +255,25 @@ export function StudioApp() {
     submitCredential,
   } = useCredentials(settings);
   const activeSection = sectionForTab(activeTab);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState("");
+
+  useEffect(() => {
+    preloadStudioPage(activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 860px)");
+    const syncSidebar = () => setSidebarCollapsed(media.matches);
+    syncSidebar();
+    media.addEventListener("change", syncSidebar);
+    return () => media.removeEventListener("change", syncSidebar);
+  }, [setSidebarCollapsed]);
+
+  useEffect(() => {
+    const likelyNext = studioMode === "build" ? ["configure", "skills", "mcp", "tools"] : ["home", "agents", "sessions", "observability"];
+    likelyNext.forEach((tab) => preloadStudioPage(tab as StudioTab));
+  }, [studioMode]);
 
   const activeConnection = useMemo(
     () => ({
@@ -231,8 +310,8 @@ export function StudioApp() {
     observabilityLimit,
     observabilityMetrics,
     observabilityRuns,
-    observabilitySource,
-    observabilityStatus,
+    observabilitySources,
+    observabilityStatuses,
     observabilitySummary,
     observabilityTimeline,
     observabilityToolFilter,
@@ -245,8 +324,8 @@ export function StudioApp() {
     selectObservabilityRun,
     setObservabilityLimit,
     setObservabilityRefreshNonce,
-    setObservabilitySource,
-    setObservabilityStatus,
+    setObservabilitySources,
+    setObservabilityStatuses,
     setObservabilityToolFilter,
     setObservabilityTraceId,
     setObservabilityWindow,
@@ -271,39 +350,61 @@ export function StudioApp() {
       })),
     [studioMode, streamEvents.length, stageEvents.length],
   );
+  const commandItems = useMemo(() => {
+    const pageItems = navGroups
+      .flatMap((group) => group.items)
+      .map((item) => ({ label: item.label, detail: "Page", tab: item.target, mode: modeForTab(item.target, studioMode) }));
+    const agentItems = agents.map((agent) => ({ label: agent.agent_id, detail: "Agent", tab: "agents" as StudioTab, mode: studioMode }));
+    const toolItems = (toolCatalog?.tools ?? availableTools?.tools ?? []).map((tool) => ({
+      label: tool.name,
+      detail: tool.kind || "Tool",
+      tab: "tools" as StudioTab,
+      mode: "build" as StudioMode,
+    }));
+    const skillItems = skills.map((skill) => ({
+      label: String(skill.name ?? skill.stable_id ?? "skill"),
+      detail: "Skill",
+      tab: "skills" as StudioTab,
+      mode: "build" as StudioMode,
+    }));
+    const credentialItems = credentials.map((credential) => ({
+      label: credential.credential_id,
+      detail: credential.kind,
+      tab: "credentials" as StudioTab,
+      mode: "build" as StudioMode,
+    }));
+    const needle = commandQuery.trim().toLowerCase();
+    return [...pageItems, ...agentItems, ...toolItems, ...skillItems, ...credentialItems]
+      .filter((item) => !needle || [item.label, item.detail].some((value) => value.toLowerCase().includes(needle)))
+      .slice(0, 12);
+  }, [agents, availableTools?.tools, commandQuery, credentials, navGroups, skills, studioMode, toolCatalog?.tools]);
 
-  function updateSettings<K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) {
-    setSettings((previous) => {
-      const next = normalizeSettings({ ...previous, [key]: value });
-      writeStoredSettings(next);
-      setSettingsStatus("Saved");
-      return next;
-    });
-  }
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen((current) => !current);
+      }
+      if (event.key === "Escape") {
+        setCommandOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
-  function updateConnectionDraft<K extends keyof ConnectionDraft>(key: K, value: ConnectionDraft[K]) {
-    setConnectionDraft((previous) => ({ ...previous, [key]: value }));
-    setConnectionTestStatus("Not tested");
-    setSettingsStatus("Unsaved connection changes");
-  }
-
-  function applyConnectionDraft() {
-    setSettings((previous) => {
-      const next = normalizeSettings({ ...previous, ...connectionDraft });
-      writeStoredSettings(next);
-      setConnectionDraft({ baseUrl: next.baseUrl, apiKey: next.apiKey, adminKey: next.adminKey });
-      setSettingsStatus("Connection applied and saved");
-      return next;
-    });
-  }
-
-  function resetStoredSettings() {
-    clearStoredSettings();
-    const next = normalizeSettings(envSettings);
-    setSettings(next);
-    setConnectionDraft({ baseUrl: next.baseUrl, apiKey: next.apiKey, adminKey: next.adminKey });
-    setSettingsStatus("Reset to environment defaults");
-    setConnectionTestStatus("Not tested");
+  function handleSidebarKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+      return;
+    }
+    const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>(".nav-item"));
+    const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (currentIndex === -1) {
+      return;
+    }
+    event.preventDefault();
+    const offset = event.key === "ArrowDown" ? 1 : -1;
+    buttons[(currentIndex + offset + buttons.length) % buttons.length]?.focus();
   }
 
   async function testConnectionDraft() {
@@ -320,33 +421,37 @@ export function StudioApp() {
         }
       }
       setConnectionTestStatus(`Connected${nextAgents.length ? ` · ${nextAgents.length} agents` : ""}`);
+      showToast("success", `Connected to ${normalizeBaseUrl(testSettings.baseUrl)}`);
     } catch (error) {
-      setConnectionTestStatus(error instanceof Error ? error.message : "Connection failed");
+      const message = error instanceof Error ? error.message : "Connection failed";
+      setConnectionTestStatus(message);
+      showToast("error", message);
     }
   }
 
-  useEffect(() => {
-    setAgentExposed(agentDetail?.exposed ?? true);
-    setAgentModelDefault(agentDetail?.model?.default ?? agentDetail?.model_default ?? settings.model);
-    setAgentModelProvider(agentDetail?.model?.provider ?? agentDetail?.model_provider ?? "openai");
-    setAgentModelBaseUrlEnv(agentDetail?.model?.base_url_env ?? agentDetail?.model_base_url_env ?? "OPENAI_BASE_URL");
-    setAgentModelApiKeyEnv(agentDetail?.model?.api_key_env ?? agentDetail?.model_api_key_env ?? "OPENAI_API_KEY");
-    setAgentSandboxMode(agentDetail?.sandbox?.mode ?? agentDetail?.sandbox_mode ?? "disabled");
-    setAgentToolsText((agentDetail?.tools?.requested_tool_names ?? agentDetail?.requested_tool_names ?? []).join(", "));
-    setAgentSpawnText((agentDetail?.multiagent?.spawn_allow_agent_ids ?? []).join(", "));
-  }, [agentDetail]);
-
-  async function submitChat(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed || isRunning) {
+  function applyConnectionWithToast() {
+    if (!connectionDraft.baseUrl.trim()) {
+      showToast("error", "Server URL is required.");
       return;
     }
-    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: trimmed };
-    const assistantMessage: ChatMessage = { id: crypto.randomUUID(), role: "assistant", content: "" };
-    const nextMessages = [...messages, userMessage, assistantMessage];
+    applyConnectionDraft();
+    showToast("success", "Connection settings saved.");
+  }
+
+  function resetStoredSettingsWithConfirm() {
+    if (!window.confirm("Reset browser-local Studio settings?")) {
+      return;
+    }
+    resetStoredSettings();
+    showToast("info", "Studio settings reset.");
+  }
+
+  useEffect(() => {
+    syncFromAgentDetail(agentDetail, settings.model);
+  }, [agentDetail, settings.model, syncFromAgentDetail]);
+
+  async function runAssistantTurn(nextMessages: ChatMessage[], assistantMessageId: string) {
     setMessages(nextMessages);
-    setInput("");
     setIsRunning(true);
     setStreamEvents([]);
     setStageEvents([]);
@@ -356,11 +461,11 @@ export function StudioApp() {
     try {
       const result = await runChat(
         settings,
-        nextMessages.filter((message) => message.id !== assistantMessage.id),
+        nextMessages.filter((message) => message.id !== assistantMessageId),
         (delta) => {
           setMessages((current) =>
             current.map((message) =>
-              message.id === assistantMessage.id ? { ...message, content: message.content + delta } : message,
+              message.id === assistantMessageId ? { ...message, content: message.content + delta } : message,
             ),
           );
         },
@@ -375,7 +480,7 @@ export function StudioApp() {
     } catch (error) {
       setMessages((current) =>
         current.map((message) =>
-          message.id === assistantMessage.id
+          message.id === assistantMessageId
             ? { ...message, content: error instanceof Error ? error.message : "Request failed" }
             : message,
         ),
@@ -383,6 +488,57 @@ export function StudioApp() {
     } finally {
       setIsRunning(false);
     }
+  }
+
+  async function submitChat(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = input.trim();
+    if (!trimmed || isRunning) {
+      return;
+    }
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: trimmed };
+    const assistantMessage: ChatMessage = { id: crypto.randomUUID(), role: "assistant", content: "" };
+    setInput("");
+    await runAssistantTurn([...messages, userMessage, assistantMessage], assistantMessage.id);
+  }
+
+  async function regenerateAssistant(assistantMessageId: string) {
+    if (isRunning) {
+      return;
+    }
+    const assistantIndex = messages.findIndex((message) => message.id === assistantMessageId);
+    if (assistantIndex < 1) {
+      return;
+    }
+    const previousMessages = messages.slice(0, assistantIndex);
+    const userIndex = [...previousMessages].reverse().findIndex((message) => message.role === "user");
+    if (userIndex === -1) {
+      return;
+    }
+    const assistantMessage: ChatMessage = { id: crypto.randomUUID(), role: "assistant", content: "" };
+    await runAssistantTurn([...previousMessages, assistantMessage], assistantMessage.id);
+  }
+
+  async function editUserMessageAndResend(messageId: string, content: string) {
+    if (isRunning) {
+      return;
+    }
+    const messageIndex = messages.findIndex((message) => message.id === messageId);
+    if (messageIndex === -1 || messages[messageIndex].role !== "user") {
+      return;
+    }
+    const trimmed = content.trim();
+    if (!trimmed) {
+      return;
+    }
+    replaceMessage(messageId, trimmed);
+    const assistantMessage: ChatMessage = { id: crypto.randomUUID(), role: "assistant", content: "" };
+    const nextMessages = [
+      ...messages.slice(0, messageIndex),
+      { ...messages[messageIndex], content: trimmed },
+      assistantMessage,
+    ];
+    await runAssistantTurn(nextMessages, assistantMessage.id);
   }
 
   async function loadPromptPreview() {
@@ -395,16 +551,29 @@ export function StudioApp() {
     event.preventDefault();
     setAgentCreateStatus("Creating");
     try {
-      const requestedToolNames = newAgentTools
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
+    const requestedToolNames = newAgentTools
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+      if (!/^[a-zA-Z0-9._-]+$/.test(newAgentId.trim())) {
+        setAgentCreateStatus("Agent id must use letters, numbers, dot, dash, or underscore");
+        showToast("error", "Agent id format is invalid.");
+        return;
+      }
+      if (!newAgentInstructions.trim()) {
+        setAgentCreateStatus("Instructions are required");
+        showToast("error", "Agent instructions are required.");
+        return;
+      }
       const created = await createAgent(settings, newAgentId, `${newAgentInstructions.trim()}\n`, requestedToolNames);
       setAgentCreateStatus(`Created ${created.agent.agent_id}`);
+      showToast("success", `Created ${created.agent.agent_id}`);
       updateSettings("agentId", created.agent.agent_id);
       await refresh();
     } catch (error) {
-      setAgentCreateStatus(error instanceof Error ? error.message : "Create failed");
+      const message = error instanceof Error ? error.message : "Create failed";
+      setAgentCreateStatus(message);
+      showToast("error", message);
     }
   }
 
@@ -428,11 +597,14 @@ export function StudioApp() {
         disabled_skill_paths: disabledSkillPaths,
       });
       setAgentConfigStatus(`Saved ${updated.agent.agent_id}`);
+      showToast("success", `Saved ${updated.agent.agent_id}`);
       await refresh();
       await loadToolCatalog();
       await loadAgentFiles();
     } catch (error) {
-      setAgentConfigStatus(error instanceof Error ? error.message : "Save failed");
+      const message = error instanceof Error ? error.message : "Save failed";
+      setAgentConfigStatus(message);
+      showToast("error", message);
     }
   }
 
@@ -444,15 +616,22 @@ export function StudioApp() {
         getStorageHealth(settings),
         getCredentialCapabilities(settings),
       ]);
-      setServerHealth(health);
-      setStorageHealth(storage);
-      setCredentialCapabilities(capabilities);
-      setAdminStatus("Ready");
+      setAdminHealth({
+        adminStatus: "Ready",
+        credentialCapabilities: capabilities,
+        serverHealth: health,
+        storageHealth: storage,
+      });
+      showToast("success", "Admin health loaded.");
     } catch (error) {
-      setServerHealth(null);
-      setStorageHealth(null);
-      setCredentialCapabilities(null);
-      setAdminStatus(error instanceof Error ? error.message : "Admin check failed");
+      const message = error instanceof Error ? error.message : "Admin check failed";
+      setAdminHealth({
+        adminStatus: message,
+        credentialCapabilities: null,
+        serverHealth: null,
+        storageHealth: null,
+      });
+      showToast("error", message);
     }
   }
 
@@ -473,8 +652,46 @@ export function StudioApp() {
   ];
 
   return (
-    <main className={`studio-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-      <aside className="sidebar">
+    <main className={`studio-shell theme-${theme} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      <ToastViewport />
+      {commandOpen ? (
+        <div className="command-backdrop" role="presentation" onMouseDown={() => setCommandOpen(false)}>
+          <div className="command-palette" role="dialog" aria-label="Global search" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="command-input-row">
+              <Search size={17} />
+              <input
+                autoFocus
+                aria-label="Global search"
+                placeholder="Search pages, agents, tools, skills, credentials"
+                value={commandQuery}
+                onChange={(event) => setCommandQuery(event.target.value)}
+              />
+              <kbd>Esc</kbd>
+            </div>
+            <div className="command-results">
+              {commandItems.length ? (
+                commandItems.map((item) => (
+                  <button
+                    key={`${item.detail}-${item.label}`}
+                    type="button"
+                    onClick={() => {
+                      navigateToTab(item.tab, item.mode);
+                      setCommandOpen(false);
+                      setCommandQuery("");
+                    }}
+                  >
+                    <strong>{item.label}</strong>
+                    <span>{item.detail}</span>
+                  </button>
+                ))
+              ) : (
+                <p>No matches</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <aside className="sidebar" aria-label="Studio navigation">
         <div className="brand-row">
           <div className="mode-switcher" aria-label="Studio mode">
             <strong>AnyAgent</strong>
@@ -483,10 +700,7 @@ export function StudioApp() {
               <button
                 className={studioMode === "use" ? "active" : ""}
                 type="button"
-                onClick={() => {
-                  setStudioMode("use");
-                  setActiveTab("home");
-                }}
+                onClick={() => navigateToTab("home", "use")}
                 title="Use mode"
               >
                 Use
@@ -494,10 +708,7 @@ export function StudioApp() {
               <button
                 className={studioMode === "build" ? "active" : ""}
                 type="button"
-                onClick={() => {
-                  setStudioMode("build");
-                  setActiveTab("configure");
-                }}
+                onClick={() => navigateToTab("configure", "build")}
                 title="Build mode"
               >
                 Build
@@ -515,7 +726,7 @@ export function StudioApp() {
           </button>
         </div>
 
-        <nav className="side-nav" aria-label="Primary">
+        <nav className="side-nav" aria-label="Primary" onKeyDown={handleSidebarKeyDown}>
           {navGroups.map((group, groupIndex) => (
             <div className="nav-group" key={groupIndex}>
               <span className="nav-group-label">{group.label}</span>
@@ -525,7 +736,9 @@ export function StudioApp() {
                   type="button"
                   key={item.label}
                   title={item.label}
-                  onClick={() => setActiveTab(item.target)}
+                  onFocus={() => warmPage(item.target)}
+                  onMouseEnter={() => warmPage(item.target)}
+                  onClick={() => navigateToTab(item.target, studioMode)}
                 >
                   <item.icon size={16} />
                   <span>{item.label}</span>
@@ -538,7 +751,13 @@ export function StudioApp() {
         </nav>
 
         <div className="sidebar-footer">
-          <button className="nav-item" type="button" onClick={() => setActiveTab("settings")}>
+          <button
+            className="nav-item"
+            type="button"
+            onFocus={() => warmPage("settings")}
+            onMouseEnter={() => warmPage("settings")}
+            onClick={() => navigateToTab("settings", studioMode)}
+          >
             <Settings size={16} />
             <span>Settings</span>
           </button>
@@ -549,9 +768,12 @@ export function StudioApp() {
         </div>
       </aside>
 
-      <section className="workspace">
+      <section className="workspace" role="main" aria-labelledby="studio-page-title">
         <header className="workspace-header">
           <span>{studioMode === "use" ? "Use Mode" : "Build Mode"}</span>
+          <button className="theme-toggle" type="button" aria-label="Toggle dark and light theme" onClick={toggleTheme}>
+            {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
         </header>
 
         <div className="project-header">
@@ -559,11 +781,17 @@ export function StudioApp() {
             <Bot size={22} />
           </div>
           <div>
-            <h1>{settings.agentId || "Personal"}</h1>
-            <p>ID {settings.agentId || "unselected"} · {status} · {activeConnection.baseUrl}</p>
+            <h1 id="studio-page-title">{settings.agentId || "Personal"}</h1>
+            <p aria-live="polite">ID {settings.agentId || "unselected"} · {status} · {activeConnection.baseUrl}</p>
           </div>
           <div className="project-actions">
-            <button className="quick-pill" type="button" onClick={() => setActiveTab("settings")}>
+            <button
+              className="quick-pill"
+              type="button"
+              onFocus={() => warmPage("settings")}
+              onMouseEnter={() => warmPage("settings")}
+              onClick={() => navigateToTab("settings", studioMode)}
+            >
               <PlugZap size={16} />
               <span>Server</span>
               <strong>{status === "ready" ? "ready" : "check"}</strong>
@@ -573,15 +801,15 @@ export function StudioApp() {
               <span>Traces</span>
               <strong>{streamEvents.length + stageEvents.length}/5000</strong>
             </button>
-            <button className="quick-pill" type="button">
+            <button className="quick-pill" type="button" onFocus={() => warmPage("home")} onMouseEnter={() => warmPage("home")} onClick={() => navigateToTab("home", "use")}>
               <Layers3 size={16} />
               <span>Studio quickstart</span>
             </button>
-            <button className="quick-pill" type="button">
+            <button className="quick-pill" type="button" onFocus={() => warmPage("observability")} onMouseEnter={() => warmPage("observability")} onClick={() => navigateToTab("observability", "use")}>
               <Activity size={16} />
               <span>Tracing quickstart</span>
             </button>
-            <button className="quick-pill" type="button">
+            <button className="quick-pill" type="button" onFocus={() => warmPage("evaluations")} onMouseEnter={() => warmPage("evaluations")} onClick={() => navigateToTab("evaluations", "use")}>
               <Database size={16} />
               <span>Evaluation quickstart</span>
             </button>
@@ -594,7 +822,8 @@ export function StudioApp() {
             <small>{subtitleForTab(activeTab, studioMode)}</small>
           </div>
 
-          <Suspense fallback={<div className="page-loading">Loading page</div>}>
+          <PageErrorBoundary title={titleForTab(activeTab)} key={activeTab}>
+          <Suspense fallback={<PageSkeleton title={titleForTab(activeTab)} />}>
           {activeTab === "home" ? (
             <HomePage
               mode={studioMode}
@@ -609,14 +838,22 @@ export function StudioApp() {
               credentials={credentials}
               availableTools={availableTools}
               adminStatus={adminStatus}
+              catalogStatus={status}
               traceRows={traceRows}
+              activeConversationId={activeConversationId}
+              conversations={conversations}
               messages={messages}
               input={input}
               isRunning={isRunning}
               streamEvents={streamEvents}
+              onEditMessage={editUserMessageAndResend}
               onInputChange={setInput}
+              onNewConversation={newConversation}
+              onRegenerate={regenerateAssistant}
+              onRenameConversation={renameConversation}
+              onSelectConversation={selectConversation}
               onSubmitChat={submitChat}
-              onNavigate={setActiveTab}
+              onNavigate={navigateToTab}
             />
           ) : activeTab === "agents" ? (
             <AgentsPage
@@ -632,9 +869,9 @@ export function StudioApp() {
               newAgentId={newAgentId}
               newAgentTools={newAgentTools}
               newAgentInstructions={newAgentInstructions}
-              onSelectAgent={(agentId) => updateSettings("agentId", agentId)}
+              onSelectAgent={(agentId: string) => updateSettings("agentId", agentId)}
               onRefresh={() => void refresh()}
-              onNavigate={setActiveTab}
+              onNavigate={navigateToTab}
               onCreateAgent={submitCreateAgent}
               onNewAgentIdChange={setNewAgentId}
               onNewAgentToolsChange={setNewAgentTools}
@@ -648,14 +885,26 @@ export function StudioApp() {
               turnCount={displayObservability.turnCount}
               avgInputChars={displayObservability.avgInputChars}
               onRefresh={() => setObservabilityRefreshNonce((value) => value + 1)}
-              onSelectRun={(responseId) => void selectObservabilityRun(responseId)}
+              onSelectRun={(responseId: string) => void selectObservabilityRun(responseId)}
+              onNavigate={navigateToTab}
             />
           ) : activeTab === "evaluations" ? (
             <EvaluationsPage
+              agents={agents}
               runs={observabilityRuns}
+              settings={settings}
               totalLatency={displayObservability.totalLatency}
               errorCount={observabilityMetrics?.error_count ?? observabilityErrors.length}
-              onInspectRun={(responseId) => void selectObservabilityRun(responseId)}
+              onInspectRun={(responseId: string) => void selectObservabilityRun(responseId)}
+              onNavigate={navigateToTab}
+            />
+          ) : activeTab === "audit" ? (
+            <AuditPage
+              errors={observabilityErrors}
+              runs={observabilityRuns}
+              timeline={observabilityTimeline}
+              onInspectRun={(responseId: string) => void selectObservabilityRun(responseId)}
+              onRefresh={() => setObservabilityRefreshNonce((value) => value + 1)}
             />
           ) : activeTab === "prompts" ? (
             <PromptsPage
@@ -685,9 +934,9 @@ export function StudioApp() {
               onConnectionDraftChange={updateConnectionDraft}
               onSettingsChange={updateSettings}
               onTestConnection={() => void testConnectionDraft()}
-              onApplyConnection={applyConnectionDraft}
+              onApplyConnection={applyConnectionWithToast}
               onLoadAdminStatus={() => void loadAdminStatus()}
-              onReset={resetStoredSettings}
+              onReset={resetStoredSettingsWithConfirm}
             />
           ) : activeTab === "credentials" ? (
             <CredentialsPage
@@ -699,7 +948,13 @@ export function StudioApp() {
               credentialStatus={credentialStatus}
               onLoadCredentials={() => void loadCredentials()}
               onSubmitCredential={submitCredential}
-              onRemoveCredential={(id) => void removeCredential(id)}
+              onRemoveCredential={(id: string) => {
+                if (!window.confirm(`Delete credential reference ${id}?`)) {
+                  return;
+                }
+                void removeCredential(id);
+                showToast("info", `Deleted credential ${id}`);
+              }}
               onCredentialIdChange={setCredentialId}
               onCredentialKindChange={setCredentialKind}
               onCredentialValueChange={setCredentialValue}
@@ -718,8 +973,8 @@ export function StudioApp() {
               timeline={observabilityTimeline}
               trace={observabilityTrace}
               traceId={observabilityTraceId}
-              source={observabilitySource}
-              status={observabilityStatus}
+              sources={observabilitySources}
+              statuses={observabilityStatuses}
               toolFilter={observabilityToolFilter}
               window={observabilityWindow}
               limit={observabilityLimit}
@@ -733,13 +988,13 @@ export function StudioApp() {
               onWindowChange={setObservabilityWindow}
               onLimitChange={setObservabilityLimit}
               onTraceIdChange={setObservabilityTraceId}
-              onSourceChange={setObservabilitySource}
-              onStatusChange={setObservabilityStatus}
+              onSourcesChange={setObservabilitySources}
+              onStatusesChange={setObservabilityStatuses}
               onToolFilterChange={setObservabilityToolFilter}
               onRefresh={() => setObservabilityRefreshNonce((value) => value + 1)}
-              onSelectRun={(responseId) => void selectObservabilityRun(responseId)}
-              onInspectTrace={(traceId) => void inspectObservabilityTrace(traceId)}
-              onNavigate={setActiveTab}
+              onSelectRun={(responseId: string) => void selectObservabilityRun(responseId)}
+              onInspectTrace={(traceId: string) => void inspectObservabilityTrace(traceId)}
+              onNavigate={navigateToTab}
             />
           ) : activeSection === "debug" ? (
             <DebugPage
@@ -749,118 +1004,127 @@ export function StudioApp() {
             />
           ) : activeSection === "configure" ? (
             <ConfigurePage
-              activeBaseUrl={activeConnection.baseUrl}
-              activeFileKind={activeFileKind}
-              agentConfigStatus={agentConfigStatus}
-              agentCreateStatus={agentCreateStatus}
-              agentDetail={agentDetail}
-              agentExposed={agentExposed}
-              agentFiles={agentFiles}
-              agentId={settings.agentId}
-              agentModelApiKeyEnv={agentModelApiKeyEnv}
-              agentModelBaseUrlEnv={agentModelBaseUrlEnv}
-              agentModelDefault={agentModelDefault}
-              agentModelProvider={agentModelProvider}
-              agentSandboxMode={agentSandboxMode}
-              agentSpawnText={agentSpawnText}
-              agentToolsText={agentToolsText}
-              agents={agents}
-              availableTools={availableTools}
-              availableToolsStatus={availableToolsStatus}
-              catalogStatus={status}
-              connectionDraft={connectionDraft}
-              connectionTestStatus={connectionTestStatus}
-              credentials={credentials}
-              credentialId={credentialId}
-              credentialKind={credentialKind}
-              credentialValue={credentialValue}
-              credentialScope={credentialScope}
-              credentialStatus={credentialStatus}
-              disabledSkillPaths={disabledSkillPaths}
-              editorText={editorText}
-              enabledFileKinds={enabledFileKinds}
-              hasConnectionDraftChanges={hasConnectionDraftChanges}
-              mcpDrafts={mcpDrafts}
-              mcpDraftsEditable={mcpDraftsEditable}
-              mcpJson={mcpJson}
-              mcpStatus={mcpStatus}
-              model={settings.model}
-              newAgentId={newAgentId}
-              newAgentInstructions={newAgentInstructions}
-              newAgentTools={newAgentTools}
-              saveStatus={saveStatus}
-              sessionKey={settings.sessionKey}
-              settingsStatus={settingsStatus}
-              skillChannel={skillChannel}
-              skillDirectoryName={skillDirectoryName}
-              skillGithubPath={skillGithubPath}
-              skillGithubRef={skillGithubRef}
-              skillImportStatus={skillImportStatus}
-              skillMarkdown={skillMarkdown}
-              skillName={skillName}
-              skillPackage={skillPackage}
-              skillSelection={skillSelection}
-              skillSelectionStatus={skillSelectionStatus}
-              skillUpdateStatus={skillUpdateStatus}
-              skills={skills}
-              toolCatalog={toolCatalog}
-              toolCatalogStatus={toolCatalogStatus}
-              onActiveFileKindChange={switchActiveFile}
-              onAddMcpDraft={addMcpDraft}
-              onAgentExposedChange={setAgentExposed}
-              onAgentIdChange={(value) => updateSettings("agentId", value)}
-              onAgentModelApiKeyEnvChange={setAgentModelApiKeyEnv}
-              onAgentModelBaseUrlEnvChange={setAgentModelBaseUrlEnv}
-              onAgentModelDefaultChange={setAgentModelDefault}
-              onAgentModelProviderChange={setAgentModelProvider}
-              onAgentSandboxModeChange={setAgentSandboxMode}
-              onAgentSpawnTextChange={setAgentSpawnText}
-              onAgentToolsTextChange={setAgentToolsText}
-              onApplyConnection={applyConnectionDraft}
-              onApplySkillUpdate={(skill) => void applySkillUpdate(skill)}
-              onCheckSkillUpdate={(skill) => void checkSkillUpdate(skill)}
-              onConnectionDraftChange={updateConnectionDraft}
-              onCredentialIdChange={setCredentialId}
-              onCredentialKindChange={setCredentialKind}
-              onCredentialScopeChange={setCredentialScope}
-              onCredentialValueChange={setCredentialValue}
-              onDisabledSkillPathsChange={setDisabledSkillPaths}
-              onEditorTextChange={setEditorText}
-              onLoadAgentFiles={() => void loadAgentFiles()}
-              onLoadAvailableTools={() => void loadAvailableTools()}
-              onLoadCredentials={() => void loadCredentials()}
-              onLoadToolCatalog={() => void loadToolCatalog()}
-              onModelChange={(value) => updateSettings("model", value)}
-              onNewAgentIdChange={setNewAgentId}
-              onNewAgentInstructionsChange={setNewAgentInstructions}
-              onNewAgentToolsChange={setNewAgentTools}
-              onRefresh={() => void refresh()}
-              onRemoveCredential={(id) => void removeCredential(id)}
-              onRemoveMcpDraft={removeMcpDraft}
-              onResetStoredSettings={resetStoredSettings}
-              onSaveActiveFile={() => void saveActiveFile()}
-              onSaveAgentConfig={() => void saveAgentConfig()}
-              onSaveMcpDrafts={() => void saveMcpDrafts()}
-              onSaveSkillSelection={() => void saveSkillSelection()}
-              onSessionKeyChange={(value) => updateSettings("sessionKey", value)}
-              onSkillChannelChange={setSkillChannel}
-              onSkillDirectoryNameChange={setSkillDirectoryName}
-              onSkillGithubPathChange={setSkillGithubPath}
-              onSkillGithubRefChange={setSkillGithubRef}
-              onSkillMarkdownChange={setSkillMarkdown}
-              onSkillNameChange={setSkillName}
-              onSkillPackageChange={setSkillPackage}
-              onSubmitCreateAgent={submitCreateAgent}
-              onSubmitCredential={submitCredential}
-              onSubmitSkillInstall={submitSkillInstall}
-              onTestConnection={() => void testConnectionDraft()}
-              onToggleFileKind={toggleFileKind}
-              onToggleRequestedTool={toggleRequestedTool}
-              onToggleSkillEnabled={toggleSkillEnabled}
-              onToggleSkillSelection={toggleSkillSelection}
-              onUpdateMcpDraft={updateMcpDraft}
-              skillDirectoryRef={skillDirectoryRef}
-              skillDisableRef={skillDisableRef}
+              data={{
+                activeBaseUrl: activeConnection.baseUrl,
+                activeFileKind,
+                agentConfigStatus,
+                agentCreateStatus,
+                agentDetail,
+                agentExposed,
+                agentFiles,
+                agentId: settings.agentId,
+                agentModelApiKeyEnv,
+                agentModelBaseUrlEnv,
+                agentModelDefault,
+                agentModelProvider,
+                agentSandboxMode,
+                agentSpawnText,
+                agentToolsText,
+                agents,
+                availableTools,
+                availableToolsStatus,
+                catalogStatus: status,
+                connectionDraft,
+                connectionTestStatus,
+                credentialId,
+                credentialKind,
+                credentialScope,
+                credentialStatus,
+                credentialValue,
+                credentials,
+                disabledSkillPaths,
+                editorText,
+                enabledFileKinds,
+                hasConnectionDraftChanges,
+                mcpDrafts,
+                mcpDraftsEditable,
+                mcpJson,
+                mcpStatus,
+                model: settings.model,
+                newAgentId,
+                newAgentInstructions,
+                newAgentTools,
+                saveStatus,
+                sessionKey: settings.sessionKey,
+                settingsStatus,
+                skillChannel,
+                skillDirectoryName,
+                skillGithubPath,
+                skillGithubRef,
+                skillImportStatus,
+                skillMarkdown,
+                skillName,
+                skillPackage,
+                skillSelection,
+                skillSelectionStatus,
+                skillUpdateStatus,
+                skills,
+                toolCatalog,
+                toolCatalogStatus,
+              }}
+              actions={{
+                onActiveFileKindChange: switchActiveFile,
+                onAddMcpDraft: addMcpDraft,
+                onAgentExposedChange: setAgentExposed,
+                onAgentIdChange: (value: string) => updateSettings("agentId", value),
+                onAgentModelApiKeyEnvChange: setAgentModelApiKeyEnv,
+                onAgentModelBaseUrlEnvChange: setAgentModelBaseUrlEnv,
+                onAgentModelDefaultChange: setAgentModelDefault,
+                onAgentModelProviderChange: setAgentModelProvider,
+                onAgentSandboxModeChange: setAgentSandboxMode,
+                onAgentSpawnTextChange: setAgentSpawnText,
+                onAgentToolsTextChange: setAgentToolsText,
+                onApplyConnection: applyConnectionWithToast,
+                onApplySkillUpdate: (skill: SkillSummary) => void applySkillUpdate(skill),
+                onCheckSkillUpdate: (skill: SkillSummary) => void checkSkillUpdate(skill),
+                onConnectionDraftChange: updateConnectionDraft,
+                onCredentialIdChange: setCredentialId,
+                onCredentialKindChange: setCredentialKind,
+                onCredentialScopeChange: setCredentialScope,
+                onCredentialValueChange: setCredentialValue,
+                onDisabledSkillPathsChange: setDisabledSkillPaths,
+                onEditorTextChange: setEditorText,
+                onLoadAgentFiles: () => void loadAgentFiles(),
+                onLoadAvailableTools: () => void loadAvailableTools(),
+                onLoadCredentials: () => void loadCredentials(),
+                onLoadToolCatalog: () => void loadToolCatalog(),
+                onModelChange: (value: string) => updateSettings("model", value),
+                onNewAgentIdChange: setNewAgentId,
+                onNewAgentInstructionsChange: setNewAgentInstructions,
+                onNewAgentToolsChange: setNewAgentTools,
+                onRefresh: () => void refresh(),
+                onRemoveCredential: (id: string) => {
+                  if (!window.confirm(`Delete credential reference ${id}?`)) {
+                    return;
+                  }
+                  void removeCredential(id);
+                  showToast("info", `Deleted credential ${id}`);
+                },
+                onRemoveMcpDraft: removeMcpDraft,
+                onResetStoredSettings: resetStoredSettingsWithConfirm,
+                onSaveActiveFile: () => void saveActiveFile(),
+                onSaveAgentConfig: () => void saveAgentConfig(),
+                onSaveMcpDrafts: () => void saveMcpDrafts(),
+                onSaveSkillSelection: () => void saveSkillSelection(),
+                onSessionKeyChange: (value: string) => updateSettings("sessionKey", value),
+                onSkillChannelChange: setSkillChannel,
+                onSkillDirectoryNameChange: setSkillDirectoryName,
+                onSkillGithubPathChange: setSkillGithubPath,
+                onSkillGithubRefChange: setSkillGithubRef,
+                onSkillMarkdownChange: setSkillMarkdown,
+                onSkillNameChange: setSkillName,
+                onSkillPackageChange: setSkillPackage,
+                onSubmitCreateAgent: submitCreateAgent,
+                onSubmitCredential: submitCredential,
+                onSubmitSkillInstall: submitSkillInstall,
+                onTestConnection: () => void testConnectionDraft(),
+                onToggleFileKind: toggleFileKind,
+                onToggleRequestedTool: toggleRequestedTool,
+                onToggleSkillEnabled: toggleSkillEnabled,
+                onToggleSkillSelection: toggleSkillSelection,
+                onUpdateMcpDraft: updateMcpDraft,
+              }}
+              refs={{ skillDirectoryRef, skillDisableRef }}
             />
           ) : activeSection === "skills" ? (
             <SkillsPage
@@ -888,8 +1152,8 @@ export function StudioApp() {
               onSkillMarkdownChange={setSkillMarkdown}
               onToggleSkillSelection={toggleSkillSelection}
               onToggleSkillEnabled={toggleSkillEnabled}
-              onCheckSkillUpdate={(skill) => void checkSkillUpdate(skill)}
-              onApplySkillUpdate={(skill) => void applySkillUpdate(skill)}
+              onCheckSkillUpdate={(skill: SkillSummary) => void checkSkillUpdate(skill)}
+              onApplySkillUpdate={(skill: SkillSummary) => void applySkillUpdate(skill)}
               skillDisableRef={skillDisableRef}
               skillDirectoryRef={skillDirectoryRef}
             />
@@ -927,6 +1191,7 @@ export function StudioApp() {
             />
           )}
           </Suspense>
+          </PageErrorBoundary>
         </div>
       </section>
     </main>

@@ -46,6 +46,10 @@ export function SettingsPage({
   onLoadAdminStatus,
   onReset,
 }: SettingsPageProps) {
+  const isTesting = connectionTestStatus === "Testing";
+  const isLoadingHealth = adminStatus === "Loading";
+  const serverError = connectionDraft.baseUrl.trim() ? "" : "Server URL is required.";
+
   return (
     <>
       <Card className="panel wide-panel compact-panel">
@@ -56,15 +60,17 @@ export function SettingsPage({
           </div>
           <div className="editor-actions">
             <span>{hasConnectionDraftChanges ? "draft changes" : settingsStatus}</span>
-            <Button size="sm" variant="secondary" onPress={onTestConnection}>
+            <Button size="sm" variant="secondary" onPress={onTestConnection} isDisabled={isTesting || Boolean(serverError)}>
+              {isTesting ? <span className="button-spinner" aria-hidden="true" /> : null}
               <PlugZap size={15} />
               Test
             </Button>
-            <Button size="sm" variant="secondary" onPress={onApplyConnection} isDisabled={!hasConnectionDraftChanges}>
+            <Button size="sm" variant="secondary" onPress={onApplyConnection} isDisabled={!hasConnectionDraftChanges || Boolean(serverError)}>
               <Cable size={15} />
               Apply
             </Button>
-            <Button size="sm" variant="secondary" onPress={onLoadAdminStatus}>
+            <Button size="sm" variant="secondary" onPress={onLoadAdminStatus} isDisabled={isLoadingHealth}>
+              {isLoadingHealth ? <span className="button-spinner" aria-hidden="true" /> : null}
               <RefreshCw size={15} />
               Health
             </Button>
@@ -93,6 +99,7 @@ export function SettingsPage({
             <label className="control-label">
               <span>Server</span>
               <Input value={connectionDraft.baseUrl} onChange={(event) => onConnectionDraftChange("baseUrl", event.target.value)} aria-label="Server" />
+              {serverError ? <small className="field-error">{serverError}</small> : null}
             </label>
             <label className="control-label">
               <span>API key</span>

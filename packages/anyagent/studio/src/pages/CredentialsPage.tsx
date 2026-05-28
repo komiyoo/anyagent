@@ -34,6 +34,12 @@ export function CredentialsPage({
   onCredentialValueChange,
   onCredentialScopeChange,
 }: CredentialsPageProps) {
+  const isSaving = credentialStatus === "Saving";
+  const isLoading = credentialStatus === "Loading" || credentialStatus === "Deleting";
+  const idError = credentialId.trim() ? "" : "Credential id is required.";
+  const kindError = credentialKind.trim() ? "" : "Kind is required.";
+  const valueError = credentialValue.trim() ? "" : "Secret value is required.";
+
   return (
     <Card className="panel wide-panel compact-panel">
       <Card.Header className="panel-header">
@@ -43,7 +49,8 @@ export function CredentialsPage({
         </div>
         <div className="editor-actions">
           <span>{credentialStatus}</span>
-          <Button size="sm" variant="secondary" onPress={onLoadCredentials}>
+          <Button size="sm" variant="secondary" onPress={onLoadCredentials} isDisabled={isLoading}>
+            {isLoading ? <span className="button-spinner" aria-hidden="true" /> : null}
             <RefreshCw size={15} />
             Refresh
           </Button>
@@ -51,14 +58,30 @@ export function CredentialsPage({
       </Card.Header>
       <Card.Content className="panel-content">
         <form className="credential-form" onSubmit={onSubmitCredential}>
-          <Input aria-label="Credential id" value={credentialId} onChange={(event) => onCredentialIdChange(event.target.value)} />
-          <Input aria-label="Credential kind" value={credentialKind} onChange={(event) => onCredentialKindChange(event.target.value)} />
-          <Input aria-label="Credential value" type="password" value={credentialValue} onChange={(event) => onCredentialValueChange(event.target.value)} />
-          <select className="native-select" aria-label="Credential scope" value={credentialScope} onChange={(event) => onCredentialScopeChange(event.target.value as "global" | "agent")}>
-            <option value="agent">agent</option>
-            <option value="global">global</option>
-          </select>
-          <Button size="sm" variant="primary" type="submit">
+          <label className="control-label">
+            <span>Credential id</span>
+            <Input aria-label="Credential id" value={credentialId} onChange={(event) => onCredentialIdChange(event.target.value)} />
+            {idError ? <small className="field-error">{idError}</small> : null}
+          </label>
+          <label className="control-label">
+            <span>Kind</span>
+            <Input aria-label="Credential kind" value={credentialKind} onChange={(event) => onCredentialKindChange(event.target.value)} />
+            {kindError ? <small className="field-error">{kindError}</small> : null}
+          </label>
+          <label className="control-label">
+            <span>Secret value</span>
+            <Input aria-label="Credential value" type="password" value={credentialValue} onChange={(event) => onCredentialValueChange(event.target.value)} />
+            {valueError ? <small className="field-error">{valueError}</small> : null}
+          </label>
+          <label className="control-label">
+            <span>Scope</span>
+            <select className="native-select" aria-label="Credential scope" value={credentialScope} onChange={(event) => onCredentialScopeChange(event.target.value as "global" | "agent")}>
+              <option value="agent">agent</option>
+              <option value="global">global</option>
+            </select>
+          </label>
+          <Button size="sm" variant="primary" type="submit" isDisabled={isSaving || Boolean(idError || kindError || valueError)}>
+            {isSaving ? <span className="button-spinner" aria-hidden="true" /> : null}
             Save credential
           </Button>
         </form>
