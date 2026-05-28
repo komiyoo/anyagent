@@ -42,7 +42,7 @@ The production path is served directly by Core:
 
 ```bash
 anyagent serve --workspace ../../anyagent-apps/examples/demo-workspace --port 8787
-open http://127.0.0.1:8787/studio/
+open http://127.0.0.1:8787/
 ```
 
 Use `--no-studio` when the API should start without the bundled frontend.

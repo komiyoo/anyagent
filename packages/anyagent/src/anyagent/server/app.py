@@ -15,7 +15,7 @@ from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 import yaml
@@ -379,10 +379,14 @@ def create_app(
                     if asyncio.iscoroutine(result):
                         await result
 
-    app = FastAPI(title="anyagent", version="0.1.5", lifespan=_lifespan)
+    app = FastAPI(title="anyagent", version="0.1.6", lifespan=_lifespan)
     if enable_studio:
         studio_dir = Path(__file__).resolve().parents[1] / "studio_static"
         if studio_dir.is_dir():
+            @app.get("/", include_in_schema=False)
+            async def root_studio_redirect() -> RedirectResponse:
+                return RedirectResponse(url="/studio/")
+
             @app.get("/studio", include_in_schema=False)
             async def studio_index() -> FileResponse:
                 return FileResponse(studio_dir / "index.html")

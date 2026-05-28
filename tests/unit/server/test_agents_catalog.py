@@ -171,6 +171,9 @@ async def _run_studio_static_is_mounted_by_default_and_can_be_disabled(tmp_path:
     _write_agent(tmp_path, "main", exposed=True, prompt="Main agent\n")
     app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        root_resp = await client.get("/", follow_redirects=False)
+        assert root_resp.status_code == 307
+        assert root_resp.headers["location"] == "/studio/"
         resp = await client.get("/studio/")
         assert resp.status_code == 200
         assert "AnyAgent Studio" in resp.text
@@ -186,6 +189,8 @@ async def _run_studio_static_is_mounted_by_default_and_can_be_disabled(tmp_path:
         enable_studio=False,
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=disabled), base_url="http://testserver") as client:
+        root_resp = await client.get("/", follow_redirects=False)
+        assert root_resp.status_code == 404
         resp = await client.get("/studio/")
         assert resp.status_code == 404
 

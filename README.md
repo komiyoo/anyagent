@@ -42,7 +42,7 @@ anyagent serve     # 一条命令启动 Agent Server
 ```bash
 anyagent dev --workspace ./my-workspace
 # API:    http://127.0.0.1:8787/v1
-# Studio: http://127.0.0.1:8787/studio/
+# Studio: http://127.0.0.1:8787/ -> /studio/
 ```
 
 ## 核心特性
