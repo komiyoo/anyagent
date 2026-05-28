@@ -19,8 +19,9 @@
 
 ## 推荐阅读顺序
 
-1) [overview/apps-packages-boundary.md](overview/apps-packages-boundary.md)：anyagent vs anyagent-apps 职责边界与安全模型
-2) [overview/roadmap.md](overview/roadmap.md)：历史演进路线与当前架构锚点
+1) [overview/system-components.md](overview/system-components.md)：系统级组件职责、连接方式与部署拓扑
+2) [overview/apps-packages-boundary.md](overview/apps-packages-boundary.md)：anyagent vs anyagent-apps 职责边界与安全模型
+3) [overview/roadmap.md](overview/roadmap.md)：历史演进路线与当前架构锚点
 3) [api/responses-api-sdk-and-server.md](api/responses-api-sdk-and-server.md)：SDK + 内置 Server 泳道与模块边界
 4) [runtime/agent-packs-and-runtime-config.md](runtime/agent-packs-and-runtime-config.md)：Agent Packs、AGENTS.md 注入、AgentSpec、agent_id 路由与 session runtime config
 5) [tool-runtime/tool-runtime-contract.md](tool-runtime/tool-runtime-contract.md)：Tool Runtime manifest/execute、registry、tool naming、context、幂等与取消
