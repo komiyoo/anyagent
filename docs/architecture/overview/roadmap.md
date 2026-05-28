@@ -180,6 +180,7 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 - 协议独立版本化:把 `anyagent.protocol` 抽成可独立发布的制品,与 reference server 解耦
 - Eval / Replay 平台化:把 event store + replay 升级为可审计的 agent eval 基础设施
 - 端侧形态评估:WebChat / 桌面 / IDE 插件;仅在 typed API 与 SDK 稳定后才进入主路径
+- IM 渠道接入:飞书(Lark)为首选,后续可扩展 Slack / 钉钉;参考 DeerFlow channels 实现(见 `docs/_notes/third-party/deer-flow.md`)
 
 这些方向在前置 Phase 完成前不开 todo,避免提前承诺。
 
