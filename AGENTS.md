@@ -6,7 +6,7 @@
 
 本仓库按 **Agentic Engineering** 方式组织，围绕五个支柱：上下文工程、验证闭环、工具化、Agentic 代码库、复合式工程。
 
-本文件是 agent harness，不是项目百科。它约束 agent 如何阅读上下文、判断边界、修改代码、同步文档和完成验证；具体接口字段、运行手册、架构决策、验收矩阵和迁移记录应保留在 `requirements.md`、`todo/*.md`、`docs/`**、README 或代码真源中。
+本文件是 agent harness，不是项目百科。它约束 agent 如何阅读上下文、判断边界、修改代码、同步文档和完成验证；具体接口字段、运行手册、架构决策、验收矩阵和迁移记录应保留在 `requirements.md`、`todo/*.md`、`docs/`、README 或代码真源中。
 
 ---
 
@@ -16,10 +16,10 @@ anyagent = **配置即服务的 Agent Server 内核 + SDK**：
 
 - **Server Core**：内置 Agent API + Tool Runtime，`anyagent serve` 一条命令从 `.anyagent/` 配置启动 OpenAI Responses API 兼容服务
 - **SDK**：`AnyAgent` Client SDK 提供 OpenAI 兼容层 + anyagent 精细层（tool/command 级 Stage Events）
-- **Protocol SSOT**：`anyagent.protocol.`* 是所有 wire-level 协议的单一真源
+- **Protocol SSOT**：`anyagent.protocol.*` 是所有 wire-level 协议的单一真源
 - **安全边界**：Agent 可见资源但不可直接操作——密钥、凭证、tool policy 由 server 代理管理
 
-同级项目 `../anyagent-apps` 消费本仓库，展示业务示例、模板与示例平台接线；迁移期仍保留历史 Agent API / Tool Runtime / Studio 接线用于回归参照，但 production runtime、PG/MySQL/Redis storage、独立 Tool Runtime、ops CLI 与插件 contract 的真源应逐步收敛到本仓库。
+本仓库是 protocol、server、SDK、runtime primitives、Tool Runtime、credential/connector contract 与文档的真源。消费侧仓库如何使用 anyagent 由各仓库自行维护，不在本仓 AGENTS.md 约束范围内。
 
 ---
 
@@ -29,24 +29,36 @@ anyagent = **配置即服务的 Agent Server 内核 + SDK**：
 
 1. 阅读 `README.md` 与 `docs/architecture/overview/roadmap.md` 了解项目定位与当前阶段
 2. 运行 `python3 scripts/anyagent_progress.py --root .` 定位下一条 TODO
-3. 从 `todo/*.md` 定位任务条目，回溯到 `requirements.md#req-`*
+3. 从 `todo/*.md` 定位任务条目，回溯到 `requirements.md#req-*`
 4. 不清晰时：向用户追问要改哪个模块
 
-### 1.2 SSOT 地图
+### 1.2 SSOT 地图与引用约定
 
-- **需求真源（What/Why）**：`requirements.md`（锚点 `requirements.md#req-`*）
-- **任务真源（When/Who/Progress）**：`todo/*.md`
-- **行为真源（How/Truth）**：仓库代码以 `packages/anyagent/` 为主
-- **长期维护文档（How/Contract）**：`docs/architecture|security|acceptance|performance/`
-- **研发草案（非稳定）**：`docs/_dev/`、`docs/_notes/`
+#### 文档真源表
 
-### 1.2.1 文档系统分层
+| 层级 | 真源 | 职责 | 引用格式 |
+|---|---|---|---|
+| 行为规范 | `AGENTS.md` | agent 协作纪律、上下文读取、文档 stewardship | 本文件内 `§N` 章节号 |
+| 需求 | `requirements.md` | What/Why,稳定锚点 | `requirements.md#req-*` |
+| 任务 | `todo/*.md` | When/Progress,每条任务挂 `Req:` 锚点 | `todo/<module>.md` |
+| 架构/契约 | `docs/architecture/`、`docs/security/`、`docs/acceptance/`、`docs/performance/` | How/Contract,长期维护 | 完整相对路径 `docs/architecture/overview/roadmap.md` |
+| 代码 | `packages/anyagent/src/anyagent/` | 行为真源(How/Truth) | Python 模块路径 `anyagent.protocol.*` 或文件路径 `path:line` |
+| 研发草案 | `docs/_dev/`、`docs/_notes/` | 非稳定,不作为引用目标 | — |
+| 人类入口 | `README.md` | 业务使用者主入口 | — |
 
-- `AGENTS.md`：agent 行为、协作纪律、上下文读取和文档 stewardship。
-- `requirements.md`：需求和约束真源。
-- `todo/*.md`：阶段任务、状态和实现证据。
-- `docs/architecture|security|acceptance|performance/`：长期维护的架构、契约、安全、验收和性能文档。
-- `README.md`：人类和业务使用者的主入口。
+#### 引用约定
+
+引用其他文档或代码时,遵循以下规则:
+
+1. **路径引用**:使用仓库根相对路径,带文件后缀。例:`docs/architecture/overview/roadmap.md`、`todo/sdk.md`。
+2. **模块引用**:引用 Python 模块时用点分路径。例:`anyagent.protocol.events`、`anyagent.storage`。
+3. **代码定位**:需要精确到行时用 `path:line` 格式。例:`packages/anyagent/src/anyagent/server/app.py:42`。
+4. **需求锚点**:统一用 `requirements.md#req-*` 格式,反引号包裹完整锚点。
+5. **不跨仓引用**:本仓文档不使用 `../` 引用其他仓库路径。消费侧仓库的行为由各仓库自行约束。
+6. **双向 cite 最低要求**:
+   - `todo/*.md` 每条任务必须 cite `requirements.md#req-*`
+   - `docs/architecture/overview/roadmap.md` 每个 Phase 必须 cite 对应 `todo/<module>.md`
+   - `docs/architecture/decisions/*.md` 必须被至少一个 `todo/*.md` 或 `roadmap.md` cite
 
 当代码变更影响公开 API、wire contract、SDK 类型、配置、运行方式、用户可见行为或模块归属时，同轮更新最贴近的真源文档。不要把同一条规则复制到多个地方；必要时用链接指向真源。
 
@@ -112,7 +124,7 @@ packages/anyagent/src/anyagent/
 
 - **改了就要验**：每次代码改动后主动执行相关验证
 - 优先选择最小且可复现的验证：
-  - 本地启动验证：`anyagent serve --workspace ../anyagent-apps/examples/demo-workspace`
+  - 本地启动验证：`anyagent serve`（使用本仓 `tests/fixtures/` 或 `docs/acceptance/` 中的 workspace）
   - 验收文档：`docs/acceptance/`
   - smoke 脚本：`tests/`
 
@@ -126,7 +138,7 @@ packages/anyagent/src/anyagent/
 ### 2.3 交付输出约定
 
 - **结论一句话**
-- **证据链**：`requirements.md#req-`* + `todo/<module>.md` + `Impl: path:line`
+- **证据链**：`requirements.md#req-*` + `todo/<module>.md` + `Impl: path:line`
 - **如何复现**：最小命令 + 必要 env
 - **如何验证**：最小验收脚本
 
@@ -153,9 +165,9 @@ packages/anyagent/src/anyagent/
 
 ### 4.1 协议与类型系统
 
-- **Protocol-First**：新增/修改协议必须先更新 `anyagent.protocol.`*
+- **Protocol-First**：新增/修改协议必须先更新 `anyagent.protocol.*`
 - **Boundary Data Parsing**：HTTP/CLI/SDK/存储/文件/第三方工具输出进入系统边界时要做一次校验和归一化，内部主路径尽量只传已知形状的数据。
-- **SDK/示例强类型**：输入/输出/事件必须有 typed model；SDK 业务边界模型集中从 `anyagent.types` 导出，`anyagent.protocol.`* 仍是 wire-level SSOT。
+- **SDK/示例强类型**：输入/输出/事件必须有 typed model；SDK 业务边界模型集中从 `anyagent.types` 导出，`anyagent.protocol.*` 仍是 wire-level SSOT。
 - **外部接口策略**：OpenAI Responses API 兼容为第一优先级，`AnyAgent` SDK 承载超集能力
 
 ### 4.2 代码组织
@@ -264,4 +276,6 @@ Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → �
 - `todo/` 中任务已勾选，包含 `Req:` + `Impl:` + `Module:` 证据
 - 有最小验证闭环
 - 若涉及安全边界变更：明确说明影响
+- 引用完整性：`python3 scripts/docs/check.py --root .` 无断链报错
+- 双向 cite 检查：新增/修改的 todo、docs、ADR 满足 §1.2 引用约定中的双向 cite 最低要求
 - 复利检查：是否有可沉淀的工具/模式/约束

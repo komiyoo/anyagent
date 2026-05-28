@@ -58,6 +58,8 @@ def _strip_anyagent_request_metadata(body: dict[str, Any]) -> dict[str, Any]:
     provider_body = dict(body)
     provider_body.pop("metadata", None)
     provider_body.pop("tenant_id", None)
+    provider_body.pop("agent_id", None)
+    provider_body.pop("session_key", None)
     return provider_body
 
 
