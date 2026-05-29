@@ -21,7 +21,7 @@
 
 ## 任务
 
-- [ ] P0 完成 PostgreSQL + Redis 组合下 session/run/event replay 的 contract test(Req: `requirements.md#req-3-1`)
+- [x] P0 完成 PostgreSQL + Redis 组合下 session/run/event replay 的 contract test(Req: `requirements.md#req-3-1`; Impl: `tests/acceptance/server/acceptance_builtin_server_smoke.py:2064`; Module: `server-storage-acceptance`)
 - [ ] P1 设计存储层 idempotency-key 与 cursor 语义的统一规范,落 ADR(Req: `requirements.md#req-3-1`)
 - [ ] P2 加一个基线 bench 脚本,跑通典型 workspace 负载,产出回归参考数据(Req: `requirements.md#req-3-1`)
 

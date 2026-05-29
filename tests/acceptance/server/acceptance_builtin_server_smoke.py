@@ -2061,6 +2061,139 @@ async def _run_session_cached_store_pg_primary_redis_hot_roundtrip_live(
         await redis.aclose()
 
 
+def test_pg_redis_session_run_event_replay_contract_live(tmp_path: Path, monkeypatch) -> None:
+    redis_dsn = os.getenv("ANYAGENT_TEST_REDIS_DSN")
+    postgres_dsn = os.getenv("ANYAGENT_TEST_POSTGRES_DSN")
+    if not redis_dsn or not redis_dsn.strip() or not postgres_dsn or not postgres_dsn.strip():
+        pytest.skip("ANYAGENT_TEST_REDIS_DSN / ANYAGENT_TEST_POSTGRES_DSN not set")
+    asyncio.run(
+        _run_pg_redis_session_run_event_replay_contract_live(
+            tmp_path=tmp_path,
+            monkeypatch=monkeypatch,
+            redis_dsn=redis_dsn.strip(),
+            postgres_dsn=postgres_dsn.strip(),
+        )
+    )
+
+
+async def _run_pg_redis_session_run_event_replay_contract_live(
+    *,
+    tmp_path: Path,
+    monkeypatch,
+    redis_dsn: str,
+    postgres_dsn: str,
+) -> None:
+    _write_workspace(tmp_path)
+    seen_bodies: list[dict] = []
+    namespace = f"anyagent-pg-redis-replay-{int(time.time() * 1000)}"
+
+    class _RecordingProvider:
+        async def create_response(self, *, body: dict, idempotency_key: str | None = None, timeout_s: float = 60.0) -> Response:
+            _ = timeout_s
+            seen_bodies.append({"body": json.loads(json.dumps(body)), "idempotency_key": idempotency_key})
+            payload = {
+                "id": f"resp_record_pg_redis_{len(seen_bodies)}",
+                "object": "response",
+                "created_at": int(time.time()),
+                "model": str(body.get("model") or "gpt-4o-mini"),
+                "output": [
+                    ResponseOutputMessage(
+                        id=f"msg_pg_redis_{len(seen_bodies)}",
+                        type="message",
+                        role="assistant",
+                        status="completed",
+                        content=[ResponseOutputText(type="output_text", text="ok", annotations=[])],
+                    ).model_dump(exclude_none=True, by_alias=True)
+                ],
+                "parallel_tool_calls": False,
+                "tool_choice": "none",
+                "tools": list(body.get("tools") or []),
+                "status": "completed",
+            }
+            return Response.model_validate(payload)
+
+        async def create_response_stream_buffered(self, *, body: dict, idempotency_key: str | None = None, timeout_s: float | None = None):
+            resp = await self.create_response(body=body, idempotency_key=idempotency_key, timeout_s=timeout_s or 60.0)
+            return [
+                ResponseCreatedEvent(type="response.created", sequence_number=0, response=resp),
+                ResponseCompletedEvent(type="response.completed", sequence_number=1, response=resp),
+            ], resp
+
+    monkeypatch.setenv("REDIS_DSN", redis_dsn)
+    _prepare_live_postgres_schema(monkeypatch=monkeypatch, postgres_dsn=postgres_dsn)
+    monkeypatch.setenv("REDIS_NAMESPACE", namespace)
+    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+
+    app1 = create_app(
+        workspace_dir=tmp_path,
+        api_key="user-key",
+        admin_api_key="admin-key",
+        sandbox_root_dir=tmp_path / ".sandbox",
+        event_store_backend="external",
+        run_store_backend="external",
+        session_store_backend="external",
+        session_lock_backend="redis",
+    )
+    assert isinstance(app1.state.anyagent.events, CachedEventStore)
+    assert isinstance(app1.state.anyagent.run_store, CachedRunStore)
+    assert isinstance(app1.state.anyagent.session_store, CachedSessionStore)
+
+    session_key = "sess-pg-redis-replay-live"
+    idempotency_key = f"idem-pg-redis-{int(time.time() * 1000)}"
+    transport1 = httpx.ASGITransport(app=app1)
+    async with httpx.AsyncClient(transport=transport1, base_url="http://testserver", timeout=5.0) as client:
+        resp1 = await client.post(
+            "/v1/responses",
+            headers={"Authorization": "Bearer user-key", "Idempotency-Key": idempotency_key},
+            json={"model": "gpt-4o-mini", "input": "hello", "metadata": {"session_key": session_key}},
+        )
+        assert resp1.status_code == 200
+        response_id = resp1.json()["id"]
+
+    app2 = create_app(
+        workspace_dir=tmp_path,
+        api_key="user-key",
+        admin_api_key="admin-key",
+        sandbox_root_dir=tmp_path / ".sandbox",
+        event_store_backend="external",
+        run_store_backend="external",
+        session_store_backend="external",
+        session_lock_backend="redis",
+    )
+    assert isinstance(app2.state.anyagent.events, CachedEventStore)
+    assert isinstance(app2.state.anyagent.run_store, CachedRunStore)
+    assert isinstance(app2.state.anyagent.session_store, CachedSessionStore)
+
+    run = await app2.state.anyagent.run_store.get(response_id)
+    assert run is not None
+    assert run.status == "completed"
+    assert run.final_response_json is not None and run.final_response_json["id"] == response_id
+    by_idempotency = await app2.state.anyagent.run_store.get_by_idempotency_key(idempotency_key)
+    assert by_idempotency is not None and by_idempotency.response_id == response_id
+
+    session = await app2.state.anyagent.session_store.get(session_partition_key=f"main::{session_key}")
+    assert session is not None
+    assert session.snapshot_json["resume_cursor"]["last_response_id"] == response_id
+
+    listed = await app2.state.anyagent.events.list_events(response_id=response_id, last_seq=0, limit=50)
+    event_names = [item.event for item in listed.events]
+    assert "anyagent.prompt.context" in event_names
+    assert "response.completed" in event_names
+    assert listed.done is True
+
+    transport2 = httpx.ASGITransport(app=app2)
+    async with httpx.AsyncClient(transport=transport2, base_url="http://testserver", timeout=5.0) as client:
+        replay = await client.post(
+            "/v1/responses",
+            headers={"Authorization": "Bearer user-key", "Idempotency-Key": idempotency_key},
+            json={"model": "gpt-4o-mini", "input": "hello", "metadata": {"session_key": session_key}},
+        )
+        assert replay.status_code == 200
+        assert replay.json()["id"] == response_id
+
+    assert len(seen_bodies) == 1
+
+
 def test_event_store_redis_roundtrip_live(tmp_path: Path, monkeypatch) -> None:
     redis_dsn = os.getenv("ANYAGENT_TEST_REDIS_DSN")
     if not redis_dsn or not redis_dsn.strip():
