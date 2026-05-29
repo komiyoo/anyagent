@@ -130,6 +130,33 @@ def test_stream_typed_decodes_prompt_context_event_shape() -> None:
     asyncio.run(_run())
 
 
+def test_stream_typed_decodes_prompt_context_rendered_event_shape() -> None:
+    async def _run() -> None:
+        events = _FakeEvents(
+            [
+                SSEBlock(
+                    id="15",
+                    event="anyagent.prompt.context.rendered",
+                    data='{"response_id":"resp_1","prompt_cache_key":"cache_1","fragments":[{"kind":"agents_instructions","role":"developer","cache_class":"stable_prefix","label":"AGENTS.md","stable_id":"agents://main","rendered_text":"Use repo rules."}],"total_chars":15,"ts_ms":444}',
+                ),
+                SSEBlock(id="16", event=None, data="[DONE]"),
+            ]
+        )
+
+        seen = []
+        async for item in events.stream_typed("resp_1", include_model_events=False):
+            seen.append(item)
+
+        assert [item.type for item in seen] == ["anyagent.prompt.context.rendered", "anyagent.done"]
+        assert seen[0].seq == 15
+        assert seen[0].prompt_cache_key == "cache_1"
+        assert seen[0].total_chars == 15
+        assert seen[0].fragments[0].rendered_text == "Use repo rules."
+        assert seen[1].seq == 16
+
+    asyncio.run(_run())
+
+
 def test_stream_typed_wraps_error_events_and_skips_invalid_payloads() -> None:
     async def _run() -> None:
         events = _FakeEvents(

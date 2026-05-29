@@ -5,7 +5,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from anyagent.protocol.stage_events import AnyAgentPromptContextEvent
+from anyagent.protocol.prompt_context import RenderedPromptFragment
+from anyagent.protocol.stage_events import AnyAgentPromptContextEvent, AnyAgentPromptContextRenderedEvent
 
 from .finalization import (
     build_nonstream_response_finalizer,
@@ -28,6 +29,7 @@ class DistributedResponsePersistenceContext:
     runtime_config: dict[str, Any]
     request_transcript_items: list[dict[str, Any]] | None
     prompt_audit: Any | None = None
+    prompt_rendered_fragments: list[RenderedPromptFragment] | None = None
     warn: ResponsePersistenceWarningHook | None = None
 
     async def append_internal_event_best_effort(
@@ -92,6 +94,20 @@ class DistributedResponsePersistenceContext:
                     "type": "anyagent.prompt.context",
                     **payload,
                 }
+            )
+        )
+
+    async def append_prompt_context_rendered_event_best_effort(self, response_id: str) -> None:
+        if not self.prompt_rendered_fragments:
+            return
+        prompt_cache_key = getattr(self.prompt_audit, "prompt_cache_key", None)
+        total_chars = sum(len(fragment.rendered_text) for fragment in self.prompt_rendered_fragments)
+        await self.stage_sink_best_effort(
+            AnyAgentPromptContextRenderedEvent(
+                response_id=response_id,
+                prompt_cache_key=prompt_cache_key if isinstance(prompt_cache_key, str) else None,
+                fragments=self.prompt_rendered_fragments,
+                total_chars=total_chars,
             )
         )
 
@@ -192,6 +208,7 @@ def create_distributed_response_persistence_context(
     runtime_config: dict[str, Any],
     request_transcript_items: list[dict[str, Any]] | None,
     prompt_audit: Any | None = None,
+    prompt_rendered_fragments: list[RenderedPromptFragment] | None = None,
     warn: ResponsePersistenceWarningHook | None = None,
 ) -> DistributedResponsePersistenceContext:
     return DistributedResponsePersistenceContext(
@@ -204,5 +221,6 @@ def create_distributed_response_persistence_context(
         runtime_config=runtime_config,
         request_transcript_items=request_transcript_items,
         prompt_audit=prompt_audit,
+        prompt_rendered_fragments=prompt_rendered_fragments,
         warn=warn,
     )

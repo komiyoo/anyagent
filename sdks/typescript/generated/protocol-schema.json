@@ -4,10 +4,11 @@
       "changes": [
         "Expose protocol_version as the stable protocol compatibility identifier.",
         "Keep schema_version as the deterministic schema bundle revision.",
-        "Publish this changelog block in the schema bundle for SDK and runtime generators."
+        "Publish this changelog block in the schema bundle for SDK and runtime generators.",
+        "Add rendered prompt-context replay event and internal prompt-context history endpoint."
       ],
       "date": "2026-05-29",
-      "protocol_version": "0.1.8",
+      "protocol_version": "0.1.9",
       "schema_version": "2026-05-27",
       "summary": "Initial versioned protocol schema bundle with endpoint manifest, semantic rules and OpenAPI export."
     }
@@ -203,6 +204,12 @@
       "path": "/v1/responses",
       "request_format": "openai_responses_create",
       "response_format": "openai_response_object"
+    },
+    {
+      "method": "GET",
+      "operation": "responses.prompt_context",
+      "path": "/internal/responses/{response_id}/prompt-context",
+      "response_model": "anyagent.protocol.agent_api_internal.InternalResponsePromptContextResponse"
     },
     {
       "method": "GET",
@@ -6151,6 +6158,449 @@
       "title": "InternalPromptBundlePreviewResponse",
       "type": "object"
     },
+    "anyagent.protocol.agent_api_internal.InternalResponsePromptContextResponse": {
+      "$defs": {
+        "AnyAgentPromptContextEvent": {
+          "additionalProperties": false,
+          "description": "Prompt assembly summary emitted before model invocation.",
+          "properties": {
+            "compacted": {
+              "default": false,
+              "title": "Compacted",
+              "type": "boolean"
+            },
+            "contextual_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Contextual Count",
+              "type": "integer"
+            },
+            "dynamic_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Dynamic Count",
+              "type": "integer"
+            },
+            "fragment_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Fragment Count",
+              "type": "integer"
+            },
+            "fragment_kinds": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Fragment Kinds",
+              "type": "array"
+            },
+            "fragments": {
+              "items": {
+                "$ref": "#/$defs/PromptFragmentSummary"
+              },
+              "title": "Fragments",
+              "type": "array"
+            },
+            "prompt_cache_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Prompt Cache Key"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "retained_fragment_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Retained Fragment Count",
+              "type": "integer"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "stable_prefix_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Stable Prefix Count",
+              "type": "integer"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.prompt.context",
+              "default": "anyagent.prompt.context",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id"
+          ],
+          "title": "AnyAgentPromptContextEvent",
+          "type": "object"
+        },
+        "AnyAgentPromptContextRenderedEvent": {
+          "additionalProperties": false,
+          "description": "Fully rendered prompt fragments emitted for historical replay.",
+          "properties": {
+            "fragments": {
+              "items": {
+                "$ref": "#/$defs/RenderedPromptFragment"
+              },
+              "title": "Fragments",
+              "type": "array"
+            },
+            "prompt_cache_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Prompt Cache Key"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "total_chars": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Total Chars",
+              "type": "integer"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.prompt.context.rendered",
+              "default": "anyagent.prompt.context.rendered",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id"
+          ],
+          "title": "AnyAgentPromptContextRenderedEvent",
+          "type": "object"
+        },
+        "PromptFragmentSummary": {
+          "additionalProperties": false,
+          "description": "Stable summary of one prompt fragment for audit/replay.",
+          "properties": {
+            "cache_class": {
+              "title": "Cache Class",
+              "type": "string"
+            },
+            "kind": {
+              "title": "Kind",
+              "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Scope"
+            },
+            "source_hash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Hash"
+            },
+            "source_path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Path"
+            },
+            "stable_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Stable Id"
+            }
+          },
+          "required": [
+            "kind",
+            "cache_class"
+          ],
+          "title": "PromptFragmentSummary",
+          "type": "object"
+        },
+        "RenderedPromptFragment": {
+          "additionalProperties": false,
+          "description": "One fully rendered prompt fragment for debug / preview surfaces.",
+          "properties": {
+            "cache_class": {
+              "title": "Cache Class",
+              "type": "string"
+            },
+            "kind": {
+              "title": "Kind",
+              "type": "string"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Label"
+            },
+            "metadata": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "title": "Metadata",
+              "type": "object"
+            },
+            "rendered_text": {
+              "title": "Rendered Text",
+              "type": "string"
+            },
+            "role": {
+              "title": "Role",
+              "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Scope"
+            },
+            "source_hash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Hash"
+            },
+            "source_path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Path"
+            },
+            "stable_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Stable Id"
+            }
+          },
+          "required": [
+            "kind",
+            "role",
+            "cache_class",
+            "rendered_text"
+          ],
+          "title": "RenderedPromptFragment",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Response model for historical prompt-context replay.",
+      "properties": {
+        "audit_event": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnyAgentPromptContextEvent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fallback": {
+          "default": "missing",
+          "enum": [
+            "rendered",
+            "audit",
+            "missing"
+          ],
+          "title": "Fallback",
+          "type": "string"
+        },
+        "fragments": {
+          "items": {
+            "$ref": "#/$defs/RenderedPromptFragment"
+          },
+          "title": "Fragments",
+          "type": "array"
+        },
+        "prompt_cache_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Cache Key"
+        },
+        "rendered_event": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnyAgentPromptContextRenderedEvent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "total_chars": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Total Chars",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "response_id"
+      ],
+      "title": "InternalResponsePromptContextResponse",
+      "type": "object"
+    },
     "anyagent.protocol.agent_api_internal.InternalSkillListItem": {
       "additionalProperties": false,
       "description": "One skill entry returned by `GET /internal/skills/list`.",
@@ -7327,6 +7777,90 @@
           "title": "AnyAgentPromptContextEvent",
           "type": "object"
         },
+        "AnyAgentPromptContextRenderedEvent": {
+          "additionalProperties": false,
+          "description": "Fully rendered prompt fragments emitted for historical replay.",
+          "properties": {
+            "fragments": {
+              "items": {
+                "$ref": "#/$defs/RenderedPromptFragment"
+              },
+              "title": "Fragments",
+              "type": "array"
+            },
+            "prompt_cache_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Prompt Cache Key"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "total_chars": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Total Chars",
+              "type": "integer"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.prompt.context.rendered",
+              "default": "anyagent.prompt.context.rendered",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id"
+          ],
+          "title": "AnyAgentPromptContextRenderedEvent",
+          "type": "object"
+        },
         "AnyAgentToolPlannedEvent": {
           "additionalProperties": false,
           "description": "A tool call has been planned (requested by the model).",
@@ -8360,6 +8894,7 @@
                 "anyagent.done": "#/$defs/AnyAgentDoneEvent",
                 "anyagent.model.stream_event": "#/$defs/AnyAgentModelStreamEvent",
                 "anyagent.prompt.context": "#/$defs/AnyAgentPromptContextEvent",
+                "anyagent.prompt.context.rendered": "#/$defs/AnyAgentPromptContextRenderedEvent",
                 "anyagent.sandbox.workspace.checkpoint_failed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
                 "anyagent.sandbox.workspace.checkpointed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
                 "anyagent.sandbox.workspace.checkpointing": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
@@ -8390,6 +8925,9 @@
               },
               {
                 "$ref": "#/$defs/AnyAgentPromptContextEvent"
+              },
+              {
+                "$ref": "#/$defs/AnyAgentPromptContextRenderedEvent"
               },
               {
                 "$ref": "#/$defs/AnyAgentWorkspaceLifecycleEvent"
@@ -13267,6 +13805,189 @@
       "title": "AnyAgentPromptContextEvent",
       "type": "object"
     },
+    "anyagent.protocol.stage_events.AnyAgentPromptContextRenderedEvent": {
+      "$defs": {
+        "RenderedPromptFragment": {
+          "additionalProperties": false,
+          "description": "One fully rendered prompt fragment for debug / preview surfaces.",
+          "properties": {
+            "cache_class": {
+              "title": "Cache Class",
+              "type": "string"
+            },
+            "kind": {
+              "title": "Kind",
+              "type": "string"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Label"
+            },
+            "metadata": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "title": "Metadata",
+              "type": "object"
+            },
+            "rendered_text": {
+              "title": "Rendered Text",
+              "type": "string"
+            },
+            "role": {
+              "title": "Role",
+              "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Scope"
+            },
+            "source_hash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Hash"
+            },
+            "source_path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Path"
+            },
+            "stable_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Stable Id"
+            }
+          },
+          "required": [
+            "kind",
+            "role",
+            "cache_class",
+            "rendered_text"
+          ],
+          "title": "RenderedPromptFragment",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Fully rendered prompt fragments emitted for historical replay.",
+      "properties": {
+        "fragments": {
+          "items": {
+            "$ref": "#/$defs/RenderedPromptFragment"
+          },
+          "title": "Fragments",
+          "type": "array"
+        },
+        "prompt_cache_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Cache Key"
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "total_chars": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Total Chars",
+          "type": "integer"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "const": "anyagent.prompt.context.rendered",
+          "default": "anyagent.prompt.context.rendered",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "response_id"
+      ],
+      "title": "AnyAgentPromptContextRenderedEvent",
+      "type": "object"
+    },
     "anyagent.protocol.stage_events.AnyAgentToolPlannedEvent": {
       "$defs": {
         "StagePayloadSummary": {
@@ -15966,7 +16687,7 @@
     }
   },
   "protocol_package": "anyagent.protocol",
-  "protocol_version": "0.1.8",
+  "protocol_version": "0.1.9",
   "schema_version": "2026-05-27",
   "semantic_rules": {
     "anyagent.protocol.credential_vault.CredentialScope": [
@@ -16736,6 +17457,90 @@
           "title": "AnyAgentPromptContextEvent",
           "type": "object"
         },
+        "AnyAgentPromptContextRenderedEvent": {
+          "additionalProperties": false,
+          "description": "Fully rendered prompt fragments emitted for historical replay.",
+          "properties": {
+            "fragments": {
+              "items": {
+                "$ref": "#/$defs/RenderedPromptFragment"
+              },
+              "title": "Fragments",
+              "type": "array"
+            },
+            "prompt_cache_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Prompt Cache Key"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "total_chars": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Total Chars",
+              "type": "integer"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.prompt.context.rendered",
+              "default": "anyagent.prompt.context.rendered",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id"
+          ],
+          "title": "AnyAgentPromptContextRenderedEvent",
+          "type": "object"
+        },
         "AnyAgentToolPlannedEvent": {
           "additionalProperties": false,
           "description": "A tool call has been planned (requested by the model).",
@@ -17208,6 +18013,103 @@
           "title": "PromptFragmentSummary",
           "type": "object"
         },
+        "RenderedPromptFragment": {
+          "additionalProperties": false,
+          "description": "One fully rendered prompt fragment for debug / preview surfaces.",
+          "properties": {
+            "cache_class": {
+              "title": "Cache Class",
+              "type": "string"
+            },
+            "kind": {
+              "title": "Kind",
+              "type": "string"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Label"
+            },
+            "metadata": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "title": "Metadata",
+              "type": "object"
+            },
+            "rendered_text": {
+              "title": "Rendered Text",
+              "type": "string"
+            },
+            "role": {
+              "title": "Role",
+              "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Scope"
+            },
+            "source_hash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Hash"
+            },
+            "source_path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Path"
+            },
+            "stable_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Stable Id"
+            }
+          },
+          "required": [
+            "kind",
+            "role",
+            "cache_class",
+            "rendered_text"
+          ],
+          "title": "RenderedPromptFragment",
+          "type": "object"
+        },
         "StageError": {
           "additionalProperties": false,
           "description": "A machine-readable error for stage events.",
@@ -17298,6 +18200,7 @@
           "anyagent.done": "#/$defs/AnyAgentDoneEvent",
           "anyagent.model.stream_event": "#/$defs/AnyAgentModelStreamEvent",
           "anyagent.prompt.context": "#/$defs/AnyAgentPromptContextEvent",
+          "anyagent.prompt.context.rendered": "#/$defs/AnyAgentPromptContextRenderedEvent",
           "anyagent.sandbox.workspace.checkpoint_failed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
           "anyagent.sandbox.workspace.checkpointed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
           "anyagent.sandbox.workspace.checkpointing": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
@@ -17328,6 +18231,9 @@
         },
         {
           "$ref": "#/$defs/AnyAgentPromptContextEvent"
+        },
+        {
+          "$ref": "#/$defs/AnyAgentPromptContextRenderedEvent"
         },
         {
           "$ref": "#/$defs/AnyAgentWorkspaceLifecycleEvent"

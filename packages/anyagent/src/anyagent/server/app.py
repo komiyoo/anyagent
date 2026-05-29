@@ -78,6 +78,7 @@ from anyagent.protocol.agent_api_internal import (
     InternalAgentSkillsConfig,
     InternalAgentToolsConfig,
     InternalPromptBundlePreviewResponse,
+    InternalResponsePromptContextResponse,
     InternalToolCatalogItem,
     InternalToolCatalogResponse,
     WorkspaceAgentFileKind,
@@ -91,7 +92,7 @@ from anyagent.protocol.observability import ObservabilityLevel
 from anyagent.protocol.prompt_context import PromptContextAudit
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.protocol.sse import SSEBlockDecoder, encode_sse_block
-from anyagent.protocol.stage_events import AnyAgentPromptContextEvent
+from anyagent.protocol.stage_events import AnyAgentPromptContextEvent, AnyAgentPromptContextRenderedEvent
 from anyagent.protocol.tool_runtime import ManifestRequest, PolicyHint, ToolContext
 from anyagent.server.finalization import build_nonstream_response_finalizer
 from anyagent.server.idempotency import begin_or_replay_response_run
@@ -785,6 +786,47 @@ def create_app(
         resp = await state.events.list_events(response_id=response_id, last_seq=last_seq, limit=limit)
         return JSONResponse(resp.model_dump(exclude_none=True))
 
+    @app.get("/internal/responses/{response_id}/prompt-context")
+    async def internal_response_prompt_context(
+        response_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        last_seq = 0
+        rendered_event = None
+        audit_event = None
+        for _ in range(100):
+            page = await state.events.list_events(response_id=response_id, last_seq=last_seq, limit=200)
+            page_rendered = page.latest_prompt_context_rendered()
+            page_audit = page.latest_prompt_context()
+            if page_rendered is not None:
+                rendered_event = page_rendered
+            if page_audit is not None:
+                audit_event = page_audit
+            if page.next_last_seq <= last_seq or page.done:
+                break
+            last_seq = page.next_last_seq
+        if rendered_event is not None:
+            payload = InternalResponsePromptContextResponse(
+                response_id=response_id,
+                prompt_cache_key=rendered_event.prompt_cache_key,
+                total_chars=rendered_event.total_chars,
+                fragments=rendered_event.fragments,
+                rendered_event=rendered_event,
+                audit_event=audit_event,
+                fallback="rendered",
+            )
+        elif audit_event is not None:
+            payload = InternalResponsePromptContextResponse(
+                response_id=response_id,
+                prompt_cache_key=audit_event.prompt_cache_key,
+                audit_event=audit_event,
+                fallback="audit",
+            )
+        else:
+            payload = InternalResponsePromptContextResponse(response_id=response_id)
+        return JSONResponse(payload.model_dump(exclude_none=True))
+
     @app.get("/internal/observability/summary")
     async def internal_observability_summary(
         response_id: str,
@@ -1175,6 +1217,15 @@ def create_app(
             }
         )
         await _stage_sink(prompt_context_event)
+        rendered_fragments = prompt_envelope.rendered_fragments()
+        await _stage_sink(
+            AnyAgentPromptContextRenderedEvent(
+                response_id=response_id,
+                prompt_cache_key=prompt_envelope.prompt_cache_key,
+                fragments=rendered_fragments,
+                total_chars=sum(len(fragment.rendered_text) for fragment in rendered_fragments),
+            )
+        )
         await state.events.append(
             response_id=response_id,
             event="anyagent.response.request",

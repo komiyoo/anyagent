@@ -56,6 +56,35 @@ def test_internal_events_list_response_latest_prompt_context_returns_latest_matc
     assert prompt_context.fragments[0].kind == "environment_context"
 
 
+def test_internal_events_list_response_latest_rendered_prompt_context_returns_latest_match() -> None:
+    listing = InternalEventsListResponse(
+        response_id="resp_list_rendered",
+        requested_last_seq=0,
+        next_last_seq=3,
+        done=False,
+        events=[
+            InternalEventItem(
+                seq=1,
+                event="anyagent.prompt.context.rendered",
+                data='{"response_id":"resp_list_rendered","prompt_cache_key":"cache_old","fragments":[{"kind":"agents_instructions","role":"developer","cache_class":"stable_prefix","rendered_text":"old"}],"total_chars":3,"ts_ms":111}',
+            ),
+            InternalEventItem(
+                seq=2,
+                event="anyagent.prompt.context.rendered",
+                data='{"response_id":"resp_list_rendered","prompt_cache_key":"cache_new","fragments":[{"kind":"environment_context","role":"developer","cache_class":"contextual","rendered_text":"new context"}],"total_chars":11,"ts_ms":222}',
+            ),
+        ],
+    )
+
+    prompt_context = listing.latest_prompt_context_rendered()
+
+    assert prompt_context is not None
+    assert prompt_context.seq == 2
+    assert prompt_context.prompt_cache_key == "cache_new"
+    assert prompt_context.total_chars == 11
+    assert prompt_context.fragments[0].rendered_text == "new context"
+
+
 def test_internal_events_list_response_replay_summary_keeps_prompt_context_and_counts() -> None:
     listing = InternalEventsListResponse(
         response_id="resp_list_3",

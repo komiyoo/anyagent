@@ -149,6 +149,7 @@ def create_distributed_responses_router(
         tool_context = tooling_ctx.tool_context
         mcp_manager = tooling_ctx.mcp_manager
         prompt_audit = tooling_ctx.prompt_audit
+        prompt_rendered_fragments = tooling_ctx.prompt_envelope.rendered_fragments()
         manifest_for_session = tooling_ctx.manifest_resolver
         refresh_manifest_for_session = tooling_ctx.manifest_force_refresh
 
@@ -162,6 +163,7 @@ def create_distributed_responses_router(
             runtime_config=session_ctx.effective_runtime_config,
             request_transcript_items=session_ctx.request_transcript_items,
             prompt_audit=prompt_audit,
+            prompt_rendered_fragments=prompt_rendered_fragments,
             warn=_warn_best_effort,
         )
         if skill_decisions:
@@ -196,6 +198,7 @@ def create_distributed_responses_router(
                     mcp_manager=mcp_manager,
                     stage_event_sink=persistence_ctx.stage_sink_best_effort,
                     append_prompt_context_event=persistence_ctx.append_prompt_context_event_best_effort,
+                    append_prompt_context_rendered_event=persistence_ctx.append_prompt_context_rendered_event_best_effort,
                     internal_event_writer=persistence_ctx.append_internal_event_best_effort,
                     run_final_persister_builder=persistence_ctx.build_run_final_persister,
                     new_response_id_factory=lambda: f"resp_anyagent_{uuid4().hex}",
@@ -218,6 +221,7 @@ def create_distributed_responses_router(
                 mcp_manager=mcp_manager,
                 stage_event_sink=persistence_ctx.stage_sink_best_effort,
                 append_prompt_context_event=persistence_ctx.append_prompt_context_event_best_effort,
+                append_prompt_context_rendered_event=persistence_ctx.append_prompt_context_rendered_event_best_effort,
                 finalize_nonstream_persisted=persistence_ctx.finalize_nonstream_persisted,
                 advance_nonstream_session_only=persistence_ctx.advance_nonstream_session_only,
                 new_response_id_factory=lambda: f"resp_anyagent_{uuid4().hex}",

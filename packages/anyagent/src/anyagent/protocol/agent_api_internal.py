@@ -21,7 +21,12 @@ from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
 from anyagent.protocol.observability import NormalizedTelemetryEvent, TelemetrySource
 from anyagent.protocol.prompt_context import PromptContextAudit, RenderedPromptFragment
 from anyagent.protocol.sandbox import SandboxMode
-from anyagent.protocol.stage_events import AnyAgentPromptContextEvent, StageEvent, decode_stage_event
+from anyagent.protocol.stage_events import (
+    AnyAgentPromptContextEvent,
+    AnyAgentPromptContextRenderedEvent,
+    StageEvent,
+    decode_stage_event,
+)
 
 
 WorkspaceAgentFileKind = Literal["agents_md", "agent_yaml", "mcp_json"]
@@ -78,6 +83,15 @@ class InternalEventsListResponse(BaseModel):
                 latest = event
         return latest
 
+    def latest_prompt_context_rendered(self) -> AnyAgentPromptContextRenderedEvent | None:
+        """Return the latest rendered prompt-context event present in this page, if any."""
+
+        latest: AnyAgentPromptContextRenderedEvent | None = None
+        for event in self.iter_typed(include_model_events=False):
+            if isinstance(event, AnyAgentPromptContextRenderedEvent):
+                latest = event
+        return latest
+
     def replay_summary(self, *, include_model_events: bool = True) -> "InternalEventsReplaySummary":
         """Build one compact replay summary for this page."""
 
@@ -111,6 +125,20 @@ class InternalEventsReplaySummary(BaseModel):
     run_status: str | None = None
     effective_run_status: str | None = None
     prompt_context: AnyAgentPromptContextEvent | None = None
+
+
+class InternalResponsePromptContextResponse(BaseModel):
+    """Response model for historical prompt-context replay."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    response_id: str
+    prompt_cache_key: str | None = None
+    total_chars: int = Field(default=0, ge=0)
+    fragments: list[RenderedPromptFragment] = Field(default_factory=list)
+    rendered_event: AnyAgentPromptContextRenderedEvent | None = None
+    audit_event: AnyAgentPromptContextEvent | None = None
+    fallback: Literal["rendered", "audit", "missing"] = "missing"
 
 
 class InternalObservabilityTurnMetric(BaseModel):

@@ -22,7 +22,7 @@ import anyagent.protocol as protocol_pkg
 
 
 SCHEMA_BUNDLE_VERSION = "2026-05-27"
-PROTOCOL_VERSION = "0.1.8"
+PROTOCOL_VERSION = "0.1.9"
 OPENAPI_VERSION = "3.1.0"
 
 
@@ -36,6 +36,7 @@ PROTOCOL_CHANGELOG: list[dict[str, Any]] = [
             "Expose protocol_version as the stable protocol compatibility identifier.",
             "Keep schema_version as the deterministic schema bundle revision.",
             "Publish this changelog block in the schema bundle for SDK and runtime generators.",
+            "Add rendered prompt-context replay event and internal prompt-context history endpoint.",
         ],
     }
 ]
@@ -90,6 +91,12 @@ PROTOCOL_ENDPOINTS: list[dict[str, Any]] = [
         "method": "GET",
         "path": "/internal/events/list",
         "response_model": "anyagent.protocol.agent_api_internal.InternalEventsListResponse",
+    },
+    {
+        "operation": "responses.prompt_context",
+        "method": "GET",
+        "path": "/internal/responses/{response_id}/prompt-context",
+        "response_model": "anyagent.protocol.agent_api_internal.InternalResponsePromptContextResponse",
     },
     {
         "operation": "agents.list",

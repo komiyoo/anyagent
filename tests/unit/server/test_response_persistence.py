@@ -4,7 +4,7 @@ import asyncio
 import json
 from typing import Any
 
-from anyagent.protocol.prompt_context import PromptContextAudit, PromptFragmentSummary
+from anyagent.protocol.prompt_context import PromptContextAudit, PromptFragmentSummary, RenderedPromptFragment
 from anyagent.server.response_persistence import create_distributed_response_persistence_context
 from anyagent.storage.inmemory import InMemoryEventStore, InMemoryLeaseLock, InMemoryRunStore, InMemorySessionStore
 from anyagent.storage.runtime import StorageRuntime
@@ -33,6 +33,15 @@ async def _run_response_persistence_context_appends_stage_and_prompt_events() ->
             stable_prefix_count=1,
             fragment_kinds=["skill"],
         ),
+        prompt_rendered_fragments=[
+            RenderedPromptFragment(
+                kind="skill",
+                role="developer",
+                cache_class="stable_prefix",
+                stable_id="s1",
+                rendered_text="Use repo rules.",
+            )
+        ],
     )
 
     class _StageEvent:
@@ -44,12 +53,21 @@ async def _run_response_persistence_context_appends_stage_and_prompt_events() ->
 
     await ctx.stage_sink_best_effort(_StageEvent())
     await ctx.append_prompt_context_event_best_effort("resp_1")
+    await ctx.append_prompt_context_rendered_event_best_effort("resp_1")
 
     events = await storage.event_store.list(response_id="resp_1", after_seq=0, limit=10)
-    assert [event.event for event in events] == ["anyagent.test.event", "anyagent.prompt.context"]
+    assert [event.event for event in events] == [
+        "anyagent.test.event",
+        "anyagent.prompt.context",
+        "anyagent.prompt.context.rendered",
+    ]
     prompt_payload = json.loads(events[1].data)
     assert prompt_payload["prompt_cache_key"] == "cache-1"
     assert prompt_payload["fragments"][0]["stable_id"] == "s1"
+    rendered_payload = json.loads(events[2].data)
+    assert rendered_payload["prompt_cache_key"] == "cache-1"
+    assert rendered_payload["total_chars"] == len("Use repo rules.")
+    assert rendered_payload["fragments"][0]["rendered_text"] == "Use repo rules."
 
 
 def test_response_persistence_context_finalizes_run_and_session() -> None:

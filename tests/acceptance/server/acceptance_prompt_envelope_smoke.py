@@ -133,6 +133,22 @@ async def _run_builtin_server_applies_prompt_envelope_to_provider_request(*, tmp
                 if isinstance(item, dict) and item.get("event") == "anyagent.prompt.context"
             ]
             assert len(prompt_events) == 1
+            rendered_events = [
+                item
+                for item in event_payload["events"]
+                if isinstance(item, dict) and item.get("event") == "anyagent.prompt.context.rendered"
+            ]
+            assert len(rendered_events) == 1
+            replay_resp = await client.get(
+                f"/internal/responses/{response_id}/prompt-context",
+                headers={"Authorization": "Bearer user-key"},
+            )
+            replay_resp.raise_for_status()
+            replay_payload = replay_resp.json()
+            assert replay_payload["fallback"] == "rendered"
+            assert replay_payload["prompt_cache_key"] == body["prompt_cache_key"]
+            assert replay_payload["total_chars"] > 0
+            assert any(item["kind"] == "environment_context" for item in replay_payload["fragments"])
             session_record = await app.state.anyagent.session_store.get(session_partition_key="main::sess_prompt")
             assert session_record is not None
             prompt_context = session_record.snapshot_json["last_run"]["prompt_context"]

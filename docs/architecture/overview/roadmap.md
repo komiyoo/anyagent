@@ -120,24 +120,29 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 | **P0** | 3 | TypeScript SDK 最小可用面 (MVU) | 1 | ✅ 已完成 | `todo/sdk.md` L27 |
 | **P0** | 4 | Tool Deferred Loading + Tool Search | 1.5 | ✅ 已完成 | `todo/tool-runtime.md` L26-27 |
 | **P0** | 5 | Skill → Agent Loop 注入管道 | 1.5 | ✅ 已完成 | `todo/server-runtime.md` L27 |
-| **P1** | 6 | Tool Runtime contract 测试矩阵 + standalone 等价验收 | 2 | 🔲 未开始 | `todo/tool-runtime.md` L33-34 |
-| **P1** | 7 | Storage replay contract: PG + Redis | 2 | 🔲 未开始 | `todo/storage.md` L24 |
-| **P1** | 8 | 跨节点 Run 调度与 lock contract | 2 | 🔲 未开始 | `todo/server-runtime.md` L34-35 |
-| **P1** | 9 | 第二 sandbox backend | 2 | 🔲 未开始 | `todo/sandbox.md` L23-24 |
-| **P2** | 10 | Plugin Manifest 统一 + MCP filter/sanitize | 1.5 | 🔲 未开始 | `todo/tool-runtime.md` L28-29 |
-| **P2** | 11 | 配置层级 merge + MCP 生命周期 Stage Events | 1.5 | 🔲 未开始 | `todo/server-runtime.md` L28-29 |
-| **P2** | 12 | Observability envelope + audit sink | 2 | 🔲 未开始 | `todo/server-runtime.md` L36 |
-| **P3** | 13 | Credential v2 (DB/Vault/session/轮转/审计) | 3 | 🔲 未开始 | `todo/security-compliance.md` L18-22 |
-| **P4** | 14 | Multi-Agent contract | 4 | 🔲 未开始 | `todo/multi-agent.md` L23-25 |
-| **P4** | 15 | Reference conformance suite + 第二 runtime | 4 | 🔲 未开始 | `todo/multi-runtime.md` L25-27 |
+| **P0** | 6 | Prompt Context Replay（rendered fragments 持久化 + 历史查询 API） | 1.5 | ✅ 已完成 | `todo/persistence.md` M1 |
+| **P1** | 7 | Tool Execution Replay（tool full payload 持久化 + 查询） | 1.5 | 🔲 未开始 | `todo/persistence.md` M2 |
+| **P1** | 8 | Model Request Replay（applied_body 持久化 + replay） | 1.5 | 🔲 未开始 | `todo/persistence.md` M3 |
+| **P1** | 9 | Tool Runtime contract 测试矩阵 + standalone 等价验收 | 2 | 🔲 未开始 | `todo/tool-runtime.md` L33-34 |
+| **P1** | 10 | Storage replay contract: PG + Redis | 2 | 🔲 未开始 | `todo/storage.md` L24 |
+| **P1** | 11 | 跨节点 Run 调度与 lock contract | 2 | 🔲 未开始 | `todo/server-runtime.md` L42-43 |
+| **P1** | 12 | 第二 sandbox backend | 2 | 🔲 未开始 | `todo/sandbox.md` L23-24 |
+| **P2** | 13 | Plugin Manifest 统一 + MCP filter/sanitize | 1.5 | 🔲 未开始 | `todo/tool-runtime.md` L28-29 |
+| **P2** | 14 | 配置层级 merge + MCP 生命周期 Stage Events | 1.5 | 🔲 未开始 | `todo/server-runtime.md` L28-29 |
+| **P2** | 15 | Unified Observability Sink（统一 envelope 出口 + 外部审计对接） | 2 | 🔲 未开始 | `todo/persistence.md` M4 |
+| **P3** | 16 | Credential v2 (DB/Vault/session/轮转/审计) | 3 | 🔲 未开始 | `todo/security-compliance.md` L18-22 |
+| **P4** | 17 | Multi-Agent contract | 4 | 🔲 未开始 | `todo/multi-agent.md` L23-25 |
+| **P4** | 18 | Reference conformance suite + 第二 runtime | 4 | 🔲 未开始 | `todo/multi-runtime.md` L25-27 |
 
 状态图例：🔲 未开始 · 🔵 进行中 · ✅ 已完成
 
 依赖关系备注：
-- #4 和 #5 可并行（分别改 ToolRegistry 和 agent_runtime）
-- #8 依赖 #7（lock contract 需要 storage adapter 就绪）
-- #10 依赖 #4（Plugin Manifest 需要 Tool Registry/Search 形状稳定）
-- #13 依赖 #6 + #12（Credential v2 需要 Tool Runtime GA + audit envelope）
+- #5 和 #6 可并行（分别改 agent_runtime 注入管道和 persistence 写入路径）
+- #7、#8 依赖 #6（replay event 格式需要 prompt context rendered event 形状稳定后对齐）
+- #11 依赖 #10（lock contract 需要 storage adapter 就绪）
+- #13 依赖 #4（Plugin Manifest 需要 Tool Registry/Search 形状稳定）
+- #15 依赖 #6 + #7 + #8（统一 sink 需要所有 replay event 类型就绪）
+- #16 依赖 #9 + #15（Credential v2 需要 Tool Runtime GA + audit sink）
 
 ---
 
@@ -153,30 +158,36 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 
 需求锚点:`req-4`(SDK)、`req-4-1` ~ `req-4-6-2`(Responses API & SSE)、`req-7`(协议导出)
 
-### Phase 1.5 — Agentic Ecosystem Hardening
+### Phase 1.5 — Agentic Ecosystem Hardening + Systematic Persistence
 
-**目标**:让 Tool Registry、Skill 系统、MCP 管理和 Plugin 体系具备生产级的发现、注入与治理能力,对齐业界最佳实践（参考 Codex CLI 架构）。
+**目标**:双线并行——(1) 让 Tool Registry、Skill 系统、MCP 管理具备生产级注入与治理能力；(2) 让完整执行过程（prompt 组装、模型调用、工具执行）在 event store 中具备全量回放能力,支撑 Studio 历史回看、Eval/Replay 与审计。
 
+Agentic Ecosystem:
 - Tool Deferred Loading:引入工具曝光度分级（direct/deferred/hidden）与按需发现机制,减少 context token 浪费
 - Skill → Agent Loop 注入管道:补齐 skill mention 解析 → SKILL.md 读取 → prompt context 注入的标准路径,带 token budget 控制
 - Plugin Manifest 统一:设计统一 PluginManifest,一个 plugin 可同时声明 skills + MCP servers + tools + hooks
 - 配置层级 merge:支持 system → user → workspace → session 的配置合并策略
 - MCP 生命周期事件:对齐 Stage Events 发射 MCP server 启动/就绪/失败状态
 
-入口:[`todo/tool-runtime.md`](../../../todo/tool-runtime.md)、[`todo/sdk.md`](../../../todo/sdk.md)、[`todo/server-runtime.md`](../../../todo/server-runtime.md)
+Systematic Persistence（系统性持久化）:
+- Prompt Context Replay:rendered fragments 持久化 + 历史查询 API + Studio 展示
+- Tool Execution Replay:tool input/output full payload 持久化 + 查询 API
+- Model Request Replay:applied_body（注入 system/developer prompt 后的完整请求体）持久化 + replay API
 
-需求锚点:`req-5`(Agent loop)、`req-5-2`(Tool Manifest)、`req-5-2-1`(Tool Registry)、`req-6`(Gateway/Plugin)
+入口:[`todo/tool-runtime.md`](../../../todo/tool-runtime.md)、[`todo/server-runtime.md`](../../../todo/server-runtime.md)、[`todo/persistence.md`](../../../todo/persistence.md)
+
+需求锚点:`req-5`(Agent loop)、`req-5-2`(Tool Manifest)、`req-5-2-1`(Tool Registry)、`req-5-13`(Observability/Audit)、`req-6`(Gateway/Plugin)
 
 ### Phase 2 — Production Runtime Hardening
 
-**目标**:让 Python reference server 在分布式部署形态下可以承载多 workspace / 多租户主路径。
+**目标**:让 Python reference server 在分布式部署形态下可以承载多 workspace / 多租户主路径,并将持久化数据统一出口到外部审计系统。
 
 - 跨节点 Run 调度与 lock contract 实装(基于现有 storage adapter)
 - Tool Runtime standalone 模式 GA(manifest / execute / credential 注入 / policy 强制 contract 全通)
 - Sandbox 第二 backend 实现(容器或 microVM 之一),走 contract test 验证可替换性
-- Observability 统一 envelope 出口与 audit 持久化
+- Unified Observability Sink:统一 envelope 出口格式,对接 OTel / 外部审计系统;Event Store 增加 TTL / retention policy
 
-入口:[`todo/server-runtime.md`](../../../todo/server-runtime.md)、[`todo/storage.md`](../../../todo/storage.md)、[`todo/tool-runtime.md`](../../../todo/tool-runtime.md)、[`todo/sandbox.md`](../../../todo/sandbox.md)
+入口:[`todo/server-runtime.md`](../../../todo/server-runtime.md)、[`todo/storage.md`](../../../todo/storage.md)、[`todo/tool-runtime.md`](../../../todo/tool-runtime.md)、[`todo/sandbox.md`](../../../todo/sandbox.md)、[`todo/persistence.md`](../../../todo/persistence.md)
 
 需求锚点:`req-3-1`(存储)、`req-5`(Agent loop & runtime)、`req-5-13`(audit)、`req-6`(Tool Runtime)、`req-12`(sandbox)
 

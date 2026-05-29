@@ -21,6 +21,7 @@ from anyagent.protocol.admin_storage import AdminSandboxRuntimeDiagnostics
 from anyagent.protocol.prompt_context import (
     PromptContextAudit,
     PromptFragmentSummary,
+    RenderedPromptFragment,
     build_prompt_context_audit,
     compact_prompt_fragments,
 )
@@ -254,6 +255,15 @@ class AnyAgentPromptContextEvent(StageEventBase, PromptContextAudit):
     type: Literal["anyagent.prompt.context"] = "anyagent.prompt.context"
 
 
+class AnyAgentPromptContextRenderedEvent(StageEventBase):
+    """Fully rendered prompt fragments emitted for historical replay."""
+
+    type: Literal["anyagent.prompt.context.rendered"] = "anyagent.prompt.context.rendered"
+    prompt_cache_key: str | None = None
+    fragments: list[RenderedPromptFragment] = Field(default_factory=list)
+    total_chars: int = Field(default=0, ge=0)
+
+
 class AnyAgentWorkspaceLifecycleEvent(StageEventBase):
     """Workspace lifecycle event for sandbox session filesystem."""
 
@@ -286,6 +296,7 @@ StageEvent: TypeAlias = Annotated[
     | AnyAgentCommandPlannedEvent
     | AnyAgentCommandResultEvent
     | AnyAgentPromptContextEvent
+    | AnyAgentPromptContextRenderedEvent
     | AnyAgentWorkspaceLifecycleEvent
     | AnyAgentDoneEvent,
     Field(discriminator="type"),

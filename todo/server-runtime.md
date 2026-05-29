@@ -16,9 +16,10 @@
 
 ## 里程碑
 
-- M1:跨节点 Run 调度 & lock contract 实装
-- M2:Observability 统一 envelope 出口
-- M3:第二 server runtime(异语言)通过 reference conformance suite(Phase 4)
+- M1:系统性持久化 — Prompt Context / Tool Execution / Model Request Replay（Phase 1.5）
+- M2:跨节点 Run 调度 & lock contract 实装（Phase 2）
+- M3:Unified Observability Sink — 统一 envelope 出口 + 外部审计对接（Phase 2）
+- M4:第二 server runtime（异语言）通过 reference conformance suite（Phase 4）
 
 ## 任务
 
@@ -29,11 +30,19 @@
 - [ ] P1 MCP 生命周期 Stage Events:对齐 `anyagent.protocol.events` 发射 `mcp.server.starting` / `mcp.server.ready` / `mcp.server.failed` 事件,可被 SDK 消费(Req: `requirements.md#req-5`、`requirements.md#req-5-13`)
 - [ ] P2 AGENTS.md 层级遍历:支持从 cwd 到 project root 每层收集 AGENTS.md,拼接后注入 agent instructions,带 byte budget 限制(monorepo 场景)(Req: `requirements.md#req-5`)
 
+### Phase 1.5 — 系统性持久化（Systematic Persistence）
+
+> 详细任务清单见 `todo/persistence.md`
+
+- [x] P0 Prompt Context Replay：rendered fragments 持久化 + 历史查询 API（Req: `requirements.md#req-5-13`；Detail: `todo/persistence.md` M1；Impl: `packages/anyagent/src/anyagent/protocol/stage_events.py:258`, `packages/anyagent/src/anyagent/server/app.py:798`, `packages/anyagent/src/anyagent/server/response_persistence.py:100`；Module: `anyagent.protocol.stage_events`, `anyagent.server.app`, `anyagent.server.response_persistence`）
+- [ ] P1 Tool Execution Replay：tool input/output full payload 持久化 + 查询（Req: `requirements.md#req-5-13`；Detail: `todo/persistence.md` M2）
+- [ ] P1 Model Request Replay：applied_body 持久化 + replay API（Req: `requirements.md#req-5-13`；Detail: `todo/persistence.md` M3）
+
 ### Phase 2 — Production Runtime Hardening
 
 - [ ] P0 设计跨节点 Run 调度与 lock contract,落 ADR(Req: `requirements.md#req-5`)
 - [ ] P0 实装 lock contract 的 Redis 与 PostgreSQL adapter,跑通跨节点 resume / cancel(Req: `requirements.md#req-5`、`requirements.md#req-3-1`)
-- [ ] P1 统一 observability envelope 出口,接入 audit sink(Req: `requirements.md#req-5-13`)
+- [ ] P1 Unified Observability Sink：统一 envelope 出口 + 外部审计系统对接（Req: `requirements.md#req-5-13`；Detail: `todo/persistence.md` M4）
 - [ ] P2 整理 reference conformance suite,为第二 server runtime 接入准备验收基线(Req: `requirements.md#req-5`、`requirements.md#req-7`)
 
 ## 决策 & 争议点

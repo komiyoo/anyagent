@@ -52,6 +52,7 @@ async def execute_distributed_nonstream_response(
     mcp_manager: Any,
     stage_event_sink: Any,
     append_prompt_context_event: PromptContextAppender,
+    append_prompt_context_rendered_event: PromptContextAppender,
     finalize_nonstream_persisted: PersistedFinalizer,
     advance_nonstream_session_only: SessionOnlyAdvancer,
     new_response_id_factory: Callable[[], str],
@@ -64,6 +65,7 @@ async def execute_distributed_nonstream_response(
     )
     if idempotency_key is not None and idem_created:
         await append_prompt_context_event(response_id_for_run)
+        await append_prompt_context_rendered_event(response_id_for_run)
 
     status_code, resp_json = await run_tool_loop_nonstream_fn(
         model_provider=model_provider,
@@ -134,6 +136,7 @@ async def execute_distributed_stream_response(
     mcp_manager: Any,
     stage_event_sink: Any,
     append_prompt_context_event: PromptContextAppender,
+    append_prompt_context_rendered_event: PromptContextAppender,
     internal_event_writer: InternalEventWriter,
     run_final_persister_builder: RunFinalPersisterBuilder,
     new_response_id_factory: Callable[[], str],
@@ -158,6 +161,7 @@ async def execute_distributed_stream_response(
                 mcp_manager=mcp_manager,
                 stage_event_sink=stage_event_sink,
                 append_prompt_context_event=append_prompt_context_event,
+                append_prompt_context_rendered_event=append_prompt_context_rendered_event,
                 internal_event_writer=internal_event_writer,
                 run_final_persister_builder=run_final_persister_builder,
                 run_tool_loop_stream_live_fn=run_tool_loop_stream_live_fn,
@@ -169,6 +173,7 @@ async def execute_distributed_stream_response(
 
     canonical_response_id = new_response_id_factory()
     await append_prompt_context_event(canonical_response_id)
+    await append_prompt_context_rendered_event(canonical_response_id)
 
     async def iter_sse() -> Any:
         try:
@@ -234,11 +239,13 @@ async def _run_idempotent_stream_to_store(
     mcp_manager: Any,
     stage_event_sink: Any,
     append_prompt_context_event: PromptContextAppender,
+    append_prompt_context_rendered_event: PromptContextAppender,
     internal_event_writer: InternalEventWriter,
     run_final_persister_builder: RunFinalPersisterBuilder,
     run_tool_loop_stream_live_fn: RunToolLoopStreamLiveFn,
 ) -> None:
     await append_prompt_context_event(canonical_response_id)
+    await append_prompt_context_rendered_event(canonical_response_id)
 
     append_event = build_response_event_appender(
         response_id=canonical_response_id,
