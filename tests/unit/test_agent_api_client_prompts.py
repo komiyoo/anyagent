@@ -47,3 +47,13 @@ def test_example_run_bundle_applies_local_option_overrides() -> None:
     assert bundle.tool_loop_items[0].item["name"] == "core.web_fetch"
     assert "纯本地示例" in bundle.explanation.key_takeaways[0]
 
+
+def test_example_run_bundle_uses_non_provider_model_label_by_default() -> None:
+    """SDK 本地示例不应默认到某个真实模型/provider。"""
+
+    client = AnyAgent(api_key="test-key", base_url="http://127.0.0.1:8787")
+
+    bundle = client.prompts.example_run_bundle()
+
+    assert bundle.model == "anyagent-example-model"
+    assert bundle.prompt_bundle.model == "anyagent-example-model"

@@ -83,6 +83,7 @@ type ChatStore = {
   stageEvents: StudioDebugEvent[];
   streamEvents: StudioDebugEvent[];
   appendMessage: (message: ChatMessage) => void;
+  deleteConversation: (id: string) => void;
   newConversation: () => void;
   renameConversation: (id: string, title: string) => void;
   replaceMessage: (id: string, content: string) => void;
@@ -126,6 +127,28 @@ export const useChatStore = create<ChatStore>((set, get) => {
     stageEvents: [],
     streamEvents: [],
     appendMessage: (message) => commitMessages([...get().messages, message]),
+    deleteConversation: (id) => {
+      const conversations = get().conversations.filter((conversation) => conversation.id !== id);
+      if (!conversations.length) {
+        const conversation = defaultConversation();
+        conversations.push(conversation);
+      }
+      const activeConversationId = conversations.some((conversation) => conversation.id === get().activeConversationId)
+        ? get().activeConversationId
+        : conversations[0].id;
+      const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId)!;
+      persistChat({ activeConversationId, conversations });
+      set({
+        activeConversationId,
+        activeResponseId: "",
+        conversations,
+        input: "",
+        messages: activeConversation.messages,
+        promptBundle: null,
+        stageEvents: [],
+        streamEvents: [],
+      });
+    },
     newConversation: () => {
       const conversation = defaultConversation();
       const conversations = [conversation, ...get().conversations];

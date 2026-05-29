@@ -23,7 +23,7 @@ Studio 左上角 `AnyAgent` logo 区域应成为工作模式切换入口，提�
 
 两种模式都共享当前 workspace、agent selector、连接状态、用户凭据状态。侧边栏折叠/展开是全局 UI 状态，不改变路由语义；折叠时保留图标与 tooltip。
 
-连接配置由 Configure 页承载，开发环境默认从 `VITE_ANYAGENT_BASE_URL`、`VITE_ANYAGENT_API_KEY`、`VITE_ANYAGENT_ADMIN_KEY`、`VITE_ANYAGENT_MODEL` 和 `VITE_ANYAGENT_AGENT_ID` 注入。用户在浏览器里编辑 `base_url`、API key、admin key 时先进入草稿态，只有点击 Test 或 Apply 后才触发请求，避免输入中途反复刷新 catalog。Apply 后配置以版本化 localStorage 保存，之后 agent catalog、OpenAI-compatible chat、admin 文件/skills/MCP/credentials、observability/debug 查询都统一消费这份活动配置；Reset 会清除浏览器保存值并回到环境默认值。保存范围仅限当前浏览器，密钥不会写回 agent workspace 文件。
+连接配置由 Configure 页承载，开发环境默认从 `VITE_ANYAGENT_BASE_URL`、`VITE_ANYAGENT_API_KEY`、`VITE_ANYAGENT_ADMIN_KEY`、`VITE_ANYAGENT_MODEL` 和 `VITE_ANYAGENT_AGENT_ID` 注入；未设置 `VITE_ANYAGENT_MODEL` 时，Studio 不发送 `model` 字段，由 Agent Server 使用 agent/workspace 默认模型。用户在浏览器里编辑 `base_url`、API key、admin key 时先进入草稿态，只有点击 Test 或 Apply 后才触发请求，避免输入中途反复刷新 catalog。Apply 后配置以版本化 localStorage 保存，之后 agent catalog、OpenAI-compatible chat、admin 文件/skills/MCP/credentials、observability/debug 查询都统一消费这份活动配置；Reset 会清除浏览器保存值并回到环境默认值。保存范围仅限当前浏览器，密钥不会写回 agent workspace 文件。
 
 ## 2. 观测面归属
 
@@ -170,7 +170,139 @@ Studio 前端代码按 protocol-first 和页面职责拆分，避免继续把所
 - Studio 前端已做页面级 code splitting；主 bundle 不再携带所有 Use/Build 页面实现，页面模块按需加载。
 - Evaluation handoff 当前基于 observability run/timeline 选择和 inspection，不定义独立 dataset/eval backend contract。
 
-## 7. 验收要求
+## 7. TypeScript SDK 集成策略
+
+Studio 前端当前通过 `anyagentClient.ts` 以原始 fetch 重新实现了所有 API 调用。下一阶段应迁移到消费 `@anyagent/sdk` TypeScript SDK，获得 schema 校验、类型安全和协议演进保护。
+
+### 7.1 迁移路径
+
+| 阶段 | 范围 | 收益 |
+|---|---|---|
+| Phase 0 (当前) | `anyagentClient.ts` 原始 fetch | 零依赖、快速迭代 |
+| Phase 1 | 将 SDK `client.ts` 作为 Studio 的 typed facade，替换 `anyagentClient.ts` 中的请求/响应类型 | 类型安全、schema 校验、协议版本锁定 |
+| Phase 2 | 消费 SDK 的 `client.responses.stream()` SSE 方法替代 OpenAI SDK 直连 | 统一流式协议、支持 cancel/retrieve |
+| Phase 3 | 消费 SDK 的 `client.observability` namespace 替代手动 fetch | 减少重复代码、自动 retry/cache |
+
+### 7.2 当前未消费的 SDK 能力
+
+Studio 应补充消费以下 SDK 端点：
+
+- `client.responses.retrieve(responseId)` — 用于 Sessions 页展示 response 状态
+- `client.responses.cancel(responseId)` — 用于 Home 页 chat 运行中取消
+- `client.events.stream(responseId)` — 用于 Debug 页实时 SSE 事件流
+- `client.admin.plugins.catalog()` — 用于 Build/Tools 页展示 plugin 来源
+- `GET /admin/credentials/capabilities` — 用于 Credentials 页展示 vault 能力矩阵（当前 Studio 已调用但 TS SDK 未暴露，需补充 SDK 方法）
+
+### 7.3 SDK 与 Studio 类型对齐
+
+Studio 的 `anyagentClient.ts` 导出的类型（`AgentDetail`、`ToolCatalog`、`ObservabilityRunItem` 等）应逐步替换为 SDK `protocol-types.ts` 中的 generated types。过渡期两套类型可共存，通过 type alias re-export 保持页面组件不感知迁移。
+
+## 8. 高密度 UI 规范
+
+Studio 采用高密度仪表盘风格（对标 Grafana/Datadog），信息密度优先于视觉留白。
+
+### 8.1 密度原则
+
+- **指标用内联 stat-strip 而非独立卡片**：一行展示 4-6 个 key-value 对，label 与 value 水平排列，不使用独立 Card 组件包裹每个指标。
+- **减少嵌套层级**：页面 → section → 内容，不再有 section → Card → Card.Header → Card.Content → 内容。
+- **紧凑间距**：全局 gap 从 12-16px 降至 6-10px，panel padding 从 16-18px 降至 10-12px，page-shell padding 从 24px 降至 16px。
+- **表格优先于列表**：run history、tool stats、error list 使用紧凑表格行（32-36px row height），不使用带 padding 的卡片式列表项。
+- **折叠默认**：timeline、error detail、turn breakdown 默认折叠，点击展开；首屏只展示聚合数字。
+- **Monospace 数字**：所有数值使用 `font-variant-numeric: tabular-nums` 保证列对齐。
+
+### 8.2 组件密度规格
+
+| 组件 | 旧规格 | 新规格 |
+|---|---|---|
+| metric-card | 独立 Card, min-height 110px, padding 16px | stat-strip inline item, height 28px, padding 0 |
+| panel | min-height 480px, border-radius 12px, padding 14-18px | min-height auto, border-radius 6px, padding 8-12px |
+| panel-header | min-height 52px, padding 14px 18px | min-height 36px, padding 8px 12px |
+| section-block | margin-bottom 20px, gap 12px | margin-bottom 12px, gap 6px |
+| trace-row | min-height 48px, gap 18px, padding 0 16px | min-height 32px, gap 10px, padding 0 10px |
+| timeline-event | padding 12px, gap 8px | padding 6px 8px, gap 4px |
+| history-row | padding 12px 14px | padding 6px 10px |
+| overview-card | min-height 200px, padding 24px | 移除，改为 stat-strip |
+| empty-state | padding 24px | padding 12px |
+
+### 8.3 Stat-strip 组件
+
+替代 metric-grid + metric-card 的新组件：
+
+```
+.stat-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  padding: 8px 12px;
+  background: var(--frost);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.stat-strip .stat {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.stat-strip .stat-label { color: var(--ink-tertiary); }
+.stat-strip .stat-value { font-weight: 600; font-family: var(--font-mono); color: var(--ink); }
+```
+
+### 8.4 页面密度验收
+
+- Observability 页首屏（无滚动）应能同时展示：聚合指标条、run 列表前 8 行、tool 聚合前 5 行。
+- Home 页 Use 模式首屏应能同时展示：连接状态、trace 表前 4 行、chat 输入区。
+- Build/Home 首屏应能同时展示：所有配置健康指标 + 配置清单 + 构建信号。
+- 任何页面的空状态占位不超过 80px 高度。
+
+## 9. 实时数据与缓存模式
+
+### 9.1 SSE 实时流
+
+Studio 应消费 Core 的 SSE 端点实现实时更新：
+
+| 场景 | 端点 | 消费方 |
+|---|---|---|
+| Chat 运行中事件 | `GET /internal/events/stream?response_id=` | Home 页 Live stream 面板 |
+| Debug 实时回放 | `GET /internal/events/stream?response_id=` | Debug 页 stage event 面板 |
+| Observability 增量 | 轮询 `/internal/observability/runs` + `/internal/observability/timeline` | Observability 页 auto-refresh |
+
+SSE 连接管理：
+- 使用 `EventSource` 或 `fetch` + `ReadableStream` 消费 SSE
+- 连接在页面切换时自动断开（通过 `useEffect` cleanup）
+- 断线后指数退避重连（1s → 2s → 4s → 8s → 停止）
+- 每个 SSE 连接携带 `last_seq` 参数避免重复事件
+
+### 9.2 数据缓存策略
+
+引入轻量 SWR 模式（不引入外部库，基于 hooks 实现）：
+
+```typescript
+type CacheEntry<T> = { data: T; fetchedAt: number; stale: boolean };
+```
+
+- **staleTime**: 数据在 N 秒内视为新鲜，不重新请求
+  - agent catalog: 30s
+  - tool catalog: 15s
+  - observability metrics: 10s
+  - credentials: 60s
+- **background refetch**: 数据过期后先返回缓存，后台刷新后更新 UI
+- **deduplication**: 同一 key 的并发请求合并为一个
+
+### 9.3 Debounce 与节流
+
+- tool catalog 的 `requestedToolsText` 变更：300ms debounce
+- observability filter 变更（source/status/tool）：200ms debounce
+- skill search filter：150ms debounce
+- connection draft 输入：不 debounce（草稿态不触发请求）
+
+### 9.4 错误恢复
+
+- 所有 API 调用失败后自动重试 1 次（间隔 1s）
+- 连续 3 次失败后进入 degraded 状态，展示 inline error banner 而非清空数据
+- 网络恢复后自动刷新当前页面数据
+
+## 10. 验收要求
 
 - 切换模式不丢失当前 agent、session key、连接配置。
 - 修改 server `base_url` / API key / admin key 时先进入草稿态；Test 能用草稿配置验证 agent catalog/detail，Apply 后所有 chat、admin、debug、observability 调用都切到新连接，刷新页面仍保留应用后的配置。

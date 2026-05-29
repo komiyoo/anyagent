@@ -1,5 +1,5 @@
 import { Button, Card } from "@heroui/react";
-import { MessageSquareText, RefreshCw } from "lucide-react";
+import { Activity, MessageSquareText, Play, RefreshCw } from "lucide-react";
 import { ObservabilityRunItem, StudioSettings } from "../anyagentClient";
 import { StudioTab } from "../navigation";
 import { formatCount } from "../studioUtils";
@@ -12,10 +12,11 @@ type SessionsPageProps = {
   avgInputChars: number;
   onRefresh: () => void;
   onSelectRun: (responseId: string) => void;
+  onCheckStatus: (responseId: string) => void;
   onNavigate: (tab: StudioTab) => void;
 };
 
-export function SessionsPage({ settings, runs, selectedRun, turnCount, avgInputChars, onRefresh, onSelectRun, onNavigate }: SessionsPageProps) {
+export function SessionsPage({ settings, runs, selectedRun, turnCount, avgInputChars, onRefresh, onSelectRun, onCheckStatus, onNavigate }: SessionsPageProps) {
   return (
     <>
       <section className="section-block">
@@ -24,28 +25,22 @@ export function SessionsPage({ settings, runs, selectedRun, turnCount, avgInputC
           <h2>Session runs</h2>
           <span>{settings.sessionKey || "current session"}</span>
         </div>
-        <div className="metric-grid compact-metrics">
-          <Card className="metric-card">
-            <Card.Content>
-              <span>Runs</span>
-              <strong>{formatCount(runs.length)}</strong>
-              <small>{settings.agentId || "main"}</small>
-            </Card.Content>
-          </Card>
-          <Card className="metric-card">
-            <Card.Content>
-              <span>Turns</span>
-              <strong>{formatCount(turnCount)}</strong>
-              <small>{formatCount(avgInputChars)} avg input chars</small>
-            </Card.Content>
-          </Card>
-          <Card className="metric-card">
-            <Card.Content>
-              <span>Latest</span>
-              <strong>{selectedRun?.status ?? "-"}</strong>
-              <small>{selectedRun?.response_id ?? "No response"}</small>
-            </Card.Content>
-          </Card>
+        <div className="stat-strip">
+          <span className="stat">
+            <span className="stat-label">Runs</span>
+            <span className="stat-value">{formatCount(runs.length)}</span>
+            <span className="stat-label">{settings.agentId || "main"}</span>
+          </span>
+          <span className="stat">
+            <span className="stat-label">Turns</span>
+            <span className="stat-value">{formatCount(turnCount)}</span>
+            <span className="stat-label">{formatCount(avgInputChars)} avg in chars</span>
+          </span>
+          <span className="stat">
+            <span className="stat-label">Latest</span>
+            <span className="stat-value">{selectedRun?.status ?? "-"}</span>
+            <span className="stat-label">{selectedRun?.response_id ?? "No response"}</span>
+          </span>
         </div>
       </section>
 
@@ -55,10 +50,21 @@ export function SessionsPage({ settings, runs, selectedRun, turnCount, avgInputC
             <MessageSquareText size={18} />
             <span>Run history</span>
           </div>
-          <Button size="sm" variant="secondary" onPress={onRefresh}>
-            <RefreshCw size={15} />
-            Refresh
-          </Button>
+          <div className="editor-actions">
+            <Button
+              size="sm"
+              variant="secondary"
+              isDisabled={!selectedRun}
+              onPress={() => selectedRun && onCheckStatus(selectedRun.response_id)}
+            >
+              <Activity size={15} />
+              Sync status
+            </Button>
+            <Button size="sm" variant="secondary" onPress={onRefresh}>
+              <RefreshCw size={15} />
+              Refresh
+            </Button>
+          </div>
         </Card.Header>
         <Card.Content className="panel-content">
           <div className="history-list session-history">
@@ -68,6 +74,7 @@ export function SessionsPage({ settings, runs, selectedRun, turnCount, avgInputC
                 <strong>Run your first session</strong>
                 <p>No response runs yet for this agent/session.</p>
                 <Button size="sm" variant="primary" onPress={() => onNavigate("home")}>
+                  <Play size={13} />
                   Start session
                 </Button>
               </div>

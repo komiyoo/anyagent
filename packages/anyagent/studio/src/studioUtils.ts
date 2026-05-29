@@ -1,8 +1,23 @@
-import { AgentFileKind, AgentWorkspaceFile, ObservabilityTimelineEvent, StudioDebugEvent } from "./anyagentClient";
+import { AgentFileKind, AgentWorkspaceFile, ObservabilityTimelineEvent, StudioDebugEvent, ToolCallItem, ToolCallKind } from "./anyagentClient";
 
 export const compactJson = (value: unknown) => JSON.stringify(value, null, 2);
 
 export const shortHash = (value?: string) => (value ? value.slice(0, 12) : "none");
+
+export function relativeTime(epochMs: number): string {
+  const delta = Date.now() - epochMs;
+  if (delta < 60_000) return "just now";
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
+  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h ago`;
+  return `${Math.floor(delta / 86_400_000)}d ago`;
+}
+
+export function statusColor(status: string): "success" | "warning" | "error" | "default" {
+  if (status === "completed") return "success";
+  if (status === "failed") return "error";
+  if (status === "cancelled") return "warning";
+  return "default";
+}
 
 export const csvToList = (value: string) =>
   value
@@ -123,4 +138,64 @@ export function timelineMeta(event: ObservabilityTimelineEvent): string {
 
 export function fileByKind(files: AgentWorkspaceFile[], kind: AgentFileKind): AgentWorkspaceFile | undefined {
   return files.find((file) => file.kind === kind);
+}
+
+export function inferToolKind(toolName: string): ToolCallKind {
+  if (toolName.startsWith("mcp.")) return "mcp";
+  if (/\.(shell|command|exec|run)$/.test(toolName) || toolName.startsWith("core.shell") || toolName.startsWith("core.command")) return "command";
+  return "core";
+}
+
+export function extractToolCalls(events: StudioDebugEvent[]): ToolCallItem[] {
+  const planned = new Map<string, { toolName: string; arguments?: string }>();
+  const results = new Map<string, { status: string; output?: string; error?: string; durationMs?: number }>();
+
+  for (const event of events) {
+    const type = event.type;
+    const callId = event.tool_call_id;
+    if (!type || !callId) continue;
+
+    if (type === "anyagent.tool.planned") {
+      const args = event.arguments;
+      let preview = "";
+      if (args && typeof args === "object") {
+        const a = args as { preview?: string };
+        preview = typeof a.preview === "string" ? a.preview : JSON.stringify(args).slice(0, 200);
+      }
+      planned.set(callId, { toolName: String(event.tool_name ?? "tool"), arguments: preview });
+    }
+
+    if (type === "anyagent.tool.result") {
+      const meta = event.meta as { duration_ms?: number } | undefined;
+      const output = event.output;
+      let outputPreview = "";
+      if (output && typeof output === "object") {
+        const o = output as { preview?: string };
+        outputPreview = typeof o.preview === "string" ? o.preview : JSON.stringify(output).slice(0, 300);
+      }
+      const errorObj = event.error as { message?: string } | undefined;
+      results.set(callId, {
+        status: String(event.status ?? "unknown"),
+        output: outputPreview || undefined,
+        error: errorObj?.message || undefined,
+        durationMs: meta?.duration_ms ?? undefined,
+      });
+    }
+  }
+
+  const items: ToolCallItem[] = [];
+  for (const [callId, plan] of planned) {
+    const result = results.get(callId);
+    items.push({
+      id: callId,
+      toolName: plan.toolName,
+      kind: inferToolKind(plan.toolName),
+      status: result ? (result.status === "success" ? "success" : "failed") : "running",
+      arguments: plan.arguments || undefined,
+      output: result?.output,
+      error: result?.error,
+      durationMs: result?.durationMs,
+    });
+  }
+  return items;
 }

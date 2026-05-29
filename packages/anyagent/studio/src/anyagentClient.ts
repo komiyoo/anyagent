@@ -124,10 +124,24 @@ export type StudioDebugEvent = {
   [key: string]: unknown;
 };
 
+export type ToolCallKind = "mcp" | "command" | "core";
+
+export type ToolCallItem = {
+  id: string;
+  toolName: string;
+  kind: ToolCallKind;
+  status: "running" | "success" | "failed";
+  arguments?: string;
+  output?: string;
+  error?: string;
+  durationMs?: number;
+};
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  toolCalls?: ToolCallItem[];
 };
 
 export type ChatRunResult = {
@@ -542,6 +556,122 @@ export async function listEvents(settings: StudioSettings, responseId: string): 
   return payload.events ?? [];
 }
 
+export type ResponseStatus = {
+  id?: string;
+  status?: string;
+  [key: string]: unknown;
+};
+
+export async function retrieveResponse(settings: StudioSettings, responseId: string): Promise<ResponseStatus | null> {
+  if (!responseId) {
+    return null;
+  }
+  const response = await fetch(`${openAiBaseUrl(settings.baseUrl)}/responses/${encodeURIComponent(responseId)}`, {
+    headers: authHeaders(settings.apiKey),
+  });
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+  return (await response.json()) as ResponseStatus;
+}
+
+export async function cancelResponse(settings: StudioSettings, responseId: string): Promise<ResponseStatus | null> {
+  if (!responseId) {
+    return null;
+  }
+  const response = await fetch(`${openAiBaseUrl(settings.baseUrl)}/responses/${encodeURIComponent(responseId)}/cancel`, {
+    method: "POST",
+    headers: authHeaders(settings.apiKey),
+  });
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+  return (await response.json()) as ResponseStatus;
+}
+
+export function streamPersistedEvents(
+  settings: StudioSettings,
+  responseId: string,
+  options: { lastSeq?: number; onEvent: (event: StudioDebugEvent) => void; onError?: (error: unknown) => void } = { onEvent: () => {} },
+): () => void {
+  if (!responseId) {
+    return () => {};
+  }
+  const params = new URLSearchParams({ response_id: responseId });
+  if (typeof options.lastSeq === "number") {
+    params.set("last_seq", String(options.lastSeq));
+  }
+  const controller = new AbortController();
+  let stopped = false;
+  let attempt = 0;
+
+  async function connect() {
+    try {
+      const response = await fetch(`${internalBaseUrl(settings.baseUrl)}/internal/events/stream?${params.toString()}`, {
+        headers: { ...authHeaders(settings.apiKey), Accept: "text/event-stream" },
+        signal: controller.signal,
+      });
+      if (!response.ok || !response.body) {
+        throw new Error(`${response.status} ${response.statusText}`);
+      }
+      attempt = 0;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (!stopped) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          const lines = frame.split("\n");
+          const idLine = lines.find((line) => line.startsWith("id:"));
+          const dataLines = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).replace(/^ /, ""));
+          if (idLine) {
+            params.set("last_seq", idLine.slice(3).trim());
+          }
+          const raw = dataLines.join("\n").trim();
+          if (!raw || raw === "[DONE]") {
+            continue;
+          }
+          try {
+            const event = JSON.parse(raw) as StudioDebugEvent;
+            if (typeof event.seq === "number") {
+              params.set("last_seq", String(event.seq));
+            }
+            options.onEvent(event);
+          } catch {
+            // skip malformed frame
+          }
+        }
+      }
+    } catch (error) {
+      if (stopped || controller.signal.aborted) {
+        return;
+      }
+      options.onError?.(error);
+      attempt += 1;
+      if (attempt <= 4) {
+        const delay = Math.min(8000, 1000 * 2 ** (attempt - 1));
+        setTimeout(() => {
+          if (!stopped) {
+            void connect();
+          }
+        }, delay);
+      }
+    }
+  }
+
+  void connect();
+  return () => {
+    stopped = true;
+    controller.abort();
+  };
+}
+
 export async function loadObservabilitySummary(
   settings: StudioSettings,
   responseId: string,
@@ -621,6 +751,7 @@ export async function previewPromptBundle(
   settings: StudioSettings,
   input: string,
 ): Promise<Record<string, unknown>> {
+  const model = settings.model.trim();
   const response = await fetch(`${internalBaseUrl(settings.baseUrl)}/internal/prompt/bundle`, {
     method: "POST",
     headers: {
@@ -628,7 +759,7 @@ export async function previewPromptBundle(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: settings.model,
+      ...(model ? { model } : {}),
       input,
       metadata: {
         agent_id: settings.agentId,
@@ -790,21 +921,15 @@ function readEventTextDelta(event: unknown): string {
   if (!event || typeof event !== "object") {
     return "";
   }
-  const candidate = event as {
-    delta?: unknown;
-    text?: unknown;
-    response?: { output_text?: unknown };
-  };
-  if (typeof candidate.delta === "string") {
-    return candidate.delta;
+  const candidate = event as { type?: unknown; delta?: unknown };
+  // Only accept the assistant's visible output-text increments.
+  // Other ".delta" events (reasoning summaries, refusals, function-call
+  // arguments) and full-text events (".done"/".completed") must be ignored,
+  // otherwise the message gets duplicated or polluted with chain-of-thought.
+  if (candidate.type !== "response.output_text.delta") {
+    return "";
   }
-  if (typeof candidate.text === "string") {
-    return candidate.text;
-  }
-  if (typeof candidate.response?.output_text === "string") {
-    return candidate.response.output_text;
-  }
-  return "";
+  return typeof candidate.delta === "string" ? candidate.delta : "";
 }
 
 function readFinalResponseText(response: unknown): string {
@@ -834,6 +959,7 @@ export async function runChat(
   messages: ChatMessage[],
   onDelta: (delta: string) => void,
   onEvent: (event: StudioDebugEvent) => void,
+  signal?: AbortSignal,
 ): Promise<ChatRunResult> {
   const client = new OpenAI({
     apiKey: settings.apiKey || "anyagent-studio",
@@ -844,18 +970,23 @@ export async function runChat(
     role: message.role,
     content: message.content,
   }));
-  const stream = await client.responses.create({
-    model: settings.model,
-    input,
-    stream: true,
-    metadata: {
-      agent_id: settings.agentId,
-      session_key: settings.sessionKey,
+  const model = settings.model.trim();
+  const stream = await client.responses.create(
+    {
+      ...(model ? { model } : {}),
+      input,
+      stream: true,
+      metadata: {
+        agent_id: settings.agentId,
+        session_key: settings.sessionKey,
+      },
     },
-  });
+    signal ? { signal } : undefined,
+  );
 
   let assistantText = "";
   let responseId: string | null = null;
+  let finalResponse: unknown = null;
   const streamEvents: StudioDebugEvent[] = [];
 
   for await (const event of stream) {
@@ -868,12 +999,18 @@ export async function runChat(
       assistantText += delta;
       onDelta(delta);
     }
-    if ("response" in debugEvent) {
-      const finalText = readFinalResponseText(debugEvent.response);
-      if (finalText && !assistantText) {
-        assistantText = finalText;
-        onDelta(finalText);
-      }
+    if ("response" in debugEvent && debugEvent.response) {
+      finalResponse = debugEvent.response;
+    }
+  }
+
+  // Fallback only when no incremental text was streamed (e.g. the transport
+  // delivered a single non-streaming response). Never combine with deltas.
+  if (!assistantText && finalResponse) {
+    const finalText = readFinalResponseText(finalResponse);
+    if (finalText) {
+      assistantText = finalText;
+      onDelta(finalText);
     }
   }
 

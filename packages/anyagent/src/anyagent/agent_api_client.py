@@ -742,7 +742,7 @@ class Prompts(_Namespace):
         *,
         agent_id: str = "main",
         session_key: str = "sess_example_bundle",
-        model: str = "gpt-5",
+        model: str | None = None,
         scenario: PromptRunBundleScenario = "sandbox_file_write",
         options: PromptRunBundleExampleOptions | dict[str, Any] | None = None,
     ) -> PromptRunBundleExampleResponse:
@@ -758,7 +758,7 @@ class Prompts(_Namespace):
         return build_example_run_bundle(
             agent_id=agent_id,
             session_key=session_key,
-            model=model,
+            model=model or "anyagent-example-model",
             scenario=scenario,
             options=coerce_example_options(options),
         )

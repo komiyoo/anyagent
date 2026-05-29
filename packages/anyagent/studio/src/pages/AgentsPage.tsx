@@ -1,5 +1,5 @@
 import { Button, Card, Chip, Input, TextArea } from "@heroui/react";
-import { Bot, RefreshCw, Sparkles, SquarePen } from "lucide-react";
+import { Bot, MessageSquareText, Play, RefreshCw, Sparkles, SquarePen } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 import { AgentDetail, AgentSummary, McpServerDraft, StudioSettings, ToolCatalog } from "../anyagentClient";
 import { StudioMode, StudioTab } from "../navigation";
@@ -131,9 +131,11 @@ export function AgentsPage({
             {mode === "use" ? (
               <div className="connection-actions">
                 <Button size="sm" variant="primary" onPress={() => onNavigate("home")}>
+                  <Play size={13} />
                   Start session
                 </Button>
                 <Button size="sm" variant="secondary" onPress={() => onNavigate("sessions")}>
+                  <MessageSquareText size={13} />
                   View sessions
                 </Button>
               </div>

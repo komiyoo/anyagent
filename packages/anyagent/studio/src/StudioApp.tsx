@@ -3,16 +3,13 @@ import {
   Bot,
   ChevronDown,
   Code2,
-  Database,
   FlaskConical,
   Home,
   KeyRound,
-  Layers3,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
   PackagePlus,
-  PlugZap,
   Puzzle,
   Rocket,
   Search,
@@ -20,11 +17,12 @@ import {
   Sparkles,
   Sun,
 } from "lucide-react";
-import { FormEvent, KeyboardEvent as ReactKeyboardEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   ChatMessage,
   SkillSummary,
+  cancelResponse,
   createAgent,
   getCredentialCapabilities,
   getHealth,
@@ -35,6 +33,7 @@ import {
   listEvents,
   listSkills,
   previewPromptBundle,
+  retrieveResponse,
   runChat,
   updateAgentConfig,
 } from "./anyagentClient";
@@ -42,8 +41,10 @@ import { useCredentials } from "./hooks/useCredentials";
 import { useAgentFiles } from "./hooks/useAgentFiles";
 import { useMcpDrafts } from "./hooks/useMcpDrafts";
 import { useObservability } from "./hooks/useObservability";
+import { useHealthPing } from "./hooks/useHealthPing";
 import { useSkillsManagement } from "./hooks/useSkillsManagement";
 import { useToolCatalog } from "./hooks/useToolCatalog";
+import { useEventStream } from "./hooks/useEventStream";
 import { useWorkspaceCatalog } from "./hooks/useWorkspaceCatalog";
 import {
   modeForTab,
@@ -85,6 +86,7 @@ import { useUiStore } from "./stores/uiStore";
 import { normalizeBaseUrl, normalizeSettings } from "./studioSettings";
 import {
   csvToList,
+  extractToolCalls,
   shortHash,
 } from "./studioUtils";
 
@@ -121,6 +123,7 @@ export function StudioApp() {
     activeConversationId,
     activeResponseId,
     conversations,
+    deleteConversation,
     input,
     isRunning,
     messages,
@@ -254,6 +257,7 @@ export function StudioApp() {
     setCredentialValue,
     submitCredential,
   } = useCredentials(settings);
+  const { liveEvents, tailing, setTailing, streamStatus } = useEventStream(settings, activeResponseId);
   const activeSection = sectionForTab(activeTab);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
@@ -283,6 +287,7 @@ export function StudioApp() {
     }),
     [settings.adminKey, settings.apiKey, settings.baseUrl],
   );
+  const health = useHealthPing(settings);
   const draftConnection = useMemo(
     () => ({
       baseUrl: normalizeBaseUrl(connectionDraft.baseUrl),
@@ -450,7 +455,13 @@ export function StudioApp() {
     syncFromAgentDetail(agentDetail, settings.model);
   }, [agentDetail, settings.model, syncFromAgentDetail]);
 
+  const chatAbortRef = useRef<AbortController | null>(null);
+  const liveResponseIdRef = useRef<string>("");
+
   async function runAssistantTurn(nextMessages: ChatMessage[], assistantMessageId: string) {
+    const controller = new AbortController();
+    chatAbortRef.current = controller;
+    liveResponseIdRef.current = "";
     setMessages(nextMessages);
     setIsRunning(true);
     setStreamEvents([]);
@@ -469,24 +480,78 @@ export function StudioApp() {
             ),
           );
         },
-        (debugEvent) => setStreamEvents((current) => [...current.slice(-79), debugEvent]),
+        (debugEvent) => {
+          const candidate = debugEvent as { response?: { id?: unknown }; id?: unknown };
+          const id = candidate.response?.id ?? candidate.id;
+          if (typeof id === "string" && id.startsWith("resp_")) {
+            liveResponseIdRef.current = id;
+          }
+          setStreamEvents((current) => [...current.slice(-79), debugEvent]);
+        },
+        controller.signal,
       );
       if (result.responseId) {
         setActiveResponseId(result.responseId);
         setSelectedResponseId(result.responseId);
         const replay = await listEvents(settings, result.responseId);
         setStageEvents(replay);
+        const toolCalls = extractToolCalls(replay);
+        if (toolCalls.length) {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessageId ? { ...message, toolCalls } : message,
+            ),
+          );
+        }
       }
     } catch (error) {
+      const aborted = controller.signal.aborted;
       setMessages((current) =>
         current.map((message) =>
           message.id === assistantMessageId
-            ? { ...message, content: error instanceof Error ? error.message : "Request failed" }
+            ? {
+                ...message,
+                content: aborted
+                  ? message.content || "Cancelled"
+                  : error instanceof Error
+                    ? error.message
+                    : "Request failed",
+              }
             : message,
         ),
       );
     } finally {
+      if (chatAbortRef.current === controller) {
+        chatAbortRef.current = null;
+      }
       setIsRunning(false);
+    }
+  }
+
+  async function cancelChat() {
+    chatAbortRef.current?.abort();
+    chatAbortRef.current = null;
+    const responseId = liveResponseIdRef.current;
+    if (responseId) {
+      try {
+        await cancelResponse(settings, responseId);
+        showToast("info", "Cancelled the running response.");
+      } catch {
+        showToast("error", "Server did not confirm cancellation.");
+      }
+    }
+    setIsRunning(false);
+  }
+
+  async function checkResponseStatus(responseId: string) {
+    if (!responseId) {
+      return;
+    }
+    try {
+      const status = await retrieveResponse(settings, responseId);
+      showToast("info", `Response ${responseId} is ${status?.status ?? "unknown"}.`);
+    } catch (error) {
+      showToast("error", error instanceof Error ? error.message : "Status check failed.");
     }
   }
 
@@ -651,6 +716,51 @@ export function StudioApp() {
     },
   ];
 
+  const healthDisplay = useMemo(() => {
+    const latencyText =
+      health.latencyMs === null
+        ? null
+        : health.latencyMs >= 1000
+          ? `${(health.latencyMs / 1000).toFixed(1)}s`
+          : `${health.latencyMs}ms`;
+    const value =
+      health.state === "checking"
+        ? "…"
+        : health.state === "down"
+          ? "offline"
+          : (latencyText ?? "—");
+    const stateLabel =
+      health.state === "healthy"
+        ? "Healthy"
+        : health.state === "degraded"
+          ? "Degraded"
+          : health.state === "down"
+            ? "Offline"
+            : "Checking";
+    const checkedText = health.lastCheckedAt
+      ? ` · checked ${Math.max(0, Math.round((Date.now() - health.lastCheckedAt) / 1000))}s ago`
+      : "";
+    const title =
+      health.state === "down"
+        ? `API health: Offline${checkedText}`
+        : `API health: ${stateLabel}${latencyText ? ` · ${latencyText}` : ""}${checkedText}`;
+    return { value, title };
+  }, [health.state, health.latencyMs, health.lastCheckedAt]);
+
+  const connectionDisplay = useMemo(() => {
+    const knownStates: Record<string, { label: string; tone: "ready" | "pending" | "error" }> = {
+      idle: { label: "Idle", tone: "pending" },
+      loading: { label: "Connecting…", tone: "pending" },
+      ready: { label: "Connected", tone: "ready" },
+    };
+    const matched = knownStates[status];
+    const subtitle = matched ?? { label: status || "Disconnected", tone: "error" as const };
+    const host = activeConnection.baseUrl.replace(/^https?:\/\//, "");
+    return { label: subtitle.label, tone: subtitle.tone, host };
+  }, [status, activeConnection.baseUrl]);
+
+  const eventCount = streamEvents.length + stageEvents.length;
+
   return (
     <main className={`studio-shell theme-${theme} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <ToastViewport />
@@ -770,51 +880,72 @@ export function StudioApp() {
 
       <section className="workspace" role="main" aria-labelledby="studio-page-title">
         <header className="workspace-header">
-          <span>{studioMode === "use" ? "Use Mode" : "Build Mode"}</span>
-          <button className="theme-toggle" type="button" aria-label="Toggle dark and light theme" onClick={toggleTheme}>
-            {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
-          </button>
-        </header>
+          <div className="header-identity">
+            <div className="project-icon">
+              <Bot size={16} />
+            </div>
+            <div className="project-info">
+              <h1 id="studio-page-title">
+                {settings.agentId || "Personal"}
+                <span
+                  className={`health-dot health-dot--${health.state}`}
+                  title={healthDisplay.title}
+                  aria-hidden="true"
+                />
+              </h1>
+              <p aria-live="polite" className={`connection-line tone-${connectionDisplay.tone}`}>
+                {connectionDisplay.label}
+                {settings.model ? <span className="meta-sep">·</span> : null}
+                {settings.model ? <span className="connection-model">{settings.model}</span> : null}
+              </p>
+            </div>
+          </div>
 
-        <div className="project-header">
-          <div className="project-icon">
-            <Bot size={22} />
+          <div className="header-meta" aria-hidden="true">
+            <span className="meta-item">{connectionDisplay.host}</span>
+            <span className="meta-sep">·</span>
+            <span className="meta-item">
+              {selectedSkillCount}/{skills.length} skills
+            </span>
+            <span className="meta-sep">·</span>
+            <span className="meta-item">{agents.length} agents</span>
           </div>
-          <div>
-            <h1 id="studio-page-title">{settings.agentId || "Personal"}</h1>
-            <p aria-live="polite">ID {settings.agentId || "unselected"} · {status} · {activeConnection.baseUrl}</p>
+
+          <div className="header-right">
+            <div className="project-actions">
+              <button
+                className="quick-pill"
+                type="button"
+                title={healthDisplay.title}
+                aria-label={healthDisplay.title}
+                onFocus={() => warmPage("settings")}
+                onMouseEnter={() => warmPage("settings")}
+                onClick={() => navigateToTab("settings", studioMode)}
+              >
+                <span className={`health-dot health-dot--${health.state}`} aria-hidden="true" />
+                <span>Health</span>
+                <strong>{healthDisplay.value}</strong>
+              </button>
+              <button
+                className="quick-pill"
+                type="button"
+                title={`${eventCount} live events · open Observability`}
+                aria-label={`${eventCount} live events, open Observability`}
+                onFocus={() => warmPage("observability")}
+                onMouseEnter={() => warmPage("observability")}
+                onClick={() => navigateToTab("observability", studioMode)}
+              >
+                <Activity size={14} />
+                <span>Events</span>
+                <strong>{eventCount}</strong>
+              </button>
+            </div>
+            <span className="mode-label">{studioMode === "use" ? "Use" : "Build"}</span>
+            <button className="theme-toggle" type="button" aria-label="Toggle dark and light theme" onClick={toggleTheme}>
+              {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+            </button>
           </div>
-          <div className="project-actions">
-            <button
-              className="quick-pill"
-              type="button"
-              onFocus={() => warmPage("settings")}
-              onMouseEnter={() => warmPage("settings")}
-              onClick={() => navigateToTab("settings", studioMode)}
-            >
-              <PlugZap size={16} />
-              <span>Server</span>
-              <strong>{status === "ready" ? "ready" : "check"}</strong>
-            </button>
-            <button className="quick-pill" type="button">
-              <Activity size={16} />
-              <span>Traces</span>
-              <strong>{streamEvents.length + stageEvents.length}/5000</strong>
-            </button>
-            <button className="quick-pill" type="button" onFocus={() => warmPage("home")} onMouseEnter={() => warmPage("home")} onClick={() => navigateToTab("home", "use")}>
-              <Layers3 size={16} />
-              <span>Studio quickstart</span>
-            </button>
-            <button className="quick-pill" type="button" onFocus={() => warmPage("observability")} onMouseEnter={() => warmPage("observability")} onClick={() => navigateToTab("observability", "use")}>
-              <Activity size={16} />
-              <span>Tracing quickstart</span>
-            </button>
-            <button className="quick-pill" type="button" onFocus={() => warmPage("evaluations")} onMouseEnter={() => warmPage("evaluations")} onClick={() => navigateToTab("evaluations", "use")}>
-              <Database size={16} />
-              <span>Evaluation quickstart</span>
-            </button>
-          </div>
-        </div>
+        </header>
 
         <div className="page-shell">
           <div className="page-title">
@@ -822,6 +953,7 @@ export function StudioApp() {
             <small>{subtitleForTab(activeTab, studioMode)}</small>
           </div>
 
+          <div className={`page-scroll ${activeTab === "home" && studioMode === "use" ? "page-scroll--fill" : ""}`}>
           <PageErrorBoundary title={titleForTab(activeTab)} key={activeTab}>
           <Suspense fallback={<PageSkeleton title={titleForTab(activeTab)} />}>
           {activeTab === "home" ? (
@@ -849,10 +981,12 @@ export function StudioApp() {
               onEditMessage={editUserMessageAndResend}
               onInputChange={setInput}
               onNewConversation={newConversation}
+              onDeleteConversation={deleteConversation}
               onRegenerate={regenerateAssistant}
               onRenameConversation={renameConversation}
               onSelectConversation={selectConversation}
               onSubmitChat={submitChat}
+              onCancelChat={cancelChat}
               onNavigate={navigateToTab}
             />
           ) : activeTab === "agents" ? (
@@ -886,6 +1020,7 @@ export function StudioApp() {
               avgInputChars={displayObservability.avgInputChars}
               onRefresh={() => setObservabilityRefreshNonce((value) => value + 1)}
               onSelectRun={(responseId: string) => void selectObservabilityRun(responseId)}
+              onCheckStatus={(responseId: string) => void checkResponseStatus(responseId)}
               onNavigate={navigateToTab}
             />
           ) : activeTab === "evaluations" ? (
@@ -1000,6 +1135,11 @@ export function StudioApp() {
             <DebugPage
               stageEvents={stageEvents}
               promptBundle={promptBundle}
+              activeResponseId={activeResponseId}
+              liveEvents={liveEvents}
+              tailing={tailing}
+              streamStatus={streamStatus}
+              onToggleTail={() => setTailing((current) => !current)}
               onPreviewPrompt={() => void loadPromptPreview()}
             />
           ) : activeSection === "configure" ? (
@@ -1192,6 +1332,7 @@ export function StudioApp() {
           )}
           </Suspense>
           </PageErrorBoundary>
+          </div>
         </div>
       </section>
     </main>

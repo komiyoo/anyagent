@@ -1,5 +1,6 @@
-import { Button, Card, Chip, Input, Separator } from "@heroui/react";
-import { BarChart3, MessageSquareText, RefreshCw, Timer } from "lucide-react";
+import { Button, Card, Chip, Input, Tabs } from "@heroui/react";
+import { BarChart3, CheckCircle2, Clock, Copy, MessageSquareText, Play, RefreshCw, Timer, Wrench, X } from "lucide-react";
+import { useState } from "react";
 import {
   McpServerDraft,
   ObservabilityErrorItem,
@@ -13,7 +14,7 @@ import {
   StudioSettings,
 } from "../anyagentClient";
 import { StudioTab } from "../navigation";
-import { compactJson, formatCount, formatMs, timelineMeta } from "../studioUtils";
+import { compactJson, formatCount, formatMs, relativeTime, shortHash, statusColor, timelineMeta } from "../studioUtils";
 
 type DisplayObservability = {
   runCount: number;
@@ -119,36 +120,24 @@ export function ObservabilityPage({
         <div className="section-title">
           <BarChart3 size={17} />
           <h2>Observability</h2>
-          <span>{settings.agentId || "main"} · current session</span>
+          <span>
+            {settings.agentId || "main"} · {selectedRun
+              ? `${relativeTime(selectedRun.created_at_ms)} · ${selectedRun.status}`
+              : "current session"}
+          </span>
         </div>
-        <div className="metric-grid">
-          <MetricCard label="Runs" value={formatCount(display.runCount)} detail={selectedResponseId || "No response yet"} />
-          <MetricCard label="Turns" value={formatCount(display.turnCount)} detail={`${formatCount(display.avgInputChars)} avg input chars`} />
-          <MetricCard
-            label="Tool Calls"
-            value={formatCount(display.toolCalls)}
-            detail={`${formatCount(tools.length)} unique tools · ${formatCount(display.eventCount)} events`}
-          />
-          <MetricCard label="MCP Calls" value={formatCount(display.mcpCalls)} detail={`${mcpDrafts.length} configured draft servers`} />
-          <MetricCard label="Skill Views" value={formatCount(display.skillViews)} detail={`${selectedSkillCount} default selected`} />
-          <MetricCard
-            label="LLM Tokens"
-            value={formatCount(display.inputTokens + display.outputTokens)}
-            detail={`in ${formatCount(display.inputTokens)} · out ${formatCount(display.outputTokens)} · cache ${formatCount(display.cachedTokens)}`}
-          />
-          <MetricCard label="First Token" value={formatMs(display.firstTokenLatency)} detail="from streamed/model events when available" />
-          <MetricCard
-            label="Errors"
-            value={formatCount(metrics?.error_count ?? errors.length)}
-            detail={`${formatMs(display.totalLatency)} max response`}
-          />
-          <MetricCard
-            label="Avg Response"
-            value={formatMs(metrics?.avg_response_latency_ms ?? null)}
-            detail={`${formatMs(display.totalLatency)} max response`}
-          />
-          <MetricCard label="Timeline" value={formatCount(timeline.length)} detail={selectedResponseId || "workspace scope"} />
-          <MetricCard label="Total Response" value={formatMs(display.totalLatency)} detail="from streamed/model events when available" />
+        <div className="stats-tier stats-tier--primary">
+          <Stat label="Runs" value={formatCount(display.runCount)} />
+          <Stat label="Errors" value={formatCount(metrics?.error_count ?? errors.length)} className={errors.length > 0 ? "stat--alert" : ""} />
+          <Stat label="Latency" value={formatMs(display.totalLatency)} />
+          <Stat label="First token" value={formatMs(display.firstTokenLatency)} />
+        </div>
+        <div className="stats-tier stats-tier--secondary">
+          <Stat label="Tokens" value={formatCount(display.inputTokens + display.outputTokens)} hint={`in ${formatCount(display.inputTokens)} / out ${formatCount(display.outputTokens)}`} />
+          <Stat label="Cached" value={formatCount(display.cachedTokens)} />
+          <Stat label="Tools" value={formatCount(display.toolCalls)} hint={`${formatCount(tools.length)} unique`} />
+          <Stat label="MCP" value={formatCount(display.mcpCalls)} />
+          <Stat label="Turns" value={formatCount(display.turnCount)} />
         </div>
       </section>
 
@@ -178,13 +167,13 @@ export function ObservabilityPage({
                 value={String(limit)}
                 onChange={(event) => onLimitChange(Math.max(1, Math.min(100, Number(event.target.value) || 20)))}
               />
-              <Button size="sm" variant="ghost" isIconOnly aria-label="Refresh observability" onPress={onRefresh}>
+              <Button size="sm" variant="ghost" isIconOnly className="filter-action" aria-label="Refresh observability" onPress={onRefresh}>
                 <RefreshCw size={16} />
               </Button>
             </div>
-            <div className="filter-row">
+            <div className="filter-row input-group">
               <Input aria-label="Trace id" placeholder="trace_id" value={traceId} onChange={(event) => onTraceIdChange(event.target.value)} />
-              <Button size="sm" variant="ghost" onPress={() => onInspectTrace(traceId)}>
+              <Button size="sm" variant="ghost" className="input-group-action" onPress={() => onInspectTrace(traceId)}>
                 Trace
               </Button>
             </div>
@@ -207,27 +196,35 @@ export function ObservabilityPage({
                   <strong>No telemetry yet</strong>
                   <p>No run history available for the current agent/session.</p>
                   <Button size="sm" variant="primary" onPress={() => onNavigate("home")}>
+                    <Play size={13} />
                     Start a request
                   </Button>
                 </div>
               ) : (
-                runs.map((run) => (
+              runs.map((run) => {
+                const duration = Math.max((run.ended_at_ms ?? run.updated_at_ms) - run.created_at_ms, run.updated_at_ms - run.created_at_ms, 0);
+                return (
                   <button
                     className={`history-row ${run.response_id === selectedRun?.response_id ? "active" : ""}`}
                     key={run.response_id}
                     type="button"
                     onClick={() => onSelectRun(run.response_id)}
                   >
-                    <div>
-                      <strong>{run.response_id}</strong>
-                      <span>{run.status} · {run.session_key}</span>
+                    <div className="run-row-left">
+                      <span className={`status-dot status-dot--${statusColor(run.status)}`} />
+                      <span className="run-row-time">{relativeTime(run.created_at_ms)}</span>
                     </div>
-                    <p>
-                      {run.stream ? "stream" : "non-stream"} · {run.agent_id}
-                    </p>
-                    <em>{formatCount(Math.max(run.updated_at_ms - run.created_at_ms, 0))} ms</em>
+                    <div className="run-row-center">
+                      <strong>{run.agent_id}</strong>
+                      <span className="run-row-meta">{run.stream ? "stream" : "sync"} · {formatMs(duration)}</span>
+                    </div>
+                    <div className="run-row-right">
+                      <code className="run-row-hash" title={run.response_id}>{shortHash(run.response_id)}</code>
+                      <CopyButton text={run.response_id} />
+                    </div>
                   </button>
-                ))
+                );
+              })
               )}
             </div>
           </Card.Content>
@@ -242,7 +239,18 @@ export function ObservabilityPage({
           </Card.Header>
           <Card.Content className="panel-content">
             <div className="filter-row">
-              <Input aria-label="Telemetry filter" placeholder="tool, trace, audit" value={toolFilter} onChange={(event) => onToolFilterChange(event.target.value)} />
+              <Input aria-label="Telemetry filter" placeholder="Filter tools, traces, audit..." value={toolFilter} onChange={(event) => onToolFilterChange(event.target.value)} />
+            </div>
+            <div className="filter-header">
+              <strong>Filters</strong>
+              {(sources.length > 0 || statuses.length > 0) && (
+                <>
+                  <Chip size="sm" variant="soft" color="accent">{sources.length + statuses.length} active</Chip>
+                  <button className="filter-clear" type="button" onClick={() => { onSourcesChange([]); onStatusesChange([]); }}>
+                    <X size={12} /> Clear
+                  </button>
+                </>
+              )}
             </div>
             <div className="advanced-filter-grid">
               <div>
@@ -280,107 +288,104 @@ export function ObservabilityPage({
                 </div>
               </div>
             </div>
-            <div className="breakdown-list">
-              {[
-                ["Tool calls", display.toolCalls],
-                ["MCP calls", display.mcpCalls],
-                ["Errors", metrics?.error_count ?? errors.length],
-                ["Skill views", display.skillViews],
-                ["Input chars", display.inputChars],
-                ["Output chars", display.outputChars],
-                ["Avg output chars", display.avgOutputChars],
-              ].map(([label, value]) => (
-                <div className="breakdown-row" key={String(label)}>
-                  <span>{label}</span>
-                  <strong>{formatCount(Number(value))}</strong>
-                </div>
-              ))}
-            </div>
-            {summary?.turns?.length ? (
-              <div className="breakdown-list turn-breakdown">
-                {summary.turns.slice(0, 6).map((turn) => (
-                  <div className="breakdown-row" key={turn.index}>
-                    <span>Turn {turn.index}</span>
-                    <strong>
-                      in {formatCount(turn.input_chars ?? 0)} · out {formatCount(turn.output_chars ?? 0)}
-                    </strong>
+            <Tabs defaultSelectedKey="tools" className="obs-tabs">
+              <Tabs.List>
+                <Tabs.Tab id="tools">Tools ({filteredTools.length})</Tabs.Tab>
+                <Tabs.Tab id="errors">Errors ({filteredErrors.length})</Tabs.Tab>
+                <Tabs.Tab id="timeline">Timeline ({filteredTimeline.length})</Tabs.Tab>
+                <Tabs.Tab id="insights">Insights ({iterationSuggestions.length})</Tabs.Tab>
+              </Tabs.List>
+              <Tabs.Panel id="tools">
+                {summary?.turns?.length ? (
+                  <div className="breakdown-list turn-breakdown">
+                    {summary.turns.slice(0, 6).map((turn) => (
+                      <div className="breakdown-row" key={turn.index}>
+                        <span>Turn {turn.index}</span>
+                        <strong>in {formatCount(turn.input_chars ?? 0)} · out {formatCount(turn.output_chars ?? 0)}</strong>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            ) : null}
-            <Separator />
-            <div className="breakdown-list turn-breakdown">
-              {filteredTools.length === 0 ? (
-                <div className="breakdown-row">
-                  <span>No tool stats</span>
-                  <strong>-</strong>
+                ) : null}
+                <div className="breakdown-list turn-breakdown">
+                  {filteredTools.length === 0 ? (
+                    <div className="empty-state compact-empty">
+                      <Wrench size={20} />
+                      <strong>No tool calls recorded</strong>
+                      <p>Tool usage statistics appear after the agent executes tool calls.</p>
+                    </div>
+                  ) : (
+                    filteredTools.slice(0, 12).map((tool) => (
+                      <div className="breakdown-row" key={tool.tool_name}>
+                        <span>{tool.tool_name}</span>
+                        <strong>{formatCount(tool.result_count)} runs · {formatCount(tool.error_count)} errors · {formatMs(tool.avg_duration_ms ?? null)}</strong>
+                      </div>
+                    ))
+                  )}
                 </div>
-              ) : (
-                filteredTools.slice(0, 8).map((tool) => (
-                  <div className="breakdown-row" key={tool.tool_name}>
-                    <span>{tool.tool_name}</span>
-                    <strong>
-                      {formatCount(tool.result_count)} runs · {formatCount(tool.error_count)} errors · {formatMs(tool.avg_duration_ms ?? null)}
-                    </strong>
-                  </div>
-                ))
-              )}
-            </div>
-            <Separator />
-            <div className="event-list compact-events">
-              {filteredErrors.length === 0 ? (
-                <p className="empty">No normalized errors were returned by the telemetry API.</p>
-              ) : (
-                filteredErrors.slice(0, 8).map((error, index) => (
-                  <article className="timeline-event" key={`err-${error.response_id}-${error.type}-${index}`}>
-                    <div>
-                      <strong>{error.type}</strong>
-                      <span>
-                        {[error.source, error.tool_name, error.trace_id].filter(Boolean).join(" · ")}
-                        {error.trace_id ? (
-                          <button className="inline-link" type="button" onClick={() => onInspectTrace(error.trace_id || "")}>
-                            trace
-                          </button>
-                        ) : null}
-                      </span>
+              </Tabs.Panel>
+              <Tabs.Panel id="errors">
+                <div className="event-list compact-events">
+                  {filteredErrors.length === 0 ? (
+                    <div className="empty-state compact-empty">
+                      <CheckCircle2 size={20} />
+                      <strong>No errors</strong>
+                      <p>All runs completed without normalized errors.</p>
                     </div>
-                    <pre>{error.message || compactJson(error.payload ?? {})}</pre>
-                  </article>
-                ))
-              )}
-            </div>
-            <Separator />
-            <div className="event-list compact-events">
-              {filteredTimeline.length === 0 ? (
-                <p className="empty">Telemetry timeline will populate after Core records run, tool, audit, or stage events.</p>
-              ) : (
-                filteredTimeline.slice(0, 14).map((event, index) => (
-                  <article className="timeline-event" key={`tel-${event.response_id}-${event.seq}-${event.type}-${index}`}>
-                    <div>
-                      <strong>{event.type}</strong>
-                      <span>
-                        {timelineMeta(event)}
-                        {event.trace_id ? (
-                          <button className="inline-link" type="button" onClick={() => onInspectTrace(event.trace_id || "")}>
-                            trace
-                          </button>
-                        ) : null}
-                      </span>
+                  ) : (
+                    filteredErrors.slice(0, 12).map((error, index) => (
+                      <article className="timeline-event" key={`err-${error.response_id}-${error.type}-${index}`}>
+                        <div>
+                          <strong>{error.type}</strong>
+                          <span>
+                            {[error.source, error.tool_name].filter(Boolean).join(" · ")}
+                            {error.trace_id ? (
+                              <button className="inline-link" type="button" onClick={() => onInspectTrace(error.trace_id || "")}>trace</button>
+                            ) : null}
+                          </span>
+                        </div>
+                        <pre>{error.message || compactJson(error.payload ?? {})}</pre>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </Tabs.Panel>
+              <Tabs.Panel id="timeline">
+                <div className="event-list compact-events">
+                  {filteredTimeline.length === 0 ? (
+                    <div className="empty-state compact-empty">
+                      <Clock size={20} />
+                      <strong>No timeline events</strong>
+                      <p>Timeline populates after the agent records run, tool, audit, or stage events.</p>
                     </div>
-                    {event.message ? <pre>{event.message}</pre> : null}
-                  </article>
-                ))
-              )}
-            </div>
-            <Separator />
-            <div className="suggestion-list">
-              {iterationSuggestions.map((suggestion) => (
-                <button className="suggestion-row" key={suggestion.title} type="button" onClick={() => onNavigate(suggestion.target)}>
-                  <strong>{suggestion.title}</strong>
-                  <span>{suggestion.detail}</span>
-                </button>
-              ))}
-            </div>
+                  ) : (
+                    filteredTimeline.slice(0, 20).map((event, index) => (
+                      <article className="timeline-event" key={`tel-${event.response_id}-${event.seq}-${event.type}-${index}`}>
+                        <div>
+                          <strong>{event.type}</strong>
+                          <span>
+                            {timelineMeta(event)}
+                            {event.trace_id ? (
+                              <button className="inline-link" type="button" onClick={() => onInspectTrace(event.trace_id || "")}>trace</button>
+                            ) : null}
+                          </span>
+                        </div>
+                        {event.message ? <pre>{event.message}</pre> : null}
+                      </article>
+                    ))
+                  )}
+                </div>
+              </Tabs.Panel>
+              <Tabs.Panel id="insights">
+                <div className="suggestion-list">
+                  {iterationSuggestions.map((suggestion) => (
+                    <button className="suggestion-row" key={suggestion.title} type="button" onClick={() => onNavigate(suggestion.target)}>
+                      <strong>{suggestion.title}</strong>
+                      <span>{suggestion.detail}</span>
+                    </button>
+                  ))}
+                </div>
+              </Tabs.Panel>
+            </Tabs>
           </Card.Content>
         </Card>
       </div>
@@ -388,14 +393,31 @@ export function ObservabilityPage({
   );
 }
 
-function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+function Stat({ label, value, hint, className }: { label: string; value: string; hint?: string; className?: string }) {
   return (
-    <Card className="metric-card">
-      <Card.Content>
-        <span>{label}</span>
-        <strong>{value}</strong>
-        <small>{detail}</small>
-      </Card.Content>
-    </Card>
+    <span className={`stat ${className || ""}`} title={hint ? `${label}: ${value} (${hint})` : `${label}: ${value}`}>
+      <span className="stat-label">{label}</span>
+      <span className="stat-value">{value}</span>
+      {hint ? <span className="stat-label">{hint}</span> : null}
+    </span>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      className="copy-btn"
+      type="button"
+      title="Copy response ID"
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? <CheckCircle2 size={12} /> : <Copy size={12} />}
+    </button>
   );
 }

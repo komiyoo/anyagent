@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { StudioSettings, ToolCatalog, listAvailableTools, listTools } from "../anyagentClient";
 import { csvToList } from "../studioUtils";
+import { useDebouncedValue } from "./useDebouncedValue";
 
 export function useToolCatalog(settings: StudioSettings, requestedToolsText: string) {
   const [toolCatalog, setToolCatalog] = useState<ToolCatalog | null>(null);
   const [availableTools, setAvailableTools] = useState<ToolCatalog | null>(null);
   const [toolCatalogStatus, setToolCatalogStatus] = useState("Not loaded");
   const [availableToolsStatus, setAvailableToolsStatus] = useState("Not loaded");
+  const debouncedRequestedTools = useDebouncedValue(requestedToolsText, 300);
 
   async function loadToolCatalog() {
     if (!settings.agentId) {
@@ -37,7 +39,7 @@ export function useToolCatalog(settings: StudioSettings, requestedToolsText: str
 
   useEffect(() => {
     void loadToolCatalog();
-  }, [settings.baseUrl, settings.apiKey, settings.agentId, settings.sessionKey, requestedToolsText]);
+  }, [settings.baseUrl, settings.apiKey, settings.agentId, settings.sessionKey, debouncedRequestedTools]);
 
   useEffect(() => {
     void loadAvailableTools();
