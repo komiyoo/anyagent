@@ -31,7 +31,7 @@
 ### Phase 2 — Production Runtime Hardening
 
 - [x] P0 整理 Tool Runtime contract 测试矩阵,覆盖 manifest、execute、credential 注入、policy 强制(Req: `requirements.md#req-6`; Impl: `tests/contract/test_tool_runtime_contract_matrix.py:115`; Module: `tool-runtime-contract`)
-- [ ] P0 standalone Tool Runtime 管理面与进程内 runtime 的等价性验收(Req: `requirements.md#req-6`)
+- [x] P0 standalone Tool Runtime 管理面与进程内 runtime 的等价性验收(Req: `requirements.md#req-6`; Impl: `tests/contract/test_tool_runtime_contract_matrix.py:147`; Module: `tool-runtime-contract`)
 - [ ] P1 Plugin contract 公开化:定义 manifest schema、生命周期 hook 与 capability matrix(Req: `requirements.md#req-6`)
 - [ ] P2 参考实现:至少一个内置 Plugin 与一个 Connector 走完 contract,作为后续生态接入样板(Req: `requirements.md#req-6`)
 

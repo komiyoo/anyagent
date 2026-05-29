@@ -5,11 +5,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from anyagent.agent_packs import load_agent_catalog
 from anyagent.mcp.auth import CredentialResolver
 from anyagent.protocol.tool_runtime import AuthRef, ExecuteRequest, ManifestRequest, PolicyHint, ToolContext
 from anyagent.server.runtime import InProcessToolRuntimeService
 from anyagent.server.sandbox import SandboxManager
+from anyagent.tool_runtime import ToolRuntimeClient, create_tool_runtime_app
 from anyagent.tool_runtime.models import ToolCredentialSpec, ToolDefinition
 
 
@@ -94,8 +97,13 @@ def _build_inprocess_runtime(tmp_path: Path) -> tuple[InProcessToolRuntimeServic
         sandbox_manager=SandboxManager(root_dir=tmp_path / ".sandbox"),
         credential_store=credentials,
     )
-    runtime.register_tool(_definition("app.echo"), _echo_handler)
-    runtime.register_tool(
+    _register_contract_tools(runtime.register_tool)
+    return runtime, credentials
+
+
+def _register_contract_tools(register_tool: Any) -> None:
+    register_tool(_definition("app.echo"), _echo_handler)
+    register_tool(
         _definition(
             "app.secret",
             credentials=[
@@ -108,8 +116,7 @@ def _build_inprocess_runtime(tmp_path: Path) -> tuple[InProcessToolRuntimeServic
         ),
         _secret_handler,
     )
-    runtime.register_tool(_definition("app.blocked"), _echo_handler)
-    return runtime, credentials
+    register_tool(_definition("app.blocked"), _echo_handler)
 
 
 def test_inprocess_tool_runtime_contract_matrix_covers_manifest_execute_credentials_policy(tmp_path: Path) -> None:
@@ -118,7 +125,57 @@ def test_inprocess_tool_runtime_contract_matrix_covers_manifest_execute_credenti
 
 async def _run_inprocess_tool_runtime_contract_matrix_covers_manifest_execute_credentials_policy(tmp_path: Path) -> None:
     runtime, credentials = _build_inprocess_runtime(tmp_path)
+    result = await _exercise_contract_matrix(runtime)
 
+    assert result == {
+        "blocked_error": "tool_not_allowed",
+        "echo": {
+            "agent_id": "main",
+            "message": "hello",
+            "session_key": "sess-contract",
+        },
+        "manifest_tools": ["app.echo", "app.secret"],
+        "missing_secret_error": "credential_not_found",
+        "secret": {"secret": "Bearer sk-contract"},
+    }
+    assert credentials.seen == [
+        ("api_key", "search", {"agent_id": "main"}),
+        ("api_key", "missing", {"agent_id": "main"}),
+    ]
+
+
+def test_standalone_tool_runtime_matches_inprocess_contract_matrix(tmp_path: Path) -> None:
+    asyncio.run(_run_standalone_tool_runtime_matches_inprocess_contract_matrix(tmp_path))
+
+
+async def _run_standalone_tool_runtime_matches_inprocess_contract_matrix(tmp_path: Path) -> None:
+    inprocess_runtime, _inprocess_credentials = _build_inprocess_runtime(tmp_path / "inprocess")
+    inprocess_result = await _exercise_contract_matrix(inprocess_runtime)
+
+    workspace = tmp_path / "standalone"
+    _write_workspace(workspace)
+    standalone_credentials = _MemoryCredentialResolver({("api_key", "search"): "sk-contract"})
+    app = create_tool_runtime_app(
+        workspace_dir=workspace,
+        internal_key="internal-key",
+        credential_store=standalone_credentials,
+        sandbox_root_dir=workspace / ".sandbox",
+    )
+    _register_contract_tools(app.state.anyagent_tool_runtime.register_tool)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        client = ToolRuntimeClient(base_url="http://testserver", internal_key="internal-key", http=http)
+        standalone_result = await _exercise_contract_matrix(client)
+
+    assert standalone_result == inprocess_result
+    assert standalone_credentials.seen == [
+        ("api_key", "search", {"agent_id": "main"}),
+        ("api_key", "missing", {"agent_id": "main"}),
+    ]
+
+
+async def _exercise_contract_matrix(runtime: Any) -> dict[str, Any]:
     manifest = await runtime.manifest(
         ManifestRequest(
             agent_id="main",
@@ -143,11 +200,7 @@ async def _run_inprocess_tool_runtime_contract_matrix_covers_manifest_execute_cr
         )
     )
     assert executed.status == "completed"
-    assert json.loads(executed.output) == {
-        "agent_id": "main",
-        "message": "hello",
-        "session_key": "sess-contract",
-    }
+    echo_output = json.loads(executed.output)
 
     secret = await runtime.execute(
         ExecuteRequest(
@@ -162,8 +215,7 @@ async def _run_inprocess_tool_runtime_contract_matrix_covers_manifest_execute_cr
         )
     )
     assert secret.status == "completed"
-    assert json.loads(secret.output) == {"secret": "Bearer sk-contract"}
-    assert credentials.seen == [("api_key", "search", {"agent_id": "main"})]
+    secret_output = json.loads(secret.output)
 
     missing_secret = await runtime.execute(
         ExecuteRequest(
@@ -178,7 +230,6 @@ async def _run_inprocess_tool_runtime_contract_matrix_covers_manifest_execute_cr
         )
     )
     assert missing_secret.status == "error"
-    assert missing_secret.error.code == "credential_not_found"
 
     blocked = await runtime.execute(
         ExecuteRequest(
@@ -193,4 +244,10 @@ async def _run_inprocess_tool_runtime_contract_matrix_covers_manifest_execute_cr
         )
     )
     assert blocked.status == "error"
-    assert blocked.error.code == "tool_not_allowed"
+    return {
+        "blocked_error": blocked.error.code,
+        "echo": echo_output,
+        "manifest_tools": [tool.name for tool in manifest.tools],
+        "missing_secret_error": missing_secret.error.code,
+        "secret": secret_output,
+    }
