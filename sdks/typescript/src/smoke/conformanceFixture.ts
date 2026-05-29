@@ -181,6 +181,8 @@ export class SdkConformanceFixtureStore {
       "responses.retrieve",
       "responses.cancel",
       "events.list",
+      "responses.tool_executions",
+      "responses.model_request",
       "agents.list",
       "agents.get",
       "tools.catalog",

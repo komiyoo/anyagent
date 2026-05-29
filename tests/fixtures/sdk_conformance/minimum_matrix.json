@@ -33,6 +33,16 @@
       "fixture": "events.list.empty_done"
     },
     {
+      "name": "responses.tool_executions",
+      "kind": "protocol_model",
+      "fixture": "responses.tool_executions.detail"
+    },
+    {
+      "name": "responses.model_request",
+      "kind": "protocol_model",
+      "fixture": "responses.model_request.applied_body"
+    },
+    {
       "name": "agents.list",
       "kind": "protocol_model",
       "fixture": "agents.list.main"

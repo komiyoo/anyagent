@@ -50,6 +50,47 @@
       }
     },
     {
+      "name": "responses.tool_executions.detail",
+      "schema": "anyagent.protocol.agent_api_internal.InternalResponseToolExecutionsResponse",
+      "payload": {
+        "response_id": "resp_1",
+        "tool_executions": [
+          {
+            "type": "anyagent.tool.execution.detail",
+            "response_id": "resp_1",
+            "seq": 4,
+            "trace_id": "trace_1",
+            "ts_ms": 400,
+            "tool_call_id": "call_1",
+            "tool_name": "exec",
+            "arguments_json": "{\"cmd\":\"pwd\"}",
+            "output": "/workspace",
+            "status": "completed",
+            "duration_ms": 12,
+            "output_truncated": false,
+            "audit_ref": "audit_1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "responses.model_request.applied_body",
+      "schema": "anyagent.protocol.agent_api_internal.InternalResponseModelRequestResponse",
+      "payload": {
+        "response_id": "resp_1",
+        "prompt_cache_key": "prompt-cache-demo",
+        "applied_body": {
+          "model": "test-model",
+          "input": [
+            {
+              "role": "user",
+              "content": "hello"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "agents.list.main",
       "schema": "anyagent.protocol.agent_api_internal.InternalAgentsListResponse",
       "payload": {

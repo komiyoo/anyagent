@@ -15,7 +15,8 @@ The scaffold currently exposes a tiny schema registry helper, generates
 generated declarations. It also includes a fetch-based `AnyAgentClient`
 for typed control-plane paths with runtime response validation. It also covers
 Responses `create` / `stream` / `retrieve` / `cancel`, events list,
-agents list/get, tools catalog, skills list, prompt bundle preview,
+tool execution replay, model request replay, agents list/get, tools catalog,
+skills list, prompt bundle preview,
 observability summary/runs/timeline/metrics/tools/errors/trace, admin
 storage/tool/plugin catalog, credential set/list/delete, agent create/get,
 agent file list/update, agent skill import/install/update, and agent

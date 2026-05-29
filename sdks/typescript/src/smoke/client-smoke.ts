@@ -50,6 +50,10 @@ const fakeFetch: AnyAgentFetch = async (input, init) => {
     body = fixture.openAIResponsePayload("responses.cancel.cancelled");
   } else if (url.pathname === "/internal/events/list") {
     body = fixture.payload("events.list.empty_done");
+  } else if (url.pathname === "/internal/responses/resp_1/tool-executions") {
+    body = fixture.payload("responses.tool_executions.detail");
+  } else if (url.pathname === "/internal/responses/resp_1/model-request") {
+    body = fixture.payload("responses.model_request.applied_body");
   } else if (url.pathname === "/internal/agents") {
     body = fixture.payload("agents.list.main");
   } else if (url.pathname === "/internal/agents/main") {
@@ -158,6 +162,18 @@ assert(cancelled.status === "cancelled", "responses.cancel should decode respons
 const events = await client.events.list("resp_1", { lastSeq: 2, limit: 10 });
 assert(events.response_id === "resp_1", "events.list should pass response_id");
 assert(events.requested_last_seq === 2, "events.list should pass last_seq");
+
+const toolExecutions = await client.events.toolExecutions("resp_1");
+assert(
+  toolExecutions.tool_executions?.[0]?.tool_name === "exec",
+  "events.toolExecutions should decode tool execution details",
+);
+
+const modelRequest = await client.events.modelRequest("resp_1");
+assert(
+  modelRequest.applied_body?.["model"] === "test-model",
+  "events.modelRequest should decode historical applied model request",
+);
 
 const agents = await client.agents.list({ includeUnexposed: true });
 assert(Array.isArray(agents.agents), "agents.list should decode agents");
@@ -287,6 +303,14 @@ assert(configUpdated.agent.exposed === false, "admin.updateAgentConfig should de
 assert(
   seen.some((item) => item.url.endsWith("/v1/responses/resp_1/cancel") && item.method === "POST"),
   "responses.cancel should use POST",
+);
+assert(
+  seen.some((item) => item.url.endsWith("/internal/responses/resp_1/tool-executions") && item.method === "GET"),
+  "events.toolExecutions should use response-scoped replay endpoint",
+);
+assert(
+  seen.some((item) => item.url.endsWith("/internal/responses/resp_1/model-request") && item.method === "GET"),
+  "events.modelRequest should use response-scoped replay endpoint",
 );
 assert(
   seen.some(

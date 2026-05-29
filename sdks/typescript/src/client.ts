@@ -28,6 +28,8 @@ import type {
   InternalObservabilityToolsResponse,
   InternalObservabilityTraceResponse,
   InternalPromptBundlePreviewResponse,
+  InternalResponseModelRequestResponse,
+  InternalResponseToolExecutionsResponse,
   InternalSkillsListResponse,
   InternalToolCatalogResponse,
   PluginCatalogResponse,
@@ -452,6 +454,20 @@ export class AnyAgentEvents {
         last_seq: options.lastSeq ?? 0,
         limit: options.limit ?? 200,
       },
+    });
+  }
+
+  async toolExecutions(responseId: string): Promise<InternalResponseToolExecutionsResponse> {
+    return this.http.getEndpoint<InternalResponseToolExecutionsResponse>({
+      operation: "responses.tool_executions",
+      pathParams: { response_id: responseId },
+    });
+  }
+
+  async modelRequest(responseId: string): Promise<InternalResponseModelRequestResponse> {
+    return this.http.getEndpoint<InternalResponseModelRequestResponse>({
+      operation: "responses.model_request",
+      pathParams: { response_id: responseId },
     });
   }
 }

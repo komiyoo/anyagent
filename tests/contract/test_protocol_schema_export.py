@@ -358,6 +358,8 @@ def test_sdk_minimum_matrix_references_existing_conformance_fixtures() -> None:
         "responses.retrieve",
         "responses.cancel",
         "events.list",
+        "responses.tool_executions",
+        "responses.model_request",
         "agents.list",
         "agents.get",
         "tools.catalog",
