@@ -474,6 +474,27 @@ export type InternalPromptBundlePreviewResponse = {
   "tool_context"?: Record<string, unknown>;
 };
 
+export type InternalResponseModelRequestResponse = {
+  "applied_body"?: Record<string, unknown> | null;
+  "prompt_cache_key"?: string | null;
+  "response_id": string;
+};
+
+export type InternalResponsePromptContextResponse = {
+  "audit_event"?: AnyAgentPromptContextEvent | null;
+  "fallback"?: "rendered" | "audit" | "missing";
+  "fragments"?: Array<RenderedPromptFragment>;
+  "prompt_cache_key"?: string | null;
+  "rendered_event"?: AnyAgentPromptContextRenderedEvent | null;
+  "response_id": string;
+  "total_chars"?: number;
+};
+
+export type InternalResponseToolExecutionsResponse = {
+  "response_id": string;
+  "tool_executions"?: Array<AnyAgentToolExecutionDetailEvent>;
+};
+
 export type InternalSkillListItem = {
   "description"?: string | null;
   "enabled": boolean;
@@ -536,7 +557,7 @@ export type PromptRunBundleExampleResponse = {
   "scenario": "sandbox_file_write" | "multi_skill_research" | "toolset_retry";
   "scenario_label": string;
   "session_key": string;
-  "stage_events"?: Array<AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentDoneEvent>;
+  "stage_events"?: Array<AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentToolExecutionDetailEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentPromptContextRenderedEvent | AnyAgentModelRequestEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentDoneEvent>;
   "tool_loop_items"?: Array<PromptRunBundleToolLoopItem>;
 };
 
@@ -756,6 +777,17 @@ export type SpawnAgentResult = {
   "thread_id": string;
 };
 
+export type TaskArgs = {
+  "agent_id": string;
+  "description": string;
+  "prompt": string;
+};
+
+export type TaskResult = {
+  "agent_id": string;
+  "output_text": string;
+};
+
 export type WaitArgs = {
   "ids": Array<string>;
   "timeout_ms"?: number;
@@ -969,6 +1001,16 @@ export type AnyAgentDoneEvent = {
   "type"?: "anyagent.done";
 };
 
+export type AnyAgentModelRequestEvent = {
+  "applied_body"?: Record<string, unknown>;
+  "prompt_cache_key"?: string | null;
+  "response_id": string;
+  "seq"?: number | null;
+  "trace_id"?: string | null;
+  "ts_ms"?: number | null;
+  "type"?: "anyagent.model.request";
+};
+
 export type AnyAgentModelStreamEvent = {
   "payload": Record<string, unknown>;
   "response_id": string;
@@ -994,6 +1036,34 @@ export type AnyAgentPromptContextEvent = {
   "trace_id"?: string | null;
   "ts_ms"?: number | null;
   "type"?: "anyagent.prompt.context";
+};
+
+export type AnyAgentPromptContextRenderedEvent = {
+  "fragments"?: Array<RenderedPromptFragment>;
+  "prompt_cache_key"?: string | null;
+  "response_id": string;
+  "seq"?: number | null;
+  "total_chars"?: number;
+  "trace_id"?: string | null;
+  "ts_ms"?: number | null;
+  "type"?: "anyagent.prompt.context.rendered";
+};
+
+export type AnyAgentToolExecutionDetailEvent = {
+  "arguments_json"?: string;
+  "audit_ref"?: string | null;
+  "duration_ms"?: number | null;
+  "error"?: StageError | null;
+  "output"?: string | null;
+  "output_truncated"?: boolean | null;
+  "response_id": string;
+  "seq"?: number | null;
+  "status": string;
+  "tool_call_id": string;
+  "tool_name": string;
+  "trace_id"?: string | null;
+  "ts_ms"?: number | null;
+  "type"?: "anyagent.tool.execution.detail";
 };
 
 export type AnyAgentToolPlannedEvent = {
@@ -1206,6 +1276,6 @@ export type WorkspaceInitResult = {
   "workspace": string;
 };
 
-export type StageEvent = AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentDoneEvent;
+export type StageEvent = AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentToolExecutionDetailEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentPromptContextRenderedEvent | AnyAgentModelRequestEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentDoneEvent;
 
 export type ExecuteResponse = ExecuteResponseCompleted | ExecuteResponseCancelled | ExecuteResponseError;

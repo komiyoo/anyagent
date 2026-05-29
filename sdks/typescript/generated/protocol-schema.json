@@ -5,7 +5,9 @@
         "Expose protocol_version as the stable protocol compatibility identifier.",
         "Keep schema_version as the deterministic schema bundle revision.",
         "Publish this changelog block in the schema bundle for SDK and runtime generators.",
-        "Add rendered prompt-context replay event and internal prompt-context history endpoint."
+        "Add rendered prompt-context replay event and internal prompt-context history endpoint.",
+        "Add tool execution detail event and model request event for M2/M3 replay.",
+        "Add internal tool-executions and model-request history endpoints."
       ],
       "date": "2026-05-29",
       "protocol_version": "0.1.9",
@@ -207,6 +209,12 @@
     },
     {
       "method": "GET",
+      "operation": "responses.model_request",
+      "path": "/internal/responses/{response_id}/model-request",
+      "response_model": "anyagent.protocol.agent_api_internal.InternalResponseModelRequestResponse"
+    },
+    {
+      "method": "GET",
       "operation": "responses.prompt_context",
       "path": "/internal/responses/{response_id}/prompt-context",
       "response_model": "anyagent.protocol.agent_api_internal.InternalResponsePromptContextResponse"
@@ -223,6 +231,12 @@
       "path": "/v1/responses",
       "request_format": "openai_responses_create",
       "response_format": "responses_sse_stream"
+    },
+    {
+      "method": "GET",
+      "operation": "responses.tool_executions",
+      "path": "/internal/responses/{response_id}/tool-executions",
+      "response_model": "anyagent.protocol.agent_api_internal.InternalResponseToolExecutionsResponse"
     },
     {
       "method": "GET",
@@ -6158,6 +6172,46 @@
       "title": "InternalPromptBundlePreviewResponse",
       "type": "object"
     },
+    "anyagent.protocol.agent_api_internal.InternalResponseModelRequestResponse": {
+      "additionalProperties": false,
+      "description": "Response model for historical model request body replay.",
+      "properties": {
+        "applied_body": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applied Body"
+        },
+        "prompt_cache_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Cache Key"
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "response_id"
+      ],
+      "title": "InternalResponseModelRequestResponse",
+      "type": "object"
+    },
     "anyagent.protocol.agent_api_internal.InternalResponsePromptContextResponse": {
       "$defs": {
         "AnyAgentPromptContextEvent": {
@@ -6599,6 +6653,213 @@
         "response_id"
       ],
       "title": "InternalResponsePromptContextResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.agent_api_internal.InternalResponseToolExecutionsResponse": {
+      "$defs": {
+        "AnyAgentToolExecutionDetailEvent": {
+          "additionalProperties": false,
+          "description": "Full tool execution payload for historical replay — supplements planned/result summaries.",
+          "properties": {
+            "arguments_json": {
+              "default": "",
+              "title": "Arguments Json",
+              "type": "string"
+            },
+            "audit_ref": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audit Ref"
+            },
+            "duration_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Duration Ms"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StageError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Output"
+            },
+            "output_truncated": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Output Truncated"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            },
+            "tool_call_id": {
+              "title": "Tool Call Id",
+              "type": "string"
+            },
+            "tool_name": {
+              "title": "Tool Name",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.tool.execution.detail",
+              "default": "anyagent.tool.execution.detail",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "tool_call_id",
+            "tool_name",
+            "status"
+          ],
+          "title": "AnyAgentToolExecutionDetailEvent",
+          "type": "object"
+        },
+        "StageError": {
+          "additionalProperties": false,
+          "description": "A machine-readable error for stage events.",
+          "properties": {
+            "code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Code"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "retryable": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Retryable"
+            },
+            "type": {
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "message"
+          ],
+          "title": "StageError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Response model for historical tool execution detail replay.",
+      "properties": {
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "tool_executions": {
+          "items": {
+            "$ref": "#/$defs/AnyAgentToolExecutionDetailEvent"
+          },
+          "title": "Tool Executions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "response_id"
+      ],
+      "title": "InternalResponseToolExecutionsResponse",
       "type": "object"
     },
     "anyagent.protocol.agent_api_internal.InternalSkillListItem": {
@@ -7580,6 +7841,82 @@
           "title": "AnyAgentFunctionToolParam",
           "type": "object"
         },
+        "AnyAgentModelRequestEvent": {
+          "additionalProperties": false,
+          "description": "First model request body sent to the model provider, persisted for historical replay.",
+          "properties": {
+            "applied_body": {
+              "additionalProperties": true,
+              "title": "Applied Body",
+              "type": "object"
+            },
+            "prompt_cache_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Prompt Cache Key"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.model.request",
+              "default": "anyagent.model.request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id"
+          ],
+          "title": "AnyAgentModelRequestEvent",
+          "type": "object"
+        },
         "AnyAgentModelStreamEvent": {
           "additionalProperties": false,
           "description": "Wrap one OpenAI Responses stream event JSON payload.",
@@ -7859,6 +8196,145 @@
             "response_id"
           ],
           "title": "AnyAgentPromptContextRenderedEvent",
+          "type": "object"
+        },
+        "AnyAgentToolExecutionDetailEvent": {
+          "additionalProperties": false,
+          "description": "Full tool execution payload for historical replay — supplements planned/result summaries.",
+          "properties": {
+            "arguments_json": {
+              "default": "",
+              "title": "Arguments Json",
+              "type": "string"
+            },
+            "audit_ref": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audit Ref"
+            },
+            "duration_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Duration Ms"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StageError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Output"
+            },
+            "output_truncated": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Output Truncated"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            },
+            "tool_call_id": {
+              "title": "Tool Call Id",
+              "type": "string"
+            },
+            "tool_name": {
+              "title": "Tool Name",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.tool.execution.detail",
+              "default": "anyagent.tool.execution.detail",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "tool_call_id",
+            "tool_name",
+            "status"
+          ],
+          "title": "AnyAgentToolExecutionDetailEvent",
           "type": "object"
         },
         "AnyAgentToolPlannedEvent": {
@@ -8892,6 +9368,7 @@
                 "anyagent.command.planned": "#/$defs/AnyAgentCommandPlannedEvent",
                 "anyagent.command.result": "#/$defs/AnyAgentCommandResultEvent",
                 "anyagent.done": "#/$defs/AnyAgentDoneEvent",
+                "anyagent.model.request": "#/$defs/AnyAgentModelRequestEvent",
                 "anyagent.model.stream_event": "#/$defs/AnyAgentModelStreamEvent",
                 "anyagent.prompt.context": "#/$defs/AnyAgentPromptContextEvent",
                 "anyagent.prompt.context.rendered": "#/$defs/AnyAgentPromptContextRenderedEvent",
@@ -8902,6 +9379,7 @@
                 "anyagent.sandbox.workspace.restore_failed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
                 "anyagent.sandbox.workspace.restored": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
                 "anyagent.sandbox.workspace.restoring": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
+                "anyagent.tool.execution.detail": "#/$defs/AnyAgentToolExecutionDetailEvent",
                 "anyagent.tool.planned": "#/$defs/AnyAgentToolPlannedEvent",
                 "anyagent.tool.result": "#/$defs/AnyAgentToolResultEvent"
               },
@@ -8918,6 +9396,9 @@
                 "$ref": "#/$defs/AnyAgentToolResultEvent"
               },
               {
+                "$ref": "#/$defs/AnyAgentToolExecutionDetailEvent"
+              },
+              {
                 "$ref": "#/$defs/AnyAgentCommandPlannedEvent"
               },
               {
@@ -8928,6 +9409,9 @@
               },
               {
                 "$ref": "#/$defs/AnyAgentPromptContextRenderedEvent"
+              },
+              {
+                "$ref": "#/$defs/AnyAgentModelRequestEvent"
               },
               {
                 "$ref": "#/$defs/AnyAgentWorkspaceLifecycleEvent"
@@ -11024,6 +11508,52 @@
         "agent_id"
       ],
       "title": "SpawnAgentResult",
+      "type": "object"
+    },
+    "anyagent.protocol.multi_agent.TaskArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "minLength": 1,
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "prompt": {
+          "minLength": 1,
+          "title": "Prompt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "prompt",
+        "agent_id"
+      ],
+      "title": "TaskArgs",
+      "type": "object"
+    },
+    "anyagent.protocol.multi_agent.TaskResult": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "output_text": {
+          "title": "Output Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "output_text"
+      ],
+      "title": "TaskResult",
       "type": "object"
     },
     "anyagent.protocol.multi_agent.WaitArgs": {
@@ -13538,6 +14068,82 @@
       "title": "AnyAgentDoneEvent",
       "type": "object"
     },
+    "anyagent.protocol.stage_events.AnyAgentModelRequestEvent": {
+      "additionalProperties": false,
+      "description": "First model request body sent to the model provider, persisted for historical replay.",
+      "properties": {
+        "applied_body": {
+          "additionalProperties": true,
+          "title": "Applied Body",
+          "type": "object"
+        },
+        "prompt_cache_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Cache Key"
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "const": "anyagent.model.request",
+          "default": "anyagent.model.request",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "response_id"
+      ],
+      "title": "AnyAgentModelRequestEvent",
+      "type": "object"
+    },
     "anyagent.protocol.stage_events.AnyAgentModelStreamEvent": {
       "additionalProperties": false,
       "description": "Wrap one OpenAI Responses stream event JSON payload.",
@@ -13986,6 +14592,191 @@
         "response_id"
       ],
       "title": "AnyAgentPromptContextRenderedEvent",
+      "type": "object"
+    },
+    "anyagent.protocol.stage_events.AnyAgentToolExecutionDetailEvent": {
+      "$defs": {
+        "StageError": {
+          "additionalProperties": false,
+          "description": "A machine-readable error for stage events.",
+          "properties": {
+            "code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Code"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "retryable": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Retryable"
+            },
+            "type": {
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "message"
+          ],
+          "title": "StageError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Full tool execution payload for historical replay — supplements planned/result summaries.",
+      "properties": {
+        "arguments_json": {
+          "default": "",
+          "title": "Arguments Json",
+          "type": "string"
+        },
+        "audit_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audit Ref"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StageError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "output": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output"
+        },
+        "output_truncated": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Truncated"
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "title": "Tool Call Id",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "const": "anyagent.tool.execution.detail",
+          "default": "anyagent.tool.execution.detail",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "response_id",
+        "tool_call_id",
+        "tool_name",
+        "status"
+      ],
+      "title": "AnyAgentToolExecutionDetailEvent",
       "type": "object"
     },
     "anyagent.protocol.stage_events.AnyAgentToolPlannedEvent": {
@@ -17260,6 +18051,82 @@
           "title": "AnyAgentDoneEvent",
           "type": "object"
         },
+        "AnyAgentModelRequestEvent": {
+          "additionalProperties": false,
+          "description": "First model request body sent to the model provider, persisted for historical replay.",
+          "properties": {
+            "applied_body": {
+              "additionalProperties": true,
+              "title": "Applied Body",
+              "type": "object"
+            },
+            "prompt_cache_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Prompt Cache Key"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.model.request",
+              "default": "anyagent.model.request",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id"
+          ],
+          "title": "AnyAgentModelRequestEvent",
+          "type": "object"
+        },
         "AnyAgentModelStreamEvent": {
           "additionalProperties": false,
           "description": "Wrap one OpenAI Responses stream event JSON payload.",
@@ -17539,6 +18406,145 @@
             "response_id"
           ],
           "title": "AnyAgentPromptContextRenderedEvent",
+          "type": "object"
+        },
+        "AnyAgentToolExecutionDetailEvent": {
+          "additionalProperties": false,
+          "description": "Full tool execution payload for historical replay — supplements planned/result summaries.",
+          "properties": {
+            "arguments_json": {
+              "default": "",
+              "title": "Arguments Json",
+              "type": "string"
+            },
+            "audit_ref": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audit Ref"
+            },
+            "duration_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Duration Ms"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StageError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Output"
+            },
+            "output_truncated": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Output Truncated"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            },
+            "tool_call_id": {
+              "title": "Tool Call Id",
+              "type": "string"
+            },
+            "tool_name": {
+              "title": "Tool Name",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.tool.execution.detail",
+              "default": "anyagent.tool.execution.detail",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "tool_call_id",
+            "tool_name",
+            "status"
+          ],
+          "title": "AnyAgentToolExecutionDetailEvent",
           "type": "object"
         },
         "AnyAgentToolPlannedEvent": {
@@ -18198,6 +19204,7 @@
           "anyagent.command.planned": "#/$defs/AnyAgentCommandPlannedEvent",
           "anyagent.command.result": "#/$defs/AnyAgentCommandResultEvent",
           "anyagent.done": "#/$defs/AnyAgentDoneEvent",
+          "anyagent.model.request": "#/$defs/AnyAgentModelRequestEvent",
           "anyagent.model.stream_event": "#/$defs/AnyAgentModelStreamEvent",
           "anyagent.prompt.context": "#/$defs/AnyAgentPromptContextEvent",
           "anyagent.prompt.context.rendered": "#/$defs/AnyAgentPromptContextRenderedEvent",
@@ -18208,6 +19215,7 @@
           "anyagent.sandbox.workspace.restore_failed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
           "anyagent.sandbox.workspace.restored": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
           "anyagent.sandbox.workspace.restoring": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
+          "anyagent.tool.execution.detail": "#/$defs/AnyAgentToolExecutionDetailEvent",
           "anyagent.tool.planned": "#/$defs/AnyAgentToolPlannedEvent",
           "anyagent.tool.result": "#/$defs/AnyAgentToolResultEvent"
         },
@@ -18224,6 +19232,9 @@
           "$ref": "#/$defs/AnyAgentToolResultEvent"
         },
         {
+          "$ref": "#/$defs/AnyAgentToolExecutionDetailEvent"
+        },
+        {
           "$ref": "#/$defs/AnyAgentCommandPlannedEvent"
         },
         {
@@ -18234,6 +19245,9 @@
         },
         {
           "$ref": "#/$defs/AnyAgentPromptContextRenderedEvent"
+        },
+        {
+          "$ref": "#/$defs/AnyAgentModelRequestEvent"
         },
         {
           "$ref": "#/$defs/AnyAgentWorkspaceLifecycleEvent"
