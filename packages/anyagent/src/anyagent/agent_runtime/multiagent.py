@@ -5,7 +5,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from time import monotonic, time
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,6 +22,7 @@ from anyagent.protocol.multi_agent import (
     SpawnAgentArgs,
     SpawnAgentResult,
     TaskArgs,
+    TaskResult,
     WaitArgs,
     WaitResult,
 )
@@ -598,3 +599,129 @@ class MultiAgentManager:
 
         out = ResumeAgentResult(ok=True)
         return json.dumps(out.model_dump(exclude_none=True), ensure_ascii=False)
+
+
+class SubAgentExecutor:
+    """In-process `task()` executor for the Phase 1.8 multi-agent MVP."""
+
+    async def execute_task(
+        self,
+        *,
+        catalog: AgentCatalog,
+        parent_pack: AgentPack,
+        model_provider: Any,
+        tool_runtime: Any,
+        session_key: str | None,
+        parent_body: dict[str, Any],
+        arguments_json: object,
+        max_iters: int = 4,
+    ) -> str:
+        obj = _coerce_arguments_object(arguments_json=arguments_json, tool_name="task")
+        args = TaskArgs.model_validate(obj)
+        child_agent_id = args.agent_id.strip()
+        allow = {
+            item.strip()
+            for item in (parent_pack.spec.multiagent.spawn_allow_agent_ids or [])
+            if isinstance(item, str) and item.strip()
+        }
+        if child_agent_id not in allow:
+            raise ValueError(f"task agent_id not allowed: {child_agent_id}")
+
+        child_pack = catalog.get(child_agent_id)
+        if child_pack is None:
+            raise ValueError(f"unknown agent_id: {child_agent_id}")
+        if not child_pack.spec.exposed:
+            raise ValueError(f"agent_id not exposed: {child_agent_id}")
+
+        from anyagent.protocol.tool_runtime import ToolContext
+
+        from .prompt_envelope import build_default_environment_context_values, build_prompt_envelope
+        from .tool_loop import run_tool_loop_nonstream
+
+        model = child_pack.spec.model.default or parent_body.get("model")
+        child_session_key = _task_session_key(parent_session_key=session_key, agent_id=child_agent_id)
+        child_body: dict[str, Any] = {
+            "input": args.prompt,
+            "metadata": {
+                "agent_id": child_agent_id,
+                "session_key": child_session_key,
+                "parent_session_key": session_key,
+                "task_description": args.description,
+            },
+        }
+        if isinstance(model, str) and model.strip():
+            child_body["model"] = model.strip()
+
+        prompt_envelope = build_prompt_envelope(
+            pack=child_pack,
+            selected_skills=[],
+            tool_context=ToolContext(),
+            model=child_body.get("model") if isinstance(child_body.get("model"), str) else None,
+            environment_values=build_default_environment_context_values(
+                cwd=child_pack.root_dir,
+                sandbox_mode=child_pack.spec.sandbox.mode,
+            ),
+        )
+        child_body = prompt_envelope.apply_to_body(body=child_body)
+
+        status_code, payload = await run_tool_loop_nonstream(
+            model_provider=model_provider,
+            tool_runtime=tool_runtime,
+            agent_id=child_agent_id,
+            session_key=child_session_key,
+            body=child_body,
+            idempotency_key=None,
+            tool_context=ToolContext(),
+            selected_skills=[],
+            max_iters=max_iters,
+            prompt_envelope_applied=True,
+        )
+        if status_code >= 400:
+            raise RuntimeError(_extract_error_message(payload))
+
+        result = TaskResult(agent_id=child_agent_id, output_text=_extract_response_output_text(payload))
+        return json.dumps(result.model_dump(), ensure_ascii=False)
+
+
+def _coerce_arguments_object(*, arguments_json: object, tool_name: str) -> dict[str, Any]:
+    try:
+        obj = json.loads(arguments_json) if isinstance(arguments_json, str) else arguments_json
+    except Exception as e:  # noqa: BLE001
+        raise ValueError(f"invalid {tool_name} arguments_json: {e}") from e
+    if not isinstance(obj, dict):
+        raise ValueError(f"{tool_name} arguments must be an object")
+    return obj
+
+
+def _task_session_key(*, parent_session_key: str | None, agent_id: str) -> str:
+    parent = (parent_session_key or "ephemeral").strip() or "ephemeral"
+    suffix = uuid4().hex[:12]
+    return f"{parent}:task:{agent_id}:{suffix}"
+
+
+def _extract_response_output_text(payload: dict[str, Any]) -> str:
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str):
+        return output_text
+    chunks: list[str] = []
+    output = payload.get("output")
+    if isinstance(output, list):
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    chunks.append(part["text"])
+    if chunks:
+        return "".join(chunks)
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _extract_error_message(payload: dict[str, Any]) -> str:
+    error = payload.get("error")
+    if isinstance(error, dict) and isinstance(error.get("message"), str):
+        return error["message"]
+    return "subagent task failed"

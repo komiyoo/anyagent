@@ -42,6 +42,7 @@ from anyagent.mcp.auth import CredentialResolver
 from anyagent.skills.loader import SkillLoadError, load_skill_package
 from anyagent.agent_runtime import (
     SkillInjector,
+    SubAgentExecutor,
     build_default_environment_context_values,
     build_prompt_envelope,
     persist_session_snapshot,
@@ -1216,6 +1217,22 @@ def create_app(
                 data=event.model_dump_json(exclude_none=True, by_alias=True),
             )
 
+        def _system_tool_executor_for_body(parent_body: dict[str, Any]):
+            async def _execute_system_tool(tool_name: str, arguments_json: object) -> str:
+                if tool_name != "task":
+                    raise ValueError(f"unsupported system tool: {tool_name}")
+                return await SubAgentExecutor().execute_task(
+                    catalog=state.catalog,
+                    parent_pack=pack,
+                    model_provider=model_provider,
+                    tool_runtime=state.runtime,
+                    session_key=session_key,
+                    parent_body=parent_body,
+                    arguments_json=arguments_json,
+                )
+
+            return _execute_system_tool
+
         prompt_context_event = AnyAgentPromptContextEvent.model_validate(
             {
                 "response_id": response_id,
@@ -1303,6 +1320,7 @@ def create_app(
                                     mcp_manager=mcp_manager,
                                     stage_event_sink=_stage_sink,
                                     prompt_envelope_applied=True,
+                                    system_tool_executor=_system_tool_executor_for_body(body2),
                                 ):
                                     await _append_sse_chunk(
                                         state,
@@ -1557,6 +1575,7 @@ def create_app(
                                 mcp_manager=mcp_manager,
                                 stage_event_sink=_stage_sink,
                                 prompt_envelope_applied=True,
+                                system_tool_executor=_system_tool_executor_for_body(body2),
                             )
                         except asyncio.CancelledError:
                             payload = build_minimal_openai_response_json(

@@ -26,7 +26,7 @@
 ### Phase 1.8 — Sub-Agent 最小可用版
 
 - [x] P0 设计 `task()` tool 的 schema（description, prompt, agent_id 参数）（Req: `requirements.md#req-13`; Impl: `packages/anyagent/src/anyagent/protocol/multi_agent.py:37`, `packages/anyagent/src/anyagent/agent_runtime/multiagent.py:110`, `tests/unit/agent_runtime/test_multiagent_task_schema.py:20`; Module: `anyagent.agent_runtime.multiagent`）
-- [ ] P0 实现 in-process SubAgentExecutor: 接收 task() 调用 → 创建子 Agent Loop → 独立上下文 → 返回结果（Req: `requirements.md#req-13`）
+- [x] P0 实现 in-process SubAgentExecutor: 接收 task() 调用 → 创建子 Agent Loop → 独立上下文 → 返回结果（Req: `requirements.md#req-13`; Impl: `packages/anyagent/src/anyagent/agent_runtime/multiagent.py:604`, `packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:350`, `tests/unit/agent_runtime/test_multiagent_task_schema.py:46`; Module: `anyagent.agent_runtime.multiagent`, `anyagent.agent_runtime.tool_loop`）
 - [ ] P1 子 Agent 的 Stage Events 追踪（parent_run_id 关联）（Req: `requirements.md#req-13`）
 - [ ] P1 子 Agent 并发限制（MAX_CONCURRENT_SUBAGENTS 配置）（Req: `requirements.md#req-13`）
 - [ ] P2 子 Agent 超时机制（Req: `requirements.md#req-13`）

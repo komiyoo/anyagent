@@ -52,6 +52,7 @@ from .tool_results import (
 StageEventSink = Callable[[StageEvent], Awaitable[None]]
 ManifestRefresher = Callable[[], Awaitable[tuple[list[dict[str, Any]], int]]]
 ManifestResolver = Callable[[], Awaitable[tuple[list[dict[str, Any]], int]]]
+SystemToolExecutor = Callable[[str, object], Awaitable[str]]
 
 
 def _strip_anyagent_request_metadata(body: dict[str, Any]) -> dict[str, Any]:
@@ -272,6 +273,7 @@ async def _execute_one_tool(
     manifest_tools: list[dict[str, Any]],
     tool_context: ToolContext,
     manifest_refresher: ManifestRefresher | None,
+    system_tool_executor: SystemToolExecutor | None,
     call: ResponseFunctionToolCall,
     stage_event_sink: StageEventSink | None,
 ) -> tuple[FunctionCallOutput | None, list[dict[str, Any]], int]:
@@ -300,7 +302,22 @@ async def _execute_one_tool(
         arguments_json=parsed_args,
     )
 
-    if tool_name.startswith("mcp."):
+    if tool_name == "task":
+        if system_tool_executor is None:
+            tool_result = build_error_tool_result(
+                error_type="system_tool_error",
+                message="task executor not configured",
+            )
+        else:
+            try:
+                output_text = await system_tool_executor(tool_name, parsed_args)
+                tool_result = build_completed_tool_result(output=output_text)
+            except Exception as e:  # noqa: BLE001
+                tool_result = build_error_tool_result(
+                    error_type="system_tool_error",
+                    message=str(e),
+                )
+    elif tool_name.startswith("mcp."):
         if mcp_manager is None:
             tool_result = build_error_tool_result(
                 error_type="mcp_error",
@@ -429,6 +446,7 @@ async def run_tool_loop_nonstream(
     max_iters: int = 8,
     stage_event_sink: StageEventSink | None = None,
     prompt_envelope_applied: bool = False,
+    system_tool_executor: SystemToolExecutor | None = None,
 ) -> tuple[int, dict[str, Any]]:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     enabled_skills = [s.stable_id for s in (selected_skills or [])]
@@ -509,6 +527,7 @@ async def run_tool_loop_nonstream(
                 manifest_tools=manifest_tools,
                 tool_context=tool_context or ToolContext(),
                 manifest_refresher=_refresh_manifest,
+                system_tool_executor=system_tool_executor,
                 call=call,
                 stage_event_sink=stage_event_sink,
             )
@@ -570,6 +589,7 @@ async def run_tool_loop_stream_buffered(
     max_iters: int = 8,
     stage_event_sink: StageEventSink | None = None,
     prompt_envelope_applied: bool = False,
+    system_tool_executor: SystemToolExecutor | None = None,
 ) -> tuple[int, Iterable[bytes]]:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     enabled_skills = [s.stable_id for s in (selected_skills or [])]
@@ -651,6 +671,7 @@ async def run_tool_loop_stream_buffered(
                 manifest_tools=manifest_tools,
                 tool_context=tool_context or ToolContext(),
                 manifest_refresher=_refresh_manifest,
+                system_tool_executor=system_tool_executor,
                 call=call,
                 stage_event_sink=stage_event_sink,
             )
@@ -716,6 +737,7 @@ async def run_tool_loop_stream_live(
     max_iters: int = 8,
     stage_event_sink: StageEventSink | None = None,
     prompt_envelope_applied: bool = False,
+    system_tool_executor: SystemToolExecutor | None = None,
 ) -> AsyncIterator[bytes]:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     enabled_skills = [s.stable_id for s in (selected_skills or [])]
@@ -821,6 +843,7 @@ async def run_tool_loop_stream_live(
                 manifest_tools=manifest_tools,
                 tool_context=tool_context or ToolContext(),
                 manifest_refresher=_refresh_manifest,
+                system_tool_executor=system_tool_executor,
                 call=call,
                 stage_event_sink=stage_event_sink,
             )
