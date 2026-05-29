@@ -17,6 +17,7 @@ from anyagent.protocol.sse import encode_sse_event, normalize_response_id
 from anyagent.protocol.stage_events import (
     AnyAgentCommandPlannedEvent,
     AnyAgentCommandResultEvent,
+    AnyAgentToolExecutionDetailEvent,
     AnyAgentToolPlannedEvent,
     AnyAgentToolResultEvent,
     StageEvent,
@@ -261,6 +262,50 @@ async def _emit_tool_result(
     )
 
 
+async def _emit_tool_execution_detail(
+    *,
+    sink: StageEventSink | None,
+    response_id: str,
+    trace_id: str | None,
+    tool_call_id: str,
+    tool_name: str,
+    arguments_json: str,
+    output: str | None = None,
+    error: dict[str, Any] | None = None,
+    status: str,
+    duration_ms: int | None = None,
+    output_truncated: bool | None = None,
+    audit_ref: str | None = None,
+) -> None:
+    """Emit full tool execution detail event for historical replay."""
+    if sink is None:
+        return
+    ts_ms = int(time.time() * 1000)
+    detail_error = None
+    if error is not None:
+        detail_error = {
+            "type": error.get("type", "tool_error"),
+            "message": error.get("message", ""),
+            "code": error.get("code"),
+            "retryable": error.get("retryable"),
+        }
+    event = AnyAgentToolExecutionDetailEvent(
+        response_id=response_id,
+        trace_id=trace_id,
+        tool_call_id=tool_call_id,
+        tool_name=tool_name,
+        arguments_json=arguments_json if isinstance(arguments_json, str) else json.dumps(arguments_json, ensure_ascii=False),
+        output=output,
+        error=detail_error,  # type: ignore[arg-type]
+        status=status,
+        duration_ms=duration_ms,
+        output_truncated=output_truncated,
+        audit_ref=audit_ref,
+        ts_ms=ts_ms,
+    )
+    await sink(event)
+
+
 async def _execute_one_tool(
     *,
     model_provider: ModelProvider,
@@ -394,6 +439,20 @@ async def _execute_one_tool(
             output_truncated=tr.meta.output_truncated,
             audit_ref=tr.meta.audit_ref,
         )
+        await _emit_tool_execution_detail(
+            sink=stage_event_sink,
+            response_id=response_id,
+            trace_id=trace_id,
+            tool_call_id=call_id,
+            tool_name=tool_name,
+            arguments_json=arguments,
+            output=tr.output if isinstance(tr.output, str) else json.dumps(tr.output, ensure_ascii=False) if tr.output is not None else None,
+            error=error_value,
+            status=tr.status,
+            duration_ms=tr.meta.duration_ms,
+            output_truncated=tr.meta.output_truncated,
+            audit_ref=tr.meta.audit_ref,
+        )
         return build_function_call_output_item(
             call_id=call_id,
             tool_result=tool_result,
@@ -401,6 +460,9 @@ async def _execute_one_tool(
         ), current_manifest_tools, current_toolset_version
 
     if tool_result.get("status") == "completed":
+        mcp_status = "completed"
+        mcp_output = tool_result.get("output")
+        mcp_error = None
         await _emit_tool_result(
             sink=stage_event_sink,
             response_id=response_id,
@@ -409,9 +471,12 @@ async def _execute_one_tool(
             tool_name=tool_name,
             tool_kind=tool_kind,
             status="completed",
-            output=tool_result.get("output"),
+            output=mcp_output,
         )
     else:
+        mcp_status = str(tool_result.get("status") or "error")
+        mcp_output = None
+        mcp_error = tool_result.get("error")
         await _emit_tool_result(
             sink=stage_event_sink,
             response_id=response_id,
@@ -419,9 +484,20 @@ async def _execute_one_tool(
             tool_call_id=call_id,
             tool_name=tool_name,
             tool_kind=tool_kind,
-            status=str(tool_result.get("status") or "error"),
-            error=tool_result.get("error"),
+            status=mcp_status,
+            error=mcp_error,
         )
+    await _emit_tool_execution_detail(
+        sink=stage_event_sink,
+        response_id=response_id,
+        trace_id=trace_id,
+        tool_call_id=call_id,
+        tool_name=tool_name,
+        arguments_json=arguments,
+        output=mcp_output if isinstance(mcp_output, str) else json.dumps(mcp_output, ensure_ascii=False) if mcp_output is not None else None,
+        error=mcp_error,
+        status=mcp_status,
+    )
     return build_function_call_output_item(
         call_id=call_id,
         tool_result=tool_result,

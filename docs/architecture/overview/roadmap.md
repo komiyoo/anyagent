@@ -1,10 +1,12 @@
-<!--
----
+## <!--
+
 doc_kind: architecture
 status: stable
 tags: ["roadmap", "architecture", "anyagent"]
 summary: anyagent 仓库的长期架构方向、当前事实锚点、设计边界与分阶段路线。
+
 ---
+
 -->
 
 # anyagent Architecture Direction & Roadmap
@@ -32,19 +34,19 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 
 ## 2. 当前事实锚点
 
-| 领域 | 当前真源 | 已实现事实 |
-|---|---|---|
-| 协议 | `packages/anyagent/src/anyagent/protocol/`、`schema_export.py` | 导出 JSON Schema bundle、endpoint manifest、semantic rules 与 OpenAPI 3.1 document。 |
-| Server | `packages/anyagent/src/anyagent/server/app.py` | 提供 `/v1/responses`、`/internal/*`、`/admin/*` typed endpoints。 |
-| CLI | `packages/anyagent/src/anyagent/cli.py` | 提供 `serve`、`init`、`doctor`、config、storage、workspace 等 control-plane 入口。 |
-| Python SDK | `packages/anyagent/src/anyagent/agent_api_client.py`、`anyagent.types` | OpenAI 兼容 client + events、agents、skills、tools、prompts、observability、admin、health namespaces。 |
-| TypeScript SDK | `sdks/typescript/` | 从 protocol export 生成 schema/types,通过 endpoint manifest 解析 schema-backed paths。 |
-| Stage Events | `anyagent.protocol.events` | 覆盖 prompt context、model stream、tool planned/result、command planned/result 与 done 主路径。 |
-| Storage | `anyagent.storage`、server storage adapters | 支持 in-memory、SQLite、PostgreSQL、Redis hot path 与 typed external SQL backend config。 |
-| Tool Runtime | `anyagent.tool_runtime`、server tool endpoints | manifest/execute contract、credential resolver/admin-store assembly、standalone Tool Runtime 管理面。 |
-| Credential | `anyagent.server.security.credential_*` | Env/File/Infisical read-only backend、admin credential CRUD、capability matrix。 |
-| Sandbox | `anyagent.protocol.sandbox`、sandbox backend modules | `SandboxPolicy`、`NetworkSandboxPolicy`、`ResourceLimits` 与 backend adapter 分层。 |
-| Studio | `packages/anyagent/studio/`、`packages/anyagent/src/anyagent/studio_static/` | 源码位于 package workspace,构建产物随 Python package 打包,消费 typed API。 |
+| 领域           | 当前真源                                                                     | 已实现事实                                                                                             |
+| -------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 协议           | `packages/anyagent/src/anyagent/protocol/`、`schema_export.py`               | 导出 JSON Schema bundle、endpoint manifest、semantic rules 与 OpenAPI 3.1 document。                   |
+| Server         | `packages/anyagent/src/anyagent/server/app.py`                               | 提供 `/v1/responses`、`/internal/*`、`/admin/*` typed endpoints。                                      |
+| CLI            | `packages/anyagent/src/anyagent/cli.py`                                      | 提供 `serve`、`init`、`doctor`、config、storage、workspace 等 control-plane 入口。                     |
+| Python SDK     | `packages/anyagent/src/anyagent/agent_api_client.py`、`anyagent.types`       | OpenAI 兼容 client + events、agents、skills、tools、prompts、observability、admin、health namespaces。 |
+| TypeScript SDK | `sdks/typescript/`                                                           | 从 protocol export 生成 schema/types,通过 endpoint manifest 解析 schema-backed paths。                 |
+| Stage Events   | `anyagent.protocol.events`                                                   | 覆盖 prompt context、model stream、tool planned/result、command planned/result 与 done 主路径。        |
+| Storage        | `anyagent.storage`、server storage adapters                                  | 支持 in-memory、SQLite、PostgreSQL、Redis hot path 与 typed external SQL backend config。              |
+| Tool Runtime   | `anyagent.tool_runtime`、server tool endpoints                               | manifest/execute contract、credential resolver/admin-store assembly、standalone Tool Runtime 管理面。  |
+| Credential     | `anyagent.server.security.credential_*`                                      | Env/File/Infisical read-only backend、admin credential CRUD、capability matrix。                       |
+| Sandbox        | `anyagent.protocol.sandbox`、sandbox backend modules                         | `SandboxPolicy`、`NetworkSandboxPolicy`、`ResourceLimits` 与 backend adapter 分层。                    |
+| Studio         | `packages/anyagent/studio/`、`packages/anyagent/src/anyagent/studio_static/` | 源码位于 package workspace,构建产物随 Python package 打包,消费 typed API。                             |
 
 ---
 
@@ -92,16 +94,16 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 
 ## 4. 兼容决策矩阵
 
-| 决策点 | 当前锚点 | 长期约束 |
-|---|---|---|
-| 协议真源 | `anyagent.protocol.*` + schema bundle | 可独立版本化的 protocol/spec 制品必须保持同一 semantic rules。 |
-| Server runtime | Python built-in server | 可替换 runtime 必须通过 reference conformance suite。 |
-| Client SDK | Python SDK facade + TypeScript SDK scaffold | 多语言 SDK 必须从 protocol/spec 派生并通过 contract fixtures。 |
-| 存储 | in-memory / SQLite / PostgreSQL / Redis adapters | 跨 runtime storage/replay contract 必须保持 session/run/event 语义一致。 |
-| Tool Runtime | 进程内与 standalone Tool Runtime contract | manifest/execute、credential injection、policy enforcement 不绑定单一 runtime。 |
-| Credential | Env/File/Infisical backend + admin store | Agent 只见 credential ref;secret 不通过 read API 回显。 |
-| Sandbox | policy/backend adapter 分层 | backend 可替换,agent loop 只消费 `exec` tool 与 sandbox policy。 |
-| Multi-Agent | runtime primitives 与 stage events | parent/child/root run、quota 与 event replay 语义必须可验收。 |
+| 决策点         | 当前锚点                                         | 长期约束                                                                        |
+| -------------- | ------------------------------------------------ | ------------------------------------------------------------------------------- |
+| 协议真源       | `anyagent.protocol.*` + schema bundle            | 可独立版本化的 protocol/spec 制品必须保持同一 semantic rules。                  |
+| Server runtime | Python built-in server                           | 可替换 runtime 必须通过 reference conformance suite。                           |
+| Client SDK     | Python SDK facade + TypeScript SDK scaffold      | 多语言 SDK 必须从 protocol/spec 派生并通过 contract fixtures。                  |
+| 存储           | in-memory / SQLite / PostgreSQL / Redis adapters | 跨 runtime storage/replay contract 必须保持 session/run/event 语义一致。        |
+| Tool Runtime   | 进程内与 standalone Tool Runtime contract        | manifest/execute、credential injection、policy enforcement 不绑定单一 runtime。 |
+| Credential     | Env/File/Infisical backend + admin store         | Agent 只见 credential ref;secret 不通过 read API 回显。                         |
+| Sandbox        | policy/backend adapter 分层                      | backend 可替换,agent loop 只消费 `exec` tool 与 sandbox policy。                |
+| Multi-Agent    | runtime primitives 与 stage events               | parent/child/root run、quota 与 event replay 语义必须可验收。                   |
 
 ---
 
@@ -113,36 +115,44 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 
 > 最后更新：2026-05-29
 
-| 优先级 | # | 任务 | Phase | 状态 | todo 入口 |
-|---|---|---|---|---|---|
-| **P0** | 1 | Protocol schema bundle 版本化 | 1 | ✅ 已完成 | `todo/protocol.md` L24 |
-| **P0** | 2 | SDK conformance fixtures → Stage Events + Tool Runtime | 1 | ✅ 已完成 | `todo/sdk.md` L26 |
-| **P0** | 3 | TypeScript SDK 最小可用面 (MVU) | 1 | ✅ 已完成 | `todo/sdk.md` L27 |
-| **P0** | 4 | Tool Deferred Loading + Tool Search | 1.5 | ✅ 已完成 | `todo/tool-runtime.md` L26-27 |
-| **P0** | 5 | Skill → Agent Loop 注入管道 | 1.5 | ✅ 已完成 | `todo/server-runtime.md` L27 |
-| **P0** | 6 | Prompt Context Replay（rendered fragments 持久化 + 历史查询 API） | 1.5 | ✅ 已完成 | `todo/persistence.md` M1 |
-| **P1** | 7 | Tool Execution Replay（tool full payload 持久化 + 查询） | 1.5 | 🔲 未开始 | `todo/persistence.md` M2 |
-| **P1** | 8 | Model Request Replay（applied_body 持久化 + replay） | 1.5 | 🔲 未开始 | `todo/persistence.md` M3 |
-| **P1** | 9 | Tool Runtime contract 测试矩阵 + standalone 等价验收 | 2 | 🔲 未开始 | `todo/tool-runtime.md` L33-34 |
-| **P1** | 10 | Storage replay contract: PG + Redis | 2 | 🔲 未开始 | `todo/storage.md` L24 |
-| **P1** | 11 | 跨节点 Run 调度与 lock contract | 2 | 🔲 未开始 | `todo/server-runtime.md` L42-43 |
-| **P1** | 12 | 第二 sandbox backend | 2 | 🔲 未开始 | `todo/sandbox.md` L23-24 |
-| **P2** | 13 | Plugin Manifest 统一 + MCP filter/sanitize | 1.5 | 🔲 未开始 | `todo/tool-runtime.md` L28-29 |
-| **P2** | 14 | 配置层级 merge + MCP 生命周期 Stage Events | 1.5 | 🔲 未开始 | `todo/server-runtime.md` L28-29 |
-| **P2** | 15 | Unified Observability Sink（统一 envelope 出口 + 外部审计对接） | 2 | 🔲 未开始 | `todo/persistence.md` M4 |
-| **P3** | 16 | Credential v2 (DB/Vault/session/轮转/审计) | 3 | 🔲 未开始 | `todo/security-compliance.md` L18-22 |
-| **P4** | 17 | Multi-Agent contract | 4 | 🔲 未开始 | `todo/multi-agent.md` L23-25 |
-| **P4** | 18 | Reference conformance suite + 第二 runtime | 4 | 🔲 未开始 | `todo/multi-runtime.md` L25-27 |
+| 优先级 | #   | 任务                                                              | Phase | 状态      | todo 入口                            |
+| ------ | --- | ----------------------------------------------------------------- | ----- | --------- | ------------------------------------ |
+| **P0** | 1   | Protocol schema bundle 版本化                                     | 1     | ✅ 已完成 | `todo/protocol.md` L24               |
+| **P0** | 2   | SDK conformance fixtures → Stage Events + Tool Runtime            | 1     | ✅ 已完成 | `todo/sdk.md` L26                    |
+| **P0** | 3   | TypeScript SDK 最小可用面 (MVU)                                   | 1     | ✅ 已完成 | `todo/sdk.md` L27                    |
+| **P0** | 4   | Tool Deferred Loading + Tool Search                               | 1.5   | ✅ 已完成 | `todo/tool-runtime.md` L26-27        |
+| **P0** | 5   | Skill → Agent Loop 注入管道                                       | 1.5   | ✅ 已完成 | `todo/server-runtime.md` L27         |
+| **P0** | 6   | Prompt Context Replay（rendered fragments 持久化 + 历史查询 API） | 1.5   | ✅ 已完成 | `todo/persistence.md` M1             |
+| **P1** | 7   | Tool Execution Replay（tool full payload 持久化 + 查询）          | 1.5   | ✅ 已完成 | `todo/persistence.md` M2             |
+| **P1** | 8   | Model Request Replay（applied_body 持久化 + replay）              | 1.5   | ✅ 已完成 | `todo/persistence.md` M3             |
+| **P1** | 9   | Plugin Manifest 统一 + MCP filter/sanitize                        | 1.5   | 🔲 未开始 | `todo/tool-runtime.md` L28-29        |
+| **P1** | 10  | 配置层级 merge + MCP 生命周期 Stage Events                        | 1.5   | 🔲 未开始 | `todo/server-runtime.md` L28-29      |
+| **P0** | 11  | Sub-Agent 最小可用版（`task()` tool 模式）                        | 1.8   | 🔵 进行中 | `todo/multi-agent.md` M0             |
+| **P0** | 12  | 上下文压缩（SummarizationMiddleware 模式）                        | 1.8   | 🔲 未开始 | `todo/server-runtime.md`             |
+| **P1** | 13  | 循环检测（Agent Loop 内置安全机制）                               | 1.8   | 🔲 未开始 | `todo/server-runtime.md`             |
+| **P2** | 15  | Tool Runtime contract 测试矩阵 + standalone 等价验收              | 2     | 🔲 未开始 | `todo/tool-runtime.md` L33-34        |
+| **P2** | 16  | Storage replay contract: PG + Redis                               | 2     | 🔲 未开始 | `todo/storage.md` L24                |
+| **P3** | 17  | 跨节点 Run 调度与 lock contract                                   | 2     | 🔲 未开始 | `todo/server-runtime.md` L42-43      |
+| **P3** | 18  | 第二 sandbox backend                                              | 2     | 🔲 未开始 | `todo/sandbox.md` L23-24             |
+| **P3** | 19  | Unified Observability Sink（统一 envelope 出口 + 外部审计对接）   | 2     | 🔲 未开始 | `todo/persistence.md` M4             |
+| **P4** | 20  | Credential v2 (DB/Vault/session/轮转/审计)                        | 3     | 🔲 未开始 | `todo/security-compliance.md` L18-22 |
+| **P4** | 21  | Multi-Agent contract（完整 parent/child/root run 语义）           | 4     | 🔲 未开始 | `todo/multi-agent.md` L23-25         |
+| **P4** | 22  | Reference conformance suite + 第二 runtime                        | 4     | 🔲 未开始 | `todo/multi-runtime.md` L25-27       |
 
 状态图例：🔲 未开始 · 🔵 进行中 · ✅ 已完成
 
 依赖关系备注：
+
 - #5 和 #6 可并行（分别改 agent_runtime 注入管道和 persistence 写入路径）
 - #7、#8 依赖 #6（replay event 格式需要 prompt context rendered event 形状稳定后对齐）
-- #11 依赖 #10（lock contract 需要 storage adapter 就绪）
-- #13 依赖 #4（Plugin Manifest 需要 Tool Registry/Search 形状稳定）
-- #15 依赖 #6 + #7 + #8（统一 sink 需要所有 replay event 类型就绪）
-- #16 依赖 #9 + #15（Credential v2 需要 Tool Runtime GA + audit sink）
+- #9 依赖 #4（Plugin Manifest 需要 Tool Registry/Search 形状稳定）
+- #11 依赖 #13（Sub-Agent 需要循环检测作为安全网）；不依赖 #9/#10（MVP 用内置 tool 注册，不需要 Plugin Manifest）
+- #12、#13、#14 无阻塞依赖，可立即并行启动
+- #17 依赖 #16（lock contract 需要 storage adapter 就绪）
+- #19 依赖 #6 + #7 + #8（统一 sink 需要所有 replay event 类型就绪）
+- #20 依赖 #15 + #19（Credential v2 需要 Tool Runtime GA + audit sink）
+
+> **决策记录（2026-05-29）**：当前仅公司内部使用，多租户/水平扩展需求推迟。Phase 2 中的分布式加固（#17 跨节点调度、#18 第二 sandbox backend）降为 P3，有外部用户需求后再投入。新增 Phase 1.8 聚焦内部高频需求：Sub-Agent、上下文压缩、循环检测。
 
 ---
 
@@ -163,6 +173,7 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 **目标**:双线并行——(1) 让 Tool Registry、Skill 系统、MCP 管理具备生产级注入与治理能力；(2) 让完整执行过程（prompt 组装、模型调用、工具执行）在 event store 中具备全量回放能力,支撑 Studio 历史回看、Eval/Replay 与审计。
 
 Agentic Ecosystem:
+
 - Tool Deferred Loading:引入工具曝光度分级（direct/deferred/hidden）与按需发现机制,减少 context token 浪费
 - Skill → Agent Loop 注入管道:补齐 skill mention 解析 → SKILL.md 读取 → prompt context 注入的标准路径,带 token budget 控制
 - Plugin Manifest 统一:设计统一 PluginManifest,一个 plugin 可同时声明 skills + MCP servers + tools + hooks
@@ -170,6 +181,7 @@ Agentic Ecosystem:
 - MCP 生命周期事件:对齐 Stage Events 发射 MCP server 启动/就绪/失败状态
 
 Systematic Persistence（系统性持久化）:
+
 - Prompt Context Replay:rendered fragments 持久化 + 历史查询 API + Studio 展示
 - Tool Execution Replay:tool input/output full payload 持久化 + 查询 API
 - Model Request Replay:applied_body（注入 system/developer prompt 后的完整请求体）持久化 + replay API
@@ -178,14 +190,30 @@ Systematic Persistence（系统性持久化）:
 
 需求锚点:`req-5`(Agent loop)、`req-5-2`(Tool Manifest)、`req-5-2-1`(Tool Registry)、`req-5-13`(Observability/Audit)、`req-6`(Gateway/Plugin)
 
+### Phase 1.8 — Internal Productivity（内部生产力提升）
+
+**目标**:让 AnyAgent 在公司内部场景中具备处理复合任务和长对话的能力,快速提升内部团队的实际使用体验。
+
+> 背景:当前仅公司内部使用,多租户/水平扩展暂不需要。本 Phase 聚焦内部高频需求。
+
+- Sub-Agent 最小可用版:参考 DeerFlow SubagentExecutor 的 `task()` tool 模式,实现 in-process 子 Agent 委派
+- 上下文压缩:token 接近上限时触发摘要,保留近 N 条 + LLM 摘要旧消息（参考 DeerFlow SummarizationMiddleware）
+- 循环检测:Agent Loop 内置安全机制,检测重复工具调用或无进展循环
+- 嵌入 DeerFlow Skills:适配 `deep-research` 等不依赖沙箱的 skill,验证兼容性
+
+入口:[`todo/multi-agent.md`](../../../todo/multi-agent.md)、[`todo/server-runtime.md`](../../../todo/server-runtime.md)
+
+需求锚点:`req-13`(multi-agent)、`req-5`(Agent loop)
+
 ### Phase 2 — Production Runtime Hardening
 
-**目标**:让 Python reference server 在分布式部署形态下可以承载多 workspace / 多租户主路径,并将持久化数据统一出口到外部审计系统。
+**目标**:让 Python reference server 具备生产级 Tool Runtime 和存储验收能力。分布式多租户加固推迟到有外部用户需求时再投入。
 
-- 跨节点 Run 调度与 lock contract 实装(基于现有 storage adapter)
 - Tool Runtime standalone 模式 GA(manifest / execute / credential 注入 / policy 强制 contract 全通)
-- Sandbox 第二 backend 实现(容器或 microVM 之一),走 contract test 验证可替换性
+- Storage replay contract: PG + Redis 验收
 - Unified Observability Sink:统一 envelope 出口格式,对接 OTel / 外部审计系统;Event Store 增加 TTL / retention policy
+- （推迟）跨节点 Run 调度与 lock contract — 等有外部用户/多租户需求时再投入
+- （推迟）Sandbox 第二 backend — 等有容器化部署需求时再投入
 
 入口:[`todo/server-runtime.md`](../../../todo/server-runtime.md)、[`todo/storage.md`](../../../todo/storage.md)、[`todo/tool-runtime.md`](../../../todo/tool-runtime.md)、[`todo/sandbox.md`](../../../todo/sandbox.md)、[`todo/persistence.md`](../../../todo/persistence.md)
 
@@ -212,7 +240,7 @@ Systematic Persistence（系统性持久化）:
 - 第二 server runtime 实现(候选 Go 或 Rust),通过 reference conformance suite
 - 多语言 SDK 按真实集成需求启动(候选 Go / Rust / Java),禁止空壳 scaffold
 - Plugin / Connector 公开 contract 与一组参考实现
-- Multi-Agent 编排原语 GA:parent/child/root run quota + event replay 全语义验收
+- Multi-Agent 编排原语 GA:在 Phase 1.8 MVP 基础上,补齐 parent/child/root run quota + event replay 全语义验收 + 跨 runtime 一致性
 
 入口:[`todo/multi-runtime.md`](../../../todo/multi-runtime.md)、[`todo/sdk.md`](../../../todo/sdk.md)、[`todo/multi-agent.md`](../../../todo/multi-agent.md)
 

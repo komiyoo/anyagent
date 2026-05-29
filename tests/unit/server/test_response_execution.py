@@ -168,6 +168,10 @@ def test_execute_distributed_stream_response_forwards_non_idempotent_stream() ->
 async def _run_execute_distributed_stream_response_forwards_non_idempotent_stream() -> None:
     prompts: list[str] = []
     seen: list[dict[str, Any]] = []
+    emitted: list[Any] = []
+
+    async def _stage_sink(event: Any) -> None:
+        emitted.append(event)
 
     async def _run_stream(**kwargs: Any) -> Any:
         seen.append(kwargs)
@@ -189,12 +193,13 @@ async def _run_execute_distributed_stream_response_forwards_non_idempotent_strea
         manifest_resolver=_noop_manifest,
         manifest_force_refresh=_noop_manifest,
         mcp_manager=None,
-        stage_event_sink="sink",
+        stage_event_sink=_stage_sink,
         append_prompt_context_event=lambda response_id: _record_prompt(prompts, response_id),
         append_prompt_context_rendered_event=_noop_prompt_event,
         internal_event_writer=lambda **_kwargs: _int_none(),
         run_final_persister_builder=lambda _response_id: _record_final_state([]),
         new_response_id_factory=lambda: "resp_stream",
+        prompt_cache_key="cache-stream",
         run_tool_loop_stream_live_fn=_run_stream,
     )
 
@@ -203,7 +208,9 @@ async def _run_execute_distributed_stream_response_forwards_non_idempotent_strea
     assert chunks == [b"event: response.output_text.delta\ndata: {\"delta\":\"hi\"}\n\n"]
     assert prompts == ["resp_stream"]
     assert seen[0]["canonical_response_id"] == "resp_stream"
-    assert "stage_event_sink" not in seen[0]
+    assert seen[0]["stage_event_sink"] is _stage_sink
+    assert emitted[0].type == "anyagent.model.request"
+    assert emitted[0].prompt_cache_key == "cache-stream"
 
 
 def test_execute_distributed_stream_response_persists_idempotent_leader() -> None:

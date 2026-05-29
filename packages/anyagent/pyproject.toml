@@ -20,6 +20,7 @@ postgres = [
   "psycopg[binary]>=3.2",
   "psycopg-pool>=3.2",
   "sqlalchemy>=2.0",
+  "alembic>=1.13",
   "greenlet>=3.0",
 ]
 mysql = [
@@ -29,6 +30,11 @@ mysql = [
 ]
 redis = [
   "redis>=5.0",
+]
+local = [
+  "aiosqlite>=0.20",
+  "sqlalchemy>=2.0",
+  "greenlet>=3.0",
 ]
 s3 = [
   "minio>=7.2.8",

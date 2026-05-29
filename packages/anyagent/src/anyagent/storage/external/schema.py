@@ -94,3 +94,9 @@ def _event_column_type(dialect: str):
     if dialect == "mysql":
         return String(length=128)
     return TEXT
+
+
+def _json_column_type(dialect: str):
+    if dialect == "sqlite":
+        return JSON
+    return JSON

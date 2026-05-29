@@ -24,6 +24,8 @@ from anyagent.protocol.sandbox import SandboxMode
 from anyagent.protocol.stage_events import (
     AnyAgentPromptContextEvent,
     AnyAgentPromptContextRenderedEvent,
+    AnyAgentToolExecutionDetailEvent,
+    AnyAgentModelRequestEvent,
     StageEvent,
     decode_stage_event,
 )
@@ -139,6 +141,25 @@ class InternalResponsePromptContextResponse(BaseModel):
     rendered_event: AnyAgentPromptContextRenderedEvent | None = None
     audit_event: AnyAgentPromptContextEvent | None = None
     fallback: Literal["rendered", "audit", "missing"] = "missing"
+
+
+class InternalResponseToolExecutionsResponse(BaseModel):
+    """Response model for historical tool execution detail replay."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    response_id: str
+    tool_executions: list[AnyAgentToolExecutionDetailEvent] = Field(default_factory=list)
+
+
+class InternalResponseModelRequestResponse(BaseModel):
+    """Response model for historical model request body replay."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    response_id: str
+    applied_body: dict[str, Any] | None = None
+    prompt_cache_key: str | None = None
 
 
 class InternalObservabilityTurnMetric(BaseModel):

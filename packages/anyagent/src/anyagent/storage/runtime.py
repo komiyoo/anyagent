@@ -52,21 +52,24 @@ class StorageRuntime:
 
 def resolve_storage_runtime_mode(settings: StorageSettings) -> str:
     mode = (settings.storage_mode or "auto").strip().lower()
-    if mode not in {"auto", "none", "external"}:
-        raise RuntimeError("invalid STORAGE_MODE (expected auto|none|external)")
+    if mode not in {"auto", "none", "local", "external"}:
+        raise RuntimeError("invalid STORAGE_MODE (expected auto|none|local|external)")
 
-    has_sql = settings.postgres_dsn is not None or settings.mysql_dsn is not None
+    has_sql = settings.effective_postgres_dsn is not None or settings.mysql_dsn is not None
     has_redis = settings.redis_dsn is not None
 
     if mode == "none":
         return "none"
+    if mode == "local":
+        return "local"
     if mode == "external":
         if not has_sql:
-            raise RuntimeError("STORAGE_MODE=external requires POSTGRES_DSN or MYSQL_DSN")
+            raise RuntimeError("STORAGE_MODE=external requires POSTGRES_DSN or DATABASE_URL (or MYSQL_DSN)")
         return "external"
+    # auto: SQL configured → external (Redis optional); otherwise → local (SQLite)
     if has_sql:
         return "external"
-    return "none"
+    return "local"
 
 
 def resolve_rollout_runtime_root(*, workspace_dir: str | Path, rollout_root_dir: str | None) -> Path:
@@ -89,17 +92,17 @@ async def create_storage_runtime(
     resolved = resolve_storage_runtime_mode(storage_settings)
 
     if resolved == "none":
-        if storage_settings.postgres_dsn is not None or storage_settings.mysql_dsn is not None or storage_settings.redis_dsn is not None:
+        if storage_settings.effective_postgres_dsn is not None or storage_settings.mysql_dsn is not None or storage_settings.redis_dsn is not None:
             logger.warning(
                 "storage disabled due to incomplete config (auto mode); running in in-memory mode",
                 extra={
-                    "has_postgres_dsn": storage_settings.postgres_dsn is not None,
+                    "has_postgres_dsn": storage_settings.effective_postgres_dsn is not None,
                     "has_mysql_dsn": storage_settings.mysql_dsn is not None,
                     "has_redis_dsn": storage_settings.redis_dsn is not None,
                 },
             )
         else:
-            logger.warning("storage disabled (no DSN configured); running in in-memory mode")
+            logger.warning("storage disabled (STORAGE_MODE=none); running in in-memory mode")
 
         rollout_root = resolve_rollout_runtime_root(
             workspace_dir=workspace_dir,
@@ -119,6 +122,26 @@ async def create_storage_runtime(
             lease_lock=InMemoryLeaseLock(),
             session_store=InMemorySessionStore(rollout_writer=rollout_writer),
             rollout_writer=rollout_writer,
+        )
+
+    if resolved == "local":
+        try:
+            from .external.sqlite import SqliteEventStore, SqliteRunStore, SqliteSessionStore, create_sqlite_engine, init_sqlite_schema
+        except ImportError as e:
+            raise RuntimeError("local storage requires: pip install anyagent[local]") from e
+
+        workspace_root = Path(workspace_dir).expanduser().resolve()
+        db_path = workspace_root / ".anyagent" / "data" / "anyagent.db"
+        engine = create_sqlite_engine(db_path)
+        await init_sqlite_schema(engine)
+        logger.info("local SQLite storage enabled", extra={"db_path": str(db_path)})
+        return StorageRuntime(
+            mode="local",
+            run_store=SqliteRunStore(engine=engine),
+            event_store=SqliteEventStore(engine=engine),
+            lease_lock=InMemoryLeaseLock(),
+            session_store=SqliteSessionStore(engine=engine),
+            sql_engine=engine,
         )
 
     schema = (storage_settings.postgres_schema or "public").strip() or "public"
@@ -144,7 +167,7 @@ async def create_storage_runtime(
 
     has_redis = storage_settings.redis_dsn is not None
     sql_config = resolve_external_sql_backend_config(
-        postgres_dsn=storage_settings.postgres_dsn,
+        postgres_dsn=storage_settings.effective_postgres_dsn,
         mysql_dsn=storage_settings.mysql_dsn,
         redis_dsn=storage_settings.redis_dsn,
         schema_name=schema,
@@ -152,6 +175,7 @@ async def create_storage_runtime(
         dialect=storage_settings.sql_backend_dialect,
     )
     sql_engine = create_external_sql_engine(sql_config)
+
     if sql_config.dialect == "mysql":
         run_store = MySQLRunStore(engine=sql_engine)
         event_store = MySQLEventStore(engine=sql_engine)

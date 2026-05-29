@@ -6,6 +6,7 @@ import {
   Check,
   Copy,
   MessageSquareText,
+  PanelLeftOpen,
   Pencil,
   PlugZap,
   Plus,
@@ -27,7 +28,9 @@ import {
 } from "lucide-react";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MarkdownMessage } from "../components/MarkdownMessage";
-import { AgentDetail, AgentWorkspaceFile, ChatMessage, CredentialRef, McpServerDraft, StudioDebugEvent, StudioSettings, ToolCallItem, ToolCatalog } from "../anyagentClient";
+import { ConversationSidebar } from "../components/ConversationSidebar";
+import { AgentSelector } from "../components/AgentSelector";
+import { AgentDetail, AgentSummary, AgentWorkspaceFile, ChatMessage, CredentialRef, McpServerDraft, StudioDebugEvent, StudioSettings, ToolCallItem, ToolCatalog } from "../anyagentClient";
 import { StudioMode, StudioTab } from "../navigation";
 import { StudioConversation } from "../stores/chatStore";
 import { compactJson, formatCount, shortHash } from "../studioUtils";
@@ -63,6 +66,10 @@ type HomePageProps = {
   input: string;
   isRunning: boolean;
   streamEvents: StudioDebugEvent[];
+  agents: AgentSummary[];
+  conversationSidebarOpen: boolean;
+  onToggleConversationSidebar: () => void;
+  onChangeConversationAgent: (agentId: string) => void;
   onEditMessage: (messageId: string, content: string) => void;
   onInputChange: (value: string) => void;
   onNewConversation: () => void;
@@ -96,6 +103,10 @@ export function HomePage({
   input,
   isRunning,
   streamEvents,
+  agents,
+  conversationSidebarOpen,
+  onToggleConversationSidebar,
+  onChangeConversationAgent,
   onEditMessage,
   onInputChange,
   onNewConversation,
@@ -285,19 +296,35 @@ export function HomePage({
         </div>
       </section>
 
-      <div className="main-grid chat-grid">
+      <div className={`main-grid chat-grid ${conversationSidebarOpen ? "" : "sidebar-hidden"}`}>
+        {/* ── Conversation Sidebar ── */}
+        <ConversationSidebar
+          conversations={conversations}
+          activeConversationId={activeConversationId}
+          open={conversationSidebarOpen}
+          onSelect={onSelectConversation}
+          onNew={onNewConversation}
+          onDelete={onDeleteConversation}
+          onRename={onRenameConversation}
+          onToggle={onToggleConversationSidebar}
+        />
+
         {/* ── Left: Chat Panel ── */}
         <Card className="panel chat-panel">
           <Card.Header className="panel-header chat-header">
             <div className="panel-title">
+              {!conversationSidebarOpen && (
+                <button className="conversation-sidebar-toggle" onClick={onToggleConversationSidebar}>
+                  <PanelLeftOpen size={16} />
+                </button>
+              )}
               <MessageSquareText size={18} />
               <span>Chat</span>
-              {settings.agentId ? (
-                <span className="chat-agent-badge">
-                  <Bot size={13} />
-                  {settings.agentId}
-                </span>
-              ) : null}
+              <AgentSelector
+                agents={agents}
+                currentAgentId={conversations.find((c) => c.id === activeConversationId)?.agentId || settings.agentId}
+                onChangeAgent={onChangeConversationAgent}
+              />
               {settings.model ? (
                 <span className="chat-model-badge">{settings.model}</span>
               ) : null}
@@ -319,43 +346,6 @@ export function HomePage({
             </div>
           </Card.Header>
           <Card.Content className="panel-content chat-content">
-            {/* Conversation tabs */}
-            {conversations.length > 1 ? (
-              <div className="conversation-strip" aria-label="Conversations">
-                {conversations.map((conversation) => (
-                  <div
-                    className={`conversation-pill ${conversation.id === activeConversationId ? "active" : ""}`}
-                    key={conversation.id}
-                  >
-                    <button
-                      type="button"
-                      className="conversation-pill-btn"
-                      onClick={() => onSelectConversation(conversation.id)}
-                      onDoubleClick={() => {
-                        const title = window.prompt("Conversation title", conversation.title);
-                        if (title) onRenameConversation(conversation.id, title);
-                      }}
-                    >
-                      <strong>{conversation.title}</strong>
-                      <span>{conversation.messages.length} msgs</span>
-                    </button>
-                    <button
-                      className="conversation-delete-btn"
-                      type="button"
-                      title="Delete conversation"
-                      onClick={() => {
-                        if (window.confirm(`Delete "${conversation.title}"?`)) {
-                          onDeleteConversation(conversation.id);
-                        }
-                      }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
             {/* Messages */}
             <div className="chat-log" ref={chatLogRef} onScroll={handleChatScroll}>
               {messages.length === 0 ? (
@@ -444,13 +434,16 @@ export function HomePage({
                           ) : (
                             <p className="message-text">{message.content}</p>
                           )
-                        ) : isStreamingMsg ? (
+                        ) : isStreamingMsg && !message.thinking ? (
                           <div className="streaming-indicator">
                             <span className="streaming-dot" />
                             <span className="streaming-dot" />
                             <span className="streaming-dot" />
                             <span className="streaming-label">Thinking...</span>
                           </div>
+                        ) : null}
+                        {message.thinking ? (
+                          <ThinkingBlock content={message.thinking} isStreaming={isStreamingMsg && !message.content} />
                         ) : null}
                         {/* Tool calls */}
                         {message.toolCalls?.length ? (
@@ -662,6 +655,25 @@ function ToolCallCard({ toolCall }: { toolCall: ToolCallItem }) {
               <pre className="tc-pre">{toolCall.error}</pre>
             </div>
           ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ThinkingBlock({ content, isStreaming }: { content: string; isStreaming: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className={`thinking-block ${isStreaming ? "thinking-streaming" : ""}`}>
+      <button type="button" className="thinking-header" onClick={() => setExpanded((v) => !v)}>
+        <Sparkles size={13} className="thinking-icon" />
+        <span className="thinking-label">{isStreaming ? "Thinking..." : "Thinking"}</span>
+        <span className="thinking-length">{content.length > 100 ? `${Math.ceil(content.length / 4)} tokens` : ""}</span>
+        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+      </button>
+      {expanded ? (
+        <div className="thinking-content">
+          <MarkdownMessage content={content} isStreaming={isStreaming} />
         </div>
       ) : null}
     </div>

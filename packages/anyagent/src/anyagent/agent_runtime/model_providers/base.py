@@ -14,6 +14,12 @@ class ModelProviderError(RuntimeError):
     can handle failures consistently.
     """
 
+    def __str__(self) -> str:
+        msg = getattr(self, "message", None)
+        if isinstance(msg, str) and msg.strip():
+            return msg
+        return super().__str__() or type(self).__name__
+
 
 @dataclass(slots=True)
 class ModelProviderInvalidRequestError(ModelProviderError):

@@ -35,6 +35,11 @@
 - `todo/server-runtime.md`：Skill 注入管道、配置层级 merge、MCP 生命周期事件、AGENTS.md 层级遍历（`requirements.md#req-5`）
 - `todo/sdk.md`：SDK Skill Injection / Tool Discovery / 配置层级感知（`requirements.md#req-4`）
 
+**Phase 1.8 — Internal Productivity（内部生产力提升）**
+
+- `todo/multi-agent.md`：Sub-Agent 最小可用版（`task()` tool 模式）（`requirements.md#req-13`）
+- `todo/server-runtime.md`：上下文压缩、循环检测、DeerFlow Skills 嵌入（`requirements.md#req-5`）
+
 **Phase 2 — Production Runtime Hardening**
 
 - `todo/server-runtime.md`：跨节点 Run 调度、lock、observability envelope（`requirements.md#req-5`）

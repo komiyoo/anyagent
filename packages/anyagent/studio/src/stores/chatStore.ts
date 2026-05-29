@@ -6,6 +6,8 @@ export type StudioConversation = {
   title: string;
   messages: ChatMessage[];
   updatedAt: number;
+  agentId: string;
+  sessionKey: string;
 };
 
 const STORAGE_KEY = "anyagent.studio.chat.v1";
@@ -20,12 +22,15 @@ function newId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
-function defaultConversation(): StudioConversation {
+function defaultConversation(agentId = "main"): StudioConversation {
+  const id = newId("conversation");
   return {
-    id: newId("conversation"),
+    id,
     title: "New conversation",
     messages: [welcomeMessage],
     updatedAt: Date.now(),
+    agentId,
+    sessionKey: `studio-${id.slice(13, 21)}`,
   };
 }
 
@@ -54,7 +59,12 @@ function readPersistedChat(): PersistedChatState {
       return { activeConversationId: conversation.id, conversations: [conversation] };
     }
     const parsed = JSON.parse(raw) as Partial<PersistedChatState>;
-    const conversations = Array.isArray(parsed.conversations) && parsed.conversations.length ? parsed.conversations : [defaultConversation()];
+    const conversations = (Array.isArray(parsed.conversations) && parsed.conversations.length ? parsed.conversations : [defaultConversation()])
+      .map((c: Partial<StudioConversation> & { id: string; title: string; messages: ChatMessage[]; updatedAt: number }) => ({
+        ...c,
+        agentId: c.agentId || "main",
+        sessionKey: c.sessionKey || `studio-${c.id.slice(13, 21)}`,
+      }));
     const activeConversationId = parsed.activeConversationId && conversations.some((item) => item.id === parsed.activeConversationId)
       ? parsed.activeConversationId
       : conversations[0].id;
@@ -84,11 +94,12 @@ type ChatStore = {
   streamEvents: StudioDebugEvent[];
   appendMessage: (message: ChatMessage) => void;
   deleteConversation: (id: string) => void;
-  newConversation: () => void;
+  newConversation: (agentId?: string) => void;
   renameConversation: (id: string, title: string) => void;
   replaceMessage: (id: string, content: string) => void;
   selectConversation: (id: string) => void;
   setActiveResponseId: (value: string) => void;
+  setConversationAgent: (id: string, agentId: string) => void;
   setInput: (value: string) => void;
   setIsRunning: (value: boolean) => void;
   setMessages: (value: ChatMessage[] | ((current: ChatMessage[]) => ChatMessage[])) => void;
@@ -149,15 +160,15 @@ export const useChatStore = create<ChatStore>((set, get) => {
         streamEvents: [],
       });
     },
-    newConversation: () => {
-      const conversation = defaultConversation();
+    newConversation: (agentId?: string) => {
+      const conversation = defaultConversation(agentId);
       const conversations = [conversation, ...get().conversations];
       persistChat({ activeConversationId: conversation.id, conversations });
       set({
         activeConversationId: conversation.id,
         activeResponseId: "",
         conversations,
-        input: "用当前 agent 的配置介绍一下你能做什么。",
+        input: "",
         messages: conversation.messages,
         promptBundle: null,
         stageEvents: [],
@@ -190,6 +201,15 @@ export const useChatStore = create<ChatStore>((set, get) => {
       });
     },
     setActiveResponseId: (value) => set({ activeResponseId: value }),
+    setConversationAgent: (id, agentId) => {
+      const conversations = get().conversations.map((conversation) =>
+        conversation.id === id
+          ? { ...conversation, agentId, sessionKey: `studio-${id.slice(13, 21)}-${Date.now().toString(36)}` }
+          : conversation,
+      );
+      persistChat({ activeConversationId: get().activeConversationId, conversations });
+      set({ conversations });
+    },
     setInput: (value) => set({ input: value }),
     setIsRunning: (value) => set({ isRunning: value }),
     setMessages: (value) => {

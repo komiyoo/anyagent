@@ -1,8 +1,9 @@
 import { Button, Card, Chip, Input, Tabs } from "@heroui/react";
-import { BarChart3, CheckCircle2, Clock, Copy, MessageSquareText, Play, RefreshCw, Timer, Wrench, X } from "lucide-react";
-import { useState } from "react";
+import { BarChart3, CheckCircle2, ChevronDown, ChevronRight, Clock, Copy, Eye, FileCode, MessageSquareText, Play, RefreshCw, Timer, Wrench, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import {
   McpServerDraft,
+  ModelRequestResponse,
   ObservabilityErrorItem,
   ObservabilityMetrics,
   ObservabilityRunItem,
@@ -11,7 +12,9 @@ import {
   ObservabilityTimelineEvent,
   ObservabilityToolStats,
   ObservabilityTrace,
+  PromptContextResponse,
   StudioSettings,
+  ToolExecutionDetail,
 } from "../anyagentClient";
 import { StudioTab } from "../navigation";
 import { compactJson, formatCount, formatMs, relativeTime, shortHash, statusColor, timelineMeta } from "../studioUtils";
@@ -64,6 +67,9 @@ type ObservabilityPageProps = {
   filteredErrors: ObservabilityErrorItem[];
   filteredTimeline: ObservabilityTimelineEvent[];
   iterationSuggestions: IterationSuggestion[];
+  replayToolExecutions: ToolExecutionDetail[];
+  replayModelRequest: ModelRequestResponse | null;
+  replayPromptContext: PromptContextResponse | null;
   onWindowChange: (value: "all" | "hour" | "day") => void;
   onLimitChange: (value: number) => void;
   onTraceIdChange: (value: string) => void;
@@ -110,9 +116,19 @@ export function ObservabilityPage({
   onSelectRun,
   onInspectTrace,
   onNavigate,
+  replayToolExecutions,
+  replayModelRequest,
+  replayPromptContext,
 }: ObservabilityPageProps) {
   const sourceOptions: ObservabilitySource[] = ["run", "event", "stage", "observability", "workspace", "audit"];
   const statusOptions: Array<"error" | "warning" | "success" | "denied"> = ["error", "warning", "success", "denied"];
+  const [replayTab, setReplayTab] = useState<"context" | "model" | "tools">("context");
+  const [replayExpanded, setReplayExpanded] = useState(false);
+
+  const promptContextEvent = useMemo(() => {
+    // Find prompt context rendered event from stage events (via summary or timeline)
+    return null; // Server-side replay; client reads from dedicated endpoints
+  }, []);
 
   return (
     <>
@@ -389,6 +405,136 @@ export function ObservabilityPage({
           </Card.Content>
         </Card>
       </div>
+
+      {selectedRun && (
+        <Card className="panel replay-panel">
+          <Card.Header className="panel-header">
+            <button
+              className="replay-toggle"
+              type="button"
+              onClick={() => setReplayExpanded((v) => !v)}
+            >
+              {replayExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              <Eye size={16} />
+              <span>Run Replay · {selectedRun.response_id.slice(0, 16)}…</span>
+            </button>
+            {replayExpanded && (
+              <div className="replay-tabs">
+                <button
+                  className={`replay-tab ${replayTab === "context" ? "active" : ""}`}
+                  type="button"
+                  onClick={() => setReplayTab("context")}
+                >
+                  <FileCode size={13} /> Prompt Context
+                </button>
+                <button
+                  className={`replay-tab ${replayTab === "model" ? "active" : ""}`}
+                  type="button"
+                  onClick={() => setReplayTab("model")}
+                >
+                  <MessageSquareText size={13} /> Model Request
+                </button>
+                <button
+                  className={`replay-tab ${replayTab === "tools" ? "active" : ""}`}
+                  type="button"
+                  onClick={() => setReplayTab("tools")}
+                >
+                  <Wrench size={13} /> Tool Executions ({replayToolExecutions.length})
+                </button>
+              </div>
+            )}
+          </Card.Header>
+          {replayExpanded && (
+            <Card.Content className="panel-content replay-content">
+              {replayTab === "context" && (
+                <div className="replay-section">
+                  {replayPromptContext?.fragments && replayPromptContext.fragments.length > 0 ? (
+                    <div className="replay-fragments">
+                      <div className="replay-meta">
+                        <span>
+                          {replayPromptContext.fragments.length} fragment{replayPromptContext.fragments.length !== 1 ? "s" : ""}
+                          {replayPromptContext.total_chars ? ` · ${formatCount(replayPromptContext.total_chars)} chars` : ""}
+                          {replayPromptContext.prompt_cache_key ? ` · cache: ${shortHash(replayPromptContext.prompt_cache_key)}` : ""}
+                        </span>
+                      </div>
+                      {replayPromptContext.fragments.map((frag, idx) => (
+                        <details className="replay-tool-detail" key={`frag-${frag.stable_id ?? idx}`}>
+                          <summary>
+                            <strong>{frag.label ?? frag.kind}</strong>
+                            <span> · {frag.role} · {frag.cache_class}</span>
+                            {frag.source_path ? <span> · {frag.source_path}</span> : null}
+                          </summary>
+                          <pre className="replay-json">{frag.rendered_text}</pre>
+                        </details>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty-state compact-empty">
+                      <FileCode size={20} />
+                      <strong>No rendered context</strong>
+                      <p>Prompt context fragments are not available for this run.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {replayTab === "model" && (
+                <div className="replay-section">
+                  {replayModelRequest?.applied_body ? (
+                    <pre className="replay-json">
+                      {JSON.stringify(replayModelRequest.applied_body, null, 2)}
+                    </pre>
+                  ) : (
+                    <div className="empty-state compact-empty">
+                      <MessageSquareText size={20} />
+                      <strong>No model request</strong>
+                      <p>The first model request body was not persisted for this run.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {replayTab === "tools" && (
+                <div className="replay-section">
+                  {replayToolExecutions.length > 0 ? (
+                    replayToolExecutions.map((exec, index) => (
+                      <article className="timeline-event replay-tool-event" key={`tool-${exec.tool_call_id}-${index}`}>
+                        <div>
+                          <strong>{exec.tool_name}</strong>
+                          <span>
+                            {exec.status} · {exec.duration_ms != null ? `${exec.duration_ms}ms` : "—"}
+                            {exec.audit_ref ? ` · ${exec.audit_ref}` : ""}
+                          </span>
+                        </div>
+                        <details className="replay-tool-detail">
+                          <summary>Arguments</summary>
+                          <pre className="replay-json">{exec.arguments_json}</pre>
+                        </details>
+                        {exec.output && (
+                          <details className="replay-tool-detail">
+                            <summary>Output</summary>
+                            <pre className="replay-json">{exec.output}</pre>
+                          </details>
+                        )}
+                        {exec.error && (
+                          <details className="replay-tool-detail replay-tool-error">
+                            <summary>Error</summary>
+                            <pre className="replay-json">{JSON.stringify(exec.error, null, 2)}</pre>
+                          </details>
+                        )}
+                      </article>
+                    ))
+                  ) : (
+                    <div className="empty-state compact-empty">
+                      <Wrench size={20} />
+                      <strong>No tool executions</strong>
+                      <p>Tool execution details are not available for this run.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card.Content>
+          )}
+        </Card>
+      )}
     </>
   );
 }

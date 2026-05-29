@@ -41,17 +41,17 @@
 
 ### M2 — Tool Execution Replay（P1）
 
-- [ ] P1 Protocol: 新增 `AnyAgentToolExecutionDetailEvent` stage event,存储 tool input/output full payload + timing（Req: `requirements.md#req-5-13`）
-- [ ] P1 Storage: tool_planned/tool_result 现有事件保持不变;detail event 作为补充,按需持久化完整 payload（Req: `requirements.md#req-5-13`）
-- [ ] P1 Server: 新增 `GET /internal/responses/{response_id}/tool-executions` API（Req: `requirements.md#req-5-13`）
-- [ ] P2 Studio: tool call card 增加「查看完整输入/输出」展开面板（Req: `requirements.md#req-5-13`）
+- [x] P1 Protocol: 新增 `AnyAgentToolExecutionDetailEvent` stage event,存储 tool input/output full payload + timing（Req: `requirements.md#req-5-13`；Impl: `packages/anyagent/src/anyagent/protocol/stage_events.py:246`, `packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:263`；Module: `anyagent.protocol.stage_events`, `anyagent.agent_runtime.tool_loop`）
+- [x] P1 Storage: tool_planned/tool_result 现有事件保持不变;detail event 作为补充,按需持久化完整 payload（Req: `requirements.md#req-5-13`；Impl: `packages/anyagent/src/anyagent/persistence/tool_execution.py:38`；Module: `anyagent.persistence.tool_execution`）
+- [x] P1 Server: 新增 `GET /internal/responses/{response_id}/tool-executions` API（Req: `requirements.md#req-5-13`；Impl: `packages/anyagent/src/anyagent/server/app.py:842`；Module: `anyagent.server.app`）
+- [x] P2 Studio: tool call card 增加「查看完整输入/输出」展开面板（Req: `requirements.md#req-5-13`；Impl: `packages/anyagent/studio/src/pages/ObservabilityPage.tsx:413`；Module: `studio`）
 
 ### M3 — Model Request Replay（P1）
 
-- [ ] P1 Protocol: 新增 `AnyAgentModelRequestEvent` stage event,存储 applied_body（注入 system/developer prompt 后的完整请求体）（Req: `requirements.md#req-5-13`）
-- [ ] P1 Storage: 在 model stream 开始前持久化,与 prompt context rendered event 互补（一个存 fragments,一个存最终 body）（Req: `requirements.md#req-5-13`）
-- [ ] P1 Server: 新增 `GET /internal/responses/{response_id}/model-request` API（Req: `requirements.md#req-5-13`）
-- [ ] P2 Studio: 在 observability 面板增加「模型请求回放」视图（Req: `requirements.md#req-5-13`）
+- [x] P1 Protocol: 新增 `AnyAgentModelRequestEvent` stage event,存储 applied_body（注入 system/developer prompt 后的完整请求体）（Req: `requirements.md#req-5-13`；Impl: `packages/anyagent/src/anyagent/protocol/stage_events.py:260`；Module: `anyagent.protocol.stage_events`）
+- [x] P1 Storage: 在 model stream 开始前持久化,与 prompt context rendered event 互补（一个存 fragments,一个存最终 body）（Req: `requirements.md#req-5-13`；Impl: `packages/anyagent/src/anyagent/server/app.py:1293`, `packages/anyagent/src/anyagent/server/app.py:1484`；Module: `anyagent.server.app`）
+- [x] P1 Server: 新增 `GET /internal/responses/{response_id}/model-request` API（Req: `requirements.md#req-5-13`；Impl: `packages/anyagent/src/anyagent/server/app.py:869`；Module: `anyagent.server.app`）
+- [x] P2 Studio: 在 observability 面板增加「模型请求回放」视图（Req: `requirements.md#req-5-13`；Impl: `packages/anyagent/studio/src/pages/ObservabilityPage.tsx:426`；Module: `studio`）
 
 ### M4 — Unified Observability Sink（P2）
 

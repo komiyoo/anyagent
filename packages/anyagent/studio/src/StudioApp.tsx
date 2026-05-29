@@ -100,7 +100,7 @@ export function StudioApp() {
   const warmPage = (tab: StudioTab) => {
     preloadStudioPage(tab);
   };
-  const { sidebarCollapsed, setSidebarCollapsed, theme, toggleTheme } = useUiStore();
+  const { sidebarCollapsed, setSidebarCollapsed, conversationSidebarOpen, setConversationSidebarOpen, theme, toggleTheme } = useUiStore();
   const showToast = useToastStore((state) => state.showToast);
   const {
     adminStatus,
@@ -133,6 +133,7 @@ export function StudioApp() {
     replaceMessage,
     selectConversation,
     setActiveResponseId,
+    setConversationAgent,
     setInput,
     setIsRunning,
     setMessages,
@@ -324,6 +325,9 @@ export function StudioApp() {
     observabilityTrace,
     observabilityTraceId,
     observabilityWindow,
+    replayToolExecutions,
+    replayModelRequest,
+    replayPromptContext,
     selectedResponseId,
     selectedRun,
     selectObservabilityRun,
@@ -469,9 +473,15 @@ export function StudioApp() {
     setPromptBundle(null);
     setActiveResponseId("");
     setSelectedResponseId("");
+    const activeConv = conversations.find((c) => c.id === activeConversationId);
+    const chatSettings = {
+      ...settings,
+      agentId: activeConv?.agentId || settings.agentId,
+      sessionKey: activeConv?.sessionKey || settings.sessionKey,
+    };
     try {
       const result = await runChat(
-        settings,
+        chatSettings,
         nextMessages.filter((message) => message.id !== assistantMessageId),
         (delta) => {
           setMessages((current) =>
@@ -489,6 +499,13 @@ export function StudioApp() {
           setStreamEvents((current) => [...current.slice(-79), debugEvent]);
         },
         controller.signal,
+        (thinkingDelta) => {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessageId ? { ...message, thinking: (message.thinking || "") + thinkingDelta } : message,
+            ),
+          );
+        },
       );
       if (result.responseId) {
         setActiveResponseId(result.responseId);
@@ -610,6 +627,10 @@ export function StudioApp() {
     setPromptBundle(null);
     const bundle = await previewPromptBundle(settings, input || "hello");
     setPromptBundle(bundle);
+  }
+
+  function handleChangeConversationAgent(agentId: string) {
+    setConversationAgent(activeConversationId, agentId);
   }
 
   async function submitCreateAgent(event: FormEvent<HTMLFormElement>) {
@@ -988,6 +1009,10 @@ export function StudioApp() {
               onSubmitChat={submitChat}
               onCancelChat={cancelChat}
               onNavigate={navigateToTab}
+              agents={agents}
+              conversationSidebarOpen={conversationSidebarOpen}
+              onToggleConversationSidebar={() => setConversationSidebarOpen((v) => !v)}
+              onChangeConversationAgent={handleChangeConversationAgent}
             />
           ) : activeTab === "agents" ? (
             <AgentsPage
@@ -1130,6 +1155,9 @@ export function StudioApp() {
               onSelectRun={(responseId: string) => void selectObservabilityRun(responseId)}
               onInspectTrace={(traceId: string) => void inspectObservabilityTrace(traceId)}
               onNavigate={navigateToTab}
+              replayToolExecutions={replayToolExecutions}
+              replayModelRequest={replayModelRequest}
+              replayPromptContext={replayPromptContext}
             />
           ) : activeSection === "debug" ? (
             <DebugPage

@@ -356,6 +356,17 @@ def main(argv: list[str] | None = None) -> int:
     storage_retention_nested = storage_sub.add_parser("retention", help="Run PostgreSQL storage retention maintenance.")
     _add_storage_retention_flags(storage_retention_nested)
 
+    db = sub.add_parser("db", help="Database migration management (Alembic).")
+    db_sub = db.add_subparsers(dest="db_cmd", required=True)
+    db_migrate = db_sub.add_parser("migrate", help="Run all pending Alembic migrations (upgrade head).")
+    db_migrate.add_argument("--sql", action="store_true", help="Generate SQL without executing (offline mode).")
+    db_downgrade = db_sub.add_parser("downgrade", help="Downgrade one revision.")
+    db_downgrade.add_argument("--revision", default="-1", help="Target revision (default: -1).")
+    db_current = db_sub.add_parser("current", help="Show current migration revision.")
+    db_history = db_sub.add_parser("history", help="Show migration history.")
+    db_stamp = db_sub.add_parser("stamp", help="Stamp database with a revision without running migrations.")
+    db_stamp.add_argument("revision", help="Revision to stamp (e.g. 'head', '0001').")
+
     cred = sub.add_parser("credential", help="Manage credentials via built-in Admin API.")
     cred_sub = cred.add_subparsers(dest="cred_cmd", required=True)
 
@@ -469,6 +480,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.storage_cmd == "retention":
             return run_retention_from_args(args)
         parser.error("unsupported storage command")
+    if args.cmd == "db":
+        return _cmd_db(args)
     if args.cmd == "plugin":
         if args.plugin_cmd == "catalog":
             client = _admin_client_from_args(args)
@@ -539,6 +552,53 @@ def _add_storage_retention_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--events-retention-days", type=int, default=30, help="Retention for events (default: 30).")
     parser.add_argument("--runs-retention-days", type=int, default=180, help="Retention for runs (default: 180).")
     parser.add_argument("--sessions-retention-days", type=int, default=90, help="Retention for sessions (default: 90).")
+
+
+def _cmd_db(args: argparse.Namespace) -> int:
+    """Database migration management via Alembic."""
+    import sys
+    from pathlib import Path
+
+    alembic_dir = Path(__file__).resolve().parent / "storage" / "alembic"
+
+    try:
+        from alembic.config import Config
+        from alembic import command as alembic_cmd
+    except ImportError:
+        print("alembic is required: pip install anyagent[postgres]", file=sys.stderr)
+        return 1
+
+    settings = StorageSettings()
+    dsn = settings.effective_postgres_dsn
+    if dsn is None:
+        print("DATABASE_URL or POSTGRES_DSN must be set", file=sys.stderr)
+        return 1
+
+    effective_dsn = str(dsn)
+    if effective_dsn.startswith("postgresql://"):
+        effective_dsn = "postgresql+psycopg://" + effective_dsn[len("postgresql://"):]
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(alembic_dir))
+    cfg.set_main_option("sqlalchemy.url", effective_dsn)
+
+    if args.db_cmd == "migrate":
+        if args.sql:
+            alembic_cmd.upgrade(cfg, "head", sql=True)
+        else:
+            alembic_cmd.upgrade(cfg, "head")
+        print("migrations applied successfully")
+    elif args.db_cmd == "downgrade":
+        alembic_cmd.downgrade(cfg, args.revision)
+        print(f"downgraded to {args.revision}")
+    elif args.db_cmd == "current":
+        alembic_cmd.current(cfg, verbose=True)
+    elif args.db_cmd == "history":
+        alembic_cmd.history(cfg, verbose=True)
+    elif args.db_cmd == "stamp":
+        alembic_cmd.stamp(cfg, args.revision)
+        print(f"stamped {args.revision}")
+    return 0
 
 
 def _cmd_storage_replay(args: argparse.Namespace) -> int:

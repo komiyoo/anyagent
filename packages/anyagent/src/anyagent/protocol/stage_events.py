@@ -243,6 +243,29 @@ class AnyAgentCommandResultEvent(StageEventBase):
     source_tool_name: str
 
 
+class AnyAgentToolExecutionDetailEvent(StageEventBase):
+    """Full tool execution payload for historical replay — supplements planned/result summaries."""
+
+    type: Literal["anyagent.tool.execution.detail"] = "anyagent.tool.execution.detail"
+    tool_call_id: str
+    tool_name: str
+    arguments_json: str = ""
+    output: str | None = None
+    error: StageError | None = None
+    status: str
+    duration_ms: int | None = Field(default=None, ge=0)
+    output_truncated: bool | None = None
+    audit_ref: str | None = None
+
+
+class AnyAgentModelRequestEvent(StageEventBase):
+    """First model request body sent to the model provider, persisted for historical replay."""
+
+    type: Literal["anyagent.model.request"] = "anyagent.model.request"
+    applied_body: dict[str, Any] = Field(default_factory=dict)
+    prompt_cache_key: str | None = None
+
+
 class AnyAgentDoneEvent(StageEventBase):
     """Terminal stage event emitted when `[DONE]` is observed."""
 
@@ -293,10 +316,12 @@ StageEvent: TypeAlias = Annotated[
     AnyAgentModelStreamEvent
     | AnyAgentToolPlannedEvent
     | AnyAgentToolResultEvent
+    | AnyAgentToolExecutionDetailEvent
     | AnyAgentCommandPlannedEvent
     | AnyAgentCommandResultEvent
     | AnyAgentPromptContextEvent
     | AnyAgentPromptContextRenderedEvent
+    | AnyAgentModelRequestEvent
     | AnyAgentWorkspaceLifecycleEvent
     | AnyAgentDoneEvent,
     Field(discriminator="type"),

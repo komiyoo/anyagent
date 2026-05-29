@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ChatMessage,
+  ModelRequestResponse,
   ObservabilityErrorItem,
   ObservabilityMetrics,
   ObservabilityRunItem,
@@ -9,9 +10,12 @@ import {
   ObservabilityTimelineEvent,
   ObservabilityToolStats,
   ObservabilityTrace,
+  PromptContextResponse,
   StudioDebugEvent,
   StudioSettings,
+  ToolExecutionDetail,
   listEvents,
+  loadModelRequest,
   loadObservabilityErrors,
   loadObservabilityMetrics,
   loadObservabilityRuns,
@@ -19,6 +23,8 @@ import {
   loadObservabilityTimeline,
   loadObservabilityTools,
   loadObservabilityTrace,
+  loadPromptContext,
+  loadToolExecutions,
 } from "../anyagentClient";
 import { StudioTab } from "../navigation";
 import { eventType, firstNumber, formatCount, formatMs } from "../studioUtils";
@@ -52,6 +58,9 @@ export function useObservability(settings: StudioSettings, options: UseObservabi
   const [observabilityRefreshNonce, setObservabilityRefreshNonce] = useState(0);
   const [observabilityWindow, setObservabilityWindow] = useState<"all" | "hour" | "day">("all");
   const [observabilityLimit, setObservabilityLimit] = useState(20);
+  const [replayToolExecutions, setReplayToolExecutions] = useState<ToolExecutionDetail[]>([]);
+  const [replayModelRequest, setReplayModelRequest] = useState<ModelRequestResponse | null>(null);
+  const [replayPromptContext, setReplayPromptContext] = useState<PromptContextResponse | null>(null);
   const allDebugEvents = useMemo(() => [...options.streamEvents, ...options.stageEvents], [options.streamEvents, options.stageEvents]);
 
   const localObservability = useMemo(() => {
@@ -216,19 +225,33 @@ export function useObservability(settings: StudioSettings, options: UseObservabi
     options.setStageEvents([]);
     setObservabilitySummary(null);
     setObservabilityTimeline([]);
+    setReplayToolExecutions([]);
+    setReplayModelRequest(null);
+    setReplayPromptContext(null);
     try {
-      const [summary, replay, timeline] = await Promise.all([
+      const [summary, replay, timeline, toolExecs, promptCtx] = await Promise.all([
         loadObservabilitySummary(settings, responseId),
         listEvents(settings, responseId),
         loadObservabilityTimeline(settings, { responseId, limit: 200 }),
+        loadToolExecutions(settings, responseId).catch(() => ({ response_id: responseId, tool_executions: [] })),
+        loadPromptContext(settings, responseId).catch(() => ({ response_id: responseId })),
       ]);
       setObservabilitySummary(summary);
       options.setStageEvents(replay);
       setObservabilityTimeline(timeline.events ?? []);
+      setReplayToolExecutions(toolExecs.tool_executions ?? []);
+      setReplayPromptContext(promptCtx);
     } catch {
       options.setStageEvents([]);
       setObservabilitySummary(null);
       setObservabilityTimeline([]);
+      setReplayPromptContext(null);
+    }
+    try {
+      const modelReq = await loadModelRequest(settings, responseId);
+      setReplayModelRequest(modelReq);
+    } catch {
+      setReplayModelRequest(null);
     }
   }
 
@@ -328,6 +351,9 @@ export function useObservability(settings: StudioSettings, options: UseObservabi
     observabilityTrace,
     observabilityTraceId,
     observabilityWindow,
+    replayModelRequest,
+    replayPromptContext,
+    replayToolExecutions,
     selectedResponseId,
     selectedRun,
     selectObservabilityRun,

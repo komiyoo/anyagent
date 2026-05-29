@@ -141,6 +141,7 @@ export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  thinking?: string;
   toolCalls?: ToolCallItem[];
 };
 
@@ -299,6 +300,59 @@ export type ObservabilityTrace = {
   response_ids: string[];
   audit_refs: string[];
   events: ObservabilityTimelineEvent[];
+};
+
+export type ToolExecutionDetail = {
+  response_id?: string;
+  type?: string;
+  tool_call_id: string;
+  tool_name: string;
+  arguments_json: string;
+  output?: string | null;
+  error?: {
+    type?: string;
+    code?: string | null;
+    message?: string;
+    retryable?: boolean | null;
+  } | null;
+  status: string;
+  duration_ms?: number | null;
+  output_truncated?: boolean | null;
+  audit_ref?: string | null;
+  trace_id?: string | null;
+  ts_ms?: number | null;
+};
+
+export type ToolExecutionsResponse = {
+  response_id: string;
+  tool_executions: ToolExecutionDetail[];
+};
+
+export type ModelRequestResponse = {
+  response_id: string;
+  applied_body?: Record<string, unknown> | null;
+  prompt_cache_key?: string | null;
+};
+
+export type PromptContextFragment = {
+  kind: string;
+  role: string;
+  cache_class: string;
+  label?: string | null;
+  stable_id?: string | null;
+  source_path?: string | null;
+  source_hash?: string | null;
+  scope?: string | null;
+  metadata?: Record<string, string>;
+  rendered_text: string;
+};
+
+export type PromptContextResponse = {
+  response_id: string;
+  prompt_cache_key?: string | null;
+  total_chars?: number;
+  fragments?: PromptContextFragment[];
+  fallback?: "rendered" | "audit" | "missing";
 };
 
 export type AgentFileKind = "agents_md" | "agent_yaml" | "mcp_json";
@@ -735,6 +789,36 @@ export async function loadObservabilityTrace(
   );
 }
 
+export async function loadToolExecutions(
+  settings: StudioSettings,
+  responseId: string,
+): Promise<ToolExecutionsResponse> {
+  return fetchJson<ToolExecutionsResponse>(
+    settings,
+    `/internal/responses/${encodeURIComponent(responseId)}/tool-executions`,
+  );
+}
+
+export async function loadModelRequest(
+  settings: StudioSettings,
+  responseId: string,
+): Promise<ModelRequestResponse> {
+  return fetchJson<ModelRequestResponse>(
+    settings,
+    `/internal/responses/${encodeURIComponent(responseId)}/model-request`,
+  );
+}
+
+export async function loadPromptContext(
+  settings: StudioSettings,
+  responseId: string,
+): Promise<PromptContextResponse> {
+  return fetchJson<PromptContextResponse>(
+    settings,
+    `/internal/responses/${encodeURIComponent(responseId)}/prompt-context`,
+  );
+}
+
 function observabilityQuery(filters: ObservabilityFilters): string {
   const params = new URLSearchParams();
   if (filters.agentId) params.set("agent_id", filters.agentId);
@@ -932,6 +1016,20 @@ function readEventTextDelta(event: unknown): string {
   return typeof candidate.delta === "string" ? candidate.delta : "";
 }
 
+function readEventThinkingDelta(event: unknown): string {
+  if (!event || typeof event !== "object") {
+    return "";
+  }
+  const candidate = event as { type?: unknown; delta?: unknown; summary_text?: unknown };
+  if (candidate.type === "response.reasoning_summary_text.delta") {
+    return typeof candidate.delta === "string" ? candidate.delta : "";
+  }
+  if (candidate.type === "response.reasoning_summary_part.delta") {
+    return typeof candidate.delta === "string" ? candidate.delta : "";
+  }
+  return "";
+}
+
 function readFinalResponseText(response: unknown): string {
   if (!response || typeof response !== "object") {
     return "";
@@ -960,6 +1058,7 @@ export async function runChat(
   onDelta: (delta: string) => void,
   onEvent: (event: StudioDebugEvent) => void,
   signal?: AbortSignal,
+  onThinkingDelta?: (delta: string) => void,
 ): Promise<ChatRunResult> {
   const client = new OpenAI({
     apiKey: settings.apiKey || "anyagent-studio",
@@ -998,6 +1097,12 @@ export async function runChat(
     if (delta) {
       assistantText += delta;
       onDelta(delta);
+    }
+    if (onThinkingDelta) {
+      const thinkingDelta = readEventThinkingDelta(event);
+      if (thinkingDelta) {
+        onThinkingDelta(thinkingDelta);
+      }
     }
     if ("response" in debugEvent && debugEvent.response) {
       finalResponse = debugEvent.response;

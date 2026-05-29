@@ -8,6 +8,7 @@ from fastapi.responses import Response
 
 from anyagent.agent_packs import AgentCatalog
 from anyagent.agent_runtime import run_tool_loop_nonstream, run_tool_loop_stream_live
+from anyagent.protocol.stage_events import AnyAgentModelRequestEvent
 from anyagent.tool_runtime import fetch_manifest_tools
 
 from .idempotency import begin_distributed_response_run
@@ -179,6 +180,7 @@ def create_distributed_responses_router(
             )
 
         async def do_work() -> Response:
+            _prompt_cache_key = getattr(tooling_ctx.prompt_envelope, "prompt_cache_key", None)
             if stream:
                 return await execute_distributed_stream_response(
                     model_provider=request.app.state.openai_provider,
@@ -203,6 +205,7 @@ def create_distributed_responses_router(
                     run_final_persister_builder=persistence_ctx.build_run_final_persister,
                     new_response_id_factory=lambda: f"resp_anyagent_{uuid4().hex}",
                     is_disconnected=request.is_disconnected,
+                    prompt_cache_key=_prompt_cache_key,
                     run_tool_loop_stream_live_fn=run_tool_loop_stream_live_fn,
                 )
 
@@ -225,6 +228,7 @@ def create_distributed_responses_router(
                 finalize_nonstream_persisted=persistence_ctx.finalize_nonstream_persisted,
                 advance_nonstream_session_only=persistence_ctx.advance_nonstream_session_only,
                 new_response_id_factory=lambda: f"resp_anyagent_{uuid4().hex}",
+                prompt_cache_key=_prompt_cache_key,
                 run_tool_loop_nonstream_fn=run_tool_loop_nonstream_fn,
             )
 

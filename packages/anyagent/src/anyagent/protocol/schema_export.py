@@ -37,6 +37,8 @@ PROTOCOL_CHANGELOG: list[dict[str, Any]] = [
             "Keep schema_version as the deterministic schema bundle revision.",
             "Publish this changelog block in the schema bundle for SDK and runtime generators.",
             "Add rendered prompt-context replay event and internal prompt-context history endpoint.",
+            "Add tool execution detail event and model request event for M2/M3 replay.",
+            "Add internal tool-executions and model-request history endpoints.",
         ],
     }
 ]
@@ -97,6 +99,18 @@ PROTOCOL_ENDPOINTS: list[dict[str, Any]] = [
         "method": "GET",
         "path": "/internal/responses/{response_id}/prompt-context",
         "response_model": "anyagent.protocol.agent_api_internal.InternalResponsePromptContextResponse",
+    },
+    {
+        "operation": "responses.tool_executions",
+        "method": "GET",
+        "path": "/internal/responses/{response_id}/tool-executions",
+        "response_model": "anyagent.protocol.agent_api_internal.InternalResponseToolExecutionsResponse",
+    },
+    {
+        "operation": "responses.model_request",
+        "method": "GET",
+        "path": "/internal/responses/{response_id}/model-request",
+        "response_model": "anyagent.protocol.agent_api_internal.InternalResponseModelRequestResponse",
     },
     {
         "operation": "agents.list",

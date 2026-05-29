@@ -79,7 +79,9 @@ from anyagent.protocol.agent_api_internal import (
     InternalAgentSkillsConfig,
     InternalAgentToolsConfig,
     InternalPromptBundlePreviewResponse,
+    InternalResponseModelRequestResponse,
     InternalResponsePromptContextResponse,
+    InternalResponseToolExecutionsResponse,
     InternalToolCatalogItem,
     InternalToolCatalogResponse,
     WorkspaceAgentFileKind,
@@ -93,7 +95,7 @@ from anyagent.protocol.observability import ObservabilityLevel
 from anyagent.protocol.prompt_context import PromptContextAudit
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.protocol.sse import SSEBlockDecoder, encode_sse_block
-from anyagent.protocol.stage_events import AnyAgentPromptContextEvent, AnyAgentPromptContextRenderedEvent
+from anyagent.protocol.stage_events import AnyAgentModelRequestEvent, AnyAgentPromptContextEvent, AnyAgentPromptContextRenderedEvent
 from anyagent.protocol.tool_runtime import ManifestRequest, PolicyHint, ToolContext
 from anyagent.server.finalization import build_nonstream_response_finalizer
 from anyagent.server.idempotency import begin_or_replay_response_run
@@ -202,6 +204,15 @@ def _build_opensandbox_backend_if_needed(catalog: AgentCatalog) -> OpenSandboxWo
         memory_limit=(os.getenv("OPENSANDBOX_MEMORY_LIMIT") or "1Gi").strip() or "1Gi",
         proxy_port=int(os.getenv("OPENSANDBOX_PROXY_PORT") or "44772"),
     )
+
+
+def _safe_error_message(e: Exception) -> str:
+    """Extract error message from exception, handling dataclass-based errors whose
+    ``message`` field may not be propagated to ``BaseException.args``."""
+    msg = getattr(e, "message", None)
+    if isinstance(msg, str) and msg.strip():
+        return msg
+    return str(e) or type(e).__name__
 
 
 def _parse_cors_origins(value: str | list[str] | tuple[str, ...] | None) -> list[str]:
@@ -835,6 +846,63 @@ def create_app(
             payload = InternalResponsePromptContextResponse(response_id=response_id)
         return JSONResponse(payload.model_dump(exclude_none=True))
 
+    @app.get("/internal/responses/{response_id}/tool-executions")
+    async def internal_response_tool_executions(
+        response_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        detail_events: list[Any] = []
+        last_seq = 0
+        for _ in range(100):
+            page = await state.events.list_events(response_id=response_id, last_seq=last_seq, limit=500)
+            for item in page.events:
+                if not isinstance(item.data, str):
+                    continue
+                try:
+                    data = json.loads(item.data)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if data.get("type") == "anyagent.tool.execution.detail":
+                    detail_events.append(data)
+            if page.next_last_seq <= last_seq or page.done:
+                break
+            last_seq = page.next_last_seq
+        payload = InternalResponseToolExecutionsResponse(
+            response_id=response_id,
+            tool_executions=detail_events,  # type: ignore[arg-type]
+        )
+        return JSONResponse(payload.model_dump(exclude_none=True))
+
+    @app.get("/internal/responses/{response_id}/model-request")
+    async def internal_response_model_request(
+        response_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        _require_user_auth(state, authorization)
+        last_model_request: dict[str, Any] | None = None
+        last_seq = 0
+        for _ in range(100):
+            page = await state.events.list_events(response_id=response_id, last_seq=last_seq, limit=500)
+            for item in page.events:
+                if not isinstance(item.data, str):
+                    continue
+                try:
+                    data = json.loads(item.data)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if data.get("type") == "anyagent.model.request":
+                    last_model_request = data
+            if page.next_last_seq <= last_seq or page.done:
+                break
+            last_seq = page.next_last_seq
+        payload = InternalResponseModelRequestResponse(
+            response_id=response_id,
+            applied_body=last_model_request.get("applied_body") if last_model_request else None,
+            prompt_cache_key=last_model_request.get("prompt_cache_key") if last_model_request else None,
+        )
+        return JSONResponse(payload.model_dump(exclude_none=True))
+
     @app.get("/internal/observability/summary")
     async def internal_observability_summary(
         response_id: str,
@@ -1303,6 +1371,13 @@ def create_app(
                                 body=body,
                             )
                             body2 = prompt_envelope.apply_to_body(body=session_ctx.effective_body)
+                            await _stage_sink(
+                                AnyAgentModelRequestEvent(
+                                    response_id=response_id,
+                                    applied_body=body2,
+                                    prompt_cache_key=prompt_envelope.prompt_cache_key,
+                                )
+                            )
                             decoder = SSEBlockDecoder()
                             try:
                                 async for chunk in run_tool_loop_stream_live(
@@ -1407,7 +1482,7 @@ def create_app(
                                     status="failed",
                                     model=str(session_ctx.effective_body.get("model") or "unknown"),
                                 )
-                                payload["error"] = {"type": "server_error", "message": str(e)}
+                                payload["error"] = {"type": "server_error", "message": _safe_error_message(e)}
                                 completed_block = _build_completed_sse_block(payload)
                                 done_block = encode_sse_block(event=None, data="[DONE]", id=None)
                                 await _append_sse_chunk(
@@ -1494,6 +1569,13 @@ def create_app(
                             body=body,
                         )
                         body2 = prompt_envelope.apply_to_body(body=session_ctx.effective_body)
+                        await _stage_sink(
+                            AnyAgentModelRequestEvent(
+                                response_id=response_id,
+                                applied_body=body2,
+                                prompt_cache_key=prompt_envelope.prompt_cache_key,
+                            )
+                        )
                         async def _finalize_nonstream_terminal(
                             *,
                             payload: dict[str, Any],
@@ -1594,12 +1676,12 @@ def create_app(
                                 status="failed",
                                 model=str(session_ctx.effective_body.get("model") or "unknown"),
                             )
-                            payload["error"] = {"type": "server_error", "message": str(e)}
+                            payload["error"] = {"type": "server_error", "message": _safe_error_message(e)}
                             return await _finalize_nonstream_terminal(
                                 payload=payload,
                                 response_status_code=500,
                                 effective_status="failed",
-                                error_json={"type": "server_error", "message": str(e)},
+                                error_json={"type": "server_error", "message": _safe_error_message(e)},
                             )
 
                         if status_code >= 400 or not isinstance(payload, dict) or not isinstance(payload.get("id"), str):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -14,6 +15,7 @@ from anyagent.agent_runtime import (
 )
 from anyagent.agent_runtime import run_tool_loop_nonstream as default_run_tool_loop_nonstream
 from anyagent.agent_runtime import run_tool_loop_stream_live as default_run_tool_loop_stream_live
+from anyagent.protocol.stage_events import AnyAgentModelRequestEvent
 from anyagent.protocol.sse import SSEBlockDecoder
 
 from .responses_optional import openai_error_response
@@ -34,6 +36,8 @@ SessionOnlyAdvancer = Callable[..., Awaitable[None]]
 InternalEventWriter = Callable[..., Awaitable[int | None]]
 RunFinalPersisterBuilder = Callable[[str], Any]
 DisconnectedChecker = Callable[[], Awaitable[bool]]
+
+_logger = logging.getLogger("anyagent.server.response_execution")
 
 
 async def execute_distributed_nonstream_response(
@@ -56,6 +60,7 @@ async def execute_distributed_nonstream_response(
     finalize_nonstream_persisted: PersistedFinalizer,
     advance_nonstream_session_only: SessionOnlyAdvancer,
     new_response_id_factory: Callable[[], str],
+    prompt_cache_key: str | None = None,
     run_tool_loop_nonstream_fn: RunToolLoopNonstreamFn = default_run_tool_loop_nonstream,
 ) -> Response:
     response_id_for_run = (
@@ -66,6 +71,16 @@ async def execute_distributed_nonstream_response(
     if idempotency_key is not None and idem_created:
         await append_prompt_context_event(response_id_for_run)
         await append_prompt_context_rendered_event(response_id_for_run)
+
+    if stage_event_sink is not None:
+        try:
+            await stage_event_sink(AnyAgentModelRequestEvent(
+                response_id=response_id_for_run,
+                applied_body=body,
+                prompt_cache_key=prompt_cache_key,
+            ))
+        except Exception:
+            _logger.warning("failed to emit model request event", exc_info=True)
 
     status_code, resp_json = await run_tool_loop_nonstream_fn(
         model_provider=model_provider,
@@ -80,7 +95,7 @@ async def execute_distributed_nonstream_response(
         manifest_resolver=manifest_resolver,
         manifest_force_refresh=manifest_force_refresh,
         mcp_manager=mcp_manager,
-        stage_event_sink=stage_event_sink if idem_created else None,
+        stage_event_sink=stage_event_sink,
     )
 
     if status_code >= 400 or not isinstance(resp_json, dict):
@@ -141,6 +156,7 @@ async def execute_distributed_stream_response(
     run_final_persister_builder: RunFinalPersisterBuilder,
     new_response_id_factory: Callable[[], str],
     is_disconnected: DisconnectedChecker | None = None,
+    prompt_cache_key: str | None = None,
     run_tool_loop_stream_live_fn: RunToolLoopStreamLiveFn = default_run_tool_loop_stream_live,
 ) -> Response:
     if idempotency_key is not None and idem_created and isinstance(idem_response_id, str) and idem_response_id:
@@ -164,6 +180,7 @@ async def execute_distributed_stream_response(
                 append_prompt_context_rendered_event=append_prompt_context_rendered_event,
                 internal_event_writer=internal_event_writer,
                 run_final_persister_builder=run_final_persister_builder,
+                prompt_cache_key=prompt_cache_key,
                 run_tool_loop_stream_live_fn=run_tool_loop_stream_live_fn,
             )
         )
@@ -174,6 +191,16 @@ async def execute_distributed_stream_response(
     canonical_response_id = new_response_id_factory()
     await append_prompt_context_event(canonical_response_id)
     await append_prompt_context_rendered_event(canonical_response_id)
+
+    if stage_event_sink is not None:
+        try:
+            await stage_event_sink(AnyAgentModelRequestEvent(
+                response_id=canonical_response_id,
+                applied_body=body,
+                prompt_cache_key=prompt_cache_key,
+            ))
+        except Exception:
+            _logger.warning("failed to emit model request event", exc_info=True)
 
     async def iter_sse() -> Any:
         try:
@@ -190,6 +217,7 @@ async def execute_distributed_stream_response(
                 manifest_resolver=manifest_resolver,
                 manifest_force_refresh=manifest_force_refresh,
                 mcp_manager=mcp_manager,
+                stage_event_sink=stage_event_sink,
             ):
                 if is_disconnected is not None and await is_disconnected():
                     return
@@ -242,10 +270,21 @@ async def _run_idempotent_stream_to_store(
     append_prompt_context_rendered_event: PromptContextAppender,
     internal_event_writer: InternalEventWriter,
     run_final_persister_builder: RunFinalPersisterBuilder,
-    run_tool_loop_stream_live_fn: RunToolLoopStreamLiveFn,
+    prompt_cache_key: str | None = None,
+    run_tool_loop_stream_live_fn: RunToolLoopStreamLiveFn = default_run_tool_loop_stream_live,
 ) -> None:
     await append_prompt_context_event(canonical_response_id)
     await append_prompt_context_rendered_event(canonical_response_id)
+
+    if stage_event_sink is not None:
+        try:
+            await stage_event_sink(AnyAgentModelRequestEvent(
+                response_id=canonical_response_id,
+                applied_body=body,
+                prompt_cache_key=prompt_cache_key,
+            ))
+        except Exception:
+            _logger.warning("failed to emit model request event", exc_info=True)
 
     append_event = build_response_event_appender(
         response_id=canonical_response_id,

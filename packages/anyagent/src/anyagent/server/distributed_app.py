@@ -18,6 +18,7 @@ from .distributed_runtime import (
     create_distributed_agent_runtime,
 )
 from .internal_events import create_internal_events_router
+from .internal_replay import create_internal_replay_router
 from .internal_skills import create_internal_skills_router
 from .responses_optional import create_optional_responses_router
 
@@ -69,6 +70,7 @@ def create_distributed_agent_app(
     )
     app.include_router(create_internal_events_router(api_key=api_key))
     app.include_router(create_internal_skills_router(api_key=api_key))
+    app.include_router(create_internal_replay_router(api_key=api_key))
     app.include_router(create_optional_responses_router(api_key=api_key))
 
     return app

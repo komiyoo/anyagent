@@ -22,7 +22,7 @@ class ResolvedServerStorageSettings:
 class ServerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, extra="ignore")
 
-    storage_mode: Literal["none", "external"] = Field(
+    storage_mode: Literal["none", "local", "external"] = Field(
         default="none",
         alias="STORAGE_MODE",
     )
