@@ -4,7 +4,7 @@ doc_kind: architecture
 status: draft
 tags: ["sdk", "protocol", "compatibility", "schema", "contract-tests"]
 summary: Implemented SDK compatibility surfaces for the current single-repo, multi-package boundary.
-req: ["requirements.md#req-4"]
+req: ["requirements.md#req-4", "requirements.md#req-7"]
 ---
 -->
 
@@ -25,6 +25,7 @@ This page tracks implemented compatibility surfaces between anyagent server, pro
 ## Compatibility Rules
 
 - Protocol schema changes must update the schema bundle, server handlers, SDK facade and Studio consumers in the same change when they touch the same API path.
+- Protocol exports carry both `protocol_version` (compatibility identifier) and `schema_version` (deterministic bundle revision); changelog entries live in the bundle so SDK/runtime generators can cite the protocol history they consumed.
 - The TypeScript SDK generates wire models from the protocol schema bundle and keeps handwritten helpers in `sdks/typescript/src/client.ts`.
 - SDKs must not import server runtime modules. Studio must not copy protocol shapes by hand.
 - Contract tests protect schema export, StageEvent decoding, SSE parsing, and resource namespace request/response shapes.

@@ -109,6 +109,38 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 
 每个 Phase 只声明目标与对应 todo 入口,具体任务清单维护在 `todo/*.md`。
 
+### 5.1 执行优先级与完成状态
+
+> 最后更新：2026-05-29
+
+| 优先级 | # | 任务 | Phase | 状态 | todo 入口 |
+|---|---|---|---|---|---|
+| **P0** | 1 | Protocol schema bundle 版本化 | 1 | ✅ 已完成 | `todo/protocol.md` L24 |
+| **P0** | 2 | SDK conformance fixtures → Stage Events + Tool Runtime | 1 | 🔲 未开始 | `todo/sdk.md` L26 |
+| **P0** | 3 | TypeScript SDK 最小可用面 (MVU) | 1 | 🔲 未开始 | `todo/sdk.md` L27 |
+| **P0** | 4 | Tool Deferred Loading + Tool Search | 1.5 | 🔲 未开始 | `todo/tool-runtime.md` L26-27 |
+| **P0** | 5 | Skill → Agent Loop 注入管道 | 1.5 | 🔲 未开始 | `todo/server-runtime.md` L27 |
+| **P1** | 6 | Tool Runtime contract 测试矩阵 + standalone 等价验收 | 2 | 🔲 未开始 | `todo/tool-runtime.md` L33-34 |
+| **P1** | 7 | Storage replay contract: PG + Redis | 2 | 🔲 未开始 | `todo/storage.md` L24 |
+| **P1** | 8 | 跨节点 Run 调度与 lock contract | 2 | 🔲 未开始 | `todo/server-runtime.md` L34-35 |
+| **P1** | 9 | 第二 sandbox backend | 2 | 🔲 未开始 | `todo/sandbox.md` L23-24 |
+| **P2** | 10 | Plugin Manifest 统一 + MCP filter/sanitize | 1.5 | 🔲 未开始 | `todo/tool-runtime.md` L28-29 |
+| **P2** | 11 | 配置层级 merge + MCP 生命周期 Stage Events | 1.5 | 🔲 未开始 | `todo/server-runtime.md` L28-29 |
+| **P2** | 12 | Observability envelope + audit sink | 2 | 🔲 未开始 | `todo/server-runtime.md` L36 |
+| **P3** | 13 | Credential v2 (DB/Vault/session/轮转/审计) | 3 | 🔲 未开始 | `todo/security-compliance.md` L18-22 |
+| **P4** | 14 | Multi-Agent contract | 4 | 🔲 未开始 | `todo/multi-agent.md` L23-25 |
+| **P4** | 15 | Reference conformance suite + 第二 runtime | 4 | 🔲 未开始 | `todo/multi-runtime.md` L25-27 |
+
+状态图例：🔲 未开始 · 🔵 进行中 · ✅ 已完成
+
+依赖关系备注：
+- #4 和 #5 可并行（分别改 ToolRegistry 和 agent_runtime）
+- #8 依赖 #7（lock contract 需要 storage adapter 就绪）
+- #10 依赖 #4（Plugin Manifest 需要 Tool Registry/Search 形状稳定）
+- #13 依赖 #6 + #12（Credential v2 需要 Tool Runtime GA + audit envelope）
+
+---
+
 ### Phase 1 — Protocol & SDK Hardening(进行中)
 
 **目标**:让 protocol bundle 与 SDK 成为对外可承诺兼容性的稳定面。

@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from anyagent.protocol.schema_export import (
     TYPE_ADAPTER_EXPORTS,
     export_openapi_document,
+    export_protocol_changelog,
     export_protocol_schema_bundle,
     iter_protocol_model_classes,
 )
@@ -39,7 +40,12 @@ def test_protocol_schema_export_includes_core_models_and_unions() -> None:
     bundle = export_protocol_schema_bundle()
 
     assert bundle["schema_version"] == "2026-05-27"
+    assert bundle["protocol_version"] == "0.1.8"
     assert bundle["protocol_package"] == "anyagent.protocol"
+    assert bundle["changelog"] == export_protocol_changelog()
+    assert bundle["changelog"][0]["protocol_version"] == bundle["protocol_version"]
+    assert bundle["changelog"][0]["schema_version"] == bundle["schema_version"]
+    assert bundle["changelog"][0]["changes"]
 
     models = bundle["models"]
     assert "anyagent.protocol.agent_api_internal.InternalEventsListResponse" in models
@@ -164,6 +170,8 @@ def test_openapi_export_is_generated_from_endpoint_manifest_and_protocol_models(
     assert document["openapi"] == "3.1.0"
     assert document["info"]["version"] == bundle["schema_version"]
     assert document["x-anyagent-schema-version"] == bundle["schema_version"]
+    assert document["x-anyagent-protocol-version"] == bundle["protocol_version"]
+    assert document["x-anyagent-protocol-changelog"] == bundle["changelog"]
     assert document["components"]["schemas"].keys() == bundle["models"].keys()
 
     health = document["paths"]["/healthz"]["get"]

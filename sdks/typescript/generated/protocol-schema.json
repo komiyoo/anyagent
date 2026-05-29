@@ -1,4 +1,17 @@
 {
+  "changelog": [
+    {
+      "changes": [
+        "Expose protocol_version as the stable protocol compatibility identifier.",
+        "Keep schema_version as the deterministic schema bundle revision.",
+        "Publish this changelog block in the schema bundle for SDK and runtime generators."
+      ],
+      "date": "2026-05-29",
+      "protocol_version": "0.1.8",
+      "schema_version": "2026-05-27",
+      "summary": "Initial versioned protocol schema bundle with endpoint manifest, semantic rules and OpenAPI export."
+    }
+  ],
   "endpoints": [
     {
       "method": "PUT",
@@ -15953,6 +15966,7 @@
     }
   },
   "protocol_package": "anyagent.protocol",
+  "protocol_version": "0.1.8",
   "schema_version": "2026-05-27",
   "semantic_rules": {
     "anyagent.protocol.credential_vault.CredentialScope": [

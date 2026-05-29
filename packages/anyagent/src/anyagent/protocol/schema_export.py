@@ -22,7 +22,23 @@ import anyagent.protocol as protocol_pkg
 
 
 SCHEMA_BUNDLE_VERSION = "2026-05-27"
+PROTOCOL_VERSION = "0.1.8"
 OPENAPI_VERSION = "3.1.0"
+
+
+PROTOCOL_CHANGELOG: list[dict[str, Any]] = [
+    {
+        "protocol_version": PROTOCOL_VERSION,
+        "schema_version": SCHEMA_BUNDLE_VERSION,
+        "date": "2026-05-29",
+        "summary": "Initial versioned protocol schema bundle with endpoint manifest, semantic rules and OpenAPI export.",
+        "changes": [
+            "Expose protocol_version as the stable protocol compatibility identifier.",
+            "Keep schema_version as the deterministic schema bundle revision.",
+            "Publish this changelog block in the schema bundle for SDK and runtime generators.",
+        ],
+    }
+]
 
 
 TYPE_ADAPTER_EXPORTS: dict[str, TypeAdapter[Any]] = {
@@ -367,7 +383,9 @@ def export_protocol_schema_bundle() -> dict[str, Any]:
 
     return {
         "schema_version": SCHEMA_BUNDLE_VERSION,
+        "protocol_version": PROTOCOL_VERSION,
         "protocol_package": "anyagent.protocol",
+        "changelog": export_protocol_changelog(),
         "endpoints": export_protocol_endpoints(),
         "models": dict(sorted(models.items())),
         "semantic_rules": export_semantic_rules(),
@@ -407,6 +425,8 @@ def export_openapi_document() -> dict[str, Any]:
             "version": SCHEMA_BUNDLE_VERSION,
         },
         "x-anyagent-schema-version": SCHEMA_BUNDLE_VERSION,
+        "x-anyagent-protocol-version": PROTOCOL_VERSION,
+        "x-anyagent-protocol-changelog": export_protocol_changelog(),
         "paths": dict(sorted(paths.items())),
         "components": {
             "schemas": dict(sorted(components.items())),
@@ -527,3 +547,9 @@ def export_semantic_rules() -> dict[str, list[dict[str, Any]]]:
     """Export non-JSON-Schema semantic rules required by SDK/runtime generators."""
 
     return {key: list(value) for key, value in sorted(SEMANTIC_RULES.items())}
+
+
+def export_protocol_changelog() -> list[dict[str, Any]]:
+    """Export protocol version history for SDK/runtime compatibility checks."""
+
+    return [dict(entry) for entry in PROTOCOL_CHANGELOG]

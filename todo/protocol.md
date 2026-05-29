@@ -21,7 +21,7 @@
 
 ## 任务
 
-- [ ] P0 在 schema bundle 输出中增加 `protocol_version` 字段与 changelog 段落(Req: `requirements.md#req-7`)
+- [x] P0 在 schema bundle 输出中增加 `protocol_version` 字段与 changelog 段落(Req: `requirements.md#req-7`; Impl: `packages/anyagent/src/anyagent/protocol/schema_export.py:25`; Module: `anyagent.protocol.schema_export`)
 - [ ] P1 实现 protocol schema diff 工具,CI 中检测对外字段的 breaking change(Req: `requirements.md#req-7`)
 - [ ] P1 把 semantic rules 集中维护到独立文件,避免散落在 protocol model 注释中(Req: `requirements.md#req-7`)
 - [ ] P2 设计 protocol 独立版本化方案 ADR,放 `docs/architecture/decisions/`(Req: `requirements.md#req-7`)
