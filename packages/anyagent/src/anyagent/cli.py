@@ -652,6 +652,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         session_lease_ttl_s=args.session_lease_ttl_s,
         cors_origins=args.cors_origin,
         enable_studio=enable_studio,
+        session_config_overrides={},
     )
     _print_serve_banner(
         workspace=workspace,

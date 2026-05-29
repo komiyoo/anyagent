@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from anyagent.observability import emit_observability_event
+from anyagent.protocol.stage_events import AnyAgentMcpServerLifecycleEvent, StageError, StageEvent
 
 from .auth import CredentialResolver
 from .models import MCPConfig
@@ -13,6 +14,7 @@ from .server import MCPServer, MCPServerError, create_mcp_server
 from .util import mcp_call_result_to_output_text, mcp_tool_to_function_param
 
 logger = logging.getLogger("anyagent.mcp")
+StageEventSink = Callable[[StageEvent], Awaitable[None]]
 
 
 class MCPServerManager:
@@ -40,14 +42,35 @@ class MCPServerManager:
             if cfg.enabled
         }
         self._idle_check_task: asyncio.Task[None] | None = None
+        self._tool_source_names: dict[str, str] = {}
 
-    async def ensure_all_connected(self) -> list[MCPServer]:
+    async def ensure_all_connected(
+        self,
+        *,
+        stage_event_sink: StageEventSink | None = None,
+        response_id: str | None = None,
+    ) -> list[MCPServer]:
         """Ensures each server is connected and returns healthy server instances."""
         self._start_idle_check_task()
         alive: list[MCPServer] = []
         for label, server in self._servers.items():
+            was_connected = bool(getattr(server, "_connected", False))
             try:
+                if not was_connected:
+                    await self._emit_lifecycle_event(
+                        stage_event_sink=stage_event_sink,
+                        response_id=response_id,
+                        event_type="anyagent.mcp.server.starting",
+                        server=server,
+                    )
                 await server.ensure_connected()
+                if not was_connected:
+                    await self._emit_lifecycle_event(
+                        stage_event_sink=stage_event_sink,
+                        response_id=response_id,
+                        event_type="anyagent.mcp.server.ready",
+                        server=server,
+                    )
                 emit_observability_event(
                     "mcp.server.connected",
                     category="mcp",
@@ -56,6 +79,14 @@ class MCPServerManager:
                 )
                 alive.append(server)
             except Exception as e:  # noqa: BLE001
+                if not was_connected:
+                    await self._emit_lifecycle_event(
+                        stage_event_sink=stage_event_sink,
+                        response_id=response_id,
+                        event_type="anyagent.mcp.server.failed",
+                        server=server,
+                        error=e,
+                    )
                 emit_observability_event(
                     "mcp.server.connection_failed",
                     category="mcp",
@@ -68,9 +99,14 @@ class MCPServerManager:
                 )
         return alive
 
-    async def list_all_tools(self) -> list[dict[str, Any]]:
+    async def list_all_tools(
+        self,
+        *,
+        stage_event_sink: StageEventSink | None = None,
+        response_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Lists and converts tools from all connected MCP servers."""
-        servers = await self.ensure_all_connected()
+        servers = await self.ensure_all_connected(stage_event_sink=stage_event_sink, response_id=response_id)
         out: list[dict[str, Any]] = []
         for server in servers:
             try:
@@ -95,7 +131,12 @@ class MCPServerManager:
                 continue
             for tool in tools:
                 try:
-                    out.append(mcp_tool_to_function_param(tool, server_label=server.name))
+                    function_param = mcp_tool_to_function_param(tool, server_label=server.name)
+                    qualified_name = str(function_param.get("name", ""))
+                    source_name = str(function_param.get("x_anyagent_source_name", "")).strip()
+                    if qualified_name and source_name:
+                        self._tool_source_names[qualified_name] = source_name
+                    out.append(function_param)
                 except Exception as e:  # noqa: BLE001
                     emit_observability_event(
                         "mcp.tool.conversion_failed",
@@ -113,6 +154,32 @@ class MCPServerManager:
                     )
         return out
 
+    async def _emit_lifecycle_event(
+        self,
+        *,
+        stage_event_sink: StageEventSink | None,
+        response_id: str | None,
+        event_type: str,
+        server: MCPServer,
+        error: Exception | None = None,
+    ) -> None:
+        if stage_event_sink is None or not response_id:
+            return
+        transport: str | None = None
+        try:
+            transport = server.config.infer_transport().value
+        except Exception:  # noqa: BLE001
+            transport = None
+        await stage_event_sink(
+            AnyAgentMcpServerLifecycleEvent(
+                type=event_type,  # type: ignore[arg-type]
+                response_id=response_id,
+                server_label=server.name,
+                transport=transport,
+                error=StageError(type=type(error).__name__, message=str(error)) if error is not None else None,
+            )
+        )
+
     async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> str:
         """Routes one `mcp.<label>.<tool>` call and returns stringified tool output."""
         server_label, local_tool_name = self._parse_qualified_tool_name(tool_name)
@@ -120,12 +187,18 @@ class MCPServerManager:
         if server is None:
             raise MCPServerError(f"unknown mcp server label: {server_label}")
 
-        result = await server.call_tool(local_tool_name, arguments or {})
+        raw_local_tool_name = self._tool_source_names.get(tool_name, local_tool_name)
+        result = await server.call_tool(raw_local_tool_name, arguments or {})
         emit_observability_event(
             "mcp.tool.called",
             category="mcp",
             level="info",
-            payload={"agent_id": self.agent_id, "server_label": server_label, "tool_name": local_tool_name},
+            payload={
+                "agent_id": self.agent_id,
+                "server_label": server_label,
+                "tool_name": local_tool_name,
+                "source_tool_name": raw_local_tool_name,
+            },
         )
         return mcp_call_result_to_output_text(result)
 

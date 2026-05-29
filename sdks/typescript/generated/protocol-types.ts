@@ -557,7 +557,7 @@ export type PromptRunBundleExampleResponse = {
   "scenario": "sandbox_file_write" | "multi_skill_research" | "toolset_retry";
   "scenario_label": string;
   "session_key": string;
-  "stage_events"?: Array<AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentToolExecutionDetailEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentPromptContextRenderedEvent | AnyAgentModelRequestEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentSubAgentSpawnedEvent | AnyAgentSubAgentCompletedEvent | AnyAgentSubAgentTimeoutEvent | AnyAgentContextCompactedEvent | AnyAgentLoopWarningEvent | AnyAgentLoopTerminatedEvent | AnyAgentDoneEvent>;
+  "stage_events"?: Array<AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentToolExecutionDetailEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentPromptContextRenderedEvent | AnyAgentModelRequestEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentMcpServerLifecycleEvent | AnyAgentSubAgentSpawnedEvent | AnyAgentSubAgentCompletedEvent | AnyAgentSubAgentTimeoutEvent | AnyAgentContextCompactedEvent | AnyAgentLoopWarningEvent | AnyAgentLoopTerminatedEvent | AnyAgentDoneEvent>;
   "tool_loop_items"?: Array<PromptRunBundleToolLoopItem>;
 };
 
@@ -728,6 +728,7 @@ export type MCPServerConfig = {
 export type MCPToolFilterConfig = {
   "allowed_tool_names"?: Array<string> | null;
   "blocked_tool_names"?: Array<string> | null;
+  "match_mode"?: "raw" | "sanitized" | "both";
 };
 
 export type AgentState = {
@@ -1037,6 +1038,17 @@ export type AnyAgentLoopWarningEvent = {
   "ts_ms"?: number | null;
   "type"?: "anyagent.agent.loop_warning";
   "window_size": number;
+};
+
+export type AnyAgentMcpServerLifecycleEvent = {
+  "error"?: StageError | null;
+  "response_id": string;
+  "seq"?: number | null;
+  "server_label": string;
+  "trace_id"?: string | null;
+  "transport"?: string | null;
+  "ts_ms"?: number | null;
+  "type": "anyagent.mcp.server.starting" | "anyagent.mcp.server.ready" | "anyagent.mcp.server.failed";
 };
 
 export type AnyAgentModelRequestEvent = {
@@ -1350,6 +1362,6 @@ export type WorkspaceInitResult = {
   "workspace": string;
 };
 
-export type StageEvent = AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentToolExecutionDetailEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentPromptContextRenderedEvent | AnyAgentModelRequestEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentSubAgentSpawnedEvent | AnyAgentSubAgentCompletedEvent | AnyAgentSubAgentTimeoutEvent | AnyAgentContextCompactedEvent | AnyAgentLoopWarningEvent | AnyAgentLoopTerminatedEvent | AnyAgentDoneEvent;
+export type StageEvent = AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentToolExecutionDetailEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentPromptContextRenderedEvent | AnyAgentModelRequestEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentMcpServerLifecycleEvent | AnyAgentSubAgentSpawnedEvent | AnyAgentSubAgentCompletedEvent | AnyAgentSubAgentTimeoutEvent | AnyAgentContextCompactedEvent | AnyAgentLoopWarningEvent | AnyAgentLoopTerminatedEvent | AnyAgentDoneEvent;
 
 export type ExecuteResponse = ExecuteResponseCompleted | ExecuteResponseCancelled | ExecuteResponseError;

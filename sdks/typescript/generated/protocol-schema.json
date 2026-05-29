@@ -8104,6 +8104,97 @@
           "title": "AnyAgentLoopWarningEvent",
           "type": "object"
         },
+        "AnyAgentMcpServerLifecycleEvent": {
+          "additionalProperties": false,
+          "description": "MCP server lifecycle progress emitted while resolving tool manifests.",
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StageError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "server_label": {
+              "title": "Server Label",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "transport": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Transport"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "enum": [
+                "anyagent.mcp.server.starting",
+                "anyagent.mcp.server.ready",
+                "anyagent.mcp.server.failed"
+              ],
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "response_id",
+            "server_label"
+          ],
+          "title": "AnyAgentMcpServerLifecycleEvent",
+          "type": "object"
+        },
         "AnyAgentModelRequestEvent": {
           "additionalProperties": false,
           "description": "First model request body sent to the model provider, persisted for historical replay.",
@@ -9880,6 +9971,9 @@
                 "anyagent.command.result": "#/$defs/AnyAgentCommandResultEvent",
                 "anyagent.context.compacted": "#/$defs/AnyAgentContextCompactedEvent",
                 "anyagent.done": "#/$defs/AnyAgentDoneEvent",
+                "anyagent.mcp.server.failed": "#/$defs/AnyAgentMcpServerLifecycleEvent",
+                "anyagent.mcp.server.ready": "#/$defs/AnyAgentMcpServerLifecycleEvent",
+                "anyagent.mcp.server.starting": "#/$defs/AnyAgentMcpServerLifecycleEvent",
                 "anyagent.model.request": "#/$defs/AnyAgentModelRequestEvent",
                 "anyagent.model.stream_event": "#/$defs/AnyAgentModelStreamEvent",
                 "anyagent.prompt.context": "#/$defs/AnyAgentPromptContextEvent",
@@ -9930,6 +10024,9 @@
               },
               {
                 "$ref": "#/$defs/AnyAgentWorkspaceLifecycleEvent"
+              },
+              {
+                "$ref": "#/$defs/AnyAgentMcpServerLifecycleEvent"
               },
               {
                 "$ref": "#/$defs/AnyAgentSubAgentSpawnedEvent"
@@ -11469,6 +11566,16 @@
               ],
               "default": null,
               "title": "Blocked Tool Names"
+            },
+            "match_mode": {
+              "default": "both",
+              "enum": [
+                "raw",
+                "sanitized",
+                "both"
+              ],
+              "title": "Match Mode",
+              "type": "string"
             }
           },
           "title": "MCPToolFilterConfig",
@@ -11593,6 +11700,16 @@
               ],
               "default": null,
               "title": "Blocked Tool Names"
+            },
+            "match_mode": {
+              "default": "both",
+              "enum": [
+                "raw",
+                "sanitized",
+                "both"
+              ],
+              "title": "Match Mode",
+              "type": "string"
             }
           },
           "title": "MCPToolFilterConfig",
@@ -11768,6 +11885,16 @@
           ],
           "default": null,
           "title": "Blocked Tool Names"
+        },
+        "match_mode": {
+          "default": "both",
+          "enum": [
+            "raw",
+            "sanitized",
+            "both"
+          ],
+          "title": "Match Mode",
+          "type": "string"
         }
       },
       "title": "MCPToolFilterConfig",
@@ -14918,6 +15045,143 @@
         "window_size"
       ],
       "title": "AnyAgentLoopWarningEvent",
+      "type": "object"
+    },
+    "anyagent.protocol.stage_events.AnyAgentMcpServerLifecycleEvent": {
+      "$defs": {
+        "StageError": {
+          "additionalProperties": false,
+          "description": "A machine-readable error for stage events.",
+          "properties": {
+            "code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Code"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "retryable": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Retryable"
+            },
+            "type": {
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "message"
+          ],
+          "title": "StageError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "MCP server lifecycle progress emitted while resolving tool manifests.",
+      "properties": {
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StageError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "server_label": {
+          "title": "Server Label",
+          "type": "string"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "transport": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transport"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "enum": [
+            "anyagent.mcp.server.starting",
+            "anyagent.mcp.server.ready",
+            "anyagent.mcp.server.failed"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "response_id",
+        "server_label"
+      ],
+      "title": "AnyAgentMcpServerLifecycleEvent",
       "type": "object"
     },
     "anyagent.protocol.stage_events.AnyAgentModelRequestEvent": {
@@ -19452,6 +19716,97 @@
           "title": "AnyAgentLoopWarningEvent",
           "type": "object"
         },
+        "AnyAgentMcpServerLifecycleEvent": {
+          "additionalProperties": false,
+          "description": "MCP server lifecycle progress emitted while resolving tool manifests.",
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StageError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "server_label": {
+              "title": "Server Label",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "transport": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Transport"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "enum": [
+                "anyagent.mcp.server.starting",
+                "anyagent.mcp.server.ready",
+                "anyagent.mcp.server.failed"
+              ],
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "response_id",
+            "server_label"
+          ],
+          "title": "AnyAgentMcpServerLifecycleEvent",
+          "type": "object"
+        },
         "AnyAgentModelRequestEvent": {
           "additionalProperties": false,
           "description": "First model request body sent to the model provider, persisted for historical replay.",
@@ -20854,6 +21209,9 @@
           "anyagent.command.result": "#/$defs/AnyAgentCommandResultEvent",
           "anyagent.context.compacted": "#/$defs/AnyAgentContextCompactedEvent",
           "anyagent.done": "#/$defs/AnyAgentDoneEvent",
+          "anyagent.mcp.server.failed": "#/$defs/AnyAgentMcpServerLifecycleEvent",
+          "anyagent.mcp.server.ready": "#/$defs/AnyAgentMcpServerLifecycleEvent",
+          "anyagent.mcp.server.starting": "#/$defs/AnyAgentMcpServerLifecycleEvent",
           "anyagent.model.request": "#/$defs/AnyAgentModelRequestEvent",
           "anyagent.model.stream_event": "#/$defs/AnyAgentModelStreamEvent",
           "anyagent.prompt.context": "#/$defs/AnyAgentPromptContextEvent",
@@ -20904,6 +21262,9 @@
         },
         {
           "$ref": "#/$defs/AnyAgentWorkspaceLifecycleEvent"
+        },
+        {
+          "$ref": "#/$defs/AnyAgentMcpServerLifecycleEvent"
         },
         {
           "$ref": "#/$defs/AnyAgentSubAgentSpawnedEvent"

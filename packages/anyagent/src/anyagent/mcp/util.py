@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
+
+_MCP_TOOL_NAME_ALLOWED_RE = re.compile(r"^[a-z0-9_.-]+$")
+_MCP_TOOL_NAME_INVALID_CHARS_RE = re.compile(r"[^a-z0-9_.-]+")
 
 
 def mcp_tool_to_function_param(tool: Any, server_label: str) -> dict[str, Any]:
@@ -9,6 +13,7 @@ def mcp_tool_to_function_param(tool: Any, server_label: str) -> dict[str, Any]:
     tool_name = str(_field(tool, "name", default="")).strip()
     if not tool_name:
         raise ValueError("mcp tool missing name")
+    sanitized_tool_name = sanitize_mcp_tool_name(tool_name)
 
     schema_raw = _field(tool, "input_schema", "inputSchema", default={})
     schema = _json_object(schema_raw)
@@ -17,11 +22,23 @@ def mcp_tool_to_function_param(tool: Any, server_label: str) -> dict[str, Any]:
 
     return {
         "type": "function",
-        "name": f"mcp.{server_label}.{tool_name}",
+        "name": f"mcp.{server_label}.{sanitized_tool_name}",
         "description": str(_field(tool, "description", default="") or ""),
         "parameters": schema,
         "x_anyagent_kind": "mcp",
+        "x_anyagent_source_name": tool_name,
     }
+
+
+def sanitize_mcp_tool_name(name: str) -> str:
+    """Sanitizes an MCP tool name for OpenAI function-tool compatibility."""
+    text = str(name).strip().lower()
+    text = _MCP_TOOL_NAME_INVALID_CHARS_RE.sub("_", text).strip("_")
+    if not text:
+        raise ValueError("mcp tool name sanitizes to empty")
+    if not _MCP_TOOL_NAME_ALLOWED_RE.match(text):
+        raise ValueError(f"invalid sanitized mcp tool name: {text}")
+    return text
 
 
 def mcp_call_result_to_output_text(result: Any) -> str:

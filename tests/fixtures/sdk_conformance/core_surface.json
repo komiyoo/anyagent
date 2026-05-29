@@ -675,7 +675,8 @@
             "tool_filter": {
               "allowed_tool_names": [
                 "search_docs"
-              ]
+              ],
+              "match_mode": "both"
             }
           }
         }
@@ -1064,12 +1065,24 @@
       }
     },
     {
+      "name": "stage_event.mcp.server.ready",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.mcp.server.ready",
+        "response_id": "resp_stage",
+        "seq": 8,
+        "ts_ms": 750,
+        "server_label": "docs",
+        "transport": "streamable_http"
+      }
+    },
+    {
       "name": "stage_event.done",
       "schema": "anyagent.protocol.stage_events.StageEvent",
       "payload": {
         "type": "anyagent.done",
         "response_id": "resp_stage",
-        "seq": 8,
+        "seq": 9,
         "ts_ms": 800
       }
     },

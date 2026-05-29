@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -31,6 +32,7 @@ class MCPToolFilterConfig(BaseModel):
 
     allowed_tool_names: list[str] | None = None
     blocked_tool_names: list[str] | None = None
+    match_mode: Literal["raw", "sanitized", "both"] = "both"
 
 
 class MCPServerConfig(BaseModel):

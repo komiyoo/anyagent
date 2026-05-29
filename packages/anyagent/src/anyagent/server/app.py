@@ -29,6 +29,7 @@ from anyagent.agent_packs import (
     AgentSpec,
     load_agent_catalog,
     preferred_agents_root,
+    stat_config_mtimes,
 )
 from anyagent.model_config import (
     ModelConfigError,
@@ -301,6 +302,17 @@ def _build_opensandbox_backend_if_needed(catalog: AgentCatalog) -> OpenSandboxWo
     )
 
 
+def _catalog_has_cold_restart_change(current: AgentCatalog, candidate: AgentCatalog) -> bool:
+    """Returns True when changed config requires a process restart."""
+    if set(current.packs) != set(candidate.packs):
+        return False
+    for agent_id, current_pack in current.packs.items():
+        candidate_pack = candidate.packs[agent_id]
+        if current_pack.spec.sandbox != candidate_pack.spec.sandbox:
+            return True
+    return False
+
+
 def _safe_error_message(e: Exception) -> str:
     """Extract error message from exception, handling dataclass-based errors whose
     ``message`` field may not be propagated to ``BaseException.args``."""
@@ -346,6 +358,9 @@ class AnyAgentServerApp:
     storage_resources: list[object] = field(default_factory=list)
     api_key: str | None = None
     admin_api_key: str | None = None
+    session_config_overrides: dict[str, Any] | None = None
+    config_mtimes: dict[str, float] = field(default_factory=dict)
+    config_reload_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def require_pack(self, agent_id: str, *, external: bool) -> AgentPack:
         pack = self.catalog.get(agent_id)
@@ -356,7 +371,7 @@ class AnyAgentServerApp:
         return pack
 
     def reload_catalog(self) -> None:
-        catalog = load_agent_catalog(workspace_dir=self.workspace_dir)
+        catalog = load_agent_catalog(workspace_dir=self.workspace_dir, session_config_overrides=self.session_config_overrides)
         models_config = load_workspace_models_config(self.workspace_dir)
         if not any(pack.spec.exposed for pack in catalog.packs.values()):
             raise RuntimeError("workspace must define at least one exposed agent")
@@ -364,6 +379,29 @@ class AnyAgentServerApp:
         self.models_config = models_config
         self.runtime.set_catalog(catalog)
         self.manifest_cache = ManifestCache(ttl_seconds=2.0)
+        self.config_mtimes = stat_config_mtimes(self.workspace_dir, self.session_config_overrides)
+
+    async def refresh_config_if_needed(self) -> None:
+        """Reloads hot config changes discovered by mtime polling."""
+        latest = stat_config_mtimes(self.workspace_dir, self.session_config_overrides)
+        if latest == self.config_mtimes:
+            return
+        async with self.config_reload_lock:
+            latest = stat_config_mtimes(self.workspace_dir, self.session_config_overrides)
+            if latest == self.config_mtimes:
+                return
+            catalog = load_agent_catalog(workspace_dir=self.workspace_dir, session_config_overrides=self.session_config_overrides)
+            if not any(pack.spec.exposed for pack in catalog.packs.values()):
+                raise RuntimeError("workspace must define at least one exposed agent")
+            if _catalog_has_cold_restart_change(self.catalog, catalog):
+                _LOGGER.warning("config change touches cold fields; restart required")
+                self.config_mtimes = latest
+                return
+            self.catalog = catalog
+            self.models_config = load_workspace_models_config(self.workspace_dir)
+            self.runtime.set_catalog(catalog)
+            self.manifest_cache = ManifestCache(ttl_seconds=2.0)
+            self.config_mtimes = latest
 
 def create_app(
     *,
@@ -379,6 +417,7 @@ def create_app(
     session_lease_ttl_s: float | None = None,
     cors_origins: str | list[str] | tuple[str, ...] | None = None,
     enable_studio: bool = True,
+    session_config_overrides: dict[str, Any] | None = None,
 ) -> FastAPI:
     workspace = Path(workspace_dir).expanduser().resolve()
     load_workspace_runtime_environment(workspace)
@@ -391,7 +430,7 @@ def create_app(
         session_lock_backend=session_lock_backend if isinstance(session_lock_backend, str) else None,
         session_lease_ttl_s=session_lease_ttl_s,
     )
-    catalog = load_agent_catalog(workspace_dir=workspace)
+    catalog = load_agent_catalog(workspace_dir=workspace, session_config_overrides=session_config_overrides)
     models_config = load_workspace_models_config(workspace)
     if not any(pack.spec.exposed for pack in catalog.packs.values()):
         raise RuntimeError("workspace must define at least one exposed agent")
@@ -470,6 +509,8 @@ def create_app(
         storage_resources=storage_bundle.resources,
         api_key=api_key.strip() if isinstance(api_key, str) and api_key.strip() else None,
         admin_api_key=admin_api_key.strip() if isinstance(admin_api_key, str) and admin_api_key.strip() else None,
+        session_config_overrides=session_config_overrides,
+        config_mtimes=stat_config_mtimes(workspace, session_config_overrides),
     )
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
@@ -517,6 +558,11 @@ def create_app(
             allow_headers=["authorization", "content-type", "idempotency-key", "x-agent-id"],
         )
     app.state.anyagent = state
+
+    @app.middleware("http")
+    async def _config_hot_reload_middleware(request: Request, call_next: Any) -> Any:
+        await state.refresh_config_if_needed()
+        return await call_next(request)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:
@@ -1366,6 +1412,8 @@ def create_app(
                 request_tools=body.get("tools"),
                 tool_context=tool_context,
                 enabled_skills=enabled_skill_ids or None,
+                stage_event_sink=_stage_sink,
+                stage_response_id=response_id,
             )
             await state.manifest_cache.put(manifest_cache_key, resolved)
             return resolved

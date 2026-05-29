@@ -13,6 +13,7 @@ import httpx
 
 from .auth import CredentialResolver, resolve_mcp_auth_env, resolve_mcp_auth_headers
 from .models import MCPServerConfig, MCPServerTransport
+from .util import sanitize_mcp_tool_name
 
 logger = logging.getLogger("anyagent.mcp")
 
@@ -168,20 +169,35 @@ class MCPServer(ABC):
         if tool_filter is None:
             return tools
 
-        allow = set(tool_filter.allowed_tool_names or [])
-        deny = set(tool_filter.blocked_tool_names or [])
+        allow = {str(item).strip() for item in (tool_filter.allowed_tool_names or []) if str(item).strip()}
+        deny = {str(item).strip() for item in (tool_filter.blocked_tool_names or []) if str(item).strip()}
+        match_mode = tool_filter.match_mode
 
         out: list[Any] = []
         for tool in tools:
-            name = self._tool_name(tool)
-            if not name:
+            raw_name = self._tool_name(tool)
+            if not raw_name:
                 continue
-            if allow and name not in allow:
+            names = self._filter_match_names(raw_name=raw_name, match_mode=match_mode)
+            if allow and not names.intersection(allow):
                 continue
-            if name in deny:
+            if names.intersection(deny):
                 continue
             out.append(tool)
         return out
+
+    @staticmethod
+    def _filter_match_names(*, raw_name: str, match_mode: str) -> set[str]:
+        """Returns the name variants that can satisfy one configured filter."""
+        names: set[str] = set()
+        if match_mode in {"raw", "both"}:
+            names.add(raw_name)
+        if match_mode in {"sanitized", "both"}:
+            try:
+                names.add(sanitize_mcp_tool_name(raw_name))
+            except ValueError:
+                pass
+        return names
 
     @staticmethod
     def _tool_name(tool: Any) -> str:

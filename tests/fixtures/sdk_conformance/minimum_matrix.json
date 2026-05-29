@@ -283,6 +283,11 @@
       "fixture": "stage_event.sandbox.workspace.restored"
     },
     {
+      "name": "stage_event.mcp.server.ready",
+      "kind": "type_adapter",
+      "fixture": "stage_event.mcp.server.ready"
+    },
+    {
       "name": "stage_event.done",
       "kind": "type_adapter",
       "fixture": "stage_event.done"

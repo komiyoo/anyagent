@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from .config_merge import ConfigMergeError, deep_merge, validate_workspace_override_denylist
 from .mcp import MCPConfig
 from .protocol.sandbox import SandboxPolicy
 
@@ -24,6 +26,7 @@ ANYAGENT_SKILLS_SUBDIR = "skills"
 ANYAGENT_SECRETS_FILE = "secrets.yaml"
 ANYAGENT_CREDENTIALS_DIR = "credentials"
 DEFAULT_CREDENTIAL_FILE_ROOT = f"{ANYAGENT_CONFIG_DIR}/{ANYAGENT_CREDENTIALS_DIR}"
+DEFAULT_SYSTEM_CONFIG_DIR = "/etc/anyagent"
 
 _AGENT_ID_RE = re.compile(r"^[a-zA-Z0-9_.-]{1,64}$")
 _ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -166,6 +169,43 @@ def resolve_agents_root(workspace_dir: Path) -> Path:
     return preferred_agents_root(workspace_dir)
 
 
+def resolve_config_layers(workspace_dir: Path, session_overrides: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Resolves system/user/workspace/session config roots in merge order."""
+    workspace = Path(workspace_dir).expanduser().resolve()
+    system_root = Path(os.getenv("ANYAGENT_SYSTEM_CONFIG_DIR", DEFAULT_SYSTEM_CONFIG_DIR)).expanduser()
+    user_root = Path(os.getenv("ANYAGENT_USER_CONFIG_DIR", str(Path.home() / ANYAGENT_CONFIG_DIR))).expanduser()
+    layers: list[dict[str, Any]] = [
+        {"name": "system", "config_dir": system_root, "agents_dir": system_root / ANYAGENT_AGENTS_SUBDIR},
+        {"name": "user", "config_dir": user_root, "agents_dir": user_root / ANYAGENT_AGENTS_SUBDIR},
+        {
+            "name": "workspace",
+            "config_dir": preferred_config_root(workspace),
+            "agents_dir": preferred_agents_root(workspace),
+        },
+        {"name": "session", "config": session_overrides or {}, "agents_dir": None},
+    ]
+    return layers
+
+
+def stat_config_mtimes(workspace_dir: Path, session_overrides: dict[str, Any] | None = None) -> dict[str, float]:
+    """Returns mtimes for layered agent.yaml and mcp.json files."""
+    layers = resolve_config_layers(workspace_dir, session_overrides=session_overrides)
+    mtimes: dict[str, float] = {}
+    for agent_id in _discover_layered_agent_ids(layers):
+        for layer in layers:
+            agents_dir = layer.get("agents_dir")
+            if not isinstance(agents_dir, Path):
+                continue
+            for filename in ("agent.yaml", "mcp.json"):
+                candidate = agents_dir / agent_id / filename
+                try:
+                    stat = candidate.stat()
+                except FileNotFoundError:
+                    continue
+                mtimes[str(candidate)] = float(stat.st_mtime_ns)
+    return mtimes
+
+
 def _read_text_with_limit(path: Path, *, max_bytes: int) -> tuple[str, str]:
     raw = path.read_bytes()
     if len(raw) > max_bytes:
@@ -195,6 +235,110 @@ def _load_yaml_object(path: Path) -> dict[str, Any]:
     return obj
 
 
+def _load_json_object(path: Path, *, max_bytes: int) -> dict[str, Any]:
+    try:
+        raw, _ = _read_text_with_limit(path, max_bytes=max_bytes)
+    except FileNotFoundError as e:
+        raise AgentPackError(f"missing required file: {path}") from e
+    try:
+        obj = json.loads(raw)
+    except Exception as e:  # noqa: BLE001
+        raise AgentPackError(f"invalid json: {path}: {e}") from e
+    if not isinstance(obj, dict):
+        raise AgentPackError(f"json config must be an object: {path}")
+    return obj
+
+
+def _session_agent_override(session_config: dict[str, Any], agent_id: str, kind: str) -> dict[str, Any]:
+    agents = session_config.get("agents")
+    if not isinstance(agents, dict):
+        return {}
+    agent_config = agents.get(agent_id)
+    if not isinstance(agent_config, dict):
+        return {}
+    value = agent_config.get(kind)
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _discover_layered_agent_ids(layers: list[dict[str, Any]]) -> list[str]:
+    ids: set[str] = set()
+    for layer in layers:
+        agents_dir = layer.get("agents_dir")
+        if isinstance(agents_dir, Path) and agents_dir.is_dir():
+            for child in agents_dir.iterdir():
+                if child.is_dir() and not child.name.startswith("."):
+                    ids.add(child.name)
+            continue
+        config = layer.get("config")
+        agents = config.get("agents") if isinstance(config, dict) else None
+        if isinstance(agents, dict):
+            ids.update(str(key) for key in agents.keys())
+    return sorted(ids)
+
+
+def _find_agent_file(layers: list[dict[str, Any]], agent_id: str, filename: str) -> Path | None:
+    for layer in reversed(layers):
+        agents_dir = layer.get("agents_dir")
+        if isinstance(agents_dir, Path):
+            candidate = agents_dir / agent_id / filename
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _find_agent_root(layers: list[dict[str, Any]], agent_id: str) -> Path | None:
+    for layer in reversed(layers):
+        agents_dir = layer.get("agents_dir")
+        if isinstance(agents_dir, Path):
+            candidate = agents_dir / agent_id
+            if candidate.is_dir():
+                return candidate
+    return None
+
+
+def _merged_agent_yaml(layers: list[dict[str, Any]], agent_id: str) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for layer in layers:
+        name = str(layer.get("name") or "")
+        agents_dir = layer.get("agents_dir")
+        source: Path | None = None
+        payload: dict[str, Any] = {}
+        if isinstance(agents_dir, Path):
+            candidate = agents_dir / agent_id / "agent.yaml"
+            if candidate.is_file():
+                payload = _load_yaml_object(candidate)
+                source = candidate
+        else:
+            payload = _session_agent_override(layer.get("config", {}), agent_id, "agent")
+        if not payload:
+            continue
+        if name == "workspace":
+            try:
+                validate_workspace_override_denylist(base=merged, override=payload, source=source or Path("<session>"))
+            except ConfigMergeError as e:
+                raise AgentPackError(str(e)) from e
+        merged = deep_merge(merged, payload)
+    return merged
+
+
+def _merged_mcp_config(layers: list[dict[str, Any]], agent_id: str, *, max_mcp_json_bytes: int) -> dict[str, Any] | None:
+    merged: dict[str, Any] = {}
+    found = False
+    for layer in layers:
+        agents_dir = layer.get("agents_dir")
+        payload: dict[str, Any] = {}
+        if isinstance(agents_dir, Path):
+            candidate = agents_dir / agent_id / "mcp.json"
+            if candidate.is_file():
+                payload = _load_json_object(candidate, max_bytes=max_mcp_json_bytes)
+        else:
+            payload = _session_agent_override(layer.get("config", {}), agent_id, "mcp")
+        if payload:
+            merged = deep_merge(merged, payload)
+            found = True
+    return merged if found else None
+
+
 def _load_workspace_env(workspace_dir: Path) -> dict[str, str]:
     env: dict[str, str] = {}
     for candidate in (workspace_dir / ".env", workspace_dir / ".env.local"):
@@ -219,6 +363,7 @@ def _expand_env_placeholders(value: str, env: dict[str, str]) -> str:
 def load_agent_catalog(
     *,
     workspace_dir: Path,
+    session_config_overrides: dict[str, Any] | None = None,
     max_agents_md_bytes: int = 64 * 1024,
     max_mcp_json_bytes: int = 256 * 1024,
 ) -> AgentCatalog:
@@ -234,8 +379,10 @@ def load_agent_catalog(
     workspace_env = _load_workspace_env(workspace_dir)
     expand_env = dict(workspace_env)
     expand_env.update({key: value for key, value in os.environ.items() if isinstance(value, str)})
-    root_dir = resolve_agents_root(workspace_dir)
-    if not root_dir.is_dir():
+    layers = resolve_config_layers(workspace_dir, session_overrides=session_config_overrides)
+    root_dir = preferred_agents_root(workspace_dir)
+    agent_ids = _discover_layered_agent_ids(layers)
+    if not agent_ids:
         raise AgentPackError(f"missing agent packs root: {root_dir}")
 
     workspace_agents_md = workspace_dir / "AGENTS.md"
@@ -250,34 +397,30 @@ def load_agent_catalog(
         workspace_agents_md_path = workspace_agents_md
 
     packs: dict[str, AgentPack] = {}
-    for child in sorted(root_dir.iterdir(), key=lambda p: p.name):
-        if not child.is_dir():
-            continue
-        if child.name.startswith("."):
-            continue
-
-        agent_id = child.name
+    for agent_id in agent_ids:
         if not _AGENT_ID_RE.match(agent_id):
             raise AgentPackError(f"invalid agent_id directory name: {agent_id} (expected [a-zA-Z0-9_.-]{{1,64}})")
 
         if agent_id in packs:
             raise AgentPackError(f"duplicate agent_id: {agent_id}")
 
-        agent_yaml = child / "agent.yaml"
-        agents_md = child / "AGENTS.md"
-        if not agent_yaml.is_file():
-            raise AgentPackError(f"missing required file: {agent_yaml}")
-        if not agents_md.is_file():
-            raise AgentPackError(f"missing required file: {agents_md}")
+        child = _find_agent_root(layers, agent_id)
+        if child is None:
+            child = root_dir / agent_id
+        agent_yaml = _find_agent_file(layers, agent_id, "agent.yaml")
+        agents_md = _find_agent_file(layers, agent_id, "AGENTS.md")
+        if agent_yaml is None:
+            raise AgentPackError(f"missing required file: {child / 'agent.yaml'}")
+        if agents_md is None:
+            raise AgentPackError(f"missing required file: {child / 'AGENTS.md'}")
 
-        spec = AgentSpec.model_validate(_load_yaml_object(agent_yaml))
+        spec = AgentSpec.model_validate(_merged_agent_yaml(layers, agent_id))
         agents_md_text, sha256 = _read_text_with_limit(agents_md, max_bytes=max_agents_md_bytes)
-        mcp_json = child / "mcp.json"
+        mcp_json_payload = _merged_mcp_config(layers, agent_id, max_mcp_json_bytes=max_mcp_json_bytes)
         mcp_config: MCPConfig | None = None
-        if mcp_json.is_file():
-            mcp_raw, _ = _read_text_with_limit(mcp_json, max_bytes=max_mcp_json_bytes)
+        if mcp_json_payload is not None:
             try:
-                mcp_config = MCPConfig.model_validate_json(mcp_raw)
+                mcp_config = MCPConfig.model_validate(mcp_json_payload)
                 for server_cfg in mcp_config.mcpServers.values():
                     if server_cfg.command and not server_cfg.cwd:
                         server_cfg.cwd = str(workspace_dir)
@@ -296,6 +439,7 @@ def load_agent_catalog(
                             for key, value in server_cfg.env.items()
                         }
             except Exception as e:  # noqa: BLE001
+                mcp_json = _find_agent_file(layers, agent_id, "mcp.json") or (child / "mcp.json")
                 raise AgentPackError(f"invalid mcp.json: {mcp_json}: {e}") from e
 
         packs[agent_id] = AgentPack(

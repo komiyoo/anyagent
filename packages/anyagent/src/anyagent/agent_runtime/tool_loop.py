@@ -226,6 +226,8 @@ async def resolve_manifest_with_mcp(
     request_tools: Any,
     tool_context: ToolContext | None = None,
     enabled_skills: list[str] | None = None,
+    stage_event_sink: StageEventSink | None = None,
+    stage_response_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     tr_tools, toolset_version = await resolve_manifest(
         tool_runtime=tool_runtime,
@@ -238,7 +240,10 @@ async def resolve_manifest_with_mcp(
     )
     mcp_tools: list[dict[str, Any]] = []
     if mcp_manager is not None:
-        mcp_tools = await mcp_manager.list_all_tools()
+        mcp_tools = await mcp_manager.list_all_tools(
+            stage_event_sink=stage_event_sink,
+            response_id=stage_response_id,
+        )
     return [*tr_tools, *mcp_tools], toolset_version
 
 
@@ -610,6 +615,8 @@ async def run_tool_loop_nonstream(
             request_tools=body.get("tools"),
             tool_context=tool_context,
             enabled_skills=enabled_skills or None,
+            stage_event_sink=stage_event_sink,
+            stage_response_id=canonical_response_id,
         )
 
     allowed_tool_names = extract_allowed_function_tool_names(manifest_tools=manifest_tools)
@@ -686,6 +693,8 @@ async def run_tool_loop_nonstream(
                 request_tools=body.get("tools"),
                 tool_context=tool_context,
                 enabled_skills=enabled_skills or None,
+                stage_event_sink=stage_event_sink,
+                stage_response_id=emitted_response_id,
             )
         for call in calls:
             out, manifest_tools, toolset_version = await _execute_one_tool_with_middleware(
@@ -800,6 +809,8 @@ async def run_tool_loop_stream_buffered(
             request_tools=body.get("tools"),
             tool_context=tool_context,
             enabled_skills=enabled_skills or None,
+            stage_event_sink=stage_event_sink,
+            stage_response_id=canonical_response_id,
         )
 
     allowed_tool_names = extract_allowed_function_tool_names(manifest_tools=manifest_tools)
@@ -877,6 +888,8 @@ async def run_tool_loop_stream_buffered(
                 request_tools=body.get("tools"),
                 tool_context=tool_context,
                 enabled_skills=enabled_skills or None,
+                stage_event_sink=stage_event_sink,
+                stage_response_id=emitted_response_id,
             )
         for call in calls:
             out, manifest_tools, toolset_version = await _execute_one_tool_with_middleware(
@@ -985,6 +998,8 @@ async def run_tool_loop_stream_live(
             request_tools=body.get("tools"),
             tool_context=tool_context,
             enabled_skills=enabled_skills or None,
+            stage_event_sink=stage_event_sink,
+            stage_response_id=canonical_response_id,
         )
 
     allowed_tool_names = extract_allowed_function_tool_names(manifest_tools=manifest_tools)
@@ -1096,6 +1111,8 @@ async def run_tool_loop_stream_live(
                 request_tools=body.get("tools"),
                 tool_context=tool_context,
                 enabled_skills=enabled_skills or None,
+                stage_event_sink=stage_event_sink,
+                stage_response_id=emitted_response_id,
             )
         for call in calls:
             out, manifest_tools, toolset_version = await _execute_one_tool_with_middleware(

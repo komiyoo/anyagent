@@ -312,6 +312,19 @@ class AnyAgentWorkspaceLifecycleEvent(StageEventBase):
     runtime_diagnostics: AdminSandboxRuntimeDiagnostics | None = None
 
 
+class AnyAgentMcpServerLifecycleEvent(StageEventBase):
+    """MCP server lifecycle progress emitted while resolving tool manifests."""
+
+    type: Literal[
+        "anyagent.mcp.server.starting",
+        "anyagent.mcp.server.ready",
+        "anyagent.mcp.server.failed",
+    ]
+    server_label: str
+    transport: str | None = None
+    error: StageError | None = None
+
+
 class AnyAgentSubAgentSpawnedEvent(StageEventBase):
     """A bounded sub-agent task has been spawned from a parent run."""
 
@@ -384,6 +397,7 @@ StageEvent: TypeAlias = Annotated[
     | AnyAgentPromptContextRenderedEvent
     | AnyAgentModelRequestEvent
     | AnyAgentWorkspaceLifecycleEvent
+    | AnyAgentMcpServerLifecycleEvent
     | AnyAgentSubAgentSpawnedEvent
     | AnyAgentSubAgentCompletedEvent
     | AnyAgentSubAgentTimeoutEvent
