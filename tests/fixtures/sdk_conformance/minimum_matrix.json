@@ -201,6 +201,61 @@
       "name": "negative.stage_event.seq",
       "kind": "type_adapter_negative",
       "fixture": "stage_event.seq_zero"
+    },
+    {
+      "name": "tool_runtime.manifest.request",
+      "kind": "protocol_model",
+      "fixture": "tool_runtime.manifest.request"
+    },
+    {
+      "name": "tool_runtime.manifest.response",
+      "kind": "protocol_model",
+      "fixture": "tool_runtime.manifest.response"
+    },
+    {
+      "name": "tool_runtime.execute.request",
+      "kind": "protocol_model",
+      "fixture": "tool_runtime.execute.request"
+    },
+    {
+      "name": "stage_event.model.stream_event",
+      "kind": "type_adapter",
+      "fixture": "stage_event.model.stream_event"
+    },
+    {
+      "name": "stage_event.tool.result",
+      "kind": "type_adapter",
+      "fixture": "stage_event.tool.result"
+    },
+    {
+      "name": "stage_event.command.planned",
+      "kind": "type_adapter",
+      "fixture": "stage_event.command.planned"
+    },
+    {
+      "name": "stage_event.prompt.context",
+      "kind": "type_adapter",
+      "fixture": "stage_event.prompt.context"
+    },
+    {
+      "name": "stage_event.sandbox.workspace.restored",
+      "kind": "type_adapter",
+      "fixture": "stage_event.sandbox.workspace.restored"
+    },
+    {
+      "name": "stage_event.done",
+      "kind": "type_adapter",
+      "fixture": "stage_event.done"
+    },
+    {
+      "name": "tool_runtime.execute.response.cancelled",
+      "kind": "type_adapter",
+      "fixture": "tool_runtime.execute.response.cancelled"
+    },
+    {
+      "name": "tool_runtime.execute.response.error",
+      "kind": "type_adapter",
+      "fixture": "tool_runtime.execute.response.error"
     }
   ],
   "language_checks": [

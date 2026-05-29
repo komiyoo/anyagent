@@ -665,6 +665,100 @@
           ]
         }
       }
+    },
+    {
+      "name": "tool_runtime.manifest.request",
+      "schema": "anyagent.protocol.tool_runtime.ManifestRequest",
+      "payload": {
+        "tenant_id": "tenant_demo",
+        "agent_id": "main",
+        "session_key": "session_1",
+        "context": {
+          "trace": {
+            "trace_id": "trace_manifest"
+          },
+          "auth_ref": {
+            "kind": "credential_id",
+            "ref": "cred_demo"
+          },
+          "policy": {
+            "allow_tools": [
+              "exec"
+            ],
+            "deny_tools": [
+              "admin.*"
+            ]
+          }
+        },
+        "enabled_skills": [
+          "repo-helper"
+        ],
+        "requested_tool_names": [
+          "exec"
+        ],
+        "requested_tools": [
+          {
+            "name": "exec"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tool_runtime.manifest.response",
+      "schema": "anyagent.protocol.tool_runtime.ManifestResponse",
+      "payload": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "exec",
+            "description": "Run a command in the session sandbox.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "cmd": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cmd"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true,
+            "x-anyagent-kind": "command"
+          }
+        ],
+        "toolset_version": 3,
+        "decisions": [
+          {
+            "tool_name": "admin.delete",
+            "decision": "deny",
+            "reason": "policy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tool_runtime.execute.request",
+      "schema": "anyagent.protocol.tool_runtime.ExecuteRequest",
+      "payload": {
+        "tenant_id": "tenant_demo",
+        "agent_id": "main",
+        "session_key": "session_1",
+        "response_id": "resp_stage",
+        "tool_call_id": "call_1",
+        "tool_name": "exec",
+        "arguments_json": {
+          "cmd": "pwd"
+        },
+        "deadline_ms": 30000,
+        "toolset_version": 3,
+        "context": {
+          "trace": {
+            "trace_id": "trace_execute"
+          }
+        }
+      }
     }
   ],
   "type_adapter_cases": [
@@ -723,6 +817,161 @@
           "duration_ms": 7,
           "output_truncated": false,
           "audit_ref": "audit_1"
+        }
+      }
+    },
+    {
+      "name": "stage_event.model.stream_event",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.model.stream_event",
+        "response_id": "resp_stage",
+        "seq": 1,
+        "trace_id": "trace_stage",
+        "ts_ms": 100,
+        "sse_event": "response.output_text.delta",
+        "payload": {
+          "type": "response.output_text.delta",
+          "delta": "hi"
+        }
+      }
+    },
+    {
+      "name": "stage_event.tool.result",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.tool.result",
+        "response_id": "resp_stage",
+        "seq": 3,
+        "trace_id": "trace_stage",
+        "ts_ms": 300,
+        "tool_call_id": "call_1",
+        "tool_name": "exec",
+        "status": "completed",
+        "meta": {
+          "duration_ms": 17,
+          "output_truncated": false,
+          "audit_ref": "audit_1"
+        },
+        "output": {
+          "bytes": 0,
+          "sha256": "e3b0c442",
+          "preview": null,
+          "preview_truncated": false
+        }
+      }
+    },
+    {
+      "name": "stage_event.command.planned",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.command.planned",
+        "response_id": "resp_stage",
+        "seq": 4,
+        "ts_ms": 400,
+        "command": {
+          "bytes": 13,
+          "sha256": "args-sha",
+          "preview": "object keys: cmd",
+          "preview_truncated": false
+        },
+        "workdir": "/workspace",
+        "timeout_ms": 30000,
+        "source_tool_call_id": "call_1",
+        "source_tool_name": "exec"
+      }
+    },
+    {
+      "name": "stage_event.prompt.context",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.prompt.context",
+        "response_id": "resp_stage",
+        "seq": 6,
+        "ts_ms": 600,
+        "prompt_cache_key": "prompt_main",
+        "fragments": [
+          {
+            "kind": "agents_md",
+            "cache_class": "stable_prefix",
+            "stable_id": "main/AGENTS.md",
+            "source_path": "/tmp/workspace/.anyagent/agents/main/AGENTS.md",
+            "source_hash": "abc",
+            "scope": "agent"
+          }
+        ],
+        "fragment_count": 1,
+        "retained_fragment_count": 1,
+        "stable_prefix_count": 1,
+        "contextual_count": 0,
+        "dynamic_count": 0,
+        "fragment_kinds": [
+          "agents_md"
+        ],
+        "compacted": false
+      }
+    },
+    {
+      "name": "stage_event.sandbox.workspace.restored",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.sandbox.workspace.restored",
+        "response_id": "resp_stage",
+        "seq": 7,
+        "ts_ms": 700,
+        "session_partition_key": "main::session_1",
+        "workspace_id": "ws_1",
+        "generation": 2,
+        "sandbox_id": "sandbox_1",
+        "snapshot_uri": "memory://snapshot/ws_1/2",
+        "snapshot_bytes": 128,
+        "duration_ms": 9,
+        "audit_ref": "audit_workspace_1"
+      }
+    },
+    {
+      "name": "stage_event.done",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.done",
+        "response_id": "resp_stage",
+        "seq": 8,
+        "ts_ms": 800
+      }
+    },
+    {
+      "name": "tool_runtime.execute.response.cancelled",
+      "schema": "anyagent.protocol.tool_runtime.ExecuteResponse",
+      "payload": {
+        "status": "cancelled",
+        "error": {
+          "type": "cancelled",
+          "code": "USER_CANCELLED",
+          "message": "cancelled by user",
+          "retryable": false
+        },
+        "meta": {
+          "duration_ms": 3,
+          "output_truncated": false,
+          "audit_ref": "audit_cancel"
+        }
+      }
+    },
+    {
+      "name": "tool_runtime.execute.response.error",
+      "schema": "anyagent.protocol.tool_runtime.ExecuteResponse",
+      "payload": {
+        "status": "error",
+        "error": {
+          "type": "policy_error",
+          "code": "TOOL_DENIED",
+          "message": "tool denied",
+          "retryable": false
+        },
+        "meta": {
+          "duration_ms": 1,
+          "output_truncated": false,
+          "audit_ref": "audit_error"
         }
       }
     }

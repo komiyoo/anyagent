@@ -375,3 +375,25 @@ def test_sdk_minimum_matrix_references_existing_conformance_fixtures() -> None:
         "stage_event.tool.planned",
     }
     assert required_operations <= set(operation_names)
+
+
+def test_sdk_minimum_matrix_covers_stage_event_and_tool_runtime_main_paths() -> None:
+    matrix = json.loads(SDK_MINIMUM_MATRIX.read_text(encoding="utf-8"))
+
+    operation_names = {operation["name"] for operation in matrix["operations"]}
+    assert {
+        "stage_event.model.stream_event",
+        "stage_event.tool.planned",
+        "stage_event.tool.result",
+        "stage_event.command.planned",
+        "stage_event.command.result",
+        "stage_event.prompt.context",
+        "stage_event.sandbox.workspace.restored",
+        "stage_event.done",
+        "tool_runtime.manifest.request",
+        "tool_runtime.manifest.response",
+        "tool_runtime.execute.request",
+        "tool_runtime.execute.response",
+        "tool_runtime.execute.response.cancelled",
+        "tool_runtime.execute.response.error",
+    } <= operation_names
