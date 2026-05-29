@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -165,4 +167,71 @@ class MiddlewareChain:
             if hook_result.result is not None:
                 current = hook_result.result
         return AfterToolResult(result=current)
+
+
+class MiddlewareLoadError(Exception):
+    """Raised when an agent middleware cannot be loaded from a class path."""
+
+
+_MIDDLEWARE_CLASSPATH_RE = re.compile(r"^(?P<module>[A-Za-z_][\w.]*):(?P<attr>[A-Za-z_]\w*)$")
+
+_MIDDLEWARE_HOOK_NAMES = (
+    "before_model_call",
+    "after_model_call",
+    "before_tool_execute",
+    "after_tool_execute",
+)
+
+
+def _is_middleware_like(obj: Any) -> bool:
+    return all(callable(getattr(obj, name, None)) for name in _MIDDLEWARE_HOOK_NAMES)
+
+
+def load_middleware_from_classpath(
+    classpath: str,
+    *,
+    kwargs: dict[str, Any] | None = None,
+) -> AgentMiddleware:
+    """Import and instantiate an agent middleware from a ``"module.path:ClassName"`` string.
+
+    This consumes a TRUSTED server-side configuration surface (`agent.yaml`
+    `runtime.middlewares` and plugin manifests are controlled by the deployer),
+    NOT agent-controllable input. It performs a plain ``importlib.import_module``
+    and is unrelated to the sandbox boundary — never feed agent/model output here.
+    """
+
+    if not isinstance(classpath, str):
+        raise MiddlewareLoadError(f"middleware classpath must be a string, got {type(classpath)!r}")
+    match = _MIDDLEWARE_CLASSPATH_RE.match(classpath.strip())
+    if match is None:
+        raise MiddlewareLoadError(
+            f"invalid middleware classpath (expected 'module.path:ClassName'): {classpath!r}"
+        )
+    module_path = match.group("module")
+    attr = match.group("attr")
+
+    try:
+        module = importlib.import_module(module_path)
+    except Exception as e:  # noqa: BLE001
+        raise MiddlewareLoadError(f"cannot import middleware module {module_path!r}: {e}") from e
+
+    try:
+        target = getattr(module, attr)
+    except AttributeError as e:
+        raise MiddlewareLoadError(f"middleware attr {attr!r} not found in module {module_path!r}") from e
+
+    if not isinstance(target, type):
+        raise MiddlewareLoadError(f"middleware target {classpath!r} is not a class")
+
+    try:
+        instance = target(**(kwargs or {}))
+    except Exception as e:  # noqa: BLE001
+        raise MiddlewareLoadError(f"failed to instantiate middleware {classpath!r}: {e}") from e
+
+    if not _is_middleware_like(instance):
+        raise MiddlewareLoadError(
+            f"middleware {classpath!r} does not implement the AgentMiddleware hooks "
+            f"({', '.join(_MIDDLEWARE_HOOK_NAMES)})"
+        )
+    return instance
 

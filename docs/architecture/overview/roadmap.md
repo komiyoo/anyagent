@@ -125,7 +125,7 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 | **P0** | 6   | Prompt Context Replay（rendered fragments 持久化 + 历史查询 API） | 1.5   | ✅ 已完成 | `todo/persistence.md` M1             |
 | **P1** | 7   | Tool Execution Replay（tool full payload 持久化 + 查询）          | 1.5   | ✅ 已完成 | `todo/persistence.md` M2             |
 | **P1** | 8   | Model Request Replay（applied_body 持久化 + replay）              | 1.5   | ✅ 已完成 | `todo/persistence.md` M3             |
-| **P1** | 9   | Plugin Manifest v1 统一（含 middlewares/hooks）+ MCP filter       | 1.5   | 🔲 未开始 | `todo/tool-runtime.md` L28-29        |
+| **P1** | 9   | Plugin Manifest v1 统一（含 middlewares/hooks）+ MCP filter       | 1.5   | 🟡 部分完成（Manifest v1 ✅ / MCP filter 🔲） | `todo/tool-runtime.md` L28-29        |
 | **P1** | 10  | 配置层级 merge + Config 热重载 + MCP 生命周期 Stage Events        | 1.5   | 🔲 未开始 | `todo/server-runtime.md` L28-30      |
 | **P0** | 11  | Sub-Agent 完整可用版（并发/超时/深度/fork mode/Stage Events）     | 1.8   | ✅ 已完成 | `todo/multi-agent.md` M0             |
 | **P0** | 12  | 上下文压缩（Codex prompt + Pi-mono cut-point + 迭代式摘要）       | 1.8   | ✅ 已完成 | `todo/server-runtime.md`             |

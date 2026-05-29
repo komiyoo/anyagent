@@ -1,17 +1,25 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
 import json
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 import jsonschema
 
+from anyagent.agent_runtime.middleware import (
+    AgentMiddleware,
+    MiddlewareLoadError,
+    load_middleware_from_classpath,
+)
+
 from .api import AnyAgentPluginAPI
+from .hooks import PluginHookError, PluginHooks, load_plugin_hooks
 from .models import PluginManifest
 
 
@@ -26,6 +34,27 @@ _ENTRYPOINT_RE = re.compile(r"^(?P<relpath>[^:]+):(?P<attr>[a-zA-Z_][a-zA-Z0-9_]
 class LoadedPlugin:
     manifest: PluginManifest
     plugin_dir: Path
+    middlewares: list[AgentMiddleware] = field(default_factory=list)
+    hooks: PluginHooks = field(default_factory=PluginHooks)
+    declared_skills: list[str] = field(default_factory=list)
+    declared_mcp_servers: list[str] = field(default_factory=list)
+    declared_tools: list[str] = field(default_factory=list)
+
+
+@contextlib.contextmanager
+def _temporary_sys_path(path: Path) -> Iterator[None]:
+    """Temporarily expose ``path`` on sys.path so plugin modules become importable."""
+
+    resolved = str(Path(path).resolve())
+    added = resolved not in sys.path
+    if added:
+        sys.path.insert(0, resolved)
+    try:
+        yield
+    finally:
+        if added:
+            with contextlib.suppress(ValueError):
+                sys.path.remove(resolved)
 
 
 def _load_json_file(path: Path, *, max_bytes: int) -> dict[str, Any]:
@@ -137,6 +166,58 @@ def _load_register_callable(plugin_dir: Path, *, plugin_id: str, entrypoint: str
     return register
 
 
+def _resolve_declared_capabilities(
+    manifest: PluginManifest,
+    plugin_dir: Path,
+) -> tuple[list[AgentMiddleware], PluginHooks, list[str], list[str], list[str]]:
+    """Resolve a v1 manifest's declarative capability fields.
+
+    - middlewares / hooks: imported & instantiated (under plugin_dir on sys.path).
+    - skills / mcp_servers / tools: validated as declarations + returned for
+      traceability — no duplicate loading, since existing scan/registry sinks own them.
+
+    Raises PluginLoadError on any failure so the caller can isolate this plugin.
+    """
+
+    from anyagent.tool_runtime.registry import TOOL_NAME_RE
+
+    plugin_root = Path(plugin_dir).resolve()
+
+    declared_skills: list[str] = []
+    for rel in manifest.skills:
+        skill_dir = (plugin_root / rel).resolve()
+        if not skill_dir.is_relative_to(plugin_root):
+            raise PluginLoadError(f"declared skill path escapes plugin_dir: {rel!r}")
+        if not (skill_dir / "SKILL.md").is_file():
+            raise PluginLoadError(f"declared skill missing SKILL.md: {rel!r}")
+        declared_skills.append(rel)
+
+    # mcp_servers already validated as MCPServerConfig by the manifest model.
+    declared_mcp_servers = sorted(manifest.mcp_servers.keys())
+
+    declared_tools: list[str] = []
+    for name in manifest.tools:
+        if not isinstance(name, str) or not TOOL_NAME_RE.match(name):
+            raise PluginLoadError(f"invalid declared tool name: {name!r}")
+        declared_tools.append(name)
+
+    middlewares: list[AgentMiddleware] = []
+    hooks = PluginHooks()
+    with _temporary_sys_path(plugin_root):
+        for classpath in manifest.middlewares:
+            try:
+                middlewares.append(load_middleware_from_classpath(classpath))
+            except MiddlewareLoadError as e:
+                raise PluginLoadError(f"middleware load failed: {e}") from e
+        if manifest.hooks:
+            try:
+                hooks = load_plugin_hooks(manifest.hooks)
+            except PluginHookError as e:
+                raise PluginLoadError(f"hook load failed: {e}") from e
+
+    return middlewares, hooks, declared_skills, declared_mcp_servers, declared_tools
+
+
 def discover_plugin_dirs(root: Path) -> list[Path]:
     root = Path(root)
     if not root.exists():
@@ -165,7 +246,20 @@ def load_plugins_from_roots(
                 entrypoint = manifest.entrypoint or "plugin.py:register"
                 register = _load_register_callable(d, plugin_id=manifest.plugin_id, entrypoint=entrypoint)
                 register(api)
-                loaded.append(LoadedPlugin(manifest=manifest, plugin_dir=d))
+                middlewares, hooks, declared_skills, declared_mcp_servers, declared_tools = (
+                    _resolve_declared_capabilities(manifest, d)
+                )
+                loaded.append(
+                    LoadedPlugin(
+                        manifest=manifest,
+                        plugin_dir=d,
+                        middlewares=middlewares,
+                        hooks=hooks,
+                        declared_skills=declared_skills,
+                        declared_mcp_servers=declared_mcp_servers,
+                        declared_tools=declared_tools,
+                    )
+                )
             except PluginLoadError as e:
                 errors.append((str(d), str(e)))
             except Exception as e:  # noqa: BLE001

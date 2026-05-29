@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+import textwrap
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from anyagent.agent_packs import AgentPack, AgentSpec
 from anyagent.agent_runtime.middleware import (
@@ -119,3 +123,97 @@ def test_server_builds_builtin_middleware_chain_from_runtime_order() -> None:
 
     assert chain is not None
     assert [type(item) for item in chain._middlewares] == [ContextCompactionMiddleware, LoopDetectionMiddleware]
+
+
+def _make_pack(middlewares: list[str]) -> AgentPack:
+    return AgentPack(
+        agent_id="main",
+        root_dir=Path("/tmp/anyagent-test/main"),
+        spec=AgentSpec.model_validate(
+            {
+                "exposed": True,
+                "tools": {"requested_tool_names": []},
+                "runtime": {
+                    "middlewares": middlewares,
+                    "context_compaction": {"enabled": False},
+                    "loop_detection": {"enabled": False},
+                },
+            }
+        ),
+        agents_md_path=Path("/tmp/anyagent-test/main/AGENTS.md"),
+        agents_md_text="You are main.",
+        agents_md_sha256="0" * 64,
+    )
+
+
+def test_server_loads_plugin_middleware_via_classpath(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "agent_cfg_mw.py").write_text(
+        textwrap.dedent(
+            """
+            from anyagent.agent_runtime.middleware import BaseMiddleware
+
+            class CustomMiddleware(BaseMiddleware):
+                pass
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    sys.modules.pop("agent_cfg_mw", None)
+
+    pack = _make_pack(["agent_cfg_mw:CustomMiddleware"])
+    chain = _build_agent_middleware_chain(pack)
+
+    assert chain is not None
+    assert [type(item).__name__ for item in chain._middlewares] == ["CustomMiddleware"]
+
+
+def test_server_skips_unloadable_classpath_middleware_gracefully() -> None:
+    pack = _make_pack(["anyagent_missing_module_zzz:Nope"])
+
+    # A bad classpath must not raise; it is logged and skipped, leaving no chain.
+    chain = _build_agent_middleware_chain(pack)
+
+    assert chain is None
+
+
+def test_server_preserves_runtime_middleware_order_mixing_builtin_and_classpath(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "agent_order_mw.py").write_text(
+        textwrap.dedent(
+            """
+            from anyagent.agent_runtime.middleware import BaseMiddleware
+
+            class OrderMiddleware(BaseMiddleware):
+                pass
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    sys.modules.pop("agent_order_mw", None)
+
+    pack = AgentPack(
+        agent_id="main",
+        root_dir=Path("/tmp/anyagent-test/main"),
+        spec=AgentSpec.model_validate(
+            {
+                "exposed": True,
+                "tools": {"requested_tool_names": []},
+                "runtime": {
+                    "middlewares": ["agent_order_mw:OrderMiddleware", "loop_detection"],
+                    "context_compaction": {"enabled": False},
+                    "loop_detection": {"enabled": True},
+                },
+            }
+        ),
+        agents_md_path=Path("/tmp/anyagent-test/main/AGENTS.md"),
+        agents_md_text="You are main.",
+        agents_md_sha256="0" * 64,
+    )
+
+    chain = _build_agent_middleware_chain(pack)
+
+    assert chain is not None
+    assert [type(item).__name__ for item in chain._middlewares] == ["OrderMiddleware", "LoopDetectionMiddleware"]

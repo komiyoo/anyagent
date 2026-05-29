@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -50,7 +51,11 @@ from anyagent.agent_runtime import (
 )
 from anyagent.agent_runtime.session_runtime import input_to_transcript_items
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp, run_tool_loop_nonstream, run_tool_loop_stream_live
-from anyagent.agent_runtime.middleware import MiddlewareChain
+from anyagent.agent_runtime.middleware import (
+    MiddlewareChain,
+    MiddlewareLoadError,
+    load_middleware_from_classpath,
+)
 from anyagent.agent_runtime.middlewares import ContextCompactionMiddleware, LoopDetectionMiddleware
 from anyagent.agent_runtime.model_providers import get_default_model_provider  # re-exported for existing smoke monkeypatches
 from anyagent.gateway.sequencer import KeyedSequencer
@@ -122,6 +127,17 @@ from anyagent.server.streaming import (
 from anyagent.server.workspace_env import load_workspace_runtime_environment
 
 
+_LOGGER = logging.getLogger(__name__)
+
+_BUILTIN_MIDDLEWARE_ALIASES = {
+    "loop_detection": "loop_detection",
+    "loopdetectionmiddleware": "loop_detection",
+    "context_compaction": "context_compaction",
+    "contextcompactionmiddleware": "context_compaction",
+    "compaction": "context_compaction",
+}
+
+
 def _build_agent_middleware_chain(pack: AgentPack) -> MiddlewareChain | None:
     configured_order = [item.strip() for item in (pack.spec.runtime.middlewares or []) if isinstance(item, str) and item.strip()]
     order = configured_order or ["loop_detection", "context_compaction"]
@@ -131,7 +147,8 @@ def _build_agent_middleware_chain(pack: AgentPack) -> MiddlewareChain | None:
 
     def _append(name: str) -> None:
         normalized = name.rsplit(":", 1)[-1].rsplit(".", 1)[-1].lower().replace("-", "_")
-        if normalized in {"loop_detection", "loopdetectionmiddleware"} and loop_cfg.enabled:
+        builtin = _BUILTIN_MIDDLEWARE_ALIASES.get(normalized)
+        if builtin == "loop_detection" and loop_cfg.enabled:
             middlewares.append(
                 LoopDetectionMiddleware(
                     window_size=loop_cfg.window_size,
@@ -139,7 +156,8 @@ def _build_agent_middleware_chain(pack: AgentPack) -> MiddlewareChain | None:
                     hard_limit=loop_cfg.hard_limit,
                 )
             )
-        elif normalized in {"context_compaction", "contextcompactionmiddleware", "compaction"} and compaction_cfg.enabled:
+            return
+        if builtin == "context_compaction" and compaction_cfg.enabled:
             middlewares.append(
                 ContextCompactionMiddleware(
                     max_context_tokens=compaction_cfg.max_context_tokens,
@@ -147,9 +165,37 @@ def _build_agent_middleware_chain(pack: AgentPack) -> MiddlewareChain | None:
                     keep_recent_tokens=compaction_cfg.keep_recent_tokens,
                 )
             )
+            return
+        if builtin is not None:
+            # A known builtin whose config is disabled — intentionally skipped.
+            return
+        # Not a builtin name: treat as a "module.path:ClassName" classpath so a
+        # plugin-provided middleware can be wired purely via runtime.middlewares.
+        # Failures are logged and skipped to keep the run resilient (no-op safe).
+        try:
+            middlewares.append(load_middleware_from_classpath(name))
+        except MiddlewareLoadError as e:
+            _LOGGER.warning("skipping middleware %r for agent %r: %s", name, pack.agent_id, e)
 
     for name in order:
         _append(name)
+    if not configured_order and loop_cfg.enabled and not any(isinstance(m, LoopDetectionMiddleware) for m in middlewares):
+        middlewares.append(
+            LoopDetectionMiddleware(
+                window_size=loop_cfg.window_size,
+                warn_threshold=loop_cfg.warn_threshold,
+                hard_limit=loop_cfg.hard_limit,
+            )
+        )
+    if not configured_order and compaction_cfg.enabled and not any(isinstance(m, ContextCompactionMiddleware) for m in middlewares):
+        middlewares.append(
+            ContextCompactionMiddleware(
+                max_context_tokens=compaction_cfg.max_context_tokens,
+                trigger_ratio=compaction_cfg.trigger_ratio,
+                keep_recent_tokens=compaction_cfg.keep_recent_tokens,
+            )
+        )
+    return MiddlewareChain(middlewares) if middlewares else None
     if not configured_order and loop_cfg.enabled and not any(isinstance(m, LoopDetectionMiddleware) for m in middlewares):
         middlewares.append(
             LoopDetectionMiddleware(
