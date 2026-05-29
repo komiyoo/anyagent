@@ -10,10 +10,12 @@ import httpx
 
 from anyagent.agent_packs import AgentPack
 from anyagent.agent_runtime import (
+    SkillInjector,
     build_default_environment_context_values,
     build_prompt_envelope,
     dedupe_strs,
     extract_allowed_function_tool_names,
+    resolve_skill_injection_token_budget,
 )
 from anyagent.mcp import MCPManagerRegistry, MCPServerManager
 from anyagent.protocol.openai_responses import validate_tool_choice
@@ -23,10 +25,8 @@ from anyagent.skills import (
     SkillEnablement,
     apply_skills_permissions_to_tool_context,
     dedupe_skills_by_name,
-    extract_user_texts_from_responses_request,
     requested_tool_names_for_skills,
     resolve_disabled_skill_stable_ids,
-    select_skills,
 )
 from anyagent.skills.models import SkillPackage
 from anyagent.tool_runtime import ToolRuntimeClient, fetch_manifest_tools as default_fetch_manifest_tools
@@ -109,15 +109,17 @@ async def prepare_response_tooling_context(
     )
 
     enablement = SkillEnablement(user_disabled_paths=disabled)
-    user_texts = extract_user_texts_from_responses_request(body)
-    selected_skills, skill_decisions = select_skills(
+    injection = SkillInjector(
+        token_budget=resolve_skill_injection_token_budget(metadata=metadata if isinstance(metadata, dict) else None),
+    ).select_for_request(
         skills=all_skills,
         enablement=enablement,
+        body=body,
         metadata=metadata if isinstance(metadata, dict) else None,
-        user_texts=user_texts,
         default_selected=pack.spec.skills.default_selected,
-        allow_implicit_invocation=False,
     )
+    selected_skills = injection.selected_skills
+    skill_decisions = [*injection.selection_decisions, *injection.budget_warnings]
     enabled_skills = [s.stable_id for s in selected_skills]
 
     try:

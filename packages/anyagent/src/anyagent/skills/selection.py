@@ -22,7 +22,7 @@ class SkillSelectionDecision:
     skill_stable_id: str | None = None
 
 
-_MENTION_RE = re.compile(r"(?:^|\\s)\\$(?P<name>[a-zA-Z0-9_.-]{1,64})(?=\\s|$)")
+_MENTION_RE = re.compile(r"(?:^|\s)\$(?P<name>[a-zA-Z0-9_.-]{1,64})(?=\s|$)")
 
 
 def _parse_metadata_skills(metadata: dict[str, Any] | None) -> tuple[list[str], list[SkillSelectionDecision]]:

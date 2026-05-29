@@ -24,7 +24,7 @@
 
 ### Phase 1.5 — Agentic Ecosystem Hardening
 
-- [ ] P0 Skill → Agent Loop 注入管道:在 `agent_runtime` 增加 `SkillInjector`,负责解析用户输入中的 skill mention → 读取 SKILL.md → 注入到 prompt context,带可配置 token budget(Req: `requirements.md#req-5`)
+- [x] P0 Skill → Agent Loop 注入管道:在 `agent_runtime` 增加 `SkillInjector`,负责解析用户输入中的 skill mention → 读取 SKILL.md → 注入到 prompt context,带可配置 token budget(Req: `requirements.md#req-5`; Impl: `packages/anyagent/src/anyagent/agent_runtime/skill_injector.py:40`; Module: `anyagent.agent_runtime`)
 - [ ] P1 配置层级 merge:支持 system(`/etc/anyagent/`) → user(`~/.anyagent/`) → workspace(`.anyagent/`) → session(CLI override) 的配置合并策略,workspace 层有安全 denylist(Req: `requirements.md#req-5`)
 - [ ] P1 MCP 生命周期 Stage Events:对齐 `anyagent.protocol.events` 发射 `mcp.server.starting` / `mcp.server.ready` / `mcp.server.failed` 事件,可被 SDK 消费(Req: `requirements.md#req-5`、`requirements.md#req-5-13`)
 - [ ] P2 AGENTS.md 层级遍历:支持从 cwd 到 project root 每层收集 AGENTS.md,拼接后注入 agent instructions,带 byte budget 限制(monorepo 场景)(Req: `requirements.md#req-5`)

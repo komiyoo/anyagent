@@ -1,5 +1,9 @@
 __all__ = [
     "SkillInjectionWarning",
+    "SkillInjectionBudgetWarning",
+    "SkillInjectionResult",
+    "SkillInjector",
+    "resolve_skill_injection_token_budget",
     "build_skills_injection_text",
     "build_agents_md_injection_text",
     "PromptEnvelope",
@@ -60,6 +64,12 @@ from anyagent.protocol.prompt_context import PromptEnvelope
 
 from .prompt_injection import build_agents_md_injection_text
 from .prompt_envelope import build_default_environment_context_values, build_prompt_envelope
+from .skill_injector import (
+    SkillInjectionBudgetWarning,
+    SkillInjectionResult,
+    SkillInjector,
+    resolve_skill_injection_token_budget,
+)
 from .session_runtime import (
     MANAGED_RUNTIME_FIELDS,
     PreparedSessionRequest,

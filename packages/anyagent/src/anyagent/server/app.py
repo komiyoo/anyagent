@@ -41,9 +41,11 @@ from anyagent.mcp import MCPConfig
 from anyagent.mcp.auth import CredentialResolver
 from anyagent.skills.loader import SkillLoadError, load_skill_package
 from anyagent.agent_runtime import (
+    SkillInjector,
     build_default_environment_context_values,
     build_prompt_envelope,
     persist_session_snapshot,
+    resolve_skill_injection_token_budget,
 )
 from anyagent.agent_runtime.session_runtime import input_to_transcript_items
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp, run_tool_loop_nonstream, run_tool_loop_stream_live
@@ -143,9 +145,7 @@ from anyagent.storage.settings import StorageSettings
 from anyagent.skills import (
     SkillEnablement,
     apply_skills_permissions_to_tool_context,
-    extract_user_texts_from_responses_request,
     resolve_disabled_skill_stable_ids,
-    select_skills,
 )
 
 _SKILL_DIRECTORY_RE = re.compile(r"^[a-zA-Z0-9_.-]{1,64}$")
@@ -2230,20 +2230,23 @@ def _build_agent_manifest_request(
 
 async def _select_skills(state: AnyAgentServerApp, *, pack: AgentPack, body: dict[str, Any]) -> list[Any]:
     visible_skills, _errors = state.runtime.visible_skills_for_agent(pack.agent_id)
+    metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     disabled = resolve_disabled_skill_stable_ids(
         pack.spec.skills.disabled_paths,
         skills=visible_skills,
         base_dir=pack.root_dir,
     )
     enablement = SkillEnablement(user_disabled_paths=disabled)
-    selected, _decisions = select_skills(
+    result = SkillInjector(
+        token_budget=resolve_skill_injection_token_budget(metadata=metadata),
+    ).select_for_request(
         skills=visible_skills,
         enablement=enablement,
-        metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else None,
-        user_texts=extract_user_texts_from_responses_request(body),
+        body=body,
+        metadata=metadata,
         default_selected=pack.spec.skills.default_selected,
     )
-    return selected
+    return result.selected_skills
 
 
 def _build_server_tool_context(*, pack: AgentPack, body: dict[str, Any], selected_skills: list[Any]) -> ToolContext:
