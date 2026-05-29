@@ -7,13 +7,20 @@ from anyagent.protocol.sandbox import FileSystemSandboxPolicy, SandboxPolicy
 from anyagent.storage import SessionWorkspaceRecord
 
 from .backends import CommandExecutionResult, LocalUnsafeBackend
+from .opensandbox_backend import OpenSandboxWorkspaceBackend
 from .workspace import LocalSessionWorkspaceService
 
 
 class SandboxManager:
-    def __init__(self, *, root_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        root_dir: str | Path | None = None,
+        opensandbox_backend: OpenSandboxWorkspaceBackend | None = None,
+    ) -> None:
         base_root = Path(root_dir) if root_dir is not None else None
         self._local_unsafe = LocalUnsafeBackend(root_dir=base_root)
+        self._opensandbox = opensandbox_backend
         self._workspace_service = LocalSessionWorkspaceService(
             root_dir=(base_root or (self._local_unsafe.root_dir / "_workspace_state"))
         )
@@ -42,7 +49,16 @@ class SandboxManager:
         if mode not in {"local-unsafe", "external", "opensandbox"}:
             raise RuntimeError(f"unsupported sandbox mode: {mode}")
         if mode == "opensandbox":
-            raise RuntimeError(f"sandbox backend not implemented yet: {mode}")
+            if self._opensandbox is None:
+                raise RuntimeError("opensandbox backend is not configured")
+            return await self._opensandbox.execute_command(
+                policy=policy,
+                agent_id=agent_id,
+                session_key=session_key,
+                cmd=cmd,
+                workdir=workdir,
+                timeout_seconds=timeout_seconds,
+            )
         session_pk = session_partition_key(agent_id=agent_id, session_key=session_key)
         filesystem = _effective_filesystem_policy(policy)
         if filesystem.persistence_mode == "session_hot_cold":
@@ -66,12 +82,22 @@ class SandboxManager:
         agent_id: str,
         session_key: str,
     ) -> SessionWorkspaceRecord | None:
+        if self._opensandbox is not None:
+            record = await self._opensandbox.get_workspace(agent_id=agent_id, session_key=session_key)
+            if record is not None:
+                return record
         return self._workspace_service.get(
             session_partition_key=session_partition_key(agent_id=agent_id, session_key=session_key)
         )
 
     async def list_workspaces(self) -> list[SessionWorkspaceRecord]:
-        return self._workspace_service.list()
+        local = self._workspace_service.list()
+        if self._opensandbox is None:
+            return local
+        by_key = {record.session_partition_key: record for record in local}
+        for record in await self._opensandbox.list_workspaces():
+            by_key[record.session_partition_key] = record
+        return list(by_key.values())
 
     async def checkpoint(
         self,
@@ -80,6 +106,10 @@ class SandboxManager:
         agent_id: str,
         session_key: str,
     ) -> SessionWorkspaceRecord:
+        if policy.mode == "opensandbox":
+            if self._opensandbox is None:
+                raise RuntimeError("opensandbox backend is not configured")
+            return await self._opensandbox.hibernate_workspace(agent_id=agent_id, session_key=session_key)
         filesystem = _effective_filesystem_policy(policy)
         return await self._workspace_service.checkpoint(
             session_partition_key=session_partition_key(agent_id=agent_id, session_key=session_key),
@@ -93,6 +123,10 @@ class SandboxManager:
         agent_id: str,
         session_key: str,
     ) -> SessionWorkspaceRecord:
+        if policy.mode == "opensandbox":
+            if self._opensandbox is None:
+                raise RuntimeError("opensandbox backend is not configured")
+            return await self._opensandbox.hibernate_workspace(agent_id=agent_id, session_key=session_key)
         filesystem = _effective_filesystem_policy(policy)
         return await self._workspace_service.hibernate(
             session_partition_key=session_partition_key(agent_id=agent_id, session_key=session_key),
@@ -105,6 +139,8 @@ class SandboxManager:
         agent_id: str,
         session_key: str,
     ) -> None:
+        if self._opensandbox is not None:
+            await self._opensandbox.delete_workspace(agent_id=agent_id, session_key=session_key)
         await self._workspace_service.destroy(
             session_partition_key=session_partition_key(agent_id=agent_id, session_key=session_key)
         )
@@ -118,6 +154,16 @@ class SandboxManager:
         src_dir: str | Path,
         record: SessionWorkspaceRecord,
     ) -> SessionWorkspaceRecord:
+        if policy.mode == "opensandbox":
+            if self._opensandbox is None:
+                raise RuntimeError("opensandbox backend is not configured")
+            return await self._opensandbox.restore_workspace_from_directory(
+                policy=policy,
+                agent_id=agent_id,
+                session_key=session_key,
+                src_dir=src_dir,
+                record=record,
+            )
         filesystem = _effective_filesystem_policy(policy)
         lease = await self._workspace_service.restore_from_directory(
             session_partition_key=session_partition_key(agent_id=agent_id, session_key=session_key),

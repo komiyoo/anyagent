@@ -117,7 +117,7 @@ from anyagent.server.streaming import (
 from anyagent.server.workspace_env import load_workspace_runtime_environment
 from anyagent.server.runs import RunRegistry
 from anyagent.server.runtime import InProcessToolRuntimeService
-from anyagent.server.sandbox import SandboxManager
+from anyagent.server.sandbox import OpenSandboxWorkspaceBackend, SandboxManager
 from anyagent.server.security import (
     CredentialRuntimeConfig,
     InMemoryCredentialStore,
@@ -185,6 +185,21 @@ def _emit_server_response_event(
         category="server",
         level=level,
         payload={key: value for key, value in payload.items() if value is not None},
+    )
+
+
+def _build_opensandbox_backend_if_needed(catalog: AgentCatalog) -> OpenSandboxWorkspaceBackend | None:
+    if not any(pack.spec.sandbox.mode == "opensandbox" for pack in catalog.packs.values()):
+        return None
+    return OpenSandboxWorkspaceBackend(
+        base_url=(os.getenv("OPENSANDBOX_BASE_URL") or "").strip(),
+        api_key=(os.getenv("OPENSANDBOX_API_KEY") or "").strip() or None,
+        workspace_root=(os.getenv("SANDBOX_WORKSPACE_ROOT") or "/workspace").strip() or "/workspace",
+        image=(os.getenv("OPENSANDBOX_IMAGE") or "ubuntu:24.04").strip() or "ubuntu:24.04",
+        sandbox_timeout_s=int(os.getenv("OPENSANDBOX_TIMEOUT_S") or "3600"),
+        cpu_limit=(os.getenv("OPENSANDBOX_CPU_LIMIT") or "1000m").strip() or "1000m",
+        memory_limit=(os.getenv("OPENSANDBOX_MEMORY_LIMIT") or "1Gi").strip() or "1Gi",
+        proxy_port=int(os.getenv("OPENSANDBOX_PROXY_PORT") or "44772"),
     )
 
 
@@ -273,16 +288,8 @@ def create_app(
     models_config = load_workspace_models_config(workspace)
     if not any(pack.spec.exposed for pack in catalog.packs.values()):
         raise RuntimeError("workspace must define at least one exposed agent")
-    unsupported_opensandbox = [
-        pack.agent_id for pack in catalog.packs.values() if pack.spec.sandbox.mode == "opensandbox"
-    ]
-    if unsupported_opensandbox:
-        raise RuntimeError(
-            "opensandbox backend is not implemented in this repository build: "
-            + ",".join(sorted(unsupported_opensandbox))
-        )
-
-    sandbox_manager = SandboxManager(root_dir=sandbox_root_dir)
+    opensandbox_backend = _build_opensandbox_backend_if_needed(catalog)
+    sandbox_manager = SandboxManager(root_dir=sandbox_root_dir, opensandbox_backend=opensandbox_backend)
     credential_store = InMemoryCredentialStore()
     mcp_credential_store = build_credential_resolver_from_config(
         CredentialRuntimeConfig(

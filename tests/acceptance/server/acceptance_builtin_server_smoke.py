@@ -359,14 +359,15 @@ async def _run_builtin_server_ignores_caller_policy_for_exec(*, tmp_path: Path, 
         assert "exec" not in observed_tools, observed_tools
 
 
-def test_builtin_server_opensandbox_fails_fast(tmp_path: Path) -> None:
+def test_builtin_server_opensandbox_requires_base_url(tmp_path: Path, monkeypatch) -> None:
     _write_workspace_opensandbox(tmp_path)
+    monkeypatch.delenv("OPENSANDBOX_BASE_URL", raising=False)
     try:
         create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
     except RuntimeError as e:
-        assert "opensandbox backend is not implemented" in str(e)
+        assert "opensandbox backend requires OPENSANDBOX_BASE_URL" in str(e)
         return
-    raise AssertionError("create_app should fail fast when sandbox.mode=opensandbox")
+    raise AssertionError("create_app should require OPENSANDBOX_BASE_URL when sandbox.mode=opensandbox")
 
 
 def test_stream_created_block_shape() -> None:

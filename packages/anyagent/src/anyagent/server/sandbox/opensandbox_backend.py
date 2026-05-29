@@ -218,7 +218,7 @@ class OpenSandboxWorkspaceBackend:
         timeout_seconds: int,
     ) -> CommandExecutionResult:
         record = await self._ensure_sandbox(policy=policy, agent_id=agent_id, session_key=session_key)
-        cwd = _resolve_workdir(workspace_root=self.workspace_root, workdir=workdir)
+        cwd = _resolve_workdir(workspace_root=_workspace_root_for_policy(policy, default=self.workspace_root), workdir=workdir)
         result = await self._run_command(
             sandbox_id=str(record.sandbox_id),
             cmd=cmd,
@@ -246,7 +246,7 @@ class OpenSandboxWorkspaceBackend:
         record: SessionWorkspaceRecord,
     ) -> SessionWorkspaceRecord:
         session_pk = session_partition_key(agent_id=agent_id, session_key=session_key)
-        sandbox_id = await self._create_sandbox(session_pk=session_pk)
+        sandbox_id = await self._create_sandbox(policy=policy, session_pk=session_pk)
         archive_path = self._build_archive(src_dir=src_dir)
         remote_archive = "/tmp/anyagent-opensandbox/workspace.tar.gz"
         try:
@@ -385,7 +385,7 @@ class OpenSandboxWorkspaceBackend:
             self._records[session_pk] = updated
             return updated
 
-        sandbox_id = await self._create_sandbox(session_pk=session_pk)
+        sandbox_id = await self._create_sandbox(policy=policy, session_pk=session_pk)
         workspace_id = f"ws_{hashlib.sha256(session_pk.encode('utf-8', errors='replace')).hexdigest()[:16]}"
         record = SessionWorkspaceRecord(
             session_partition_key=session_pk,
@@ -399,22 +399,24 @@ class OpenSandboxWorkspaceBackend:
         self._records[session_pk] = record
         return record
 
-    async def _create_sandbox(self, *, session_pk: str) -> str:
-        home_dir = posixpath.join(self.workspace_root, "home")
-        tmp_dir = posixpath.join(self.workspace_root, "tmp")
+    async def _create_sandbox(self, *, policy: SandboxPolicy, session_pk: str) -> str:
+        workspace_root = _workspace_root_for_policy(policy, default=self.workspace_root)
+        home_dir = posixpath.join(workspace_root, "home")
+        tmp_dir = posixpath.join(workspace_root, "tmp")
         bootstrap_cmd = (
-            f"mkdir -p {shlex.quote(self.workspace_root)} {shlex.quote(home_dir)} {shlex.quote(tmp_dir)} "
+            f"mkdir -p {shlex.quote(workspace_root)} {shlex.quote(home_dir)} {shlex.quote(tmp_dir)} "
             f"&& sleep infinity"
         )
         request = OpenSandboxCreateSandboxRequest(
             image=OpenSandboxImageSpec(uri=self.image),
-            timeout=self.sandbox_timeout_s,
-            resourceLimits={"cpu": self.cpu_limit, "memory": self.memory_limit},
+            timeout=_sandbox_timeout_for_policy(policy, default=self.sandbox_timeout_s),
+            resourceLimits=_resource_limits_for_policy(
+                policy,
+                default_cpu_limit=self.cpu_limit,
+                default_memory_limit=self.memory_limit,
+            ),
             env={"HOME": home_dir, "TMPDIR": tmp_dir},
-            metadata={
-                "session_partition_key": _safe_label_value(session_pk),
-                "workspace_root": "workspace",
-            },
+            metadata=_metadata_for_policy(policy, session_pk=session_pk, workspace_root=workspace_root),
             entrypoint=["/bin/bash", "-lc", bootstrap_cmd],
         )
         response = await self._client.post(
@@ -590,3 +592,58 @@ class OpenSandboxWorkspaceBackend:
             tar.extractall(path=workspace_dir, filter="data")
         archive_path.unlink(missing_ok=True)
         return workspace_dir, digest, len(payload)
+
+
+def _workspace_root_for_policy(policy: SandboxPolicy, *, default: str) -> str:
+    if policy.filesystem is not None and isinstance(policy.filesystem.workspace_root, str):
+        value = policy.filesystem.workspace_root.strip()
+        if value:
+            return value
+    return default
+
+
+def _sandbox_timeout_for_policy(policy: SandboxPolicy, *, default: int) -> int:
+    raw = policy.ttl_seconds if isinstance(policy.ttl_seconds, int) else default
+    return max(60, min(86400, int(raw)))
+
+
+def _resource_limits_for_policy(
+    policy: SandboxPolicy,
+    *,
+    default_cpu_limit: str,
+    default_memory_limit: str,
+) -> dict[str, str]:
+    limits = {"cpu": default_cpu_limit, "memory": default_memory_limit}
+    resources = policy.resource_limits
+    if resources is None:
+        return limits
+    if resources.cpu_cores is not None:
+        limits["cpu"] = f"{max(1, int(resources.cpu_cores * 1000))}m"
+    if resources.memory_mb is not None:
+        limits["memory"] = f"{int(resources.memory_mb)}Mi"
+    if resources.disk_mb is not None:
+        limits["disk"] = f"{int(resources.disk_mb)}Mi"
+    return limits
+
+
+def _metadata_for_policy(policy: SandboxPolicy, *, session_pk: str, workspace_root: str) -> dict[str, str]:
+    metadata = {
+        "session_partition_key": _safe_label_value(session_pk),
+        "workspace_root": workspace_root,
+        "sandbox_mode": policy.mode,
+    }
+    if policy.network is not None:
+        metadata["network_enabled"] = "true" if policy.network.enabled else "false"
+        metadata["network_allow_hosts"] = json.dumps(policy.network.allow_hosts or [], separators=(",", ":"))
+        metadata["network_deny_hosts"] = json.dumps(policy.network.deny_hosts or [], separators=(",", ":"))
+    if policy.resource_limits is not None and policy.resource_limits.output_max_bytes is not None:
+        metadata["output_max_bytes"] = str(int(policy.resource_limits.output_max_bytes))
+    if policy.filesystem is not None:
+        metadata["filesystem_persistence_mode"] = policy.filesystem.persistence_mode
+        if policy.filesystem.hot_idle_ttl_s is not None:
+            metadata["filesystem_hot_idle_ttl_s"] = str(int(policy.filesystem.hot_idle_ttl_s))
+        if policy.filesystem.cold_retention_s is not None:
+            metadata["filesystem_cold_retention_s"] = str(int(policy.filesystem.cold_retention_s))
+        if policy.filesystem.max_snapshot_bytes is not None:
+            metadata["filesystem_max_snapshot_bytes"] = str(int(policy.filesystem.max_snapshot_bytes))
+    return metadata

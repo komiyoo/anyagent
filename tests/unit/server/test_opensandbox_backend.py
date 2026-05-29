@@ -7,7 +7,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from anyagent.protocol.sandbox import FileSystemSandboxPolicy, SandboxPolicy
+from anyagent.protocol.sandbox import FileSystemSandboxPolicy, NetworkSandboxPolicy, ResourceLimits, SandboxPolicy
 from anyagent.server.sandbox.opensandbox_backend import OpenSandboxWorkspaceBackend
 
 
@@ -16,9 +16,12 @@ def _mock_opensandbox_app() -> FastAPI:
     sandboxes: set[str] = set()
     fail_diagnostics = {"value": False}
     app.state.fail_diagnostics = fail_diagnostics
+    app.state.create_payloads = []
+    app.state.command_payloads = []
 
     @app.post("/sandboxes")
-    async def create_sandbox(_request: Request) -> JSONResponse:
+    async def create_sandbox(request: Request) -> JSONResponse:
+        app.state.create_payloads.append(await request.json())
         sandboxes.add("sandbox-1")
         return JSONResponse(
             {
@@ -60,6 +63,7 @@ def _mock_opensandbox_app() -> FastAPI:
     async def run_command(sandbox_id: str, body: dict[str, object]) -> Response:
         if sandbox_id not in sandboxes:
             raise HTTPException(status_code=404, detail="sandbox not found")
+        app.state.command_payloads.append(dict(body))
         text = str(body.get("command") or "")
         if "fail" in text:
             events = [
@@ -94,10 +98,25 @@ def test_opensandbox_workspace_backend_executes_command_and_reports_diagnostics(
         backend._client = httpx.AsyncClient(transport=httpx.ASGITransport(app=mock_app), base_url="http://mock")
         policy = SandboxPolicy(
             mode="opensandbox",
+            network=NetworkSandboxPolicy(
+                enabled=False,
+                allow_hosts=["example.com"],
+                deny_hosts=["metadata.google.internal"],
+            ),
             filesystem=FileSystemSandboxPolicy(
                 persistence_mode="session_hot_cold",
-                workspace_root="/workspace",
+                workspace_root="/workspace/project",
+                hot_idle_ttl_s=30,
+                cold_retention_s=3600,
+                max_snapshot_bytes=4096,
             ),
+            resource_limits=ResourceLimits(
+                cpu_cores=0.5,
+                memory_mb=256,
+                disk_mb=1024,
+                output_max_bytes=128,
+            ),
+            ttl_seconds=120,
         )
         try:
             result = await backend.execute_command(
@@ -110,7 +129,29 @@ def test_opensandbox_workspace_backend_executes_command_and_reports_diagnostics(
             )
             assert result.exit_code == 0
             assert result.stdout == "ok\n"
-            assert result.cwd == "/workspace"
+            assert result.cwd == "/workspace/project"
+            create_payload = mock_app.state.create_payloads[0]
+            assert create_payload["timeout"] == 120
+            assert create_payload["resourceLimits"] == {
+                "cpu": "500m",
+                "memory": "256Mi",
+                "disk": "1024Mi",
+            }
+            assert create_payload["env"] == {
+                "HOME": "/workspace/project/home",
+                "TMPDIR": "/workspace/project/tmp",
+            }
+            assert create_payload["metadata"]["network_enabled"] == "false"
+            assert create_payload["metadata"]["network_allow_hosts"] == '["example.com"]'
+            assert create_payload["metadata"]["network_deny_hosts"] == '["metadata.google.internal"]'
+            assert create_payload["metadata"]["output_max_bytes"] == "128"
+            assert create_payload["metadata"]["filesystem_persistence_mode"] == "session_hot_cold"
+            assert create_payload["metadata"]["filesystem_hot_idle_ttl_s"] == "30"
+            assert create_payload["metadata"]["filesystem_cold_retention_s"] == "3600"
+            assert create_payload["metadata"]["filesystem_max_snapshot_bytes"] == "4096"
+            assert create_payload["entrypoint"][-1].startswith("mkdir -p /workspace/project ")
+            assert mock_app.state.command_payloads[0]["cwd"] == "/workspace/project"
+            assert mock_app.state.command_payloads[0]["timeout"] == 10000
 
             failed = await backend.execute_command(
                 policy=policy,
@@ -122,7 +163,7 @@ def test_opensandbox_workspace_backend_executes_command_and_reports_diagnostics(
             )
             assert failed.exit_code == 7
             assert failed.stderr == "bad\nexit status 7"
-            assert failed.cwd == "/workspace/subdir"
+            assert failed.cwd == "/workspace/project/subdir"
 
             ref = await backend.get_workspace(agent_id="main", session_key="s1")
             assert ref is not None

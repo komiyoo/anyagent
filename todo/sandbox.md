@@ -21,7 +21,7 @@
 ## 任务
 
 - [x] P0 选定第二 backend 候选(container 或 microVM),落 ADR(Req: `requirements.md#req-12`; Impl: `docs/architecture/decisions/sandbox-backend-selection.md:10`; Module: `docs.architecture.decisions`)
-- [ ] P0 实装第二 backend,跑通 SandboxPolicy / NetworkSandboxPolicy / ResourceLimits 全字段(Req: `requirements.md#req-12-1` ~ `requirements.md#req-12-8`)
+- [x] P0 实装第二 backend,跑通 SandboxPolicy / NetworkSandboxPolicy / ResourceLimits 全字段(Req: `requirements.md#req-12-1` ~ `requirements.md#req-12-8`; Impl: `packages/anyagent/src/anyagent/server/sandbox/manager.py:51`, `packages/anyagent/src/anyagent/server/sandbox/opensandbox_backend.py:402`, `tests/unit/server/test_opensandbox_backend.py:99`; Module: `anyagent.server.sandbox`)
 - [ ] P1 整理 sandbox contract test 矩阵,作为后续 backend 接入基线(Req: `requirements.md#req-12`)
 
 ## 决策 & 争议点
