@@ -11,3 +11,4 @@
 
 - [third-party/wx/agent_design_metting.md](third-party/wx/agent_design_metting.md)
 - [third-party/openai/harness-engineering.md](third-party/openai/harness-engineering.md)
+- [third-party/workspace-repos-tech-survey.md](third-party/workspace-repos-tech-survey.md)

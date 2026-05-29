@@ -41,6 +41,7 @@ from .model_providers import (
     ModelProviderTransportError,
     ModelProviderUpstreamError,
 )
+from .middleware import MiddlewareChain, MiddlewareContext
 from .skills_injection import inject_skills_into_responses_body
 from .tool_loop_payloads import build_tool_loop_followup_body, extract_allowed_function_tool_names
 from .tool_results import (
@@ -54,6 +55,76 @@ StageEventSink = Callable[[StageEvent], Awaitable[None]]
 ManifestRefresher = Callable[[], Awaitable[tuple[list[dict[str, Any]], int]]]
 ManifestResolver = Callable[[], Awaitable[tuple[list[dict[str, Any]], int]]]
 SystemToolExecutor = Callable[[str, object], Awaitable[str]]
+
+
+async def _middleware_before_model(
+    *,
+    chain: MiddlewareChain | None,
+    context: MiddlewareContext,
+    body: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    if chain is None or chain.empty:
+        return body, False
+    result = await chain.before_model_call(context, body)
+    return result.body or body, result.stop
+
+
+async def _middleware_after_model(
+    *,
+    chain: MiddlewareChain | None,
+    context: MiddlewareContext,
+    response: Response,
+    calls: list[ResponseFunctionToolCall],
+) -> tuple[list[ResponseFunctionToolCall], bool]:
+    if chain is None or chain.empty:
+        return calls, False
+    result = await chain.after_model_call(context, response, calls)
+    if result.suppress_calls or result.stop:
+        return [], result.stop
+    return calls, False
+
+
+async def _execute_one_tool_with_middleware(
+    *,
+    middleware_chain: MiddlewareChain | None,
+    middleware_context: MiddlewareContext,
+    model_provider: ModelProvider,
+    tool_runtime: ToolRuntimeClient,
+    mcp_manager: MCPServerManager | None,
+    agent_id: str,
+    session_key: str | None,
+    response_id: str,
+    toolset_version: int,
+    manifest_tools: list[dict[str, Any]],
+    tool_context: ToolContext,
+    manifest_refresher: ManifestRefresher | None,
+    system_tool_executor: SystemToolExecutor | None,
+    call: ResponseFunctionToolCall,
+    stage_event_sink: StageEventSink | None,
+) -> tuple[FunctionCallOutput | None, list[dict[str, Any]], int]:
+    if middleware_chain is not None and not middleware_chain.empty:
+        before = await middleware_chain.before_tool_execute(middleware_context, call)
+        if before.skip:
+            return before.override_output, manifest_tools, toolset_version
+    out, manifest_tools, toolset_version = await _execute_one_tool(
+        model_provider=model_provider,
+        tool_runtime=tool_runtime,
+        mcp_manager=mcp_manager,
+        agent_id=agent_id,
+        session_key=session_key,
+        response_id=response_id,
+        toolset_version=toolset_version,
+        manifest_tools=manifest_tools,
+        tool_context=tool_context,
+        manifest_refresher=manifest_refresher,
+        system_tool_executor=system_tool_executor,
+        call=call,
+        stage_event_sink=stage_event_sink,
+    )
+    if middleware_chain is not None and not middleware_chain.empty:
+        after = await middleware_chain.after_tool_execute(middleware_context, call, out)
+        out = after.result
+    return out, manifest_tools, toolset_version
 
 
 def _strip_anyagent_request_metadata(body: dict[str, Any]) -> dict[str, Any]:
@@ -523,6 +594,7 @@ async def run_tool_loop_nonstream(
     stage_event_sink: StageEventSink | None = None,
     prompt_envelope_applied: bool = False,
     system_tool_executor: SystemToolExecutor | None = None,
+    middleware_chain: MiddlewareChain | None = None,
 ) -> tuple[int, dict[str, Any]]:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     enabled_skills = [s.stable_id for s in (selected_skills or [])]
@@ -550,6 +622,19 @@ async def run_tool_loop_nonstream(
     body["stream"] = False
     if selected_skills and not prompt_envelope_applied:
         body, _warnings = inject_skills_into_responses_body(body=body, selected_skills=selected_skills, role="developer")
+    middleware_context = MiddlewareContext(
+        agent_id=agent_id,
+        session_key=session_key,
+        iter_index=0,
+        response_id=None,
+        canonical_response_id=canonical_response_id,
+        stage_event_sink=stage_event_sink,
+        metadata=metadata,
+        model_provider=model_provider,
+    )
+    body, stop = await _middleware_before_model(chain=middleware_chain, context=middleware_context, body=body)
+    if stop:
+        return 200, {"id": canonical_response_id or "resp_anyagent", "object": "response", "output": []}
 
     try:
         resp = await model_provider.create_response(body=body, idempotency_key=idempotency_key)
@@ -573,7 +658,18 @@ async def run_tool_loop_nonstream(
             break
 
         calls = _extract_function_calls(resp)
+        middleware_context.iter_index = iters
+        middleware_context.response_id = response_id
+        middleware_context.canonical_response_id = canonical_response_id or response_id
+        calls, stop_after_model = await _middleware_after_model(
+            chain=middleware_chain,
+            context=middleware_context,
+            response=resp,
+            calls=calls,
+        )
         if not calls:
+            break
+        if stop_after_model:
             break
 
         tool_outputs: list[FunctionCallOutput] = []
@@ -592,7 +688,9 @@ async def run_tool_loop_nonstream(
                 enabled_skills=enabled_skills or None,
             )
         for call in calls:
-            out, manifest_tools, toolset_version = await _execute_one_tool(
+            out, manifest_tools, toolset_version = await _execute_one_tool_with_middleware(
+                middleware_chain=middleware_chain,
+                middleware_context=middleware_context,
                 model_provider=model_provider,
                 tool_runtime=tool_runtime,
                 mcp_manager=mcp_manager,
@@ -624,6 +722,16 @@ async def run_tool_loop_nonstream(
             prompt_cache_key=body.get("prompt_cache_key") if isinstance(body.get("prompt_cache_key"), str) else None,
         )
         next_body = _strip_anyagent_request_metadata(next_body)
+        middleware_context.iter_index = iters
+        middleware_context.response_id = response_id
+        middleware_context.canonical_response_id = canonical_response_id or response_id
+        next_body, stop = await _middleware_before_model(
+            chain=middleware_chain,
+            context=middleware_context,
+            body=next_body,
+        )
+        if stop:
+            break
         try:
             resp = await model_provider.create_response(body=next_body, idempotency_key=None)
         except ModelProviderInvalidRequestError:
@@ -636,6 +744,16 @@ async def run_tool_loop_nonstream(
                 next_body=next_body,
                 tool_outputs=tool_outputs,
             )
+            middleware_context.iter_index = iters
+            middleware_context.response_id = response_id
+            middleware_context.canonical_response_id = canonical_response_id or response_id
+            fallback_body, stop = await _middleware_before_model(
+                chain=middleware_chain,
+                context=middleware_context,
+                body=fallback_body,
+            )
+            if stop:
+                break
             try:
                 resp = await model_provider.create_response(body=fallback_body, idempotency_key=None)
             except (ModelProviderInvalidRequestError, ModelProviderUpstreamError, ModelProviderTransportError):
@@ -666,6 +784,7 @@ async def run_tool_loop_stream_buffered(
     stage_event_sink: StageEventSink | None = None,
     prompt_envelope_applied: bool = False,
     system_tool_executor: SystemToolExecutor | None = None,
+    middleware_chain: MiddlewareChain | None = None,
 ) -> tuple[int, Iterable[bytes]]:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     enabled_skills = [s.stable_id for s in (selected_skills or [])]
@@ -693,6 +812,19 @@ async def run_tool_loop_stream_buffered(
     body["stream"] = True
     if selected_skills and not prompt_envelope_applied:
         body, _warnings = inject_skills_into_responses_body(body=body, selected_skills=selected_skills, role="developer")
+    middleware_context = MiddlewareContext(
+        agent_id=agent_id,
+        session_key=session_key,
+        iter_index=0,
+        response_id=None,
+        canonical_response_id=canonical_response_id,
+        stage_event_sink=stage_event_sink,
+        metadata=metadata,
+        model_provider=model_provider,
+    )
+    body, stop = await _middleware_before_model(chain=middleware_chain, context=middleware_context, body=body)
+    if stop:
+        return 200, [encode_sse_event(None, "[DONE]")]
 
     try:
         events0, completed0 = await model_provider.create_response_stream_buffered(body=body, idempotency_key=idempotency_key)
@@ -717,7 +849,18 @@ async def run_tool_loop_stream_buffered(
         if not isinstance(response_id, str) or not response_id.strip():
             break
         calls = _extract_function_calls(resp)
+        middleware_context.iter_index = iters
+        middleware_context.response_id = response_id
+        middleware_context.canonical_response_id = canonical_response_id or response_id
+        calls, stop_after_model = await _middleware_after_model(
+            chain=middleware_chain,
+            context=middleware_context,
+            response=resp,
+            calls=calls,
+        )
         if not calls:
+            break
+        if stop_after_model:
             break
 
         tool_outputs: list[FunctionCallOutput] = []
@@ -736,7 +879,9 @@ async def run_tool_loop_stream_buffered(
                 enabled_skills=enabled_skills or None,
             )
         for call in calls:
-            out, manifest_tools, toolset_version = await _execute_one_tool(
+            out, manifest_tools, toolset_version = await _execute_one_tool_with_middleware(
+                middleware_chain=middleware_chain,
+                middleware_context=middleware_context,
                 model_provider=model_provider,
                 tool_runtime=tool_runtime,
                 mcp_manager=mcp_manager,
@@ -767,6 +912,16 @@ async def run_tool_loop_stream_buffered(
             model=body.get("model") if isinstance(body.get("model"), str) else None,
             prompt_cache_key=body.get("prompt_cache_key") if isinstance(body.get("prompt_cache_key"), str) else None,
         )
+        middleware_context.iter_index = iters
+        middleware_context.response_id = response_id
+        middleware_context.canonical_response_id = canonical_response_id or response_id
+        next_body, stop = await _middleware_before_model(
+            chain=middleware_chain,
+            context=middleware_context,
+            body=next_body,
+        )
+        if stop:
+            break
 
         try:
             events_i, completed_i = await model_provider.create_response_stream_buffered(body=next_body, idempotency_key=None)
@@ -814,6 +969,7 @@ async def run_tool_loop_stream_live(
     stage_event_sink: StageEventSink | None = None,
     prompt_envelope_applied: bool = False,
     system_tool_executor: SystemToolExecutor | None = None,
+    middleware_chain: MiddlewareChain | None = None,
 ) -> AsyncIterator[bytes]:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
     enabled_skills = [s.stable_id for s in (selected_skills or [])]
@@ -845,11 +1001,31 @@ async def run_tool_loop_stream_live(
             selected_skills=selected_skills,
             role="developer",
         )
+    middleware_context = MiddlewareContext(
+        agent_id=agent_id,
+        session_key=session_key,
+        iter_index=0,
+        response_id=None,
+        canonical_response_id=canonical_response_id,
+        stage_event_sink=stage_event_sink,
+        metadata=metadata,
+        model_provider=model_provider,
+    )
 
     current_idempotency = idempotency_key
     canonical_id = canonical_response_id
 
     for _iter_index in range(max_iters):
+        middleware_context.iter_index = _iter_index
+        middleware_context.response_id = None
+        middleware_context.canonical_response_id = canonical_id
+        current_body, stop = await _middleware_before_model(
+            chain=middleware_chain,
+            context=middleware_context,
+            body=current_body,
+        )
+        if stop:
+            break
         live_stream = await _open_live_response_stream(
             model_provider=model_provider,
             body=current_body,
@@ -886,7 +1062,21 @@ async def run_tool_loop_stream_live(
             break
 
         calls = _extract_function_calls(resp)
+        middleware_context.iter_index = _iter_index + 1
+        middleware_context.response_id = response_id
+        middleware_context.canonical_response_id = canonical_id or response_id
+        calls, stop_after_model = await _middleware_after_model(
+            chain=middleware_chain,
+            context=middleware_context,
+            response=resp,
+            calls=calls,
+        )
         if not calls:
+            if pending_completed_block is not None:
+                yield pending_completed_block
+            yield encode_sse_event(None, "[DONE]")
+            return
+        if stop_after_model:
             if pending_completed_block is not None:
                 yield pending_completed_block
             yield encode_sse_event(None, "[DONE]")
@@ -908,7 +1098,9 @@ async def run_tool_loop_stream_live(
                 enabled_skills=enabled_skills or None,
             )
         for call in calls:
-            out, manifest_tools, toolset_version = await _execute_one_tool(
+            out, manifest_tools, toolset_version = await _execute_one_tool_with_middleware(
+                middleware_chain=middleware_chain,
+                middleware_context=middleware_context,
                 model_provider=model_provider,
                 tool_runtime=tool_runtime,
                 mcp_manager=mcp_manager,

@@ -10,8 +10,8 @@
         "Add internal tool-executions and model-request history endpoints."
       ],
       "date": "2026-05-29",
-      "protocol_version": "0.1.9",
-      "schema_version": "2026-05-27",
+      "protocol_version": "0.1.10",
+      "schema_version": "2026-05-29",
       "summary": "Initial versioned protocol schema bundle with endpoint manifest, semantic rules and OpenAPI export."
     }
   ],
@@ -7723,6 +7723,117 @@
           "title": "AnyAgentCommandResultEvent",
           "type": "object"
         },
+        "AnyAgentContextCompactedEvent": {
+          "additionalProperties": false,
+          "description": "A stateless request body was compacted before a follow-up model call.",
+          "properties": {
+            "items_after": {
+              "minimum": 0,
+              "title": "Items After",
+              "type": "integer"
+            },
+            "items_before": {
+              "minimum": 0,
+              "title": "Items Before",
+              "type": "integer"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reason"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "skipped": {
+              "default": false,
+              "title": "Skipped",
+              "type": "boolean"
+            },
+            "summary": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StagePayloadSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "tokens_after": {
+              "minimum": 0,
+              "title": "Tokens After",
+              "type": "integer"
+            },
+            "tokens_before": {
+              "minimum": 0,
+              "title": "Tokens Before",
+              "type": "integer"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.context.compacted",
+              "default": "anyagent.context.compacted",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "tokens_before",
+            "tokens_after",
+            "items_before",
+            "items_after"
+          ],
+          "title": "AnyAgentContextCompactedEvent",
+          "type": "object"
+        },
         "AnyAgentDoneEvent": {
           "additionalProperties": false,
           "description": "Terminal stage event emitted when `[DONE]` is observed.",
@@ -7839,6 +7950,158 @@
             "name"
           ],
           "title": "AnyAgentFunctionToolParam",
+          "type": "object"
+        },
+        "AnyAgentLoopTerminatedEvent": {
+          "additionalProperties": false,
+          "description": "A repeated tool-call pattern reached the hard loop limit.",
+          "properties": {
+            "hard_limit": {
+              "minimum": 1,
+              "title": "Hard Limit",
+              "type": "integer"
+            },
+            "repeat_count": {
+              "minimum": 1,
+              "title": "Repeat Count",
+              "type": "integer"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "tool_signature": {
+              "title": "Tool Signature",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.agent.loop_terminated",
+              "default": "anyagent.agent.loop_terminated",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "tool_signature",
+            "repeat_count",
+            "hard_limit"
+          ],
+          "title": "AnyAgentLoopTerminatedEvent",
+          "type": "object"
+        },
+        "AnyAgentLoopWarningEvent": {
+          "additionalProperties": false,
+          "description": "A repeated tool-call pattern is approaching the hard loop limit.",
+          "properties": {
+            "repeat_count": {
+              "minimum": 1,
+              "title": "Repeat Count",
+              "type": "integer"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "tool_signature": {
+              "title": "Tool Signature",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.agent.loop_warning",
+              "default": "anyagent.agent.loop_warning",
+              "title": "Type",
+              "type": "string"
+            },
+            "window_size": {
+              "minimum": 1,
+              "title": "Window Size",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "response_id",
+            "tool_signature",
+            "repeat_count",
+            "window_size"
+          ],
+          "title": "AnyAgentLoopWarningEvent",
           "type": "object"
         },
         "AnyAgentModelRequestEvent": {
@@ -8196,6 +8459,252 @@
             "response_id"
           ],
           "title": "AnyAgentPromptContextRenderedEvent",
+          "type": "object"
+        },
+        "AnyAgentSubAgentCompletedEvent": {
+          "additionalProperties": false,
+          "description": "A bounded sub-agent task has completed.",
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "child_response_id": {
+              "title": "Child Response Id",
+              "type": "string"
+            },
+            "duration_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Duration Ms"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.subagent.completed",
+              "default": "anyagent.subagent.completed",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "child_response_id",
+            "agent_id",
+            "status"
+          ],
+          "title": "AnyAgentSubAgentCompletedEvent",
+          "type": "object"
+        },
+        "AnyAgentSubAgentSpawnedEvent": {
+          "additionalProperties": false,
+          "description": "A bounded sub-agent task has been spawned from a parent run.",
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "child_response_id": {
+              "title": "Child Response Id",
+              "type": "string"
+            },
+            "depth": {
+              "minimum": 0,
+              "title": "Depth",
+              "type": "integer"
+            },
+            "parent_response_id": {
+              "title": "Parent Response Id",
+              "type": "string"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "task_description": {
+              "$ref": "#/$defs/StagePayloadSummary"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.subagent.spawned",
+              "default": "anyagent.subagent.spawned",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "parent_response_id",
+            "child_response_id",
+            "agent_id",
+            "depth",
+            "task_description"
+          ],
+          "title": "AnyAgentSubAgentSpawnedEvent",
+          "type": "object"
+        },
+        "AnyAgentSubAgentTimeoutEvent": {
+          "additionalProperties": false,
+          "description": "A bounded sub-agent task exceeded its configured timeout.",
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "child_response_id": {
+              "title": "Child Response Id",
+              "type": "string"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "timeout_ms": {
+              "minimum": 0,
+              "title": "Timeout Ms",
+              "type": "integer"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.subagent.timeout",
+              "default": "anyagent.subagent.timeout",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "child_response_id",
+            "agent_id",
+            "timeout_ms"
+          ],
+          "title": "AnyAgentSubAgentTimeoutEvent",
           "type": "object"
         },
         "AnyAgentToolExecutionDetailEvent": {
@@ -9365,8 +9874,11 @@
           "items": {
             "discriminator": {
               "mapping": {
+                "anyagent.agent.loop_terminated": "#/$defs/AnyAgentLoopTerminatedEvent",
+                "anyagent.agent.loop_warning": "#/$defs/AnyAgentLoopWarningEvent",
                 "anyagent.command.planned": "#/$defs/AnyAgentCommandPlannedEvent",
                 "anyagent.command.result": "#/$defs/AnyAgentCommandResultEvent",
+                "anyagent.context.compacted": "#/$defs/AnyAgentContextCompactedEvent",
                 "anyagent.done": "#/$defs/AnyAgentDoneEvent",
                 "anyagent.model.request": "#/$defs/AnyAgentModelRequestEvent",
                 "anyagent.model.stream_event": "#/$defs/AnyAgentModelStreamEvent",
@@ -9379,6 +9891,9 @@
                 "anyagent.sandbox.workspace.restore_failed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
                 "anyagent.sandbox.workspace.restored": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
                 "anyagent.sandbox.workspace.restoring": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
+                "anyagent.subagent.completed": "#/$defs/AnyAgentSubAgentCompletedEvent",
+                "anyagent.subagent.spawned": "#/$defs/AnyAgentSubAgentSpawnedEvent",
+                "anyagent.subagent.timeout": "#/$defs/AnyAgentSubAgentTimeoutEvent",
                 "anyagent.tool.execution.detail": "#/$defs/AnyAgentToolExecutionDetailEvent",
                 "anyagent.tool.planned": "#/$defs/AnyAgentToolPlannedEvent",
                 "anyagent.tool.result": "#/$defs/AnyAgentToolResultEvent"
@@ -9415,6 +9930,24 @@
               },
               {
                 "$ref": "#/$defs/AnyAgentWorkspaceLifecycleEvent"
+              },
+              {
+                "$ref": "#/$defs/AnyAgentSubAgentSpawnedEvent"
+              },
+              {
+                "$ref": "#/$defs/AnyAgentSubAgentCompletedEvent"
+              },
+              {
+                "$ref": "#/$defs/AnyAgentSubAgentTimeoutEvent"
+              },
+              {
+                "$ref": "#/$defs/AnyAgentContextCompactedEvent"
+              },
+              {
+                "$ref": "#/$defs/AnyAgentLoopWarningEvent"
+              },
+              {
+                "$ref": "#/$defs/AnyAgentLoopTerminatedEvent"
               },
               {
                 "$ref": "#/$defs/AnyAgentDoneEvent"
@@ -11517,6 +12050,22 @@
           "minLength": 1,
           "title": "Agent Id",
           "type": "string"
+        },
+        "context_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "isolated",
+                "fork_last_n"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Mode"
         },
         "description": {
           "minLength": 1,
@@ -14009,6 +14558,157 @@
       "title": "AnyAgentCommandResultEvent",
       "type": "object"
     },
+    "anyagent.protocol.stage_events.AnyAgentContextCompactedEvent": {
+      "$defs": {
+        "StagePayloadSummary": {
+          "additionalProperties": false,
+          "description": "A safe summary of a potentially sensitive payload.",
+          "properties": {
+            "bytes": {
+              "minimum": 0,
+              "title": "Bytes",
+              "type": "integer"
+            },
+            "preview": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Preview"
+            },
+            "preview_truncated": {
+              "default": false,
+              "title": "Preview Truncated",
+              "type": "boolean"
+            },
+            "sha256": {
+              "title": "Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ],
+          "title": "StagePayloadSummary",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "A stateless request body was compacted before a follow-up model call.",
+      "properties": {
+        "items_after": {
+          "minimum": 0,
+          "title": "Items After",
+          "type": "integer"
+        },
+        "items_before": {
+          "minimum": 0,
+          "title": "Items Before",
+          "type": "integer"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "skipped": {
+          "default": false,
+          "title": "Skipped",
+          "type": "boolean"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StagePayloadSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tokens_after": {
+          "minimum": 0,
+          "title": "Tokens After",
+          "type": "integer"
+        },
+        "tokens_before": {
+          "minimum": 0,
+          "title": "Tokens Before",
+          "type": "integer"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "const": "anyagent.context.compacted",
+          "default": "anyagent.context.compacted",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "response_id",
+        "tokens_before",
+        "tokens_after",
+        "items_before",
+        "items_after"
+      ],
+      "title": "AnyAgentContextCompactedEvent",
+      "type": "object"
+    },
     "anyagent.protocol.stage_events.AnyAgentDoneEvent": {
       "additionalProperties": false,
       "description": "Terminal stage event emitted when `[DONE]` is observed.",
@@ -14066,6 +14766,158 @@
         "response_id"
       ],
       "title": "AnyAgentDoneEvent",
+      "type": "object"
+    },
+    "anyagent.protocol.stage_events.AnyAgentLoopTerminatedEvent": {
+      "additionalProperties": false,
+      "description": "A repeated tool-call pattern reached the hard loop limit.",
+      "properties": {
+        "hard_limit": {
+          "minimum": 1,
+          "title": "Hard Limit",
+          "type": "integer"
+        },
+        "repeat_count": {
+          "minimum": 1,
+          "title": "Repeat Count",
+          "type": "integer"
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "tool_signature": {
+          "title": "Tool Signature",
+          "type": "string"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "const": "anyagent.agent.loop_terminated",
+          "default": "anyagent.agent.loop_terminated",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "response_id",
+        "tool_signature",
+        "repeat_count",
+        "hard_limit"
+      ],
+      "title": "AnyAgentLoopTerminatedEvent",
+      "type": "object"
+    },
+    "anyagent.protocol.stage_events.AnyAgentLoopWarningEvent": {
+      "additionalProperties": false,
+      "description": "A repeated tool-call pattern is approaching the hard loop limit.",
+      "properties": {
+        "repeat_count": {
+          "minimum": 1,
+          "title": "Repeat Count",
+          "type": "integer"
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "tool_signature": {
+          "title": "Tool Signature",
+          "type": "string"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "const": "anyagent.agent.loop_warning",
+          "default": "anyagent.agent.loop_warning",
+          "title": "Type",
+          "type": "string"
+        },
+        "window_size": {
+          "minimum": 1,
+          "title": "Window Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "response_id",
+        "tool_signature",
+        "repeat_count",
+        "window_size"
+      ],
+      "title": "AnyAgentLoopWarningEvent",
       "type": "object"
     },
     "anyagent.protocol.stage_events.AnyAgentModelRequestEvent": {
@@ -14592,6 +15444,292 @@
         "response_id"
       ],
       "title": "AnyAgentPromptContextRenderedEvent",
+      "type": "object"
+    },
+    "anyagent.protocol.stage_events.AnyAgentSubAgentCompletedEvent": {
+      "additionalProperties": false,
+      "description": "A bounded sub-agent task has completed.",
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "child_response_id": {
+          "title": "Child Response Id",
+          "type": "string"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "const": "anyagent.subagent.completed",
+          "default": "anyagent.subagent.completed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "response_id",
+        "child_response_id",
+        "agent_id",
+        "status"
+      ],
+      "title": "AnyAgentSubAgentCompletedEvent",
+      "type": "object"
+    },
+    "anyagent.protocol.stage_events.AnyAgentSubAgentSpawnedEvent": {
+      "$defs": {
+        "StagePayloadSummary": {
+          "additionalProperties": false,
+          "description": "A safe summary of a potentially sensitive payload.",
+          "properties": {
+            "bytes": {
+              "minimum": 0,
+              "title": "Bytes",
+              "type": "integer"
+            },
+            "preview": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Preview"
+            },
+            "preview_truncated": {
+              "default": false,
+              "title": "Preview Truncated",
+              "type": "boolean"
+            },
+            "sha256": {
+              "title": "Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ],
+          "title": "StagePayloadSummary",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "A bounded sub-agent task has been spawned from a parent run.",
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "child_response_id": {
+          "title": "Child Response Id",
+          "type": "string"
+        },
+        "depth": {
+          "minimum": 0,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "parent_response_id": {
+          "title": "Parent Response Id",
+          "type": "string"
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "task_description": {
+          "$ref": "#/$defs/StagePayloadSummary"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "const": "anyagent.subagent.spawned",
+          "default": "anyagent.subagent.spawned",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "response_id",
+        "parent_response_id",
+        "child_response_id",
+        "agent_id",
+        "depth",
+        "task_description"
+      ],
+      "title": "AnyAgentSubAgentSpawnedEvent",
+      "type": "object"
+    },
+    "anyagent.protocol.stage_events.AnyAgentSubAgentTimeoutEvent": {
+      "additionalProperties": false,
+      "description": "A bounded sub-agent task exceeded its configured timeout.",
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "child_response_id": {
+          "title": "Child Response Id",
+          "type": "string"
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "timeout_ms": {
+          "minimum": 0,
+          "title": "Timeout Ms",
+          "type": "integer"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "const": "anyagent.subagent.timeout",
+          "default": "anyagent.subagent.timeout",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "response_id",
+        "child_response_id",
+        "agent_id",
+        "timeout_ms"
+      ],
+      "title": "AnyAgentSubAgentTimeoutEvent",
       "type": "object"
     },
     "anyagent.protocol.stage_events.AnyAgentToolExecutionDetailEvent": {
@@ -17478,8 +18616,8 @@
     }
   },
   "protocol_package": "anyagent.protocol",
-  "protocol_version": "0.1.9",
-  "schema_version": "2026-05-27",
+  "protocol_version": "0.1.10",
+  "schema_version": "2026-05-29",
   "semantic_rules": {
     "anyagent.protocol.credential_vault.CredentialScope": [
       {
@@ -17992,6 +19130,117 @@
           "title": "AnyAgentCommandResultEvent",
           "type": "object"
         },
+        "AnyAgentContextCompactedEvent": {
+          "additionalProperties": false,
+          "description": "A stateless request body was compacted before a follow-up model call.",
+          "properties": {
+            "items_after": {
+              "minimum": 0,
+              "title": "Items After",
+              "type": "integer"
+            },
+            "items_before": {
+              "minimum": 0,
+              "title": "Items Before",
+              "type": "integer"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reason"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "skipped": {
+              "default": false,
+              "title": "Skipped",
+              "type": "boolean"
+            },
+            "summary": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StagePayloadSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "tokens_after": {
+              "minimum": 0,
+              "title": "Tokens After",
+              "type": "integer"
+            },
+            "tokens_before": {
+              "minimum": 0,
+              "title": "Tokens Before",
+              "type": "integer"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.context.compacted",
+              "default": "anyagent.context.compacted",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "tokens_before",
+            "tokens_after",
+            "items_before",
+            "items_after"
+          ],
+          "title": "AnyAgentContextCompactedEvent",
+          "type": "object"
+        },
         "AnyAgentDoneEvent": {
           "additionalProperties": false,
           "description": "Terminal stage event emitted when `[DONE]` is observed.",
@@ -18049,6 +19298,158 @@
             "response_id"
           ],
           "title": "AnyAgentDoneEvent",
+          "type": "object"
+        },
+        "AnyAgentLoopTerminatedEvent": {
+          "additionalProperties": false,
+          "description": "A repeated tool-call pattern reached the hard loop limit.",
+          "properties": {
+            "hard_limit": {
+              "minimum": 1,
+              "title": "Hard Limit",
+              "type": "integer"
+            },
+            "repeat_count": {
+              "minimum": 1,
+              "title": "Repeat Count",
+              "type": "integer"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "tool_signature": {
+              "title": "Tool Signature",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.agent.loop_terminated",
+              "default": "anyagent.agent.loop_terminated",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "tool_signature",
+            "repeat_count",
+            "hard_limit"
+          ],
+          "title": "AnyAgentLoopTerminatedEvent",
+          "type": "object"
+        },
+        "AnyAgentLoopWarningEvent": {
+          "additionalProperties": false,
+          "description": "A repeated tool-call pattern is approaching the hard loop limit.",
+          "properties": {
+            "repeat_count": {
+              "minimum": 1,
+              "title": "Repeat Count",
+              "type": "integer"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "tool_signature": {
+              "title": "Tool Signature",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.agent.loop_warning",
+              "default": "anyagent.agent.loop_warning",
+              "title": "Type",
+              "type": "string"
+            },
+            "window_size": {
+              "minimum": 1,
+              "title": "Window Size",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "response_id",
+            "tool_signature",
+            "repeat_count",
+            "window_size"
+          ],
+          "title": "AnyAgentLoopWarningEvent",
           "type": "object"
         },
         "AnyAgentModelRequestEvent": {
@@ -18406,6 +19807,252 @@
             "response_id"
           ],
           "title": "AnyAgentPromptContextRenderedEvent",
+          "type": "object"
+        },
+        "AnyAgentSubAgentCompletedEvent": {
+          "additionalProperties": false,
+          "description": "A bounded sub-agent task has completed.",
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "child_response_id": {
+              "title": "Child Response Id",
+              "type": "string"
+            },
+            "duration_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Duration Ms"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.subagent.completed",
+              "default": "anyagent.subagent.completed",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "child_response_id",
+            "agent_id",
+            "status"
+          ],
+          "title": "AnyAgentSubAgentCompletedEvent",
+          "type": "object"
+        },
+        "AnyAgentSubAgentSpawnedEvent": {
+          "additionalProperties": false,
+          "description": "A bounded sub-agent task has been spawned from a parent run.",
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "child_response_id": {
+              "title": "Child Response Id",
+              "type": "string"
+            },
+            "depth": {
+              "minimum": 0,
+              "title": "Depth",
+              "type": "integer"
+            },
+            "parent_response_id": {
+              "title": "Parent Response Id",
+              "type": "string"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "task_description": {
+              "$ref": "#/$defs/StagePayloadSummary"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.subagent.spawned",
+              "default": "anyagent.subagent.spawned",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "parent_response_id",
+            "child_response_id",
+            "agent_id",
+            "depth",
+            "task_description"
+          ],
+          "title": "AnyAgentSubAgentSpawnedEvent",
+          "type": "object"
+        },
+        "AnyAgentSubAgentTimeoutEvent": {
+          "additionalProperties": false,
+          "description": "A bounded sub-agent task exceeded its configured timeout.",
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "child_response_id": {
+              "title": "Child Response Id",
+              "type": "string"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "timeout_ms": {
+              "minimum": 0,
+              "title": "Timeout Ms",
+              "type": "integer"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.subagent.timeout",
+              "default": "anyagent.subagent.timeout",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "response_id",
+            "child_response_id",
+            "agent_id",
+            "timeout_ms"
+          ],
+          "title": "AnyAgentSubAgentTimeoutEvent",
           "type": "object"
         },
         "AnyAgentToolExecutionDetailEvent": {
@@ -19201,8 +20848,11 @@
       },
       "discriminator": {
         "mapping": {
+          "anyagent.agent.loop_terminated": "#/$defs/AnyAgentLoopTerminatedEvent",
+          "anyagent.agent.loop_warning": "#/$defs/AnyAgentLoopWarningEvent",
           "anyagent.command.planned": "#/$defs/AnyAgentCommandPlannedEvent",
           "anyagent.command.result": "#/$defs/AnyAgentCommandResultEvent",
+          "anyagent.context.compacted": "#/$defs/AnyAgentContextCompactedEvent",
           "anyagent.done": "#/$defs/AnyAgentDoneEvent",
           "anyagent.model.request": "#/$defs/AnyAgentModelRequestEvent",
           "anyagent.model.stream_event": "#/$defs/AnyAgentModelStreamEvent",
@@ -19215,6 +20865,9 @@
           "anyagent.sandbox.workspace.restore_failed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
           "anyagent.sandbox.workspace.restored": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
           "anyagent.sandbox.workspace.restoring": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
+          "anyagent.subagent.completed": "#/$defs/AnyAgentSubAgentCompletedEvent",
+          "anyagent.subagent.spawned": "#/$defs/AnyAgentSubAgentSpawnedEvent",
+          "anyagent.subagent.timeout": "#/$defs/AnyAgentSubAgentTimeoutEvent",
           "anyagent.tool.execution.detail": "#/$defs/AnyAgentToolExecutionDetailEvent",
           "anyagent.tool.planned": "#/$defs/AnyAgentToolPlannedEvent",
           "anyagent.tool.result": "#/$defs/AnyAgentToolResultEvent"
@@ -19251,6 +20904,24 @@
         },
         {
           "$ref": "#/$defs/AnyAgentWorkspaceLifecycleEvent"
+        },
+        {
+          "$ref": "#/$defs/AnyAgentSubAgentSpawnedEvent"
+        },
+        {
+          "$ref": "#/$defs/AnyAgentSubAgentCompletedEvent"
+        },
+        {
+          "$ref": "#/$defs/AnyAgentSubAgentTimeoutEvent"
+        },
+        {
+          "$ref": "#/$defs/AnyAgentContextCompactedEvent"
+        },
+        {
+          "$ref": "#/$defs/AnyAgentLoopWarningEvent"
+        },
+        {
+          "$ref": "#/$defs/AnyAgentLoopTerminatedEvent"
         },
         {
           "$ref": "#/$defs/AnyAgentDoneEvent"

@@ -44,6 +44,10 @@ __all__ = [
     "run_tool_loop_nonstream",
     "run_tool_loop_stream_buffered",
     "run_tool_loop_stream_live",
+    "AgentMiddleware",
+    "BaseMiddleware",
+    "MiddlewareChain",
+    "MiddlewareContext",
     "CloseAgentResult",
     "InMemoryThreadStore",
     "MultiAgentLimitsResolved",
@@ -103,6 +107,7 @@ from .tool_loop import (
     run_tool_loop_stream_buffered,
     run_tool_loop_stream_live,
 )
+from .middleware import AgentMiddleware, BaseMiddleware, MiddlewareChain, MiddlewareContext
 from .model_providers import (
     ModelProvider,
     ModelProviderError,

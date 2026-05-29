@@ -312,6 +312,67 @@ class AnyAgentWorkspaceLifecycleEvent(StageEventBase):
     runtime_diagnostics: AdminSandboxRuntimeDiagnostics | None = None
 
 
+class AnyAgentSubAgentSpawnedEvent(StageEventBase):
+    """A bounded sub-agent task has been spawned from a parent run."""
+
+    type: Literal["anyagent.subagent.spawned"] = "anyagent.subagent.spawned"
+    parent_response_id: str
+    child_response_id: str
+    agent_id: str
+    depth: int = Field(ge=0)
+    task_description: StagePayloadSummary
+
+
+class AnyAgentSubAgentCompletedEvent(StageEventBase):
+    """A bounded sub-agent task has completed."""
+
+    type: Literal["anyagent.subagent.completed"] = "anyagent.subagent.completed"
+    child_response_id: str
+    agent_id: str
+    status: str
+    duration_ms: int | None = Field(default=None, ge=0)
+
+
+class AnyAgentSubAgentTimeoutEvent(StageEventBase):
+    """A bounded sub-agent task exceeded its configured timeout."""
+
+    type: Literal["anyagent.subagent.timeout"] = "anyagent.subagent.timeout"
+    child_response_id: str
+    agent_id: str
+    timeout_ms: int = Field(ge=0)
+
+
+class AnyAgentContextCompactedEvent(StageEventBase):
+    """A stateless request body was compacted before a follow-up model call."""
+
+    type: Literal["anyagent.context.compacted"] = "anyagent.context.compacted"
+    tokens_before: int = Field(ge=0)
+    tokens_after: int = Field(ge=0)
+    items_before: int = Field(ge=0)
+    items_after: int = Field(ge=0)
+    summary: StagePayloadSummary | None = None
+    skipped: bool = False
+    reason: str | None = None
+
+
+class AnyAgentLoopWarningEvent(StageEventBase):
+    """A repeated tool-call pattern is approaching the hard loop limit."""
+
+    type: Literal["anyagent.agent.loop_warning"] = "anyagent.agent.loop_warning"
+    tool_signature: str
+    repeat_count: int = Field(ge=1)
+    window_size: int = Field(ge=1)
+
+
+class AnyAgentLoopTerminatedEvent(StageEventBase):
+    """A repeated tool-call pattern reached the hard loop limit."""
+
+    type: Literal["anyagent.agent.loop_terminated"] = "anyagent.agent.loop_terminated"
+    tool_signature: str
+    repeat_count: int = Field(ge=1)
+    hard_limit: int = Field(ge=1)
+
+
 StageEvent: TypeAlias = Annotated[
     AnyAgentModelStreamEvent
     | AnyAgentToolPlannedEvent
@@ -323,6 +384,12 @@ StageEvent: TypeAlias = Annotated[
     | AnyAgentPromptContextRenderedEvent
     | AnyAgentModelRequestEvent
     | AnyAgentWorkspaceLifecycleEvent
+    | AnyAgentSubAgentSpawnedEvent
+    | AnyAgentSubAgentCompletedEvent
+    | AnyAgentSubAgentTimeoutEvent
+    | AnyAgentContextCompactedEvent
+    | AnyAgentLoopWarningEvent
+    | AnyAgentLoopTerminatedEvent
     | AnyAgentDoneEvent,
     Field(discriminator="type"),
 ]

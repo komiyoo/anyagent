@@ -40,6 +40,7 @@ class TaskArgs(BaseModel):
     description: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
     agent_id: str = Field(min_length=1)
+    context_mode: Literal["isolated", "fork_last_n"] | None = None
 
 
 class TaskResult(BaseModel):

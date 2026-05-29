@@ -1,5 +1,5 @@
 {
-  "schema_version": "2026-05-27",
+  "schema_version": "2026-05-29",
   "description": "Minimum SDK conformance surface for the single-repo multi-package boundary.",
   "operations": [
     {
@@ -196,6 +196,36 @@
       "name": "stage_event.command.result",
       "kind": "type_adapter",
       "fixture": "stage_event.command.result"
+    },
+    {
+      "name": "stage_event.subagent.spawned",
+      "kind": "type_adapter",
+      "fixture": "stage_event.subagent.spawned"
+    },
+    {
+      "name": "stage_event.subagent.completed",
+      "kind": "type_adapter",
+      "fixture": "stage_event.subagent.completed"
+    },
+    {
+      "name": "stage_event.subagent.timeout",
+      "kind": "type_adapter",
+      "fixture": "stage_event.subagent.timeout"
+    },
+    {
+      "name": "stage_event.context.compacted",
+      "kind": "type_adapter",
+      "fixture": "stage_event.context.compacted"
+    },
+    {
+      "name": "stage_event.agent.loop_warning",
+      "kind": "type_adapter",
+      "fixture": "stage_event.agent.loop_warning"
+    },
+    {
+      "name": "stage_event.agent.loop_terminated",
+      "kind": "type_adapter",
+      "fixture": "stage_event.agent.loop_terminated"
     },
     {
       "name": "tool_runtime.execute.response",

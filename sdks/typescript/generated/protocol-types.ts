@@ -1,6 +1,6 @@
 /* eslint-disable */
 // Generated from anyagent.protocol schema bundle. Do not edit by hand.
-// schema_version: 2026-05-27
+// schema_version: 2026-05-29
 
 export type MCPServerTransport = "streamable_http" | "sse" | "stdio";
 
@@ -557,7 +557,7 @@ export type PromptRunBundleExampleResponse = {
   "scenario": "sandbox_file_write" | "multi_skill_research" | "toolset_retry";
   "scenario_label": string;
   "session_key": string;
-  "stage_events"?: Array<AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentToolExecutionDetailEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentPromptContextRenderedEvent | AnyAgentModelRequestEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentDoneEvent>;
+  "stage_events"?: Array<AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentToolExecutionDetailEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentPromptContextRenderedEvent | AnyAgentModelRequestEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentSubAgentSpawnedEvent | AnyAgentSubAgentCompletedEvent | AnyAgentSubAgentTimeoutEvent | AnyAgentContextCompactedEvent | AnyAgentLoopWarningEvent | AnyAgentLoopTerminatedEvent | AnyAgentDoneEvent>;
   "tool_loop_items"?: Array<PromptRunBundleToolLoopItem>;
 };
 
@@ -779,6 +779,7 @@ export type SpawnAgentResult = {
 
 export type TaskArgs = {
   "agent_id": string;
+  "context_mode"?: "isolated" | "fork_last_n" | null;
   "description": string;
   "prompt": string;
 };
@@ -993,12 +994,49 @@ export type AnyAgentCommandResultEvent = {
   "type"?: "anyagent.command.result";
 };
 
+export type AnyAgentContextCompactedEvent = {
+  "items_after": number;
+  "items_before": number;
+  "reason"?: string | null;
+  "response_id": string;
+  "seq"?: number | null;
+  "skipped"?: boolean;
+  "summary"?: StagePayloadSummary | null;
+  "tokens_after": number;
+  "tokens_before": number;
+  "trace_id"?: string | null;
+  "ts_ms"?: number | null;
+  "type"?: "anyagent.context.compacted";
+};
+
 export type AnyAgentDoneEvent = {
   "response_id": string;
   "seq"?: number | null;
   "trace_id"?: string | null;
   "ts_ms"?: number | null;
   "type"?: "anyagent.done";
+};
+
+export type AnyAgentLoopTerminatedEvent = {
+  "hard_limit": number;
+  "repeat_count": number;
+  "response_id": string;
+  "seq"?: number | null;
+  "tool_signature": string;
+  "trace_id"?: string | null;
+  "ts_ms"?: number | null;
+  "type"?: "anyagent.agent.loop_terminated";
+};
+
+export type AnyAgentLoopWarningEvent = {
+  "repeat_count": number;
+  "response_id": string;
+  "seq"?: number | null;
+  "tool_signature": string;
+  "trace_id"?: string | null;
+  "ts_ms"?: number | null;
+  "type"?: "anyagent.agent.loop_warning";
+  "window_size": number;
 };
 
 export type AnyAgentModelRequestEvent = {
@@ -1047,6 +1085,42 @@ export type AnyAgentPromptContextRenderedEvent = {
   "trace_id"?: string | null;
   "ts_ms"?: number | null;
   "type"?: "anyagent.prompt.context.rendered";
+};
+
+export type AnyAgentSubAgentCompletedEvent = {
+  "agent_id": string;
+  "child_response_id": string;
+  "duration_ms"?: number | null;
+  "response_id": string;
+  "seq"?: number | null;
+  "status": string;
+  "trace_id"?: string | null;
+  "ts_ms"?: number | null;
+  "type"?: "anyagent.subagent.completed";
+};
+
+export type AnyAgentSubAgentSpawnedEvent = {
+  "agent_id": string;
+  "child_response_id": string;
+  "depth": number;
+  "parent_response_id": string;
+  "response_id": string;
+  "seq"?: number | null;
+  "task_description": StagePayloadSummary;
+  "trace_id"?: string | null;
+  "ts_ms"?: number | null;
+  "type"?: "anyagent.subagent.spawned";
+};
+
+export type AnyAgentSubAgentTimeoutEvent = {
+  "agent_id": string;
+  "child_response_id": string;
+  "response_id": string;
+  "seq"?: number | null;
+  "timeout_ms": number;
+  "trace_id"?: string | null;
+  "ts_ms"?: number | null;
+  "type"?: "anyagent.subagent.timeout";
 };
 
 export type AnyAgentToolExecutionDetailEvent = {
@@ -1276,6 +1350,6 @@ export type WorkspaceInitResult = {
   "workspace": string;
 };
 
-export type StageEvent = AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentToolExecutionDetailEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentPromptContextRenderedEvent | AnyAgentModelRequestEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentDoneEvent;
+export type StageEvent = AnyAgentModelStreamEvent | AnyAgentToolPlannedEvent | AnyAgentToolResultEvent | AnyAgentToolExecutionDetailEvent | AnyAgentCommandPlannedEvent | AnyAgentCommandResultEvent | AnyAgentPromptContextEvent | AnyAgentPromptContextRenderedEvent | AnyAgentModelRequestEvent | AnyAgentWorkspaceLifecycleEvent | AnyAgentSubAgentSpawnedEvent | AnyAgentSubAgentCompletedEvent | AnyAgentSubAgentTimeoutEvent | AnyAgentContextCompactedEvent | AnyAgentLoopWarningEvent | AnyAgentLoopTerminatedEvent | AnyAgentDoneEvent;
 
 export type ExecuteResponse = ExecuteResponseCompleted | ExecuteResponseCancelled | ExecuteResponseError;

@@ -57,7 +57,12 @@ class InternalEventsListResponse(BaseModel):
     run_status: str | None = None
     effective_run_status: str | None = None
 
-    def iter_typed(self, *, include_model_events: bool = True) -> Iterator[StageEvent]:
+    def iter_typed(
+        self,
+        *,
+        include_model_events: bool = True,
+        include_subagent_events: bool = True,
+    ) -> Iterator[StageEvent]:
         """Yield typed stage events decoded from stored SSE blocks."""
 
         for item in self.events:
@@ -68,13 +73,23 @@ class InternalEventsListResponse(BaseModel):
                 seq=item.seq,
                 include_model_events=include_model_events,
             )
-            if decoded is not None:
+            if decoded is not None and _include_stage_event(decoded, include_subagent_events=include_subagent_events):
                 yield decoded
 
-    def typed_events(self, *, include_model_events: bool = True) -> list[StageEvent]:
+    def typed_events(
+        self,
+        *,
+        include_model_events: bool = True,
+        include_subagent_events: bool = True,
+    ) -> list[StageEvent]:
         """Decode stored SSE blocks into typed stage events."""
 
-        return list(self.iter_typed(include_model_events=include_model_events))
+        return list(
+            self.iter_typed(
+                include_model_events=include_model_events,
+                include_subagent_events=include_subagent_events,
+            )
+        )
 
     def latest_prompt_context(self) -> AnyAgentPromptContextEvent | None:
         """Return the latest prompt-context event present in this page, if any."""
@@ -127,6 +142,12 @@ class InternalEventsReplaySummary(BaseModel):
     run_status: str | None = None
     effective_run_status: str | None = None
     prompt_context: AnyAgentPromptContextEvent | None = None
+
+
+def _include_stage_event(event: StageEvent, *, include_subagent_events: bool) -> bool:
+    if include_subagent_events:
+        return True
+    return not event.type.startswith("anyagent.subagent.")
 
 
 class InternalResponsePromptContextResponse(BaseModel):

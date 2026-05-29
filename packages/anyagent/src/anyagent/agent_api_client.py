@@ -269,11 +269,15 @@ class Events(_Namespace):
         last_seq: int = 0,
         limit: int = 200,
         include_model_events: bool = True,
+        include_subagent_events: bool = True,
     ) -> list[StageEvent]:
         """List persisted internal events and decode them into the typed stage union."""
 
         listing = await self.list(response_id=response_id, last_seq=last_seq, limit=limit)
-        return listing.typed_events(include_model_events=include_model_events)
+        return listing.typed_events(
+            include_model_events=include_model_events,
+            include_subagent_events=include_subagent_events,
+        )
 
     async def latest_prompt_context(
         self,
@@ -381,6 +385,7 @@ class Events(_Namespace):
         *,
         last_seq: int = 0,
         include_model_events: bool = True,
+        include_subagent_events: bool = True,
     ) -> AsyncIterator[StageEvent]:
         """Stream typed ``StageEvent`` union from internal event stream.
 
@@ -396,6 +401,8 @@ class Events(_Namespace):
                 include_model_events=include_model_events,
             )
             if decoded is None:
+                continue
+            if not include_subagent_events and decoded.type.startswith("anyagent.subagent."):
                 continue
             yield decoded
             if isinstance(decoded, AnyAgentDoneEvent):

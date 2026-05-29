@@ -103,6 +103,52 @@ def test_stream_typed_decodes_command_result_event_shape() -> None:
     asyncio.run(_run())
 
 
+def test_stream_typed_and_list_typed_can_filter_subagent_events() -> None:
+    async def _run() -> None:
+        subagent_data = (
+            '{"response_id":"resp_parent","parent_response_id":"resp_parent","child_response_id":"resp_child",'
+            '"agent_id":"worker","depth":1,'
+            '"task_description":{"bytes":8,"sha256":"task-sha","preview":null,"preview_truncated":false},"ts_ms":900}'
+        )
+        blocks = [
+            SSEBlock(id="17", event="anyagent.subagent.spawned", data=subagent_data),
+            SSEBlock(id="18", event=None, data="[DONE]"),
+        ]
+        events = _FakeEvents(
+            blocks,
+            list_pages=[
+                InternalEventsListResponse(
+                    response_id="resp_parent",
+                    requested_last_seq=0,
+                    next_last_seq=18,
+                    done=True,
+                    events=[
+                        InternalEventItem(seq=17, event="anyagent.subagent.spawned", data=subagent_data),
+                        InternalEventItem(seq=18, event=None, data="[DONE]"),
+                    ],
+                )
+            ],
+        )
+
+        streamed = []
+        async for item in events.stream_typed(
+            "resp_parent",
+            include_model_events=False,
+            include_subagent_events=False,
+        ):
+            streamed.append(item)
+        listed = await events.list_typed(
+            "resp_parent",
+            include_model_events=False,
+            include_subagent_events=False,
+        )
+
+        assert [item.type for item in streamed] == ["anyagent.done"]
+        assert [item.type for item in listed] == ["anyagent.done"]
+
+    asyncio.run(_run())
+
+
 def test_stream_typed_decodes_prompt_context_event_shape() -> None:
     async def _run() -> None:
         events = _FakeEvents(

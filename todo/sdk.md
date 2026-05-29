@@ -33,6 +33,14 @@
 - [ ] P1 SDK Tool Discovery 支持:Python SDK 暴露 `tools.search(query)` helper,消费 `core.tool_search` 的 deferred tool 发现能力(Req: `requirements.md#req-4`、`requirements.md#req-5-2-1`)
 - [ ] P2 SDK 配置层级感知:SDK client 初始化时支持读取 user/workspace 级配置合并结果,而非仅依赖显式参数(Req: `requirements.md#req-4`)
 
+### Phase 1.8 — Internal Productivity Stage Events
+
+- [x] P1 Sub-Agent Stage Events:Protocol 层新增 `AnyAgentSubAgentSpawnedEvent`（parent_run_id, child_run_id, agent_id, depth, description）和 `AnyAgentSubAgentCompletedEvent`（child_run_id, status, duration_ms, summary_preview）。Python SDK `events.stream_typed()` 新增 `include_subagent_events` 参数。TypeScript SDK 从 schema bundle 自动生成对应类型(Req: `requirements.md#req-4`、`requirements.md#req-13`; Impl: `packages/anyagent/src/anyagent/protocol/stage_events.py:315`, `packages/anyagent/src/anyagent/agent_api_client.py:382`, `sdks/typescript/generated/protocol-types.ts:1099`, `tests/contract/test_events_sdk_contract.py:106`, `tests/fixtures/sdk_conformance/core_surface.json:852`; Module: `anyagent.protocol.stage_events`, `anyagent.agent_api_client`, `typescript-sdk`, `sdk-conformance`)
+- [x] P1 Compaction Stage Event:Protocol 层新增 `AnyAgentContextCompactedEvent`（tokens_before, tokens_after, messages_removed, summary_preview, strategy）。SDK 消费方可通过 events stream 感知压缩发生(Req: `requirements.md#req-4`、`requirements.md#req-5`; Impl: `packages/anyagent/src/anyagent/protocol/stage_events.py:345`, `sdks/typescript/generated/protocol-types.ts:1009`, `tests/fixtures/sdk_conformance/core_surface.json:899`; Module: `anyagent.protocol.stage_events`, `typescript-sdk`, `sdk-conformance`)
+- [x] P1 Loop Detection Stage Events:Protocol 层新增 `AnyAgentLoopWarningEvent`（tool_name, repeat_count, threshold）和 `AnyAgentLoopTerminatedEvent`（tool_name, repeat_count, hard_limit）。SDK 消费方可感知循环检测状态(Req: `requirements.md#req-4`、`requirements.md#req-5`; Impl: `packages/anyagent/src/anyagent/protocol/stage_events.py:358`, `sdks/typescript/generated/protocol-types.ts:1038`, `tests/fixtures/sdk_conformance/core_surface.json:919`; Module: `anyagent.protocol.stage_events`, `typescript-sdk`, `sdk-conformance`)
+- [x] P1 Conformance fixtures 覆盖:在 `tests/fixtures/sdk_conformance/` 新增 sub-agent、compaction、loop-detection 的 fixture,确保 Python + TypeScript SDK 行为一致(Req: `requirements.md#req-4`; Impl: `tests/fixtures/sdk_conformance/core_surface.json:852`, `tests/fixtures/sdk_conformance/minimum_matrix.json:201`, `tests/contract/test_protocol_schema_export.py:383`; Module: `sdk-conformance`)
+- [ ] P2 SDK observability 扩展:`client.observability.summary()` 返回新增字段（compaction_count, loop_warnings_count, subagent_spawns）(Req: `requirements.md#req-4`)
+
 ### Phase 4 — Ecosystem & Multi-Runtime
 
 - [ ] P2 按真实集成需求添加 Go / Rust / Java 等 SDK scaffold;没有真实发布渠道前不创建空壳包(Req: `requirements.md#req-4`)

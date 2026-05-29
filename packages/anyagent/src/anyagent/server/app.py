@@ -50,6 +50,8 @@ from anyagent.agent_runtime import (
 )
 from anyagent.agent_runtime.session_runtime import input_to_transcript_items
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp, run_tool_loop_nonstream, run_tool_loop_stream_live
+from anyagent.agent_runtime.middleware import MiddlewareChain
+from anyagent.agent_runtime.middlewares import ContextCompactionMiddleware, LoopDetectionMiddleware
 from anyagent.agent_runtime.model_providers import get_default_model_provider  # re-exported for existing smoke monkeypatches
 from anyagent.gateway.sequencer import KeyedSequencer
 from anyagent.gateway.session import session_partition_key
@@ -118,6 +120,53 @@ from anyagent.server.streaming import (
     persist_sse_run as persist_streaming_sse_run,
 )
 from anyagent.server.workspace_env import load_workspace_runtime_environment
+
+
+def _build_agent_middleware_chain(pack: AgentPack) -> MiddlewareChain | None:
+    configured_order = [item.strip() for item in (pack.spec.runtime.middlewares or []) if isinstance(item, str) and item.strip()]
+    order = configured_order or ["loop_detection", "context_compaction"]
+    middlewares: list[Any] = []
+    loop_cfg = pack.spec.runtime.loop_detection
+    compaction_cfg = pack.spec.runtime.context_compaction
+
+    def _append(name: str) -> None:
+        normalized = name.rsplit(":", 1)[-1].rsplit(".", 1)[-1].lower().replace("-", "_")
+        if normalized in {"loop_detection", "loopdetectionmiddleware"} and loop_cfg.enabled:
+            middlewares.append(
+                LoopDetectionMiddleware(
+                    window_size=loop_cfg.window_size,
+                    warn_threshold=loop_cfg.warn_threshold,
+                    hard_limit=loop_cfg.hard_limit,
+                )
+            )
+        elif normalized in {"context_compaction", "contextcompactionmiddleware", "compaction"} and compaction_cfg.enabled:
+            middlewares.append(
+                ContextCompactionMiddleware(
+                    max_context_tokens=compaction_cfg.max_context_tokens,
+                    trigger_ratio=compaction_cfg.trigger_ratio,
+                    keep_recent_tokens=compaction_cfg.keep_recent_tokens,
+                )
+            )
+
+    for name in order:
+        _append(name)
+    if not configured_order and loop_cfg.enabled and not any(isinstance(m, LoopDetectionMiddleware) for m in middlewares):
+        middlewares.append(
+            LoopDetectionMiddleware(
+                window_size=loop_cfg.window_size,
+                warn_threshold=loop_cfg.warn_threshold,
+                hard_limit=loop_cfg.hard_limit,
+            )
+        )
+    if not configured_order and compaction_cfg.enabled and not any(isinstance(m, ContextCompactionMiddleware) for m in middlewares):
+        middlewares.append(
+            ContextCompactionMiddleware(
+                max_context_tokens=compaction_cfg.max_context_tokens,
+                trigger_ratio=compaction_cfg.trigger_ratio,
+                keep_recent_tokens=compaction_cfg.keep_recent_tokens,
+            )
+        )
+    return MiddlewareChain(middlewares) if middlewares else None
 from anyagent.server.runs import RunRegistry
 from anyagent.server.runtime import InProcessToolRuntimeService
 from anyagent.server.sandbox import OpenSandboxWorkspaceBackend, SandboxManager
@@ -1246,6 +1295,7 @@ def create_app(
             model_provider = _model_provider_for_selection(model_selection)
         except ModelConfigError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        middleware_chain = _build_agent_middleware_chain(pack)
         enabled_skill_ids = [skill.stable_id for skill in selected_skills]
         requested_tool_names = extract_requested_tool_names(body.get("tools"))
         manifest_cache_key = build_manifest_cache_key(
@@ -1289,6 +1339,10 @@ def create_app(
             async def _execute_system_tool(tool_name: str, arguments_json: object) -> str:
                 if tool_name != "task":
                     raise ValueError(f"unsupported system tool: {tool_name}")
+                parent_depth = 0
+                raw_depth = metadata.get("subagent_depth") if isinstance(metadata, dict) else None
+                if isinstance(raw_depth, int):
+                    parent_depth = max(0, raw_depth)
                 return await SubAgentExecutor().execute_task(
                     catalog=state.catalog,
                     parent_pack=pack,
@@ -1297,6 +1351,13 @@ def create_app(
                     session_key=session_key,
                     parent_body=parent_body,
                     arguments_json=arguments_json,
+                    max_concurrent=pack.spec.runtime.subagent.max_concurrent,
+                    max_depth=pack.spec.runtime.subagent.max_depth,
+                    run_timeout_seconds=pack.spec.runtime.subagent.run_timeout_seconds,
+                    default_context_mode=pack.spec.runtime.subagent.default_context_mode,
+                    depth=parent_depth,
+                    parent_response_id=response_id,
+                    stage_event_sink=_stage_sink,
                 )
 
             return _execute_system_tool
@@ -1396,6 +1457,7 @@ def create_app(
                                     stage_event_sink=_stage_sink,
                                     prompt_envelope_applied=True,
                                     system_tool_executor=_system_tool_executor_for_body(body2),
+                                    middleware_chain=middleware_chain,
                                 ):
                                     await _append_sse_chunk(
                                         state,
@@ -1658,6 +1720,7 @@ def create_app(
                                 stage_event_sink=_stage_sink,
                                 prompt_envelope_applied=True,
                                 system_tool_executor=_system_tool_executor_for_body(body2),
+                                middleware_chain=middleware_chain,
                             )
                         except asyncio.CancelledError:
                             payload = build_minimal_openai_response_json(

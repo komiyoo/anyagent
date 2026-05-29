@@ -25,8 +25,9 @@
 
 - [x] P0 Tool Deferred Loading:在 `ToolDefinition` 增加 `exposure: Literal["direct", "deferred", "hidden"]` 字段,`ToolRegistry.list_tools()` 只返回 direct 工具完整 schema(Req: `requirements.md#req-5-2`、`requirements.md#req-5-2-1`; Impl: `packages/anyagent/src/anyagent/tool_runtime/models.py:29`; Module: `anyagent.tool_runtime`)
 - [x] P0 Tool Search 机制:新增 `ToolRegistry.search_tools(query: str)` 方法 + 注册 `core.tool_search` built-in tool 供 agent loop 按需发现 deferred 工具(Req: `requirements.md#req-5-2-1`; Impl: `packages/anyagent/src/anyagent/tool_runtime/registry.py:180`; Module: `anyagent.tool_runtime`)
-- [ ] P1 Plugin Manifest 统一:设计 `PluginManifest` model,一个 plugin 可同时声明 skills/ + mcp.json + tools/ + hooks/,替代当前 tool_runtime plugin 与 skills 各自独立的体系(Req: `requirements.md#req-6`、`requirements.md#req-5-2`)
+- [ ] P1 Plugin Manifest v1 统一:升级 `PluginManifest` model,一个 plugin 可同时声明 skills/ + mcp_servers/ + tools/ + middlewares/ + hooks/。`middlewares` 字段声明 middleware 类路径（如 `"my_plugin.middleware:AuditMiddleware"`），框架按 `agent.yaml` 中 `runtime.middlewares` 顺序加载。`hooks` 字段声明生命周期回调（`on_agent_start`、`on_agent_end`）。参考 Pi-mono Extension manifest + OpenClaw plugin manifest（精简）(Req: `requirements.md#req-6`、`requirements.md#req-5-2`)
 - [ ] P1 MCP 工具 filter 与 sanitize:MCP server 注册的工具名自动 sanitize（`^[a-z0-9_.-]+$`）+ 支持 per-server tool filter 配置(Req: `requirements.md#req-5-2`)
+- [ ] P1 MCP 会话池:按 `(server_name, session_key)` 池化 stdio 连接,LRU 淘汰（默认 256）。stdio 走池化,HTTP/SSE 不池化。参考 DeerFlow `session_pool.py`(Req: `requirements.md#req-5-2`)
 
 ### Phase 2 — Production Runtime Hardening
 
@@ -43,3 +44,7 @@
 
 - `docs/architecture/overview/roadmap.md` Phase 2 / Phase 4
 - `docs/architecture/tool-runtime/`
+- `docs/_notes/third-party/workspace-repos-tech-survey.md` — 技术调研报告
+- Pi-mono Extension manifest: `pi-mono/packages/coding-agent/src/core/extensions/types.ts`
+- OpenClaw Plugin manifest: `openclaw/src/plugins/manifest.ts`
+- DeerFlow MCP session pool: `deer-flow/backend/packages/harness/deerflow/mcp/session_pool.py`

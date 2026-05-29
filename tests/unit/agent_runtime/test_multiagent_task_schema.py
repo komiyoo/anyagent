@@ -66,6 +66,66 @@ async def _run_subagent_executor_runs_child_agent_loop_with_independent_context(
     assert "You are worker." in provider.bodies[0]["input"][0]["content"]
 
 
+def test_subagent_executor_emits_events_and_filters_recursive_task_at_depth_limit() -> None:
+    asyncio.run(_run_subagent_executor_emits_events_and_filters_recursive_task_at_depth_limit())
+
+
+async def _run_subagent_executor_emits_events_and_filters_recursive_task_at_depth_limit() -> None:
+    provider = _FinalTextProvider(text="child answer")
+    events = []
+
+    async def _sink(event: Any) -> None:
+        events.append(event)
+
+    result = await SubAgentExecutor().execute_task(
+        catalog=_catalog(),
+        parent_pack=_pack("main", allow=["worker"]),
+        model_provider=provider,
+        tool_runtime=_TaskManifestToolRuntime(),
+        session_key="parent-session",
+        parent_body={"model": "gpt-parent"},
+        arguments_json={"description": "Delegate", "prompt": "Do the work", "agent_id": "worker"},
+        max_depth=1,
+        depth=0,
+        parent_response_id="resp_parent",
+        stage_event_sink=_sink,
+    )
+
+    assert json.loads(result)["output_text"] == "child answer"
+    assert [event.type for event in events] == ["anyagent.subagent.spawned", "anyagent.subagent.completed"]
+    assert events[0].parent_response_id == "resp_parent"
+    assert events[0].child_response_id == events[1].child_response_id
+    assert all(tool["name"] != "task" for tool in provider.bodies[0]["tools"])
+
+
+def test_subagent_executor_timeout_returns_bounded_task_result() -> None:
+    asyncio.run(_run_subagent_executor_timeout_returns_bounded_task_result())
+
+
+async def _run_subagent_executor_timeout_returns_bounded_task_result() -> None:
+    events = []
+
+    async def _sink(event: Any) -> None:
+        events.append(event)
+
+    result = await SubAgentExecutor().execute_task(
+        catalog=_catalog(),
+        parent_pack=_pack("main", allow=["worker"]),
+        model_provider=_SlowProvider(),
+        tool_runtime=_EmptyToolRuntime(),
+        session_key="parent-session",
+        parent_body={"model": "gpt-parent"},
+        arguments_json={"description": "Delegate", "prompt": "Do the work", "agent_id": "worker"},
+        run_timeout_seconds=1,
+        parent_response_id="resp_parent",
+        stage_event_sink=_sink,
+    )
+
+    payload = json.loads(result)
+    assert payload == {"agent_id": "worker", "output_text": "subagent task timed out"}
+    assert [event.type for event in events] == ["anyagent.subagent.spawned", "anyagent.subagent.timeout"]
+
+
 def test_tool_loop_dispatches_task_to_system_executor() -> None:
     asyncio.run(_run_tool_loop_dispatches_task_to_system_executor())
 
@@ -159,6 +219,13 @@ class _TaskCallingProvider:
                 }
             )
         return _message_response(response_id="resp_parent_2", model=str(body.get("model") or "gpt-test"), text="parent final")
+
+
+class _SlowProvider:
+    async def create_response(self, *, body: dict[str, Any], idempotency_key: str | None = None, timeout_s: float = 60.0) -> Response:
+        _ = body, idempotency_key, timeout_s
+        await asyncio.sleep(2)
+        return _message_response(response_id="resp_child", model="gpt-test", text="late")
 
 
 def _message_response(*, response_id: str, model: str, text: str) -> Response:

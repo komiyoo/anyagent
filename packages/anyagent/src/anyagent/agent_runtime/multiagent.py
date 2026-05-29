@@ -5,7 +5,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from time import monotonic, time
-from typing import Any, Literal
+from typing import Any, Awaitable, Callable, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +27,13 @@ from anyagent.protocol.multi_agent import (
     WaitResult,
 )
 from anyagent.protocol.openai_responses import FunctionToolParam
+from anyagent.protocol.stage_events import (
+    AnyAgentSubAgentCompletedEvent,
+    AnyAgentSubAgentSpawnedEvent,
+    AnyAgentSubAgentTimeoutEvent,
+    StageEvent,
+    summarize_payload,
+)
 
 
 ThreadStatus = Literal["queued", "running", "completed", "failed", "closed"]
@@ -604,6 +611,8 @@ class MultiAgentManager:
 class SubAgentExecutor:
     """In-process `task()` executor for the Phase 1.8 multi-agent MVP."""
 
+    _semaphores: dict[int, asyncio.Semaphore] = {}
+
     async def execute_task(
         self,
         *,
@@ -615,6 +624,13 @@ class SubAgentExecutor:
         parent_body: dict[str, Any],
         arguments_json: object,
         max_iters: int = 4,
+        max_concurrent: int | None = None,
+        max_depth: int | None = None,
+        run_timeout_seconds: int | None = None,
+        default_context_mode: str | None = None,
+        depth: int = 0,
+        parent_response_id: str | None = None,
+        stage_event_sink: Callable[[StageEvent], Awaitable[None]] | None = None,
     ) -> str:
         obj = _coerce_arguments_object(arguments_json=arguments_json, tool_name="task")
         args = TaskArgs.model_validate(obj)
@@ -633,13 +649,25 @@ class SubAgentExecutor:
         if not child_pack.spec.exposed:
             raise ValueError(f"agent_id not exposed: {child_agent_id}")
 
+        runtime_cfg = parent_pack.spec.runtime.subagent
+        effective_max_concurrent = max(1, max_concurrent or runtime_cfg.max_concurrent)
+        effective_max_depth = max_depth if max_depth is not None else runtime_cfg.max_depth
+        effective_timeout = run_timeout_seconds or runtime_cfg.run_timeout_seconds
+        context_mode = args.context_mode or default_context_mode or runtime_cfg.default_context_mode
+        if context_mode not in {"isolated", "fork_last_n"}:
+            context_mode = "isolated"
+        child_depth = depth + 1
+        if child_depth > effective_max_depth:
+            raise ValueError("subagent_depth_limit_reached")
+
         from anyagent.protocol.tool_runtime import ToolContext
 
         from .prompt_envelope import build_default_environment_context_values, build_prompt_envelope
-        from .tool_loop import run_tool_loop_nonstream
+        from .tool_loop import resolve_manifest_with_mcp, run_tool_loop_nonstream
 
         model = child_pack.spec.model.default or parent_body.get("model")
         child_session_key = _task_session_key(parent_session_key=session_key, agent_id=child_agent_id)
+        child_response_id = f"resp_sub_{uuid4().hex}"
         child_body: dict[str, Any] = {
             "input": args.prompt,
             "metadata": {
@@ -647,8 +675,17 @@ class SubAgentExecutor:
                 "session_key": child_session_key,
                 "parent_session_key": session_key,
                 "task_description": args.description,
+                "subagent_depth": child_depth,
+                "subagent_context_mode": context_mode,
             },
         }
+        if context_mode == "fork_last_n" and isinstance(parent_body.get("input"), list):
+            parent_items = list(parent_body["input"])[-8:]
+            child_body["input"] = [
+                {"role": "developer", "content": "Forked parent context follows for this delegated task."},
+                *parent_items,
+                {"role": "user", "content": args.prompt},
+            ]
         if isinstance(model, str) and model.strip():
             child_body["model"] = model.strip()
 
@@ -664,23 +701,95 @@ class SubAgentExecutor:
         )
         child_body = prompt_envelope.apply_to_body(body=child_body)
 
-        status_code, payload = await run_tool_loop_nonstream(
-            model_provider=model_provider,
-            tool_runtime=tool_runtime,
-            agent_id=child_agent_id,
-            session_key=child_session_key,
-            body=child_body,
-            idempotency_key=None,
-            tool_context=ToolContext(),
-            selected_skills=[],
-            max_iters=max_iters,
-            prompt_envelope_applied=True,
-        )
+        async def _manifest_resolver() -> tuple[list[dict[str, Any]], int]:
+            tools, version = await resolve_manifest_with_mcp(
+                tool_runtime=tool_runtime,
+                mcp_manager=None,
+                agent_id=child_agent_id,
+                session_key=child_session_key,
+                metadata=child_body.get("metadata") if isinstance(child_body.get("metadata"), dict) else None,
+                request_tools=child_body.get("tools"),
+                tool_context=ToolContext(),
+                enabled_skills=None,
+            )
+            if child_depth >= effective_max_depth:
+                tools = [tool for tool in tools if tool.get("name") != "task"]
+            return tools, version
+
+        async def _run_child() -> tuple[int, dict[str, Any]]:
+            return await run_tool_loop_nonstream(
+                model_provider=model_provider,
+                tool_runtime=tool_runtime,
+                agent_id=child_agent_id,
+                session_key=child_session_key,
+                body=child_body,
+                idempotency_key=None,
+                canonical_response_id=child_response_id,
+                tool_context=ToolContext(),
+                selected_skills=[],
+                manifest_resolver=_manifest_resolver,
+                max_iters=max_iters,
+                stage_event_sink=stage_event_sink,
+                prompt_envelope_applied=True,
+            )
+
+        semaphore = self._semaphore_for(effective_max_concurrent)
+        started = monotonic()
+        parent_event_response_id = parent_response_id or "resp_anyagent"
+        if stage_event_sink is not None:
+            await stage_event_sink(
+                AnyAgentSubAgentSpawnedEvent(
+                    response_id=parent_event_response_id,
+                    parent_response_id=parent_event_response_id,
+                    child_response_id=child_response_id,
+                    agent_id=child_agent_id,
+                    depth=child_depth,
+                    task_description=summarize_payload(args.description),
+                    ts_ms=_now_ms(),
+                )
+            )
+        try:
+            async with semaphore:
+                status_code, payload = await asyncio.wait_for(_run_child(), timeout=effective_timeout)
+        except TimeoutError:
+            if stage_event_sink is not None:
+                await stage_event_sink(
+                    AnyAgentSubAgentTimeoutEvent(
+                        response_id=parent_event_response_id,
+                        child_response_id=child_response_id,
+                        agent_id=child_agent_id,
+                        timeout_ms=int(effective_timeout * 1000),
+                        ts_ms=_now_ms(),
+                    )
+                )
+            return json.dumps(
+                TaskResult(agent_id=child_agent_id, output_text="subagent task timed out").model_dump(),
+                ensure_ascii=False,
+            )
         if status_code >= 400:
             raise RuntimeError(_extract_error_message(payload))
 
         result = TaskResult(agent_id=child_agent_id, output_text=_extract_response_output_text(payload))
+        if stage_event_sink is not None:
+            await stage_event_sink(
+                AnyAgentSubAgentCompletedEvent(
+                    response_id=parent_event_response_id,
+                    child_response_id=child_response_id,
+                    agent_id=child_agent_id,
+                    status="completed",
+                    duration_ms=int((monotonic() - started) * 1000),
+                    ts_ms=_now_ms(),
+                )
+            )
         return json.dumps(result.model_dump(), ensure_ascii=False)
+
+    @classmethod
+    def _semaphore_for(cls, max_concurrent: int) -> asyncio.Semaphore:
+        semaphore = cls._semaphores.get(max_concurrent)
+        if semaphore is None:
+            semaphore = asyncio.Semaphore(max_concurrent)
+            cls._semaphores[max_concurrent] = semaphore
+        return semaphore
 
 
 def _coerce_arguments_object(*, arguments_json: object, tool_name: str) -> dict[str, Any]:

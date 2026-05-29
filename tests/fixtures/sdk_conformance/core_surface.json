@@ -1,5 +1,5 @@
 {
-  "schema_version": "2026-05-27",
+  "schema_version": "2026-05-29",
   "openai_response_cases": [
     {
       "name": "responses.create.completed",
@@ -846,6 +846,99 @@
           "preview": null,
           "preview_truncated": false
         }
+      }
+    },
+    {
+      "name": "stage_event.subagent.spawned",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.subagent.spawned",
+        "response_id": "resp_parent",
+        "seq": 9,
+        "ts_ms": 900,
+        "parent_response_id": "resp_parent",
+        "child_response_id": "resp_child",
+        "agent_id": "worker",
+        "depth": 1,
+        "task_description": {
+          "bytes": 8,
+          "sha256": "task-sha",
+          "preview": null,
+          "preview_truncated": false
+        }
+      }
+    },
+    {
+      "name": "stage_event.subagent.completed",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.subagent.completed",
+        "response_id": "resp_parent",
+        "seq": 10,
+        "ts_ms": 1000,
+        "child_response_id": "resp_child",
+        "agent_id": "worker",
+        "status": "completed",
+        "duration_ms": 42
+      }
+    },
+    {
+      "name": "stage_event.subagent.timeout",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.subagent.timeout",
+        "response_id": "resp_parent",
+        "seq": 11,
+        "ts_ms": 1100,
+        "child_response_id": "resp_child",
+        "agent_id": "worker",
+        "timeout_ms": 900000
+      }
+    },
+    {
+      "name": "stage_event.context.compacted",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.context.compacted",
+        "response_id": "resp_stage",
+        "seq": 12,
+        "ts_ms": 1200,
+        "tokens_before": 32000,
+        "tokens_after": 12000,
+        "items_before": 40,
+        "items_after": 12,
+        "summary": {
+          "bytes": 20,
+          "sha256": "summary-sha",
+          "preview": null,
+          "preview_truncated": false
+        }
+      }
+    },
+    {
+      "name": "stage_event.agent.loop_warning",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.agent.loop_warning",
+        "response_id": "resp_stage",
+        "seq": 13,
+        "ts_ms": 1300,
+        "tool_signature": "sig-repeat",
+        "repeat_count": 3,
+        "window_size": 20
+      }
+    },
+    {
+      "name": "stage_event.agent.loop_terminated",
+      "schema": "anyagent.protocol.stage_events.StageEvent",
+      "payload": {
+        "type": "anyagent.agent.loop_terminated",
+        "response_id": "resp_stage",
+        "seq": 14,
+        "ts_ms": 1400,
+        "tool_signature": "sig-repeat",
+        "repeat_count": 5,
+        "hard_limit": 5
       }
     },
     {

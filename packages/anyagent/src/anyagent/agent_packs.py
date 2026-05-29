@@ -74,6 +74,42 @@ class MultiAgentSpec(BaseModel):
     limits: MultiAgentLimits | None = None
 
 
+class SubAgentRuntimeSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    max_concurrent: int = Field(default=3, ge=1)
+    max_depth: int = Field(default=3, ge=0)
+    run_timeout_seconds: int = Field(default=900, ge=1)
+    default_context_mode: str = "isolated"
+
+
+class LoopDetectionRuntimeSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    window_size: int = Field(default=20, ge=1)
+    warn_threshold: int = Field(default=3, ge=1)
+    hard_limit: int = Field(default=5, ge=1)
+
+
+class ContextCompactionRuntimeSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    max_context_tokens: int = Field(default=128_000, ge=1)
+    trigger_ratio: float = Field(default=0.8, gt=0)
+    keep_recent_tokens: int = Field(default=20_000, ge=1)
+
+
+class RuntimeSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    middlewares: list[str] | None = None
+    subagent: SubAgentRuntimeSpec = Field(default_factory=SubAgentRuntimeSpec)
+    loop_detection: LoopDetectionRuntimeSpec = Field(default_factory=LoopDetectionRuntimeSpec)
+    context_compaction: ContextCompactionRuntimeSpec = Field(default_factory=ContextCompactionRuntimeSpec)
+
+
 class AgentSpec(BaseModel):
     """
     AgentSpec = `<agent_pack_dir>/agent.yaml` 的结构化表示（v0 最小子集）。
@@ -87,6 +123,7 @@ class AgentSpec(BaseModel):
     skills: AgentSkillsSpec = Field(default_factory=AgentSkillsSpec)
     sandbox: SandboxPolicy = Field(default_factory=SandboxPolicy)
     multiagent: MultiAgentSpec = Field(default_factory=MultiAgentSpec)
+    runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
 
 
 @dataclass(frozen=True)

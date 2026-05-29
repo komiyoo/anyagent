@@ -21,8 +21,8 @@ from pydantic import BaseModel, TypeAdapter
 import anyagent.protocol as protocol_pkg
 
 
-SCHEMA_BUNDLE_VERSION = "2026-05-27"
-PROTOCOL_VERSION = "0.1.9"
+SCHEMA_BUNDLE_VERSION = "2026-05-29"
+PROTOCOL_VERSION = "0.1.10"
 OPENAPI_VERSION = "3.1.0"
 
 

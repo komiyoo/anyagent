@@ -39,8 +39,8 @@ def _fixture_names(fixture: dict[str, Any], key: str) -> set[str]:
 def test_protocol_schema_export_includes_core_models_and_unions() -> None:
     bundle = export_protocol_schema_bundle()
 
-    assert bundle["schema_version"] == "2026-05-27"
-    assert bundle["protocol_version"] == "0.1.9"
+    assert bundle["schema_version"] == "2026-05-29"
+    assert bundle["protocol_version"] == "0.1.10"
     assert bundle["protocol_package"] == "anyagent.protocol"
     assert bundle["changelog"] == export_protocol_changelog()
     assert bundle["changelog"][0]["protocol_version"] == bundle["protocol_version"]
@@ -376,6 +376,9 @@ def test_sdk_minimum_matrix_references_existing_conformance_fixtures() -> None:
         "admin.agent.skills.update",
         "admin.agent.config.update",
         "stage_event.tool.planned",
+        "stage_event.subagent.spawned",
+        "stage_event.context.compacted",
+        "stage_event.agent.loop_terminated",
     }
     assert required_operations <= set(operation_names)
 
@@ -392,6 +395,12 @@ def test_sdk_minimum_matrix_covers_stage_event_and_tool_runtime_main_paths() -> 
         "stage_event.command.result",
         "stage_event.prompt.context",
         "stage_event.sandbox.workspace.restored",
+        "stage_event.subagent.spawned",
+        "stage_event.subagent.completed",
+        "stage_event.subagent.timeout",
+        "stage_event.context.compacted",
+        "stage_event.agent.loop_warning",
+        "stage_event.agent.loop_terminated",
         "stage_event.done",
         "tool_runtime.manifest.request",
         "tool_runtime.manifest.response",
