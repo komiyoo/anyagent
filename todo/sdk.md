@@ -24,7 +24,7 @@
 ### Phase 1 — Protocol & SDK Hardening
 
 - [x] P0 扩大跨语言 conformance fixture 覆盖到 Stage Events 全主路径与 Tool Runtime manifest/execute(Req: `requirements.md#req-4-4`、`requirements.md#req-6`; Impl: `tests/fixtures/sdk_conformance/core_surface.json:670`; Module: `sdk-conformance`)
-- [ ] P0 TypeScript SDK 完成 Responses 创建/流式/取消、Skills、Tools、Agents 四个 namespace 的最小可用面与 smoke(Req: `requirements.md#req-4`)
+- [x] P0 TypeScript SDK 完成 Responses 创建/流式/取消、Skills、Tools、Agents 四个 namespace 的最小可用面与 smoke(Req: `requirements.md#req-4`; Impl: `sdks/typescript/src/client.ts:384`; Module: `sdks/typescript`)
 - [ ] P1 把 `minimum_matrix.json` 升级为对外兼容承诺基线,文档中标注每条 fixture 对应的 protocol version(Req: `requirements.md#req-4`、`requirements.md#req-7`)
 
 ### Phase 1.5 — Agentic Ecosystem Hardening

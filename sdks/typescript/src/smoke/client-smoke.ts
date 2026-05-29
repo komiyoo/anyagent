@@ -122,6 +122,13 @@ const client = new AnyAgentClient({
   fetch: fakeFetch,
 });
 
+assert(typeof client.responses.create === "function", "MVU should expose responses.create");
+assert(typeof client.responses.stream === "function", "MVU should expose responses.stream");
+assert(typeof client.responses.cancel === "function", "MVU should expose responses.cancel");
+assert(typeof client.agents.list === "function", "MVU should expose agents namespace");
+assert(typeof client.tools.catalog === "function", "MVU should expose tools namespace");
+assert(typeof client.skills.list === "function", "MVU should expose skills namespace");
+
 const health = await client.health();
 assert(health.ok === true, "health should decode response");
 
