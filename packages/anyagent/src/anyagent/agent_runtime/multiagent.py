@@ -21,6 +21,7 @@ from anyagent.protocol.multi_agent import (
     SendInputResult,
     SpawnAgentArgs,
     SpawnAgentResult,
+    TaskArgs,
     WaitArgs,
     WaitResult,
 )
@@ -101,6 +102,16 @@ def spawn_agent_tool_schema() -> FunctionToolParam:
     return FunctionToolParam(
         name="spawn_agent",
         description="Spawn a child agent thread (anyagent system tool).",
+        parameters=schema,
+        strict=True,
+    )
+
+
+def task_tool_schema() -> FunctionToolParam:
+    schema = TaskArgs.model_json_schema()
+    return FunctionToolParam(
+        name="task",
+        description="Delegate a bounded task to an allowed child agent and return its final text output.",
         parameters=schema,
         strict=True,
     )
@@ -220,6 +231,7 @@ class MultiAgentManager:
         if not allow:
             return []
         return [
+            task_tool_schema(),
             spawn_agent_tool_schema(),
             send_input_tool_schema(),
             wait_tool_schema(),

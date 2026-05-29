@@ -57,6 +57,7 @@ __all__ = [
     "send_input_tool_schema",
     "spawn_agent_tool_schema",
     "stable_root_thread_id",
+    "task_tool_schema",
     "wait_tool_schema",
 ]
 
@@ -126,5 +127,6 @@ from .multiagent import (
     send_input_tool_schema,
     spawn_agent_tool_schema,
     stable_root_thread_id,
+    task_tool_schema,
     wait_tool_schema,
 )

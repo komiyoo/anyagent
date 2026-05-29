@@ -11,6 +11,7 @@ from .models import RegisteredTool, ToolCategory, ToolDefinition, ToolHandler
 
 RESERVED_NAMES = {
     # v0 允许的系统保留工具名（Codex 风格 multi-agent 原语）
+    "task",
     "spawn_agent",
     "send_input",
     "wait",

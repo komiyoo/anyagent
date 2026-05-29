@@ -34,6 +34,21 @@ class SpawnAgentResult(BaseModel):
     nickname: str | None = None
 
 
+class TaskArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    description: str = Field(min_length=1)
+    prompt: str = Field(min_length=1)
+    agent_id: str = Field(min_length=1)
+
+
+class TaskResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    output_text: str
+
+
 class SendInputArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
