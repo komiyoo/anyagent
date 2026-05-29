@@ -13,6 +13,7 @@
 3. [tool-runtime-federation-v0.md](tool-runtime-federation-v0.md)：Tool Runtime 联邦边界、热更新控制面与 Admin API 形态。
 4. [single-repo-multi-package-boundary.md](single-repo-multi-package-boundary.md)：保持单仓库协作，通过协议真源、多包边界和 contract tests 支撑 server/client/studio 与多语言 SDK，暂不拆独立 repo。
 5. [sandbox-backend-selection.md](sandbox-backend-selection.md)：第二 sandbox backend 选定 OpenSandbox on Kubernetes，`local-unsafe` 仅作为本地 reference/dev backend。
+6. [run-scheduling-lock-contract.md](run-scheduling-lock-contract.md)：跨节点 Run 调度以 `session_partition_key` 为 keyed serialization 边界，锁统一为可续租 LeaseLock contract，并要求 Redis/PostgreSQL adapter 共享语义。
 
 维护约定：
 
