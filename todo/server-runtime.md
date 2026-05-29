@@ -41,7 +41,7 @@
 ### Phase 2 — Production Runtime Hardening
 
 - [x] P0 设计跨节点 Run 调度与 lock contract,落 ADR(Req: `requirements.md#req-5`; Impl: `docs/architecture/decisions/run-scheduling-lock-contract.md:10`; Module: `docs.architecture.decisions`)
-- [ ] P0 实装 lock contract 的 Redis 与 PostgreSQL adapter,跑通跨节点 resume / cancel(Req: `requirements.md#req-5`、`requirements.md#req-3-1`)
+- [x] P0 实装 lock contract 的 Redis 与 PostgreSQL adapter,跑通跨节点 resume / cancel(Req: `requirements.md#req-5`、`requirements.md#req-3-1`; Impl: `packages/anyagent/src/anyagent/storage/external/postgres.py:20`, `packages/anyagent/src/anyagent/storage/external/sqlalchemy_backend.py:403`, `tests/unit/server/test_lease_lock_contract.py:45`, `tests/unit/server/test_optional_responses.py:102`; Module: `anyagent.storage`)
 - [ ] P1 Unified Observability Sink：统一 envelope 出口 + 外部审计系统对接（Req: `requirements.md#req-5-13`；Detail: `todo/persistence.md` M4）
 - [ ] P2 整理 reference conformance suite,为第二 server runtime 接入准备验收基线(Req: `requirements.md#req-5`、`requirements.md#req-7`)
 

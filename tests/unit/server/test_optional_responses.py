@@ -13,6 +13,7 @@ from anyagent.server.responses_optional import (
     optional_response_payload_from_run,
     optional_response_status_from_run,
 )
+from anyagent.storage import stream_external_response_blocks
 from anyagent.storage.inmemory import InMemoryEventStore, InMemoryLeaseLock, InMemoryRunStore, InMemorySessionStore
 from anyagent.storage.runtime import StorageRuntime
 
@@ -96,3 +97,75 @@ def test_optional_responses_router_retrieves_and_cancels_run() -> None:
     events = event_store._events["resp_router_1"]
     assert [item.event for item in events] == ["response.completed", None]
     assert events[-1].data == "[DONE]"
+
+
+def test_shared_storage_runtime_replays_and_cancels_across_nodes() -> None:
+    run_store = InMemoryRunStore()
+    event_store = InMemoryEventStore()
+    lock = InMemoryLeaseLock()
+    node_a = StorageRuntime(
+        mode="external",
+        run_store=run_store,
+        event_store=event_store,
+        lease_lock=lock,
+        session_store=InMemorySessionStore(),
+    )
+    node_b = StorageRuntime(
+        mode="external",
+        run_store=run_store,
+        event_store=event_store,
+        lease_lock=lock,
+        session_store=InMemorySessionStore(),
+    )
+
+    async def _seed_and_replay() -> list[bytes]:
+        await node_a.run_store.try_create_started(
+            response_id="resp_cross_node_1",
+            session_partition_key="main::cross-node",
+            idempotency_key="idem_cross_node_1",
+            stream=True,
+        )
+        await node_a.event_store.append(
+            response_id="resp_cross_node_1",
+            session_partition_key="main::cross-node",
+            event="response.created",
+            data='{"response":{"id":"resp_cross_node_1","status":"in_progress"}}',
+        )
+        await node_a.event_store.append(
+            response_id="resp_cross_node_1",
+            session_partition_key="main::cross-node",
+            event="response.output_text.delta",
+            data='{"delta":"hi"}',
+        )
+        out: list[bytes] = []
+        async for chunk in stream_external_response_blocks(
+            run_store=node_b.run_store,
+            event_store=node_b.event_store,
+            response_id="resp_cross_node_1",
+            last_seq=1,
+            poll_timeout_s=0.01,
+        ):
+            out.append(chunk)
+            break
+        return out
+
+    replayed = asyncio.run(_seed_and_replay())
+    assert b"response.output_text.delta" in replayed[0]
+    assert b'{"delta":"hi"}' in replayed[0]
+
+    app = FastAPI()
+    app.state.storage = node_b
+    app.include_router(create_optional_responses_router(api_key="test-key"))
+
+    with TestClient(app) as client:
+        cancelled = client.post(
+            "/v1/responses/resp_cross_node_1/cancel",
+            headers={"authorization": "Bearer test-key"},
+        )
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()["status"] == "cancelled"
+
+    cancelled_run = asyncio.run(node_a.run_store.get("resp_cross_node_1"))
+    assert cancelled_run is not None
+    assert cancelled_run.status == "errored"
+    assert cancelled_run.error_json == cancelled_response_error_json()

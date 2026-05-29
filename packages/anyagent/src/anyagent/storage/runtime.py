@@ -61,10 +61,10 @@ def resolve_storage_runtime_mode(settings: StorageSettings) -> str:
     if mode == "none":
         return "none"
     if mode == "external":
-        if not has_sql or not has_redis:
-            raise RuntimeError("STORAGE_MODE=external requires REDIS_DSN plus POSTGRES_DSN or MYSQL_DSN")
+        if not has_sql:
+            raise RuntimeError("STORAGE_MODE=external requires POSTGRES_DSN or MYSQL_DSN")
         return "external"
-    if has_sql and has_redis:
+    if has_sql:
         return "external"
     return "none"
 
@@ -126,25 +126,23 @@ async def create_storage_runtime(
         raise RuntimeError("invalid POSTGRES_SCHEMA (expected [a-zA-Z_][a-zA-Z0-9_]{0,62})")
 
     try:
-        from redis.asyncio import Redis
-
         from .external import (
             MySQLEventStore,
             MySQLRunStore,
             MySQLSessionStore,
             PostgresEventStore,
+            PostgresLeaseLock,
             PostgresRunStore,
             PostgresSessionStore,
-            RedisLeaseLock,
             create_external_sql_engine,
             resolve_external_sql_backend_config,
         )
     except Exception as e:  # noqa: BLE001
         raise RuntimeError(
-            "external storage runtime requires installing anyagent[postgres,redis]"
-            " or anyagent[mysql,redis]"
+            "external storage runtime requires installing anyagent[postgres] or anyagent[mysql]"
         ) from e
 
+    has_redis = storage_settings.redis_dsn is not None
     sql_config = resolve_external_sql_backend_config(
         postgres_dsn=storage_settings.postgres_dsn,
         mysql_dsn=storage_settings.mysql_dsn,
@@ -154,7 +152,6 @@ async def create_storage_runtime(
         dialect=storage_settings.sql_backend_dialect,
     )
     sql_engine = create_external_sql_engine(sql_config)
-    redis = Redis.from_url(str(storage_settings.redis_dsn))
     if sql_config.dialect == "mysql":
         run_store = MySQLRunStore(engine=sql_engine)
         event_store = MySQLEventStore(engine=sql_engine)
@@ -163,11 +160,24 @@ async def create_storage_runtime(
         run_store = PostgresRunStore(engine=sql_engine, schema_name=schema)
         event_store = PostgresEventStore(engine=sql_engine, schema_name=schema)
         session_store = PostgresSessionStore(engine=sql_engine, schema_name=schema)
-    lease_lock = RedisLeaseLock(redis=redis, namespace=storage_settings.redis_namespace)
+
+    if has_redis:
+        from redis.asyncio import Redis
+        from .external import RedisLeaseLock
+        redis = Redis.from_url(str(storage_settings.redis_dsn))
+        lease_lock = RedisLeaseLock(redis=redis, namespace=storage_settings.redis_namespace)
+    else:
+        redis = None
+        if sql_config.dialect == "postgresql":
+            lease_lock = PostgresLeaseLock(engine=sql_engine, schema_name=schema)
+            logger.info("Redis not configured; using PostgreSQL lease lock")
+        else:
+            lease_lock = InMemoryLeaseLock()
+            logger.info("Redis not configured; using in-memory lease lock (single-node only)")
 
     logger.info(
         "storage enabled (external)",
-        extra={"sql_backend_dialect": sql_config.dialect, "postgres_schema": schema, "redis_namespace": storage_settings.redis_namespace},
+        extra={"sql_backend_dialect": sql_config.dialect, "postgres_schema": schema, "has_redis": has_redis},
     )
     return StorageRuntime(
         mode="external",

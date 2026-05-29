@@ -7,6 +7,7 @@ __all__ = [
     "MySQLRunStore",
     "MySQLSessionStore",
     "PostgresEventStore",
+    "PostgresLeaseLock",
     "PostgresRunStore",
     "PostgresSessionStore",
     "RedisLeaseLock",
@@ -26,7 +27,7 @@ _CONFIG_EXPORTS = {
     "resolve_external_sql_backend_config",
 }
 _MYSQL_EXPORTS = {"MySQLEventStore", "MySQLRunStore", "MySQLSessionStore"}
-_POSTGRES_EXPORTS = {"PostgresEventStore", "PostgresRunStore", "PostgresSessionStore"}
+_POSTGRES_EXPORTS = {"PostgresEventStore", "PostgresLeaseLock", "PostgresRunStore", "PostgresSessionStore"}
 _MIGRATION_EXPORTS = {
     "apply_external_storage_schema",
     "apply_external_storage_schema_async",

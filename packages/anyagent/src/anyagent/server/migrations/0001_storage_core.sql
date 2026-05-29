@@ -42,6 +42,14 @@ CREATE TABLE IF NOT EXISTS {{schema}}.events (
   PRIMARY KEY (response_id, seq)
 );
 
+CREATE TABLE IF NOT EXISTS {{schema}}.lease_locks (
+  lock_key TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  expires_at_ms BIGINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS {{schema}}.telemetry_events (
   id BIGSERIAL PRIMARY KEY,
   source TEXT NOT NULL,

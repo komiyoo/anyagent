@@ -11,6 +11,7 @@ class StorageTables:
     runs: Table
     sessions: Table
     events: Table
+    leases: Table
 
 
 def build_storage_tables(*, schema_name: str | None = None, dialect: str = "postgresql") -> StorageTables:
@@ -58,7 +59,17 @@ def build_storage_tables(*, schema_name: str | None = None, dialect: str = "post
         Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
         schema=schema_name,
     )
-    return StorageTables(metadata=metadata, runs=runs, sessions=sessions, events=events)
+    leases = Table(
+        "lease_locks",
+        metadata,
+        Column("lock_key", key_type, primary_key=True),
+        Column("owner", key_type, nullable=False),
+        Column("expires_at_ms", BIGINT, nullable=False),
+        Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+        Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()),
+        schema=schema_name,
+    )
+    return StorageTables(metadata=metadata, runs=runs, sessions=sessions, events=events, leases=leases)
 
 
 def _identity_column_type(dialect: str):

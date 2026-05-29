@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+from time import monotonic, time
 from typing import Any
 
-from anyagent.storage.models import EventRecord, RunRecord, SessionRecord
-from sqlalchemy import func, insert, select, update
+from anyagent.storage.models import EventRecord, LeaseLockHandle, RunRecord, SessionRecord
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -398,6 +400,65 @@ class SqlAlchemyEventStore(SqlAlchemyBackendBase):
         return out
 
 
+class SqlAlchemyLeaseLock(SqlAlchemyBackendBase):
+    async def acquire(self, *, key: str, owner: str, ttl_ms: int, wait_timeout_ms: int) -> LeaseLockHandle | None:
+        deadline = monotonic() + (max(0, int(wait_timeout_ms)) / 1000.0)
+        ttl_ms = max(1, int(ttl_ms))
+        while True:
+            now_ms = _now_ms()
+            expires_at_ms = now_ms + ttl_ms
+            if await self._try_acquire_once(key=key, owner=owner, now_ms=now_ms, expires_at_ms=expires_at_ms):
+                return LeaseLockHandle(key=key, owner=owner)
+            if monotonic() >= deadline:
+                return None
+            await asyncio.sleep(0.05)
+
+    async def renew(self, *, key: str, owner: str, ttl_ms: int) -> bool:
+        now_ms = _now_ms()
+        stmt = (
+            update(self._tables.leases)
+            .where(self._tables.leases.c.lock_key == key)
+            .where(self._tables.leases.c.owner == owner)
+            .where(self._tables.leases.c.expires_at_ms > now_ms)
+            .values(expires_at_ms=now_ms + max(1, int(ttl_ms)), updated_at=func.now())
+        )
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return bool(result.rowcount)
+
+    async def release(self, *, key: str, owner: str) -> bool:
+        stmt = delete(self._tables.leases).where(
+            self._tables.leases.c.lock_key == key,
+            self._tables.leases.c.owner == owner,
+        )
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return bool(result.rowcount)
+
+    async def _try_acquire_once(self, *, key: str, owner: str, now_ms: int, expires_at_ms: int) -> bool:
+        try:
+            async with self._engine.begin() as conn:
+                await conn.execute(
+                    insert(self._tables.leases).values(
+                        lock_key=key,
+                        owner=owner,
+                        expires_at_ms=expires_at_ms,
+                    )
+                )
+            return True
+        except IntegrityError:
+            pass
+
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                update(self._tables.leases)
+                .where(self._tables.leases.c.lock_key == key)
+                .where(self._tables.leases.c.expires_at_ms <= now_ms)
+                .values(owner=owner, expires_at_ms=expires_at_ms, updated_at=func.now())
+            )
+            return bool(result.rowcount)
+
+
 def _row_to_session(row: dict[str, Any]) -> SessionRecord:
     return SessionRecord(
         session_partition_key=str(row["session_partition_key"]),
@@ -406,3 +467,7 @@ def _row_to_session(row: dict[str, Any]) -> SessionRecord:
         snapshot_json=row.get("snapshot_json") if isinstance(row.get("snapshot_json"), dict) else {},
         snapshot_version=int(row.get("snapshot_version") or 0),
     )
+
+
+def _now_ms() -> int:
+    return int(time() * 1000)
