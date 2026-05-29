@@ -105,6 +105,46 @@ def register_builtin_core_tools_sync(registry: ToolRegistry) -> None:
     construction, while the async wrapper below preserves the historical apps API.
     """
 
+    async def tool_search(args: dict[str, Any], context: dict[str, Any]) -> str:
+        _ = context
+        query = str(args.get("query") or args.get("q") or "").strip()
+        limit = int(args.get("limit") or 10)
+        tools = registry.search_tools(query, limit=limit)
+        return json.dumps(
+            {
+                "query": query,
+                "tools": [
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "category": tool.category,
+                        "kind": tool.kind,
+                        "parameters": tool.parameters,
+                    }
+                    for tool in tools
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+    registry.register_tool(
+        tool=ToolDefinition(
+            name="core.tool_search",
+            description="Search deferred tools by name or description and return schemas for matching tools.",
+            category="core",
+            parameters={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                },
+            },
+        ),
+        handler=tool_search,
+    )
+
     async def web_fetch(args: dict[str, Any], context: dict[str, Any]) -> str:
         url = args["url"]
         timeout_ms = int(args.get("timeout_ms", 15000))
@@ -138,6 +178,7 @@ def register_builtin_core_tools_sync(registry: ToolRegistry) -> None:
             name="core.web_fetch",
             description="Fetch a URL and return text content (SSRF-protected, limited).",
             category="core",
+            exposure="deferred",
             parameters={
                 "type": "object",
                 "additionalProperties": False,
@@ -211,6 +252,7 @@ def register_builtin_core_tools_sync(registry: ToolRegistry) -> None:
             name="core.web_search",
             description="Search the web via provider-backed search APIs and return normalized results.",
             category="core",
+            exposure="deferred",
             parameters={
                 "type": "object",
                 "additionalProperties": False,
@@ -321,6 +363,7 @@ def register_privileged_core_tools_sync(*, registry: ToolRegistry, credential_st
             name="admin.credential_set",
             description="Privileged: write-only set credential (no get). Requires explicit allowlist.",
             category="core",
+            exposure="hidden",
             parameters={
                 "type": "object",
                 "additionalProperties": False,

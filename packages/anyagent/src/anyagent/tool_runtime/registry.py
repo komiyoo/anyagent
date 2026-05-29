@@ -162,10 +162,52 @@ class ToolRegistry:
         return best[1] if best else None
 
     def list_tools(self) -> list[ToolDefinition]:
-        return [rt.definition for _, rt in sorted(self._tools.items(), key=lambda kv: kv[0])]
+        return [
+            rt.definition
+            for _, rt in sorted(self._tools.items(), key=lambda kv: kv[0])
+            if rt.definition.exposure == "direct"
+        ]
 
     def listTools(self) -> list[ToolDefinition]:  # noqa: N802
         return self.list_tools()
+
+    def list_all_tools(self) -> list[ToolDefinition]:
+        return [rt.definition for _, rt in sorted(self._tools.items(), key=lambda kv: kv[0])]
+
+    def listAllTools(self) -> list[ToolDefinition]:  # noqa: N802
+        return self.list_all_tools()
+
+    def search_tools(self, query: str, *, limit: int = 10) -> list[ToolDefinition]:
+        text = query.strip().lower() if isinstance(query, str) else ""
+        terms = [term for term in re.split(r"\s+", text) if term]
+        candidates = [
+            rt.definition
+            for _, rt in sorted(self._tools.items(), key=lambda kv: kv[0])
+            if rt.definition.exposure == "deferred"
+        ]
+        if not terms:
+            return candidates[: max(1, limit)]
+
+        scored: list[tuple[int, ToolDefinition]] = []
+        for tool in candidates:
+            haystack = " ".join(
+                value
+                for value in [
+                    tool.name,
+                    tool.description or "",
+                    tool.category,
+                    tool.kind or "",
+                ]
+                if value
+            ).lower()
+            score = sum(3 if term in tool.name.lower() else 1 for term in terms if term in haystack)
+            if score > 0:
+                scored.append((score, tool))
+        scored.sort(key=lambda item: (-item[0], item[1].name))
+        return [tool for _, tool in scored[: max(1, limit)]]
+
+    def searchTools(self, query: str, *, limit: int = 10) -> list[ToolDefinition]:  # noqa: N802
+        return self.search_tools(query, limit=limit)
 
     def get_tool(self, name: str) -> RegisteredTool | None:
         return self._tools.get(name)

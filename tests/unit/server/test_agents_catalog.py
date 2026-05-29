@@ -1320,9 +1320,7 @@ async def _run_admin_tools_catalog(tmp_path: Path) -> None:
         assert isinstance(catalog, AdminToolCatalogResponse)
         assert catalog.toolset_version >= 1
         assert [tool.name for tool in catalog.tools] == [
-            "admin.credential_set",
-            "core.web_fetch",
-            "core.web_search",
+            "core.tool_search",
             "exec",
         ]
         exec_tool = next(tool for tool in catalog.tools if tool.name == "exec")

@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 ToolCategory = Literal["core", "app", "sandbox", "channel"]
+ToolExposure = Literal["direct", "deferred", "hidden"]
 ToolKind = Literal["command"]
 
 
@@ -25,6 +26,7 @@ class ToolDefinition(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
     category: ToolCategory
     kind: ToolKind | None = None
+    exposure: ToolExposure = "direct"
     credentials: list[ToolCredentialSpec] = Field(default_factory=list)
 
 

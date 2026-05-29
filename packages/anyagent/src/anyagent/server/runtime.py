@@ -561,7 +561,7 @@ class InProcessToolRuntimeService:
         deny_patterns = effective_policy.deny_tools if effective_policy is not None else None
 
         out = []
-        for tool in self._registry.list_tools():
+        for tool in self._registry.list_all_tools():
             if tool.name == "exec" and not _exec_enabled_for_agent(pack):
                 continue
             if not requested_patterns:

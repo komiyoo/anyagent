@@ -1,6 +1,7 @@
 __all__ = [
     "__version__",
     "ToolCategory",
+    "ToolExposure",
     "ToolDefinition",
     "RegisteredTool",
     "ToolRegistry",
@@ -17,7 +18,7 @@ __all__ = [
 
 __version__ = "0.1.8"
 
-from .models import ToolCategory, ToolDefinition, RegisteredTool
+from .models import ToolCategory, ToolDefinition, ToolExposure, RegisteredTool
 from .client import ToolRuntimeClient, ToolsetVersionMismatch, create_tool_runtime_client, execute_tool_runtime_tool, fetch_manifest_tools
 from .registry import (
     ToolNameValidationError,

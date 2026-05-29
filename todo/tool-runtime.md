@@ -23,8 +23,8 @@
 
 ### Phase 1.5 — Agentic Ecosystem Hardening
 
-- [ ] P0 Tool Deferred Loading:在 `ToolDefinition` 增加 `exposure: Literal["direct", "deferred", "hidden"]` 字段,`ToolRegistry.list_tools()` 只返回 direct 工具完整 schema(Req: `requirements.md#req-5-2`、`requirements.md#req-5-2-1`)
-- [ ] P0 Tool Search 机制:新增 `ToolRegistry.search_tools(query: str)` 方法 + 注册 `core.tool_search` built-in tool 供 agent loop 按需发现 deferred 工具(Req: `requirements.md#req-5-2-1`)
+- [x] P0 Tool Deferred Loading:在 `ToolDefinition` 增加 `exposure: Literal["direct", "deferred", "hidden"]` 字段,`ToolRegistry.list_tools()` 只返回 direct 工具完整 schema(Req: `requirements.md#req-5-2`、`requirements.md#req-5-2-1`; Impl: `packages/anyagent/src/anyagent/tool_runtime/models.py:29`; Module: `anyagent.tool_runtime`)
+- [x] P0 Tool Search 机制:新增 `ToolRegistry.search_tools(query: str)` 方法 + 注册 `core.tool_search` built-in tool 供 agent loop 按需发现 deferred 工具(Req: `requirements.md#req-5-2-1`; Impl: `packages/anyagent/src/anyagent/tool_runtime/registry.py:180`; Module: `anyagent.tool_runtime`)
 - [ ] P1 Plugin Manifest 统一:设计 `PluginManifest` model,一个 plugin 可同时声明 skills/ + mcp.json + tools/ + hooks/,替代当前 tool_runtime plugin 与 skills 各自独立的体系(Req: `requirements.md#req-6`、`requirements.md#req-5-2`)
 - [ ] P1 MCP 工具 filter 与 sanitize:MCP server 注册的工具名自动 sanitize（`^[a-z0-9_.-]+$`）+ 支持 per-server tool filter 配置(Req: `requirements.md#req-5-2`)
 

@@ -230,11 +230,34 @@ async def _run_standalone_tool_runtime_serves_manifest_execute_and_list(tmp_path
         listed = await http.get("/internal/tools/list", headers={"Authorization": "Bearer internal-key"})
         assert listed.status_code == 200, listed.text
         assert [tool["name"] for tool in listed.json()["tools"]] == [
-            "admin.credential_set",
-            "core.web_fetch",
-            "core.web_search",
+            "core.tool_search",
             "exec",
         ]
+
+        search_manifest = await client.manifest(
+            ManifestRequest(
+                agent_id="main",
+                session_key="sess-1",
+                requested_tool_names=["core.tool_search"],
+                context=ToolContext(),
+            )
+        )
+        assert [tool.name for tool in search_manifest.tools] == ["core.tool_search", "exec"]
+        searched = await client.execute(
+            ExecuteRequest(
+                agent_id="main",
+                session_key="sess-1",
+                response_id="resp_search",
+                tool_call_id="call_search",
+                tool_name="core.tool_search",
+                arguments_json={"query": "fetch url"},
+                toolset_version=search_manifest.toolset_version,
+                context=ToolContext(),
+            )
+        )
+        assert searched.status == "completed"
+        search_payload = json.loads(searched.output)
+        assert [tool["name"] for tool in search_payload["tools"]] == ["core.web_fetch"]
 
         executed = await client.execute(
             ExecuteRequest(
@@ -738,9 +761,7 @@ async def _run_standalone_tool_runtime_loads_plugins_from_core_loader(tmp_path: 
         listed = await http.get("/internal/tools/list", headers={"Authorization": "Bearer internal-key"})
         assert listed.status_code == 200, listed.text
         assert [tool["name"] for tool in listed.json()["tools"]] == [
-            "admin.credential_set",
-            "core.web_fetch",
-            "core.web_search",
+            "core.tool_search",
             "demo.echo",
             "exec",
         ]

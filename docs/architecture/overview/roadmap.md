@@ -118,7 +118,7 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 | **P0** | 1 | Protocol schema bundle 版本化 | 1 | ✅ 已完成 | `todo/protocol.md` L24 |
 | **P0** | 2 | SDK conformance fixtures → Stage Events + Tool Runtime | 1 | ✅ 已完成 | `todo/sdk.md` L26 |
 | **P0** | 3 | TypeScript SDK 最小可用面 (MVU) | 1 | ✅ 已完成 | `todo/sdk.md` L27 |
-| **P0** | 4 | Tool Deferred Loading + Tool Search | 1.5 | 🔲 未开始 | `todo/tool-runtime.md` L26-27 |
+| **P0** | 4 | Tool Deferred Loading + Tool Search | 1.5 | ✅ 已完成 | `todo/tool-runtime.md` L26-27 |
 | **P0** | 5 | Skill → Agent Loop 注入管道 | 1.5 | 🔲 未开始 | `todo/server-runtime.md` L27 |
 | **P1** | 6 | Tool Runtime contract 测试矩阵 + standalone 等价验收 | 2 | 🔲 未开始 | `todo/tool-runtime.md` L33-34 |
 | **P1** | 7 | Storage replay contract: PG + Redis | 2 | 🔲 未开始 | `todo/storage.md` L24 |
