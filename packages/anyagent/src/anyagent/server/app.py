@@ -63,6 +63,9 @@ from anyagent.gateway.sequencer import KeyedSequencer
 from anyagent.gateway.session import session_partition_key
 from anyagent.mcp.manager import MCPManagerRegistry
 from anyagent.observability import emit_observability_event, get_observability_emitter
+from anyagent.plugins import LoadedPlugin, load_plugins_from_roots
+from anyagent.plugins.hooks import HookContext
+from anyagent.plugins.models import PluginManifest
 from anyagent.protocol.credential_vault import AdminCredentialDeleteResponse, AdminCredentialSetRequest
 from anyagent.protocol.health import HealthResponse
 from anyagent.protocol.agent_api_internal import (
@@ -101,6 +104,7 @@ from anyagent.protocol.openai_responses import (
 )
 from anyagent.protocol.observability import ObservabilityLevel
 from anyagent.protocol.prompt_context import PromptContextAudit
+from anyagent.protocol.plugins import LoadedPluginCatalogItem, PluginCatalogResponse, PluginLoadErrorItem, PluginToolRef
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.protocol.sse import SSEBlockDecoder, encode_sse_block
 from anyagent.protocol.stage_events import AnyAgentModelRequestEvent, AnyAgentPromptContextEvent, AnyAgentPromptContextRenderedEvent
@@ -109,6 +113,7 @@ from anyagent.server.finalization import build_nonstream_response_finalizer
 from anyagent.server.idempotency import begin_or_replay_response_run
 from anyagent.server.lock_service import SessionLockService, build_session_lock_service, hold_session_lease
 from anyagent.server.manifest_cache import ManifestCache, build_manifest_cache_key, extract_requested_tool_names
+from anyagent.server.plugin_capabilities import build_plugin_capability_matrix
 from anyagent.server.request_validation import (
     ResponsesRequestValidationError,
     ensure_metadata_object,
@@ -126,6 +131,7 @@ from anyagent.server.streaming import (
     persist_sse_run as persist_streaming_sse_run,
 )
 from anyagent.server.workspace_env import load_workspace_runtime_environment
+from anyagent.tool_runtime.plugins import ToolRuntimePluginAPI
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -331,6 +337,160 @@ def _parse_cors_origins(value: str | list[str] | tuple[str, ...] | None) -> list
     return [str(item).strip() for item in value if str(item).strip()]
 
 
+def _resolve_plugin_roots(plugin_roots: list[str | Path] | tuple[str | Path, ...] | None, *, workspace: Path) -> list[Path]:
+    raw_items: list[str | Path] = []
+    if plugin_roots is not None:
+        raw_items.extend(plugin_roots)
+    else:
+        env_value = os.getenv("ANYAGENT_PLUGIN_ROOTS", "")
+        raw_items.extend(item.strip() for item in env_value.split(",") if item.strip())
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for raw_item in raw_items:
+        path = Path(raw_item).expanduser()
+        if not path.is_absolute():
+            path = workspace / path
+        resolved = path.resolve()
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(resolved)
+    return roots
+
+
+def _load_gateway_plugins(
+    *,
+    runtime: InProcessToolRuntimeService,
+    roots: list[Path],
+    fail_open: bool,
+) -> tuple[list[LoadedPlugin], list[dict[str, str]], list[dict[str, Any]]]:
+    if not roots:
+        return [], [], []
+
+    tools_by_plugin: dict[str, list[Any]] = {}
+    loaded, errors = load_plugins_from_roots(
+        roots,
+        api_factory=lambda manifest, plugin_dir, config: _build_gateway_plugin_api(
+            runtime=runtime,
+            manifest=manifest,
+            config=config,
+            tools_by_plugin=tools_by_plugin,
+        ),
+    )
+    error_payload = [{"plugin_dir": plugin_dir, "reason": reason} for plugin_dir, reason in errors]
+    for item in error_payload:
+        _LOGGER.error("plugin load error: %s: %s", item["plugin_dir"], item["reason"])
+    if error_payload and not fail_open:
+        raise RuntimeError(f"plugin load failed ({len(error_payload)} errors); set --plugins-fail-open to ignore")
+
+    catalog_payload = [
+        _loaded_plugin_catalog_item(item=item, tools=tools_by_plugin.get(item.manifest.plugin_id, []))
+        for item in loaded
+    ]
+    if catalog_payload:
+        _LOGGER.info("gateway plugins loaded: %s", ", ".join(sorted(item["plugin_id"] for item in catalog_payload)))
+    return loaded, error_payload, catalog_payload
+
+
+def _build_gateway_plugin_api(
+    *,
+    runtime: InProcessToolRuntimeService,
+    manifest: PluginManifest,
+    config: dict[str, Any],
+    tools_by_plugin: dict[str, list[Any]],
+) -> ToolRuntimePluginAPI:
+    registered_tools: list[Any] = []
+    tools_by_plugin[manifest.plugin_id] = registered_tools
+    return ToolRuntimePluginAPI(
+        host_kind="gateway",
+        plugin_id=manifest.plugin_id,
+        config=config,
+        registry=runtime._registry,
+        registered_tools=registered_tools,
+    )
+
+
+def _loaded_plugin_catalog_item(*, item: LoadedPlugin, tools: list[Any]) -> dict[str, Any]:
+    entrypoint = item.manifest.entrypoint or "plugin.py:register"
+    return {
+        "plugin_id": item.manifest.plugin_id,
+        "description": item.manifest.description,
+        "channels": list(item.manifest.channels),
+        "plugin_dir": str(item.plugin_dir),
+        "entrypoint": entrypoint,
+        "tools": [
+            PluginToolRef(
+                name=tool.name,
+                category=tool.category,
+                kind=tool.kind,
+                description=tool.description,
+            ).model_dump(mode="json", exclude_none=True)
+            for tool in tools
+        ],
+        "declared_skills": list(item.declared_skills),
+        "declared_mcp_servers": list(item.declared_mcp_servers),
+        "declared_middlewares": list(item.manifest.middlewares),
+        "declared_hooks": sorted(item.manifest.hooks),
+        "cite": {
+            "manifest": str(item.plugin_dir / "plugin.json"),
+            "entrypoint": str(item.plugin_dir / _entrypoint_path(entrypoint)),
+        },
+        "docs": _resolve_plugin_refs(item.plugin_dir, item.manifest.docs),
+        "schemas": _resolve_plugin_refs(item.plugin_dir, item.manifest.schemas),
+        "tests": _resolve_plugin_refs(item.plugin_dir, item.manifest.tests),
+    }
+
+
+def _entrypoint_path(entrypoint: str) -> Path:
+    relpath, _sep, _attr = entrypoint.partition(":")
+    return Path(relpath)
+
+
+def _resolve_plugin_refs(plugin_dir: Path, refs: list[str]) -> list[str]:
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for raw in refs:
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        value = raw.strip()
+        if "://" in value:
+            ref = value
+        else:
+            path = Path(value)
+            ref = str(path if path.is_absolute() else plugin_dir / path)
+        if ref in seen:
+            continue
+        seen.add(ref)
+        resolved.append(ref)
+    return resolved
+
+
+async def _dispatch_plugin_hook(
+    state: "AnyAgentServerApp",
+    name: str,
+    *,
+    agent_id: str,
+    session_key: str | None,
+    response_id: str,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    if not state.loaded_plugins:
+        return
+    context = HookContext(agent_id=agent_id, session_key=session_key, response_id=response_id, metadata=metadata)
+    for plugin in state.loaded_plugins:
+        hook = plugin.hooks.get(name)
+        if hook is None:
+            continue
+        try:
+            result = hook(context)
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("plugin hook failed: plugin_id=%s hook=%s error=%s", plugin.manifest.plugin_id, name, exc)
+
+
 @dataclass(slots=True)
 class AnyAgentServerApp:
     workspace_dir: Path
@@ -356,6 +516,10 @@ class AnyAgentServerApp:
     session_lock_service: SessionLockService
     session_lease_ttl_s: float
     storage_resources: list[object] = field(default_factory=list)
+    plugin_roots: list[Path] = field(default_factory=list)
+    loaded_plugins: list[LoadedPlugin] = field(default_factory=list)
+    loaded_plugin_catalog: list[dict[str, Any]] = field(default_factory=list)
+    plugin_errors: list[dict[str, str]] = field(default_factory=list)
     api_key: str | None = None
     admin_api_key: str | None = None
     session_config_overrides: dict[str, Any] | None = None
@@ -418,6 +582,8 @@ def create_app(
     cors_origins: str | list[str] | tuple[str, ...] | None = None,
     enable_studio: bool = True,
     session_config_overrides: dict[str, Any] | None = None,
+    plugin_roots: list[str | Path] | None = None,
+    plugins_fail_open: bool = False,
 ) -> FastAPI:
     workspace = Path(workspace_dir).expanduser().resolve()
     load_workspace_runtime_environment(workspace)
@@ -476,6 +642,18 @@ def create_app(
         telemetry_events=telemetry_event_store,
         include_observability_sink_events=False,
     )
+    runtime = InProcessToolRuntimeService(
+        workspace_dir=str(workspace),
+        catalog=catalog,
+        sandbox_manager=sandbox_manager,
+        credential_store=credential_store,
+    )
+    resolved_plugin_roots = _resolve_plugin_roots(plugin_roots, workspace=workspace)
+    loaded_plugins, plugin_errors, loaded_plugin_catalog = _load_gateway_plugins(
+        runtime=runtime,
+        roots=resolved_plugin_roots,
+        fail_open=plugins_fail_open,
+    )
     state = AnyAgentServerApp(
         workspace_dir=workspace,
         catalog=catalog,
@@ -486,12 +664,7 @@ def create_app(
         credentials=credential_store,
         mcp_credentials=mcp_credential_store or credential_store,
         sandbox_manager=sandbox_manager,
-        runtime=InProcessToolRuntimeService(
-            workspace_dir=str(workspace),
-            catalog=catalog,
-            sandbox_manager=sandbox_manager,
-            credential_store=credential_store,
-        ),
+        runtime=runtime,
         mcp_managers=MCPManagerRegistry(),
         runs=RunRegistry(),
         manifest_cache=ManifestCache(ttl_seconds=2.0),
@@ -507,6 +680,10 @@ def create_app(
         ),
         session_lease_ttl_s=resolved_storage.session_lease_ttl_s,
         storage_resources=storage_bundle.resources,
+        plugin_roots=resolved_plugin_roots,
+        loaded_plugins=loaded_plugins,
+        loaded_plugin_catalog=loaded_plugin_catalog,
+        plugin_errors=plugin_errors,
         api_key=api_key.strip() if isinstance(api_key, str) and api_key.strip() else None,
         admin_api_key=admin_api_key.strip() if isinstance(admin_api_key, str) and admin_api_key.strip() else None,
         session_config_overrides=session_config_overrides,
@@ -594,6 +771,22 @@ def create_app(
         _require_admin_auth(state, authorization)
         matrix = build_credential_backend_capability_matrix()
         return JSONResponse(matrix.model_dump(exclude_none=True))
+
+    @app.get("/admin/plugins/catalog")
+    async def admin_plugins_catalog(authorization: str | None = Header(default=None)) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        response = PluginCatalogResponse(
+            plugin_roots=[str(root) for root in state.plugin_roots],
+            loaded=[LoadedPluginCatalogItem.model_validate(item) for item in state.loaded_plugin_catalog],
+            errors=[PluginLoadErrorItem.model_validate(item) for item in state.plugin_errors],
+        )
+        return JSONResponse(response.model_dump(mode="json", exclude_none=True))
+
+    @app.get("/admin/plugins/capabilities")
+    async def admin_plugins_capabilities(authorization: str | None = Header(default=None)) -> JSONResponse:
+        _require_admin_auth(state, authorization)
+        matrix = build_plugin_capability_matrix()
+        return JSONResponse(matrix.model_dump(mode="json", exclude_none=True))
 
     @app.get("/admin/storage/health")
     async def admin_storage_health(authorization: str | None = Header(default=None)) -> JSONResponse:
@@ -1366,6 +1559,14 @@ def create_app(
             stream=stream_requested,
             idempotency_key_present=idempotency_key is not None,
         )
+        await _dispatch_plugin_hook(
+            state,
+            "on_agent_start",
+            agent_id=agent_id,
+            session_key=session_key,
+            response_id=response_id,
+            metadata={"stream": stream_requested, "request_metadata": metadata},
+        )
         selected_skills = await _select_skills(state, pack=pack, body=body)
         tool_context = _build_server_tool_context(pack=pack, body=body, selected_skills=selected_skills)
         prompt_envelope = build_prompt_envelope(
@@ -1686,6 +1887,14 @@ def create_app(
                             status="completed",
                         )
                 finally:
+                    await _dispatch_plugin_hook(
+                        state,
+                        "on_agent_end",
+                        agent_id=agent_id,
+                        session_key=session_key,
+                        response_id=response_id,
+                        metadata={"stream": True, "status": stream_terminal_status},
+                    )
                     await queue.put(None)
                     await state.runs.remove(response_id)
 
@@ -1867,6 +2076,19 @@ def create_app(
                     status=payload_status,
                 )
             finally:
+                status_code = int(result_box.get("status_code", 500))
+                payload = result_box.get("payload")
+                payload_status = payload.get("status") if isinstance(payload, dict) and isinstance(payload.get("status"), str) else None
+                if payload_status is None:
+                    payload_status = "completed" if status_code < 400 else "failed"
+                await _dispatch_plugin_hook(
+                    state,
+                    "on_agent_end",
+                    agent_id=agent_id,
+                    session_key=session_key,
+                    response_id=response_id,
+                    metadata={"stream": False, "status_code": status_code, "status": payload_status},
+                )
                 await state.runs.remove(response_id)
 
         task = asyncio.create_task(_worker_nonstream(), name=f"anyagent-run-{response_id}")

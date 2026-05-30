@@ -47,6 +47,7 @@ from anyagent.server.security import (
     build_credential_backend_capability_matrix,
     build_credential_resolver_from_config,
 )
+from anyagent.server.plugin_capabilities import build_plugin_capability_matrix
 from anyagent.server.workspace_env import load_workspace_runtime_environment
 from anyagent.tool_runtime.plugins import ToolRuntimePluginAPI
 from anyagent.tool_runtime.settings import ToolRuntimeServerConfig, build_tool_runtime_server_config
@@ -222,6 +223,12 @@ def create_tool_runtime_app(
             errors=[PluginLoadErrorItem.model_validate(item) for item in plugin_errors],
         )
         return JSONResponse(response.model_dump(mode="json", exclude_none=True))
+
+    @app.get("/admin/plugins/capabilities")
+    async def admin_plugins_capabilities(authorization: str | None = Header(default=None)) -> JSONResponse:
+        _require_admin_auth(expected=resolved_admin_key, authorization=authorization)
+        matrix = build_plugin_capability_matrix()
+        return JSONResponse(matrix.model_dump(mode="json", exclude_none=True))
 
     @app.get("/admin/sandbox/health")
     async def admin_sandbox_health(authorization: str | None = Header(default=None)) -> JSONResponse:
@@ -597,6 +604,10 @@ def _load_tool_runtime_plugins(
                 ).model_dump(mode="json", exclude_none=True)
                 for tool in tools_by_plugin.get(item.manifest.plugin_id, [])
             ],
+            "declared_skills": list(item.declared_skills),
+            "declared_mcp_servers": list(item.declared_mcp_servers),
+            "declared_middlewares": list(item.manifest.middlewares),
+            "declared_hooks": sorted(item.manifest.hooks),
             "cite": {
                 "manifest": str(item.plugin_dir / "plugin.json"),
                 "entrypoint": str(item.plugin_dir / _entrypoint_path(item.manifest.entrypoint or "plugin.py:register")),

@@ -837,9 +837,29 @@ export type AnyAgentFunctionToolParam = {
   "x-anyagent-kind"?: "command" | "mcp" | null;
 };
 
+export type PluginCapability = {
+  "capability": "channels" | "webhook_routes" | "skills" | "mcp_servers" | "tools" | "middlewares" | "hooks";
+  "description": string;
+  "host": "gateway" | "tool_runtime";
+  "manifest_field"?: string | null;
+  "registration_api"?: string | null;
+  "source": string;
+  "status"?: "stable" | "preview" | "planned";
+};
+
+export type PluginCapabilityMatrix = {
+  "capabilities"?: Array<PluginCapability>;
+  "manifest_schema": string;
+  "manifest_version"?: string;
+};
+
 export type LoadedPluginCatalogItem = {
   "channels"?: Array<string>;
   "cite"?: Record<string, string>;
+  "declared_hooks"?: Array<string>;
+  "declared_mcp_servers"?: Array<string>;
+  "declared_middlewares"?: Array<string>;
+  "declared_skills"?: Array<string>;
   "description"?: string | null;
   "docs"?: Array<string>;
   "entrypoint": string;

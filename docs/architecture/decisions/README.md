@@ -14,6 +14,7 @@
 4. [single-repo-multi-package-boundary.md](single-repo-multi-package-boundary.md)：保持单仓库协作，通过协议真源、多包边界和 contract tests 支撑 server/client/studio 与多语言 SDK，暂不拆独立 repo。
 5. [sandbox-backend-selection.md](sandbox-backend-selection.md)：第二 sandbox backend 选定 OpenSandbox on Kubernetes，`local-unsafe` 仅作为本地 reference/dev backend。
 6. [run-scheduling-lock-contract.md](run-scheduling-lock-contract.md)：跨节点 Run 调度以 `session_partition_key` 为 keyed serialization 边界，锁统一为可续租 LeaseLock contract，并要求 Redis/PostgreSQL adapter 共享语义。
+7. [plugin-connector-contract-v1.md](plugin-connector-contract-v1.md)：Plugin / Connector 采用统一 manifest schema，并用 capability matrix 区分 Gateway 与 Tool Runtime 的 host 能力面。
 
 维护约定：
 

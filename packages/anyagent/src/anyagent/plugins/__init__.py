@@ -11,6 +11,7 @@ __all__ = [
     "load_hook_from_classpath",
     "load_middleware_from_classpath",
     "load_plugin_config",
+    "export_plugin_manifest_schema",
     "load_plugin_hooks",
     "load_plugin_manifest",
     "load_plugins_from_roots",
@@ -35,3 +36,4 @@ from .loader import (
     load_plugins_from_roots,
 )
 from .models import PluginManifest
+from .schema_export import export_plugin_manifest_schema

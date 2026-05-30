@@ -180,6 +180,18 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument("--sandbox-root", default=None, help="Optional root dir for local sandbox sessions.")
     serve.add_argument("--no-studio", action="store_true", help="Do not mount the bundled Studio at /studio.")
     serve.add_argument(
+        "--plugin-root",
+        action="append",
+        default=None,
+        help="Plugin root to scan for plugin.json files. May be repeated. Defaults to comma-separated $ANYAGENT_PLUGIN_ROOTS.",
+    )
+    serve.add_argument(
+        "--plugins-fail-open",
+        action="store_true",
+        default=False,
+        help="Continue serving when one or more plugins fail to load (default: fail closed).",
+    )
+    serve.add_argument(
         "--storage-mode",
         choices=["none", "external"],
         default=None,
@@ -229,6 +241,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Allowed browser origin for CORS. May be repeated.",
     )
     dev.add_argument("--sandbox-root", default=None, help="Optional root dir for local sandbox sessions.")
+    dev.add_argument(
+        "--plugin-root",
+        action="append",
+        default=None,
+        help="Plugin root to scan for plugin.json files. May be repeated. Defaults to comma-separated $ANYAGENT_PLUGIN_ROOTS.",
+    )
+    dev.add_argument(
+        "--plugins-fail-open",
+        action="store_true",
+        default=False,
+        help="Continue serving when one or more plugins fail to load (default: fail closed).",
+    )
     dev.add_argument(
         "--storage-mode",
         choices=["none", "external"],
@@ -653,6 +677,8 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         cors_origins=args.cors_origin,
         enable_studio=enable_studio,
         session_config_overrides={},
+        plugin_roots=args.plugin_root,
+        plugins_fail_open=args.plugins_fail_open,
     )
     _print_serve_banner(
         workspace=workspace,

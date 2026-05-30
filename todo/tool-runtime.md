@@ -33,12 +33,12 @@
 
 - [x] P0 整理 Tool Runtime contract 测试矩阵,覆盖 manifest、execute、credential 注入、policy 强制(Req: `requirements.md#req-6`; Impl: `tests/contract/test_tool_runtime_contract_matrix.py:115`; Module: `tool-runtime-contract`)
 - [x] P0 standalone Tool Runtime 管理面与进程内 runtime 的等价性验收(Req: `requirements.md#req-6`; Impl: `tests/contract/test_tool_runtime_contract_matrix.py:147`; Module: `tool-runtime-contract`)
-- [ ] P1 Plugin contract 公开化:定义 manifest schema、生命周期 hook 与 capability matrix(Req: `requirements.md#req-6`)
-- [ ] P2 参考实现:至少一个内置 Plugin 与一个 Connector 走完 contract,作为后续生态接入样板(Req: `requirements.md#req-6`)
+- [x] P1 Plugin contract 公开化:定义 manifest schema、生命周期 hook 与 capability matrix(Req: `requirements.md#req-6`; Impl: `packages/anyagent/src/anyagent/plugins/schema_export.py:12`, `packages/anyagent/src/anyagent/protocol/plugin_capabilities.py:8`, `packages/anyagent/src/anyagent/server/app.py:363`, `packages/anyagent/src/anyagent/server/app.py:776`, `packages/anyagent/src/anyagent/server/app.py:1562`, `packages/anyagent/src/anyagent/tool_runtime/server.py:228`, `docs/schemas/plugin-manifest.schema.json`; Module: `anyagent.plugins`, `anyagent.protocol.plugin_capabilities`, `anyagent.server.app`)
+- [x] P2 参考实现:至少一个内置 Plugin 与一个 Connector 走完 contract,作为后续生态接入样板(Req: `requirements.md#req-6`; Impl: `packages/anyagent/src/anyagent/plugins/builtin/lifecycle_echo/plugin.json`, `packages/anyagent/src/anyagent/plugins/builtin/lifecycle_echo/plugin.py`, `tests/unit/plugins/test_gateway_plugin_lifecycle.py:70`; Module: `anyagent.plugins.builtin.lifecycle_echo`)
 
 ## 决策 & 争议点
 
-- [ ] Plugin 与 Connector 是统一 contract 还是分层 contract
+- [x] Plugin 与 Connector 是统一 contract 还是分层 contract(Decision: `docs/architecture/decisions/plugin-connector-contract-v1.md`; Req: `requirements.md#req-6`; Impl: `docs/architecture/decisions/plugin-connector-contract-v1.md`; Module: `architecture`)
 
 ## 参考
 

@@ -431,6 +431,33 @@
       }
     },
     {
+      "name": "admin.plugins.capabilities",
+      "schema": "anyagent.protocol.plugin_capabilities.PluginCapabilityMatrix",
+      "payload": {
+        "manifest_schema": "docs/schemas/plugin-manifest.schema.json",
+        "manifest_version": "1",
+        "capabilities": [
+          {
+            "capability": "tools",
+            "host": "tool_runtime",
+            "status": "stable",
+            "description": "Tools registered into the standalone Tool Runtime registry.",
+            "manifest_field": "tools",
+            "registration_api": "registerTool",
+            "source": "anyagent.tool_runtime.plugins.ToolRuntimePluginAPI"
+          },
+          {
+            "capability": "hooks",
+            "host": "gateway",
+            "status": "preview",
+            "description": "Run lifecycle hooks invoked at response start and terminal completion.",
+            "manifest_field": "hooks",
+            "source": "anyagent.plugins.hooks.PluginHooks"
+          }
+        ]
+      }
+    },
+    {
       "name": "admin.credentials.list",
       "schema": "anyagent.protocol.credential_vault.AdminCredentialListResponse",
       "payload": {

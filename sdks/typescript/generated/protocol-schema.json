@@ -51,6 +51,12 @@
     },
     {
       "method": "GET",
+      "operation": "admin.plugins.capabilities",
+      "path": "/admin/plugins/capabilities",
+      "response_model": "anyagent.protocol.plugin_capabilities.PluginCapabilityMatrix"
+    },
+    {
+      "method": "GET",
       "operation": "admin.plugins.catalog",
       "path": "/admin/plugins/catalog",
       "response_model": "anyagent.protocol.plugins.PluginCatalogResponse"
@@ -12630,6 +12636,186 @@
       "title": "AnyAgentFunctionToolParam",
       "type": "object"
     },
+    "anyagent.protocol.plugin_capabilities.PluginCapability": {
+      "description": "Describes one plugin capability surface exposed by a host.",
+      "properties": {
+        "capability": {
+          "enum": [
+            "channels",
+            "webhook_routes",
+            "skills",
+            "mcp_servers",
+            "tools",
+            "middlewares",
+            "hooks"
+          ],
+          "title": "Capability",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "host": {
+          "enum": [
+            "gateway",
+            "tool_runtime"
+          ],
+          "title": "Host",
+          "type": "string"
+        },
+        "manifest_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manifest Field"
+        },
+        "registration_api": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Registration Api"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "status": {
+          "default": "stable",
+          "enum": [
+            "stable",
+            "preview",
+            "planned"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "capability",
+        "host",
+        "description",
+        "source"
+      ],
+      "title": "PluginCapability",
+      "type": "object"
+    },
+    "anyagent.protocol.plugin_capabilities.PluginCapabilityMatrix": {
+      "$defs": {
+        "PluginCapability": {
+          "description": "Describes one plugin capability surface exposed by a host.",
+          "properties": {
+            "capability": {
+              "enum": [
+                "channels",
+                "webhook_routes",
+                "skills",
+                "mcp_servers",
+                "tools",
+                "middlewares",
+                "hooks"
+              ],
+              "title": "Capability",
+              "type": "string"
+            },
+            "description": {
+              "title": "Description",
+              "type": "string"
+            },
+            "host": {
+              "enum": [
+                "gateway",
+                "tool_runtime"
+              ],
+              "title": "Host",
+              "type": "string"
+            },
+            "manifest_field": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Manifest Field"
+            },
+            "registration_api": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Registration Api"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "status": {
+              "default": "stable",
+              "enum": [
+                "stable",
+                "preview",
+                "planned"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "capability",
+            "host",
+            "description",
+            "source"
+          ],
+          "title": "PluginCapability",
+          "type": "object"
+        }
+      },
+      "description": "Lists the plugin manifest capabilities supported by each host.",
+      "properties": {
+        "capabilities": {
+          "items": {
+            "$ref": "#/$defs/PluginCapability"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "manifest_schema": {
+          "title": "Manifest Schema",
+          "type": "string"
+        },
+        "manifest_version": {
+          "default": "1",
+          "title": "Manifest Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "manifest_schema"
+      ],
+      "title": "PluginCapabilityMatrix",
+      "type": "object"
+    },
     "anyagent.protocol.plugins.LoadedPluginCatalogItem": {
       "$defs": {
         "PluginToolRef": {
@@ -12691,6 +12877,34 @@
           },
           "title": "Cite",
           "type": "object"
+        },
+        "declared_hooks": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Declared Hooks",
+          "type": "array"
+        },
+        "declared_mcp_servers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Declared Mcp Servers",
+          "type": "array"
+        },
+        "declared_middlewares": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Declared Middlewares",
+          "type": "array"
+        },
+        "declared_skills": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Declared Skills",
+          "type": "array"
         },
         "description": {
           "anyOf": [
@@ -12771,6 +12985,34 @@
               },
               "title": "Cite",
               "type": "object"
+            },
+            "declared_hooks": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Declared Hooks",
+              "type": "array"
+            },
+            "declared_mcp_servers": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Declared Mcp Servers",
+              "type": "array"
+            },
+            "declared_middlewares": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Declared Middlewares",
+              "type": "array"
+            },
+            "declared_skills": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Declared Skills",
+              "type": "array"
             },
             "description": {
               "anyOf": [

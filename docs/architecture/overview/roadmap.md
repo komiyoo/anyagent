@@ -186,6 +186,7 @@ Agentic Ecosystem:
 - Config 热重载:mtime 轮询检测 agent.yaml/mcp.json 变更,热重载字段即时生效（参考 DeerFlow）
 - MCP 生命周期事件:对齐 Stage Events 发射 MCP server 启动/就绪/失败状态
 - MCP 会话池:按 (server_name, session_key) 池化 stdio 连接,LRU 淘汰（参考 DeerFlow）
+- Plugin / Connector contract 公开化:统一 manifest schema + Gateway/Tool Runtime capability matrix + lifecycle hook 接入（见 `docs/architecture/decisions/plugin-connector-contract-v1.md` 与 `todo/tool-runtime.md`）
 
 Systematic Persistence（系统性持久化）:
 

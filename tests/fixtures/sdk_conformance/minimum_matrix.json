@@ -118,6 +118,11 @@
       "fixture": "admin.plugins.catalog"
     },
     {
+      "name": "admin.plugins.capabilities",
+      "kind": "protocol_model",
+      "fixture": "admin.plugins.capabilities"
+    },
+    {
       "name": "admin.credentials.list",
       "kind": "protocol_model",
       "fixture": "admin.credentials.list"

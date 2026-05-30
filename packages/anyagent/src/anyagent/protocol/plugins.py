@@ -21,6 +21,10 @@ class LoadedPluginCatalogItem(BaseModel):
     plugin_dir: str
     entrypoint: str
     tools: list[PluginToolRef] = Field(default_factory=list)
+    declared_skills: list[str] = Field(default_factory=list)
+    declared_mcp_servers: list[str] = Field(default_factory=list)
+    declared_middlewares: list[str] = Field(default_factory=list)
+    declared_hooks: list[str] = Field(default_factory=list)
     cite: dict[str, str] = Field(default_factory=dict)
     docs: list[str] = Field(default_factory=list)
     schemas: list[str] = Field(default_factory=list)

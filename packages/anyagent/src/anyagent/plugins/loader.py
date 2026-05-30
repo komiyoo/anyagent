@@ -57,6 +57,30 @@ def _temporary_sys_path(path: Path) -> Iterator[None]:
                 sys.path.remove(resolved)
 
 
+@contextlib.contextmanager
+def _temporary_plugin_modules(classpaths: list[str]) -> Iterator[None]:
+    """Temporarily evict plugin-local modules referenced by classpaths.
+
+    Many plugin examples use ``plugin.py`` with classpaths such as
+    ``plugin:on_agent_start``. Without eviction, Python may reuse a module named
+    ``plugin`` loaded from a previous plugin directory.
+    """
+
+    module_names = sorted({item.split(":", 1)[0] for item in classpaths if isinstance(item, str) and ":" in item})
+    missing = object()
+    previous = {name: (sys.modules[name] if name in sys.modules else missing) for name in module_names}
+    for name in module_names:
+        sys.modules.pop(name, None)
+    try:
+        yield
+    finally:
+        for name, module in previous.items():
+            if module is missing:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module  # type: ignore[assignment]
+
+
 def _load_json_file(path: Path, *, max_bytes: int) -> dict[str, Any]:
     try:
         raw = path.read_bytes()
@@ -203,7 +227,8 @@ def _resolve_declared_capabilities(
 
     middlewares: list[AgentMiddleware] = []
     hooks = PluginHooks()
-    with _temporary_sys_path(plugin_root):
+    classpaths = [*manifest.middlewares, *manifest.hooks.values()]
+    with _temporary_sys_path(plugin_root), _temporary_plugin_modules(classpaths):
         for classpath in manifest.middlewares:
             try:
                 middlewares.append(load_middleware_from_classpath(classpath))

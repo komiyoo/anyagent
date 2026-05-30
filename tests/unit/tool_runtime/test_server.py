@@ -748,6 +748,10 @@ async def _run_standalone_tool_runtime_loads_plugins_from_core_loader(tmp_path: 
                         "description": "Echo text.",
                     }
                 ],
+                "declared_skills": [],
+                "declared_mcp_servers": [],
+                "declared_middlewares": [],
+                "declared_hooks": [],
                 "cite": {
                     "manifest": str(plugin_dir / "plugin.json"),
                     "entrypoint": str(plugin_dir / "plugin.py"),
@@ -757,6 +761,11 @@ async def _run_standalone_tool_runtime_loads_plugins_from_core_loader(tmp_path: 
                 "tests": [str(plugin_dir / "tests" / "smoke.py")],
             }
         ]
+        capabilities = await http.get("/admin/plugins/capabilities", headers={"Authorization": "Bearer admin-key"})
+        assert capabilities.status_code == 200, capabilities.text
+        cap_payload = capabilities.json()
+        assert cap_payload["manifest_version"] == "1"
+        assert {item["capability"] for item in cap_payload["capabilities"]} >= {"tools", "hooks"}
 
         listed = await http.get("/internal/tools/list", headers={"Authorization": "Bearer internal-key"})
         assert listed.status_code == 200, listed.text

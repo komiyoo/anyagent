@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from anyagent.protocol.mcp import MCPServerConfig
 
+from .hooks import HOOK_NAMES
 
 _CLASSPATH_RE = re.compile(r"^[A-Za-z_][\w.]*:[A-Za-z_]\w*$")
-_HOOK_NAMES = frozenset({"on_agent_start", "on_agent_end"})
 
 
 class PluginManifest(BaseModel):
@@ -33,6 +33,7 @@ class PluginManifest(BaseModel):
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
+    manifest_version: Literal["1"] = Field(default="1", description="Plugin manifest contract version.")
     plugin_id: str = Field(min_length=1, max_length=64, validation_alias=AliasChoices("plugin_id", "id"))
     description: str | None = None
     channels: list[str] = Field(default_factory=list)
@@ -61,8 +62,8 @@ class PluginManifest(BaseModel):
     def _validate_hooks(cls, value: dict[str, str]) -> dict[str, str]:
         out: dict[str, str] = {}
         for name, classpath in value.items():
-            if name not in _HOOK_NAMES:
-                raise ValueError(f"unknown hook name: {name!r} (allowed: {sorted(_HOOK_NAMES)})")
+            if name not in HOOK_NAMES:
+                raise ValueError(f"unknown hook name: {name!r} (allowed: {list(HOOK_NAMES)})")
             if not isinstance(classpath, str) or not _CLASSPATH_RE.match(classpath.strip()):
                 raise ValueError(f"invalid hook classpath for {name!r} (expected 'module.path:callable'): {classpath!r}")
             out[name] = classpath.strip()

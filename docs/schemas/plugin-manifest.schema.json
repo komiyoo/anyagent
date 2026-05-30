@@ -1,0 +1,384 @@
+{
+  "manifest_version": "1",
+  "model": "anyagent.plugins.models.PluginManifest",
+  "schema": {
+    "$defs": {
+      "MCPServerAuthConfig": {
+        "description": "Describes how to resolve and inject credentials for one MCP server.",
+        "properties": {
+          "credential_id": {
+            "title": "Credential Id",
+            "type": "string"
+          },
+          "format": {
+            "default": "Bearer {value}",
+            "title": "Format",
+            "type": "string"
+          },
+          "injection": {
+            "default": "header:Authorization",
+            "title": "Injection",
+            "type": "string"
+          },
+          "ref_kind": {
+            "default": "bearer_token",
+            "title": "Ref Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_id"
+        ],
+        "title": "MCPServerAuthConfig",
+        "type": "object"
+      },
+      "MCPServerConfig": {
+        "description": "Defines one MCP server configuration entry.",
+        "properties": {
+          "args": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Args"
+          },
+          "auth": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MCPServerAuthConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Command"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Headers"
+          },
+          "idle_timeout_seconds": {
+            "default": 300.0,
+            "minimum": 0,
+            "title": "Idle Timeout Seconds",
+            "type": "number"
+          },
+          "timeout_seconds": {
+            "default": 30.0,
+            "exclusiveMinimum": 0,
+            "title": "Timeout Seconds",
+            "type": "number"
+          },
+          "tool_filter": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MCPToolFilterConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MCPServerTransport"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Url"
+          }
+        },
+        "title": "MCPServerConfig",
+        "type": "object"
+      },
+      "MCPServerTransport": {
+        "description": "Defines supported MCP client transports.",
+        "enum": [
+          "streamable_http",
+          "sse",
+          "stdio"
+        ],
+        "title": "MCPServerTransport",
+        "type": "string"
+      },
+      "MCPToolFilterConfig": {
+        "description": "Defines optional allow/deny filters for MCP tool names.",
+        "properties": {
+          "allowed_tool_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Allowed Tool Names"
+          },
+          "blocked_tool_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Blocked Tool Names"
+          },
+          "match_mode": {
+            "default": "both",
+            "enum": [
+              "raw",
+              "sanitized",
+              "both"
+            ],
+            "title": "Match Mode",
+            "type": "string"
+          }
+        },
+        "title": "MCPToolFilterConfig",
+        "type": "object"
+      }
+    },
+    "description": "Plugin manifest (`plugin.json`).\n\nv0 字段:\n- plugin_id：稳定标识（建议与目录名一致）\n- channels：支持的平台集合（feishu/discord/telegram/...）\n- config_schema：插件配置的 JSON Schema（可选）\n- entrypoint：相对插件目录的入口（可选），形如 \"plugin.py:register\"\n- docs / schemas / tests：可追溯资料的相对路径或稳定 URL（可选）\n\nv1 声明字段（一个 plugin 可同时声明多类能力）：\n- skills：相对插件目录的 skill 目录路径（每个目录含 SKILL.md）\n- mcp_servers：MCP server 配置（结构对齐 `mcp.json` 的 `mcpServers`）\n- tools：plugin 通过 register(api) 注册的 tool 名（声明 vs 实际注册可对账）\n- middlewares：Agent Loop middleware 类路径列表（\"module.path:ClassName\"）\n- hooks：生命周期回调类路径（on_agent_start / on_agent_end → \"module.path:callable\"）",
+    "properties": {
+      "channels": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Channels",
+        "type": "array"
+      },
+      "config_schema": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Config Schema"
+      },
+      "description": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Description"
+      },
+      "docs": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Docs",
+        "type": "array"
+      },
+      "entrypoint": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Entrypoint"
+      },
+      "hooks": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "title": "Hooks",
+        "type": "object"
+      },
+      "manifest_version": {
+        "const": "1",
+        "default": "1",
+        "description": "Plugin manifest contract version.",
+        "title": "Manifest Version",
+        "type": "string"
+      },
+      "mcp_servers": {
+        "additionalProperties": {
+          "$ref": "#/$defs/MCPServerConfig"
+        },
+        "title": "Mcp Servers",
+        "type": "object"
+      },
+      "middlewares": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Middlewares",
+        "type": "array"
+      },
+      "plugin_id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Plugin Id",
+        "type": "string"
+      },
+      "schemas": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Schemas",
+        "type": "array"
+      },
+      "skills": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Skills",
+        "type": "array"
+      },
+      "tests": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Tests",
+        "type": "array"
+      },
+      "tools": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Tools",
+        "type": "array"
+      }
+    },
+    "required": [
+      "plugin_id"
+    ],
+    "title": "PluginManifest",
+    "type": "object"
+  },
+  "schema_version": "2026-05-30",
+  "semantic_rules": [
+    {
+      "description": "Entrypoints use relative 'file.py:callable' paths under the plugin directory.",
+      "fields": [
+        "entrypoint"
+      ],
+      "id": "plugin_manifest_entrypoint_is_relative_python_attr",
+      "pattern": "^[^:]+\\.py:[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    {
+      "description": "Middleware and hook targets use 'module.path:callable' classpaths.",
+      "fields": [
+        "middlewares",
+        "hooks"
+      ],
+      "id": "plugin_manifest_classpath_fields_use_module_attr",
+      "pattern": "^[A-Za-z_][\\w.]*:[A-Za-z_]\\w*$"
+    },
+    {
+      "allowed": [
+        "on_agent_start",
+        "on_agent_end"
+      ],
+      "description": "Only supported lifecycle hook names may be declared.",
+      "fields": [
+        "hooks"
+      ],
+      "id": "plugin_manifest_hook_names_are_lifecycle_hooks"
+    }
+  ]
+}

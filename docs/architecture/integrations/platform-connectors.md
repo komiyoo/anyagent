@@ -14,12 +14,19 @@ AnyAgent Core owns the connector contract, not every platform implementation.
 Core truth:
 
 - `anyagent.plugins.PluginManifest`
+- `anyagent.plugins.schema_export.export_plugin_manifest_schema`
 - `anyagent.plugins.load_plugins_from_roots`
 - `anyagent.tool_runtime.plugins.ToolRuntimePluginAPI`
 - `anyagent.protocol.plugins.PluginCatalogResponse`
+- `anyagent.protocol.plugin_capabilities.PluginCapabilityMatrix`
 - Tool Runtime `/admin/plugins/catalog`
+- Core / Tool Runtime `/admin/plugins/capabilities`
 - SDK `AnyAgent.admin.plugin_catalog()`
 - CLI `anyagent plugin catalog`
+
+Contract decision: `docs/architecture/decisions/plugin-connector-contract-v1.md`.
+
+Manifest schema artifact: `docs/schemas/plugin-manifest.schema.json`.
 
 Connector packages live outside `anyagent-apps` unless they are only example
 documentation. A platform connector can be:
@@ -43,6 +50,7 @@ A connector is framework-grade only when all of these are true:
 - It has a `plugin.json` manifest with stable `plugin_id`, `channels`, `entrypoint`,
   and docs/schema/test references.
 - Registered tools are visible through `/admin/plugins/catalog`.
+- Host support is visible through `/admin/plugins/capabilities`.
 - SDK `AnyAgent.admin.plugin_catalog()` returns the same manifest and cite data.
 - `anyagent plugin catalog` can inspect the connector without reading source code.
 - Credentials are referenced by `credential_id` / `auth_ref`; plaintext secrets are

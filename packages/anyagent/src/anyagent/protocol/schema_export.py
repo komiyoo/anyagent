@@ -204,6 +204,12 @@ PROTOCOL_ENDPOINTS: list[dict[str, Any]] = [
         "response_model": "anyagent.protocol.plugins.PluginCatalogResponse",
     },
     {
+        "operation": "admin.plugins.capabilities",
+        "method": "GET",
+        "path": "/admin/plugins/capabilities",
+        "response_model": "anyagent.protocol.plugin_capabilities.PluginCapabilityMatrix",
+    },
+    {
         "operation": "admin.credentials.list",
         "method": "GET",
         "path": "/admin/credentials",

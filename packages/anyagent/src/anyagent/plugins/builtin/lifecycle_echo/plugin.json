@@ -1,0 +1,14 @@
+{
+  "manifest_version": "1",
+  "plugin_id": "anyagent.lifecycle_echo",
+  "description": "Reference plugin demonstrating tool registration and lifecycle hooks.",
+  "channels": ["reference"],
+  "entrypoint": "plugin.py:register",
+  "tools": ["app.lifecycle_echo.echo"],
+  "hooks": {
+    "on_agent_start": "plugin:on_agent_start",
+    "on_agent_end": "plugin:on_agent_end"
+  },
+  "docs": ["README.md"],
+  "tests": ["tests/unit/plugins/test_gateway_plugin_lifecycle.py"]
+}
