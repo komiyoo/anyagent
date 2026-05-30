@@ -241,6 +241,7 @@ async def resolve_manifest_with_mcp(
     mcp_tools: list[dict[str, Any]] = []
     if mcp_manager is not None:
         mcp_tools = await mcp_manager.list_all_tools(
+            session_key=session_key,
             stage_event_sink=stage_event_sink,
             response_id=stage_response_id,
         )
@@ -449,6 +450,7 @@ async def _execute_one_tool(
                 output_text = await mcp_manager.call_tool(
                     tool_name,
                     parse_tool_arguments_object(arguments),
+                    session_key=session_key,
                 )
                 tool_result = build_completed_tool_result(
                     output=output_text if isinstance(output_text, str) else str(output_text)
