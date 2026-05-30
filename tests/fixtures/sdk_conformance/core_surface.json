@@ -50,6 +50,39 @@
       }
     },
     {
+      "name": "responses.prompt_context.rendered",
+      "schema": "anyagent.protocol.agent_api_internal.InternalResponsePromptContextResponse",
+      "payload": {
+        "response_id": "resp_1",
+        "prompt_cache_key": "prompt-cache-demo",
+        "total_chars": 20,
+        "fallback": "rendered",
+        "fragments": [
+          {
+            "kind": "agents_instructions",
+            "role": "developer",
+            "cache_class": "stable_prefix",
+            "rendered_text": "You are AnyAgent."
+          }
+        ],
+        "rendered_event": {
+          "type": "anyagent.prompt.context.rendered",
+          "response_id": "resp_1",
+          "seq": 3,
+          "prompt_cache_key": "prompt-cache-demo",
+          "total_chars": 20,
+          "fragments": [
+            {
+              "kind": "agents_instructions",
+              "role": "developer",
+              "cache_class": "stable_prefix",
+              "rendered_text": "You are AnyAgent."
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "responses.tool_executions.detail",
       "schema": "anyagent.protocol.agent_api_internal.InternalResponseToolExecutionsResponse",
       "payload": {
@@ -158,7 +191,14 @@
         "requested_tool_names": [
           "exec"
         ],
-        "tools": []
+        "tools": [
+          {
+            "name": "exec",
+            "description": "Execute a sandboxed shell command.",
+            "kind": "command",
+            "decision": "allowed"
+          }
+        ]
       }
     },
     {
@@ -236,6 +276,9 @@
         "tool_call_count": 1,
         "mcp_call_count": 0,
         "skill_view_count": 1,
+        "compaction_count": 1,
+        "loop_warnings_count": 0,
+        "subagent_spawns": 0,
         "input_chars": 5,
         "output_chars": 7,
         "turn_count": 1,

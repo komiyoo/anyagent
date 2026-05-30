@@ -15,6 +15,7 @@ export interface MinimumMatrixOperation {
   name: string;
   kind: "protocol_model" | "openai_response" | "sse_stream" | "type_adapter" | "request_negative" | "type_adapter_negative";
   fixture: string;
+  protocol_version: string;
 }
 
 export interface SdkMinimumMatrix {
@@ -153,6 +154,9 @@ export class SdkConformanceFixtureStore {
     for (const operation of this.minimumMatrix.operations) {
       if (operations.has(operation.name)) {
         throw new Error(`Duplicate SDK minimum matrix operation: ${operation.name}`);
+      }
+      if (!operation.protocol_version) {
+        throw new Error(`SDK minimum matrix operation missing protocol_version: ${operation.name}`);
       }
       operations.add(operation.name);
       if (operation.kind === "protocol_model" && !protocolCases.has(operation.fixture)) {

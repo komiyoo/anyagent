@@ -5,6 +5,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from anyagent.observability import emit_replay_observability_envelope_from_stage_event
+from anyagent.persistence.config import PersistenceConfig
 from anyagent.protocol.prompt_context import RenderedPromptFragment
 from anyagent.protocol.stage_events import AnyAgentPromptContextEvent, AnyAgentPromptContextRenderedEvent
 
@@ -77,11 +79,12 @@ class DistributedResponsePersistenceContext:
         except Exception as exc:  # noqa: BLE001
             self._warn(f"event encode failed: response_id={response_id!r} event={event_type!r}: {exc}")
             return
-        await self.append_internal_event_best_effort(
+        seq = await self.append_internal_event_best_effort(
             response_id=response_id,
             event=event_type,
             data=data,
         )
+        emit_replay_observability_envelope_from_stage_event(event, seq=seq)
 
     async def append_prompt_context_event_best_effort(self, response_id: str) -> None:
         if self.prompt_audit is None:
@@ -100,13 +103,22 @@ class DistributedResponsePersistenceContext:
     async def append_prompt_context_rendered_event_best_effort(self, response_id: str) -> None:
         if not self.prompt_rendered_fragments:
             return
+        config = _persistence_config_from_runtime_config(self.runtime_config)
+        if not config.persist_rendered_context:
+            return
+        rendered_fragments = _bounded_rendered_fragments(
+            self.prompt_rendered_fragments,
+            max_bytes=config.rendered_context_max_bytes,
+        )
+        if not rendered_fragments:
+            return
         prompt_cache_key = getattr(self.prompt_audit, "prompt_cache_key", None)
-        total_chars = sum(len(fragment.rendered_text) for fragment in self.prompt_rendered_fragments)
+        total_chars = sum(len(fragment.rendered_text) for fragment in rendered_fragments)
         await self.stage_sink_best_effort(
             AnyAgentPromptContextRenderedEvent(
                 response_id=response_id,
                 prompt_cache_key=prompt_cache_key if isinstance(prompt_cache_key, str) else None,
-                fragments=self.prompt_rendered_fragments,
+                fragments=rendered_fragments,
                 total_chars=total_chars,
             )
         )
@@ -224,3 +236,40 @@ def create_distributed_response_persistence_context(
         prompt_rendered_fragments=prompt_rendered_fragments,
         warn=warn,
     )
+
+
+def _persistence_config_from_runtime_config(runtime_config: dict[str, Any]) -> PersistenceConfig:
+    raw = runtime_config.get("observability") if isinstance(runtime_config, dict) else None
+    if not isinstance(raw, dict):
+        return PersistenceConfig()
+    payload: dict[str, Any] = {}
+    if "persist_rendered_context" in raw:
+        payload["persist_rendered_context"] = raw.get("persist_rendered_context")
+    if "rendered_context_max_bytes" in raw:
+        payload["rendered_context_max_bytes"] = raw.get("rendered_context_max_bytes")
+    return PersistenceConfig.model_validate(payload)
+
+
+def _bounded_rendered_fragments(
+    fragments: list[RenderedPromptFragment],
+    *,
+    max_bytes: int,
+) -> list[RenderedPromptFragment]:
+    if max_bytes <= 0:
+        return []
+    out = [fragment.model_copy(deep=True) for fragment in fragments]
+    while out and _rendered_fragments_size(out) > max_bytes:
+        out.pop()
+    if out:
+        return out
+    first = fragments[0].model_copy(deep=True)
+    metadata = dict(first.metadata or {})
+    metadata["truncated"] = "true"
+    first.metadata = metadata
+    first.rendered_text = ""
+    return [first] if _rendered_fragments_size([first]) <= max_bytes else []
+
+
+def _rendered_fragments_size(fragments: list[RenderedPromptFragment]) -> int:
+    payload = [fragment.model_dump(mode="json", exclude_none=True) for fragment in fragments]
+    return len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))

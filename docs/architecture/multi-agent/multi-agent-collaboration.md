@@ -144,6 +144,32 @@ Multi-Agent 是 Phase 2+ 能力。它通过一组系统保留工具让主 agent 
 - 不建议把 collab 事件映射为 OpenAI Responses SSE 自定义事件。
 - Gateway/UI 通过 anyagent 内部事件流观察 collab 事件。
 
+## Reference Runtime Contract
+
+当前 reference runtime 已收敛为 `task()` tool 模式。本文前半部分的 `spawn_agent` / `send_input` / `wait` / `close_agent` 是长期 AgentControl 方向；Phase 1.8 的可验收合同以 `anyagent.protocol.multi_agent` 与 `anyagent.agent_runtime.multiagent` 为准。
+
+父 / 子 / root run 语义：
+
+- root run 是用户直接创建的 `/v1/responses` run。
+- parent run 是发起 `task()` tool call 的 run；root run 可以同时也是 parent run。
+- child run 是 `SubAgentExecutor` 为单次 task 创建的子执行实例。
+- child run 必须拥有独立上下文；默认 `isolated`，可通过 `fork_last_n` 继承父上下文尾部片段。
+- depth 从 parent 递增，超过 `runtime.subagent.max_depth` 时不得注册或执行新的 `task()` tool。
+- parent run 通过 `subagent.spawned`、`subagent.completed`、`subagent.timeout` stage events 关联 child run。
+- replay 与观测链路必须保留 `parent_run_id`、`child_run_id`、`agent_id`、`depth` 与 `tool_call_id` 等稳定键。
+
+Contract test 入口：
+
+- `tests/unit/agent_runtime/test_multiagent_task_schema.py` 覆盖 task schema、in-process executor、并发/深度/超时和 fork mode 主路径。
+- `tests/fixtures/sdk_conformance/core_surface.json` 固化 `stage_event.subagent.spawned` / `stage_event.subagent.completed` / `stage_event.subagent.timeout` 的跨 SDK fixture。
+- `tests/contract/test_protocol_schema_export.py` 校验上述 stage event fixture 被 minimum matrix 引用。
+
+尚未承诺的 Phase 4 缺口：
+
+- quota 在跨节点 storage 下的一致性验收。
+- multi-agent event replay 的端到端 contract。
+- AgentControl 多线程生命周期 API 的 public protocol 形态。
+
 ## AgentControl
 
 AgentControl 是内部控制面组件，可以与 Agent API 同部署，但逻辑上分层。

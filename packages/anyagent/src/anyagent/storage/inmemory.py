@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from time import monotonic
+from collections.abc import Set as AbstractSet
+from time import monotonic, time
 from typing import Any
 
 from .models import EventRecord, LeaseLockHandle, RunRecord, SessionRecord
@@ -327,6 +328,8 @@ class InMemoryEventStore:
     def __init__(self, *, rollout_writer: RolloutFileWriter | None = None) -> None:
         self._lock = asyncio.Lock()
         self._events: dict[str, list[EventRecord]] = {}
+        self._event_created_at_ms: dict[str, dict[int, int]] = {}
+        self._next_seq: dict[str, int] = {}
         self._notifiers: dict[str, asyncio.Condition] = {}
         self._rollout_writer = rollout_writer
 
@@ -340,9 +343,11 @@ class InMemoryEventStore:
     ) -> int:
         persisted: tuple[str, str, int, str | None, str] | None = None
         async with self._lock:
-            seq = len(self._events.get(response_id, [])) + 1
+            seq = self._next_seq.get(response_id, 1)
+            self._next_seq[response_id] = seq + 1
             rec = EventRecord(response_id=response_id, seq=seq, event=event, data=data)
             self._events.setdefault(response_id, []).append(rec)
+            self._event_created_at_ms.setdefault(response_id, {})[seq] = _now_ms()
             cond = self._notifiers.get(response_id)
             persisted = (session_partition_key, response_id, seq, event, data)
 
@@ -365,20 +370,37 @@ class InMemoryEventStore:
 
     async def tail_seq(self, *, response_id: str) -> int:
         async with self._lock:
-            return len(self._events.get(response_id, []))
+            return max((event.seq for event in self._events.get(response_id, [])), default=0)
 
     async def list(self, *, response_id: str, after_seq: int, limit: int) -> list[EventRecord]:
         async with self._lock:
             evs = self._events.get(response_id, [])
-            start = max(0, after_seq)
-            # seq starts from 1; list index is 0
-            out = evs[start : start + max(1, limit)]
+            out = [event for event in evs if event.seq > int(after_seq)][: max(1, limit)]
             return [EventRecord.model_validate(e.model_dump()) for e in out]
+
+    async def prune_replay_events(self, *, before_ms: int, event_types: AbstractSet[str]) -> int:
+        deleted = 0
+        async with self._lock:
+            for response_id, events in list(self._events.items()):
+                created_at = self._event_created_at_ms.setdefault(response_id, {})
+                retained: list[EventRecord] = []
+                for event in events:
+                    if event.event in event_types and created_at.get(event.seq, 0) < before_ms:
+                        created_at.pop(event.seq, None)
+                        deleted += 1
+                        continue
+                    retained.append(event)
+                self._events[response_id] = retained
+                live_seqs = {event.seq for event in retained}
+                for seq in list(created_at):
+                    if seq not in live_seqs:
+                        created_at.pop(seq, None)
+        return deleted
 
     async def wait_new(self, *, response_id: str, after_seq: int, timeout_s: float) -> None:
         async with self._lock:
-            cur_len = len(self._events.get(response_id, []))
-            if cur_len > after_seq:
+            tail_seq = max((event.seq for event in self._events.get(response_id, [])), default=0)
+            if tail_seq > after_seq:
                 return
             cond = self._notifiers.get(response_id)
             if cond is None:
@@ -389,3 +411,7 @@ class InMemoryEventStore:
                 await asyncio.wait_for(cond.wait(), timeout=timeout_s)
             except TimeoutError:
                 return
+
+
+def _now_ms() -> int:
+    return int(time() * 1000)

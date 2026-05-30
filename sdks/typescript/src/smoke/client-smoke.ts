@@ -50,6 +50,8 @@ const fakeFetch: AnyAgentFetch = async (input, init) => {
     body = fixture.openAIResponsePayload("responses.cancel.cancelled");
   } else if (url.pathname === "/internal/events/list") {
     body = fixture.payload("events.list.empty_done");
+  } else if (url.pathname === "/internal/responses/resp_1/prompt-context") {
+    body = fixture.payload("responses.prompt_context.rendered");
   } else if (url.pathname === "/internal/responses/resp_1/tool-executions") {
     body = fixture.payload("responses.tool_executions.detail");
   } else if (url.pathname === "/internal/responses/resp_1/model-request") {
@@ -137,8 +139,8 @@ const health = await client.health();
 assert(health.ok === true, "health should decode response");
 
 const created = await client.responses.create(
-  { model: "test-model", input: "hello" },
-  { agentId: "main", idempotencyKey: "idem_1" },
+  { model: "test-model", input: "hello", metadata: { skills: ["existing"] } },
+  { agentId: "main", idempotencyKey: "idem_1", skills: ["repo-helper", "existing"] },
 );
 assert(created.id === "resp_create", "responses.create should decode OpenAI response payload");
 
@@ -162,6 +164,12 @@ assert(cancelled.status === "cancelled", "responses.cancel should decode respons
 const events = await client.events.list("resp_1", { lastSeq: 2, limit: 10 });
 assert(events.response_id === "resp_1", "events.list should pass response_id");
 assert(events.requested_last_seq === 2, "events.list should pass last_seq");
+
+const promptContext = await client.events.promptContext("resp_1");
+assert(
+  promptContext.fragments?.[0]?.kind === "agents_instructions",
+  "events.promptContext should decode rendered prompt context",
+);
 
 const toolExecutions = await client.events.toolExecutions("resp_1");
 assert(
@@ -188,6 +196,13 @@ const tools = await client.tools.catalog({
   requestedToolNames: ["exec"],
 });
 assert(tools.toolset_version === 1, "tools.catalog should decode catalog");
+
+const searchTools = await client.tools.search("exec", {
+  agentId: "main",
+  sessionKey: "session_1",
+  requestedToolNames: ["exec"],
+});
+assert(searchTools.tools?.[0]?.name === "exec", "tools.search should filter catalog results");
 
 const skills = await client.skills.list({ agentId: "main" });
 assert(skills.skills?.[0]?.stable_id === "repo-helper", "skills.list should decode skills catalog");
@@ -319,9 +334,10 @@ assert(
       item.method === "POST" &&
       typeof item.body === "object" &&
       item.body !== null &&
-      (item.body as { stream?: unknown }).stream === false,
+      (item.body as { stream?: unknown }).stream === false &&
+      JSON.stringify((item.body as { metadata?: unknown }).metadata).includes("repo-helper"),
   ),
-  "responses.create should POST non-stream requests",
+  "responses.create should POST non-stream requests with skill metadata",
 );
 assert(
   seen.some(

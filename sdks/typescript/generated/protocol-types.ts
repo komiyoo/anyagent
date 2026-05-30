@@ -379,11 +379,13 @@ export type InternalObservabilityRunsResponse = {
 export type InternalObservabilitySummaryResponse = {
   "agent_id"?: string | null;
   "cached_input_tokens"?: number;
+  "compaction_count"?: number;
   "effective_run_status"?: string | null;
   "event_count"?: number;
   "first_token_latency_ms"?: number | null;
   "input_chars"?: number;
   "input_tokens"?: number;
+  "loop_warnings_count"?: number;
   "mcp_call_count"?: number;
   "output_chars"?: number;
   "output_tokens"?: number;
@@ -391,6 +393,7 @@ export type InternalObservabilitySummaryResponse = {
   "run_status"?: string | null;
   "session_key"?: string | null;
   "skill_view_count"?: number;
+  "subagent_spawns"?: number;
   "tool_call_count"?: number;
   "total_response_latency_ms"?: number | null;
   "turn_count"?: number;

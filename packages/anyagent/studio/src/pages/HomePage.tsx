@@ -26,14 +26,14 @@ import {
   Terminal,
   Wrench,
 } from "lucide-react";
-import { FormEvent, KeyboardEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { ConversationSidebar } from "../components/ConversationSidebar";
 import { AgentSelector } from "../components/AgentSelector";
-import { AgentDetail, AgentSummary, AgentWorkspaceFile, ChatMessage, CredentialRef, McpServerDraft, StudioDebugEvent, StudioSettings, ToolCallItem, ToolCatalog } from "../anyagentClient";
+import { AgentDetail, AgentSummary, AgentWorkspaceFile, ChatMessage, CredentialRef, McpServerDraft, StudioSettings, ToolCallItem, ToolCatalog } from "../anyagentClient";
 import { StudioMode, StudioTab } from "../navigation";
 import { StudioConversation } from "../stores/chatStore";
-import { compactJson, formatCount, shortHash } from "../studioUtils";
+import { formatCount, shortHash } from "../studioUtils";
 
 type TraceRow = {
   name: string;
@@ -65,7 +65,6 @@ type HomePageProps = {
   messages: ChatMessage[];
   input: string;
   isRunning: boolean;
-  streamEvents: StudioDebugEvent[];
   agents: AgentSummary[];
   conversationSidebarOpen: boolean;
   onToggleConversationSidebar: () => void;
@@ -102,7 +101,6 @@ export function HomePage({
   messages,
   input,
   isRunning,
-  streamEvents,
   agents,
   conversationSidebarOpen,
   onToggleConversationSidebar,
@@ -121,10 +119,10 @@ export function HomePage({
   const [editingMessageId, setEditingMessageId] = useState<string>("");
   const [editingContent, setEditingContent] = useState("");
   const [copiedId, setCopiedId] = useState("");
-  const [showStreamEvents, setShowStreamEvents] = useState(false);
   const chatLogRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const autoScrollRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
   const [showScrollDown, setShowScrollDown] = useState(false);
 
   const scrollToBottom = useCallback(() => {
@@ -135,17 +133,28 @@ export function HomePage({
     }
   }, []);
 
-  useLayoutEffect(() => {
-    if (autoScrollRef.current && chatLogRef.current) {
-      chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
-    }
+  useEffect(() => {
+    if (!autoScrollRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      if (autoScrollRef.current && chatLogRef.current) {
+        chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
   }, [messages, isRunning]);
 
   function handleChatScroll() {
     const el = chatLogRef.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    autoScrollRef.current = atBottom;
+    const scrollTop = el.scrollTop;
+    const atBottom = el.scrollHeight - scrollTop - el.clientHeight < 80;
+    // User scrolling up detaches auto-follow immediately, even mid-stream.
+    if (scrollTop < lastScrollTopRef.current) {
+      autoScrollRef.current = false;
+    } else if (atBottom) {
+      autoScrollRef.current = true;
+    }
+    lastScrollTopRef.current = scrollTop;
     setShowScrollDown(!atBottom && messages.length > 3);
   }
 
@@ -404,6 +413,9 @@ export function HomePage({
                             ) : null}
                           </div>
                         </div>
+                        {editingMessageId !== message.id && message.thinking ? (
+                          <ThinkingBlock content={message.thinking} isStreaming={isStreamingMsg && !message.content} />
+                        ) : null}
                         {editingMessageId === message.id ? (
                           <div className="message-editor">
                             <textarea
@@ -441,9 +453,6 @@ export function HomePage({
                             <span className="streaming-dot" />
                             <span className="streaming-label">Thinking...</span>
                           </div>
-                        ) : null}
-                        {message.thinking ? (
-                          <ThinkingBlock content={message.thinking} isStreaming={isStreamingMsg && !message.content} />
                         ) : null}
                         {/* Tool calls */}
                         {message.toolCalls?.length ? (
@@ -574,43 +583,9 @@ export function HomePage({
                       : "—"
                   }
                 />
-                <DetailRow
-                  label="Stream Events"
-                  value={formatCount(streamEvents.length)}
-                />
-                <DetailRow label="Status" value={isRunning ? "Running" : "Idle"} />
+                <DetailRow label="Status" value={isRunning ? "Running" : "Idle"} dot={isRunning ? "running" : "idle"} />
               </div>
             </Card.Content>
-          </Card>
-
-          {/* Stream Events (collapsible) */}
-          <Card className="panel detail-card">
-            <Card.Header className="panel-header">
-              <button
-                className="detail-collapse-trigger"
-                type="button"
-                onClick={() => setShowStreamEvents((v) => !v)}
-              >
-                <div className="panel-title">
-                  {showStreamEvents ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  <span>Stream Events</span>
-                  <span className="detail-badge">{streamEvents.length}</span>
-                </div>
-              </button>
-            </Card.Header>
-            {showStreamEvents ? (
-              <Card.Content className="panel-content">
-                <div className="event-list detail-event-list">
-                  {streamEvents.length === 0 ? (
-                    <p className="empty">No stream events yet. Send a message to see live events.</p>
-                  ) : (
-                    streamEvents.map((event, index) => (
-                      <pre key={`${event.type}-${index}`}>{compactJson(event)}</pre>
-                    ))
-                  )}
-                </div>
-              </Card.Content>
-            ) : null}
           </Card>
         </aside>
       </div>
@@ -690,11 +665,14 @@ function HomeStat({ label, value, hint }: { label: string; value: string; hint?:
   );
 }
 
-function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function DetailRow({ label, value, mono, dot }: { label: string; value: string; mono?: boolean; dot?: "running" | "idle" }) {
   return (
     <div className="detail-row">
       <span className="detail-label">{label}</span>
-      <span className={`detail-value ${mono ? "detail-mono" : ""}`}>{value}</span>
+      <span className={`detail-value ${mono ? "detail-mono" : ""}`}>
+        {dot ? <span className={`detail-status-dot ${dot === "running" ? "running" : ""}`} /> : null}
+        {value}
+      </span>
     </div>
   );
 }

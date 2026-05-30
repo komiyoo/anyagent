@@ -19,15 +19,16 @@
 - M2:跨节点 session 一致性验收
 - M3:典型负载基线 + 回归 bench
 
-## 任务
+## 当前状态
 
-- [x] P0 完成 PostgreSQL + Redis 组合下 session/run/event replay 的 contract test(Req: `requirements.md#req-3-1`; Impl: `tests/acceptance/server/acceptance_builtin_server_smoke.py:2064`; Module: `server-storage-acceptance`)
-- [ ] P1 设计存储层 idempotency-key 与 cursor 语义的统一规范,落 ADR(Req: `requirements.md#req-3-1`)
+- 已完成条目已清理,历史记录请查看 Git。
+- 已实现能力的长期口径见架构文档:
+  - 存储最小设计、durable primary store + hot cache 语义与 backend 限制:`docs/architecture/storage/storage-minimal-design.md`
+  - idempotency-key 与 cursor 语义统一规范(ADR):`docs/architecture/decisions/storage-idempotency-and-cursor-semantics.md`
+
+## 待处理
+
 - [ ] P2 加一个基线 bench 脚本,跑通典型 workspace 负载,产出回归参考数据(Req: `requirements.md#req-3-1`)
-
-## 决策 & 争议点
-
-- [ ] 是否需要在 contract 中区分 "hot path store" 与 "cold path store",还是仅以 adapter capability 描述
 
 ## 参考
 

@@ -20,16 +20,21 @@
 - M2:第二 runtime 候选选定 + ADR
 - M3:第二 runtime 通过 reference conformance suite
 
-## 任务
+## 当前状态
 
-- [ ] P1 整理 reference conformance suite 入口文档,标注覆盖范围与已知缺口(Req: `requirements.md#req-5`、`requirements.md#req-7`)
+- 已完成条目已清理,历史记录请查看 Git。
+- 已实现能力的长期口径见架构文档:
+  - reference conformance suite 入口、覆盖范围与已知缺口:`docs/architecture/testing/testing-strategy.md`、`tests/contract/README.md`
+  - conformance suite 随 protocol/schema bundle 留在本仓的决策:`docs/architecture/decisions/protocol-versioning.md`、`docs/architecture/decisions/`
+
+## 待处理
+
 - [ ] P2 评估第二 server runtime 候选(Go / Rust),落 ADR(前置:M1 完成)(Req: `requirements.md#req-5`)
 - [ ] P3 [Phase 4] 第二 runtime PoC 接入 reference conformance suite(Req: `requirements.md#req-5`)
 
 ## 决策 & 争议点
 
 - [ ] 第二 runtime 的优先目标:性能 vs 部署 footprint vs 生态语言
-- [ ] Conformance suite 是放在本仓还是独立仓库
 
 ## 参考
 

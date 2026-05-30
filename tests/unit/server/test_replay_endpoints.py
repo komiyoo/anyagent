@@ -81,6 +81,25 @@ class TestPersistenceConfigGating:
         assert event.applied_body == {"model": "gpt-4", "input": []}
         assert event.prompt_cache_key == "cache-abc"
 
+    def test_model_request_redacts_sensitive_keys_before_storage(self) -> None:
+        config = PersistenceConfig(persist_model_request=True)
+        persistence = ModelRequestPersistence(config=config)
+        sink = AsyncMock()
+        asyncio.run(persistence.persist(
+            response_id="resp_1",
+            applied_body={
+                "model": "gpt-4",
+                "Authorization": "Bearer secret",
+                "metadata": {"credential_id": "cred_demo", "safe": "ok"},
+            },
+            stage_sink=sink,
+        ))
+
+        event = sink.call_args[0][0]
+        assert event.applied_body["Authorization"] == "[REDACTED]"
+        assert event.applied_body["metadata"]["credential_id"] == "[REDACTED]"
+        assert event.applied_body["metadata"]["safe"] == "ok"
+
     def test_rendered_context_toggle_does_not_gate_tool_execution(self) -> None:
         config = PersistenceConfig(
             persist_rendered_context=False,

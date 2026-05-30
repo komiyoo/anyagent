@@ -998,7 +998,6 @@ export function StudioApp() {
               messages={messages}
               input={input}
               isRunning={isRunning}
-              streamEvents={streamEvents}
               onEditMessage={editUserMessageAndResend}
               onInputChange={setInput}
               onNewConversation={newConversation}

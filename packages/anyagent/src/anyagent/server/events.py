@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Set as AbstractSet
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from time import time
 from typing import Any
 
+from anyagent.observability import REPLAY_EVENT_TYPES
 from anyagent.protocol.agent_api_internal import InternalEventItem, InternalEventsListResponse
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.server.postgres_schema import PostgresSchemaPolicy, ensure_postgres_schema_objects
@@ -16,6 +19,7 @@ from anyagent.storage.settings import StorageSettings
 class _ResponseRecord:
     response_id: str
     events: list[InternalEventItem] = field(default_factory=list)
+    event_created_at_ms: dict[int, int] = field(default_factory=dict)
     next_seq: int = 1
     done: bool = False
     run_status: str | None = None
@@ -42,6 +46,7 @@ class InMemoryEventStore:
         record.next_seq += 1
         item = InternalEventItem(seq=seq, event=event, data=data)
         record.events.append(item)
+        record.event_created_at_ms[seq] = _now_ms()
         for queue in list(self._subscribers.get(response_id, [])):
             await queue.put(item)
         return seq
@@ -110,6 +115,25 @@ class InMemoryEventStore:
         if not record.events:
             return 0
         return record.events[-1].seq
+
+    async def prune_replay_events(self, *, before_ms: int, event_types: AbstractSet[str] | None = None) -> int:
+        replay_event_types = event_types or REPLAY_EVENT_TYPES
+        deleted = 0
+        for record in self._records.values():
+            retained: list[InternalEventItem] = []
+            for item in record.events:
+                created_at_ms = record.event_created_at_ms.get(item.seq, 0)
+                if _is_replay_event(item.event, replay_event_types) and created_at_ms < before_ms:
+                    record.event_created_at_ms.pop(item.seq, None)
+                    deleted += 1
+                    continue
+                retained.append(item)
+            record.events = retained
+            live_seqs = {item.seq for item in retained}
+            for seq in list(record.event_created_at_ms):
+                if seq not in live_seqs:
+                    record.event_created_at_ms.pop(seq, None)
+        return deleted
 
     async def stream_events(self, *, response_id: str, last_seq: int = 0) -> AsyncIterator[InternalEventItem]:
         record = self._record(response_id)
@@ -315,6 +339,11 @@ return 1
         length = await adapter.llen(build_redis_event_list_key(namespace=self._namespace, response_id=response_id))
         return int(length or 0)
 
+    async def prune_replay_events(self, *, before_ms: int, event_types: AbstractSet[str] | None = None) -> int:
+        _ = before_ms
+        _ = event_types
+        return 0
+
     async def stream_events(self, *, response_id: str, last_seq: int = 0) -> AsyncIterator[InternalEventItem]:
         next_seq = max(last_seq, 0)
         while True:
@@ -481,6 +510,11 @@ class CachedEventStore:
         if latest > 0:
             await self._warm(response_id=response_id)
         return latest
+
+    async def prune_replay_events(self, *, before_ms: int, event_types: AbstractSet[str] | None = None) -> int:
+        deleted = await self._primary.prune_replay_events(before_ms=before_ms, event_types=event_types)
+        await self._cache.prune_replay_events(before_ms=before_ms, event_types=event_types)
+        return deleted
 
     async def stream_events(self, *, response_id: str, last_seq: int = 0) -> AsyncIterator[InternalEventItem]:
         next_seq = max(last_seq, 0)
@@ -671,6 +705,20 @@ class PostgresEventStore:
         await self._ensure_tables()
         return await self._events.tail_seq(response_id=response_id)
 
+    async def prune_replay_events(self, *, before_ms: int, event_types: AbstractSet[str] | None = None) -> int:
+        await self._ensure_tables()
+        from sqlalchemy import delete
+
+        events_table = self._events._tables.events
+        cutoff = datetime.fromtimestamp(max(before_ms, 0) / 1000, tz=timezone.utc)
+        stmt = delete(events_table).where(
+            events_table.c.event_type.in_(tuple(sorted(event_types or REPLAY_EVENT_TYPES))),
+            events_table.c.created_at < cutoff,
+        )
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return int(result.rowcount or 0)
+
     async def stream_events(self, *, response_id: str, last_seq: int = 0) -> AsyncIterator[InternalEventItem]:
         next_seq = max(last_seq, 0)
         while True:
@@ -748,6 +796,20 @@ def build_redis_event_list_key(*, namespace: str, response_id: str) -> str:
     return f"{ns}:events:list:{response_id}"
 
 
+async def prune_expired_replay_events(
+    event_store: Any,
+    *,
+    settings: StorageSettings | None = None,
+    now_ms: int | None = None,
+) -> int:
+    retention_s = max(0, int((settings or StorageSettings()).replay_event_store_retention_s))
+    cutoff_ms = (now_ms if now_ms is not None else _now_ms()) - (retention_s * 1000)
+    prune = getattr(event_store, "prune_replay_events", None)
+    if not callable(prune):
+        return 0
+    return int(await prune(before_ms=cutoff_ms, event_types=REPLAY_EVENT_TYPES) or 0)
+
+
 def _decode_internal_event_items(raw_items: list[str]) -> list[InternalEventItem]:
     out: list[InternalEventItem] = []
     for raw in raw_items:
@@ -767,3 +829,11 @@ def _loads_json_dict(value: str | None) -> dict[str, Any] | None:
     except Exception:  # noqa: BLE001
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _is_replay_event(event: str | None, event_types: AbstractSet[str]) -> bool:
+    return isinstance(event, str) and event in event_types
+
+
+def _now_ms() -> int:
+    return int(time() * 1000)

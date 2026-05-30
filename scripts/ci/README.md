@@ -5,10 +5,11 @@
 当前脚本：
 
 1. `run_docs_guardrails.sh`：文档护栏与进度可读性检查，适合 docs / roadmap / TODO 变更后的最小质量门。
-2. `run_offline_smokes.sh`：离线 smoke 集合（不依赖上游模型 API），当前覆盖 SDK client surface 与 MCP federation。
-3. `run_pytest_regressions.sh`：正式 pytest 回归集合，当前覆盖 `unit`、`contract`、`integration` 与一组离线 server acceptance pytest。
-4. `run_live_storage_matrix.sh`：live storage matrix 入口，当前覆盖 PG/Redis 与 MySQL/Redis 的 built-in server 验收。
-5. `build_release_artifacts.sh`：发布构建入口，只构建 Python wheel/sdist、执行 `twine check` 和最小 wheel metadata smoke；全量 pytest 应在 CI gate 中完成，不放在发版上传前重复执行。
+2. `run_protocol_schema_diff.sh`：导出当前 protocol schema bundle，并与 base branch 的 generated bundle 比较，拦截字段删除、required 新增、类型/枚举收窄与 endpoint 破坏性变更。
+3. `run_offline_smokes.sh`：离线 smoke 集合（不依赖上游模型 API），当前覆盖 SDK client surface 与 MCP federation。
+4. `run_pytest_regressions.sh`：正式 pytest 回归集合，当前覆盖 `unit`、`contract`、`integration` 与一组离线 server acceptance pytest。
+5. `run_live_storage_matrix.sh`：live storage matrix 入口，当前覆盖 PG/Redis 与 MySQL/Redis 的 built-in server 验收。
+6. `build_release_artifacts.sh`：发布构建入口，只构建 Python wheel/sdist、执行 `twine check` 和最小 wheel metadata smoke；全量 pytest 应在 CI gate 中完成，不放在发版上传前重复执行。
 
 补充：
 

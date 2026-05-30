@@ -29,6 +29,7 @@ import type {
   InternalObservabilityTraceResponse,
   InternalPromptBundlePreviewResponse,
   InternalResponseModelRequestResponse,
+  InternalResponsePromptContextResponse,
   InternalResponseToolExecutionsResponse,
   InternalSkillsListResponse,
   InternalToolCatalogResponse,
@@ -52,6 +53,7 @@ export type OpenAIResponseJson = Record<string, unknown> & { id: string; object?
 export interface ResponsesRequestOptions {
   agentId?: string;
   idempotencyKey?: string;
+  skills?: string[];
   signal?: AbortSignal;
 }
 
@@ -174,6 +176,43 @@ function validateOpenAIResponsePayload(payload: unknown): OpenAIResponseJson {
     throw new Error("Response does not match OpenAI Responses object payload");
   }
   return payload as OpenAIResponseJson;
+}
+
+function withSkillMentions(request: OpenAIResponsesCreateRequest, skills?: string[]): OpenAIResponsesCreateRequest {
+  const mentions = (skills ?? []).map((skill) => skill.trim()).filter(Boolean);
+  if (!mentions.length) {
+    return request;
+  }
+  const metadata = request.metadata;
+  if (metadata !== undefined && (typeof metadata !== "object" || metadata === null || Array.isArray(metadata))) {
+    throw new Error("Responses request metadata must be an object when skills are provided");
+  }
+  const existing = metadata as Record<string, unknown> | undefined;
+  const existingMentions = metadataSkillList(existing?.skills);
+  return {
+    ...request,
+    metadata: {
+      ...(existing ?? {}),
+      skills: Array.from(new Set([...existingMentions, ...mentions])),
+    },
+  };
+}
+
+function metadataSkillList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim())
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 function buildResponseHeaders(apiKey: string, options: ResponsesRequestOptions): Headers {
@@ -391,7 +430,7 @@ export class AnyAgentResponses {
     options: ResponsesRequestOptions = {},
   ): Promise<OpenAIResponseJson> {
     assertRequestObject(request);
-    const body = { ...request, stream: false };
+    const body = withSkillMentions({ ...request, stream: false }, options.skills);
     const response = await this.http.fetchImpl(new URL(`${this.http.baseUrl}${this.http.endpointPath("responses.create")}`), {
       method: "POST",
       headers: buildResponseHeaders(this.http.apiKey, options),
@@ -406,7 +445,7 @@ export class AnyAgentResponses {
     options: ResponsesRequestOptions = {},
   ): AsyncGenerator<AnyAgentSseEvent> {
     assertRequestObject(request);
-    const body = { ...request, stream: true };
+    const body = withSkillMentions({ ...request, stream: true }, options.skills);
     const response = await this.http.fetchImpl(new URL(`${this.http.baseUrl}${this.http.endpointPath("responses.stream")}`), {
       method: "POST",
       headers: buildResponseHeaders(this.http.apiKey, options),
@@ -464,6 +503,13 @@ export class AnyAgentEvents {
     });
   }
 
+  async promptContext(responseId: string): Promise<InternalResponsePromptContextResponse> {
+    return this.http.getEndpoint<InternalResponsePromptContextResponse>({
+      operation: "responses.prompt_context",
+      pathParams: { response_id: responseId },
+    });
+  }
+
   async modelRequest(responseId: string): Promise<InternalResponseModelRequestResponse> {
     return this.http.getEndpoint<InternalResponseModelRequestResponse>({
       operation: "responses.model_request",
@@ -514,6 +560,39 @@ export class AnyAgentTools {
         requested_tool_names: requested || undefined,
       },
     });
+  }
+
+  async search(
+    query: string,
+    options: {
+      agentId?: string;
+      sessionKey?: string;
+      requestedToolNames?: string[];
+      limit?: number;
+    } = {},
+  ): Promise<InternalToolCatalogResponse> {
+    const catalog = await this.catalog({
+      agentId: options.agentId,
+      sessionKey: options.sessionKey ?? "sdk-tool-search",
+      requestedToolNames: options.requestedToolNames,
+    });
+    const needle = query.trim().toLowerCase();
+    const limit = Math.max(0, options.limit ?? 10);
+    const tools = catalog.tools ?? [];
+    if (!needle) {
+      return { ...catalog, tools: tools.slice(0, limit) };
+    }
+    return {
+      ...catalog,
+      tools: tools
+        .filter((tool) =>
+          tool.name.toLowerCase().includes(needle) ||
+          (tool.description ?? "").toLowerCase().includes(needle) ||
+          (tool.kind ?? "").toLowerCase().includes(needle) ||
+          (tool.decision ?? "").toLowerCase().includes(needle),
+        )
+        .slice(0, limit),
+    };
   }
 }
 

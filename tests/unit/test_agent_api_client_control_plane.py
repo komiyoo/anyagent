@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import httpx
@@ -50,6 +51,14 @@ def test_sdk_admin_skill_update_helpers_match_server(tmp_path: Path, monkeypatch
 
 def test_sdk_observability_namespace_matches_server(tmp_path: Path) -> None:
     asyncio.run(_run_sdk_observability_namespace_matches_server(tmp_path))
+
+
+def test_sdk_response_replay_helpers_match_server(tmp_path: Path) -> None:
+    asyncio.run(_run_sdk_response_replay_helpers_match_server(tmp_path))
+
+
+def test_sdk_create_merges_skill_mentions(tmp_path: Path) -> None:
+    asyncio.run(_run_sdk_create_merges_skill_mentions(tmp_path))
 
 
 def test_sdk_public_types_entrypoint_exports_boundary_models() -> None:
@@ -152,6 +161,73 @@ async def _run_sdk_observability_namespace_matches_server(tmp_path: Path) -> Non
         trace = await client.observability.trace(trace_id)
         assert trace.response_ids == [response_id]
         assert trace.audit_refs == ["aud_sdk"]
+
+
+async def _run_sdk_response_replay_helpers_match_server(tmp_path: Path) -> None:
+    _write_workspace(tmp_path)
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    response_id = "resp_sdk_replay"
+    await app.state.anyagent.events.mark_started(response_id=response_id)
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="anyagent.context.compacted",
+        data='{"type":"anyagent.context.compacted","response_id":"resp_sdk_replay","tokens_before":100,"tokens_after":40,"items_before":10,"items_after":4}',
+    )
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="anyagent.agent.loop_warning",
+        data='{"type":"anyagent.agent.loop_warning","response_id":"resp_sdk_replay","tool_signature":"exec:{}","repeat_count":2,"window_size":4}',
+    )
+    await app.state.anyagent.events.append(
+        response_id=response_id,
+        event="anyagent.subagent.spawned",
+        data='{"type":"anyagent.subagent.spawned","response_id":"resp_sdk_replay","parent_response_id":"resp_sdk_replay","child_response_id":"resp_child","agent_id":"researcher","depth":1,"task_description":{"bytes":5,"sha256":"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824","preview":"hello","preview_truncated":false}}',
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+
+        prompt_context = await client.events.prompt_context(response_id)
+        assert prompt_context.response_id == response_id
+        assert prompt_context.fallback == "missing"
+
+        tool_executions = await client.events.tool_executions(response_id)
+        assert tool_executions.response_id == response_id
+        assert tool_executions.tool_executions == []
+
+        model_request = await client.events.model_request(response_id)
+        assert model_request.response_id == response_id
+        assert model_request.applied_body is None
+
+        summary = await client.observability.summary(response_id)
+        assert summary.compaction_count == 1
+        assert summary.loop_warnings_count == 1
+        assert summary.subagent_spawns == 1
+
+
+async def _run_sdk_create_merges_skill_mentions(tmp_path: Path) -> None:
+    _write_workspace(tmp_path)
+    seen_body: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal seen_body
+        seen_body = dict(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(200, json={"id": "resp_skill_mentions", "object": "response", "status": "completed"})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+        created = await client.create(
+            {"model": "test-model", "input": "hello", "metadata": {"skills": ["existing"]}},
+            skills=["repo-helper", "existing"],
+            x_agent_id="main",
+            idempotency_key="idem-1",
+        )
+
+    assert created["id"] == "resp_skill_mentions"
+    assert seen_body["stream"] is False
+    assert seen_body["metadata"] == {"skills": ["existing", "repo-helper"]}
 
 
 async def _run_sdk_admin_plugin_catalog_matches_tool_runtime(tmp_path: Path) -> None:

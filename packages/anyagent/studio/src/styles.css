@@ -3955,7 +3955,7 @@ select:hover {
 /* Right detail sidebar */
 .detail-panel {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   align-content: start;
   min-width: 0;
 }
@@ -3966,7 +3966,7 @@ select:hover {
 
 .detail-grid {
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
 
 .detail-row {
@@ -3974,7 +3974,7 @@ select:hover {
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
   gap: 10px;
   align-items: baseline;
-  padding: 6px 0;
+  padding: 5px 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -3989,6 +3989,10 @@ select:hover {
 }
 
 .detail-value {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
   overflow: hidden;
   color: var(--ink);
   font-size: 12px;
@@ -4003,36 +4007,17 @@ select:hover {
   font-weight: 500;
 }
 
-.detail-collapse-trigger {
-  display: flex;
-  width: 100%;
-  padding: 0;
-  background: transparent;
-  border: 0;
-}
-
-.detail-collapse-trigger .panel-title {
-  width: 100%;
-}
-
-.detail-badge {
-  margin-left: auto;
-  padding: 1px 8px;
-  color: var(--ink-secondary);
-  font-size: 11px;
-  font-family: var(--font-mono);
-  background: var(--frost);
-  border: 1px solid var(--border);
+.detail-status-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  background: var(--ink-tertiary);
   border-radius: var(--radius-full);
 }
 
-.detail-event-list {
-  min-height: 0;
-  max-height: 320px;
-}
-
-.detail-event-list pre {
-  font-size: 10px;
+.detail-status-dot.running {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 @media (max-width: 1180px) {

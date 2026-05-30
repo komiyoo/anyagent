@@ -15,6 +15,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from anyagent.observability import redact_replay_payload
 from anyagent.persistence.config import PersistenceConfig
 from anyagent.protocol.stage_events import AnyAgentModelRequestEvent
 
@@ -64,7 +65,7 @@ class ModelRequestPersistence:
         event = AnyAgentModelRequestEvent(
             response_id=response_id,
             type=EVENT_TYPE,
-            applied_body=applied_body,
+            applied_body=redact_replay_payload(applied_body),
             prompt_cache_key=prompt_cache_key,
             trace_id=trace_id,
         )

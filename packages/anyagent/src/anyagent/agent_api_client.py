@@ -19,6 +19,7 @@ anyagent Client SDK — 资源型命名空间入口。
 """
 
 import fnmatch
+import json
 from typing import TYPE_CHECKING, Any, AsyncIterator, TypeVar
 
 import httpx
@@ -59,6 +60,9 @@ from anyagent.types import (
     InternalObservabilityToolsResponse,
     InternalObservabilityTraceResponse,
     InternalPromptBundlePreviewResponse,
+    InternalResponseModelRequestResponse,
+    InternalResponsePromptContextResponse,
+    InternalResponseToolExecutionsResponse,
     InternalToolCatalogResponse,
     PromptRunBundleExampleResponse,
     PromptRunBundleExampleOptions,
@@ -298,6 +302,24 @@ class Events(_Namespace):
             if listing.done or not listing.events or listing.next_last_seq <= cursor:
                 return latest
             cursor = listing.next_last_seq
+
+    async def prompt_context(self, response_id: str) -> InternalResponsePromptContextResponse:
+        """Replay rendered prompt context via ``GET /internal/responses/{id}/prompt-context``."""
+
+        data = await self._get(f"/internal/responses/{response_id}/prompt-context")
+        return _validate_response(InternalResponsePromptContextResponse, data)
+
+    async def tool_executions(self, response_id: str) -> InternalResponseToolExecutionsResponse:
+        """Replay detailed tool execution events via ``GET /internal/responses/{id}/tool-executions``."""
+
+        data = await self._get(f"/internal/responses/{response_id}/tool-executions")
+        return _validate_response(InternalResponseToolExecutionsResponse, data)
+
+    async def model_request(self, response_id: str) -> InternalResponseModelRequestResponse:
+        """Replay the final applied model request via ``GET /internal/responses/{id}/model-request``."""
+
+        data = await self._get(f"/internal/responses/{response_id}/model-request")
+        return _validate_response(InternalResponseModelRequestResponse, data)
 
     async def replay_summary(
         self,
@@ -613,6 +635,36 @@ class Tools(_Namespace):
             params["requested_tool_names"] = ",".join(item for item in requested_tool_names if item)
         data = await self._get("/internal/tools/catalog", params=params)
         return _validate_response(InternalToolCatalogResponse, data)
+
+    async def search(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        agent_id: str = "main",
+        session_key: str = "sdk-tool-search",
+        requested_tool_names: list[str] | None = None,
+    ) -> InternalToolCatalogResponse:
+        """Search visible tools by filtering the typed catalog client-side."""
+
+        needle = query.strip().lower()
+        catalog = await self.catalog(
+            agent_id=agent_id,
+            session_key=session_key,
+            requested_tool_names=requested_tool_names,
+        )
+        if not needle:
+            return catalog.model_copy(update={"tools": catalog.tools[: max(0, int(limit))]})
+
+        matches = [
+            tool
+            for tool in catalog.tools
+            if needle in tool.name.lower()
+            or needle in (tool.description or "").lower()
+            or needle in (tool.kind or "").lower()
+            or needle in (tool.decision or "").lower()
+        ]
+        return catalog.model_copy(update={"tools": matches[: max(0, int(limit))]})
 
     async def explain(
         self,
@@ -1015,6 +1067,33 @@ class AnyAgent:
         data = await _Namespace(base_url=self._base_url, api_key=self._api_key, http=self._http)._get("/healthz")
         return _validate_response(HealthResponse, data)
 
+    async def create(
+        self,
+        request: dict[str, Any],
+        *,
+        skills: list[str] | None = None,
+        x_agent_id: str | None = None,
+        idempotency_key: str | None = None,
+        timeout: float = 60.0,
+    ) -> dict[str, Any]:
+        """Create one non-streaming OpenAI-compatible response with SDK skill mentions."""
+
+        if not isinstance(request, dict):
+            raise TypeError("request must be a dict")
+        body = _merge_skill_mentions(request, skills)
+        headers: dict[str, str] = {}
+        if isinstance(x_agent_id, str) and x_agent_id.strip():
+            headers["x-agent-id"] = x_agent_id.strip()
+        if isinstance(idempotency_key, str) and idempotency_key.strip():
+            headers["idempotency-key"] = idempotency_key.strip()
+        data = await _Namespace(base_url=self._base_url, api_key=self._api_key, http=self._http)._post_json(
+            "/v1/responses",
+            json_body={**body, "stream": False},
+            timeout=timeout,
+            headers=headers or None,
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
     def _openai_base_url(self) -> str:
         """Return normalized OpenAI SDK base URL for this AnyAgent server."""
         if self._base_url.endswith("/v1"):
@@ -1063,3 +1142,35 @@ def create_anyagent_client(
         base_url=str(settings.base_url).rstrip("/"),
         http=http,
     )
+
+
+def _merge_skill_mentions(request: dict[str, Any], skills: list[str] | None) -> dict[str, Any]:
+    body = dict(request)
+    mentions = [skill.strip() for skill in skills or [] if isinstance(skill, str) and skill.strip()]
+    if not mentions:
+        return body
+    metadata = body.get("metadata")
+    if metadata is None:
+        merged_metadata: dict[str, Any] = {}
+    elif isinstance(metadata, dict):
+        merged_metadata = dict(metadata)
+    else:
+        raise TypeError("request.metadata must be a dict when skills are provided")
+    existing = merged_metadata.get("skills")
+    existing_mentions = _metadata_skill_list(existing)
+    merged_metadata["skills"] = _dedupe_strs([*existing_mentions, *mentions])
+    body["metadata"] = merged_metadata
+    return body
+
+
+def _metadata_skill_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except Exception:  # noqa: BLE001
+            return []
+        if isinstance(parsed, list):
+            return [item.strip() for item in parsed if isinstance(item, str) and item.strip()]
+    return []

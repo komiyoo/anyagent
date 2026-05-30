@@ -30,6 +30,7 @@ class StorageSettings(BaseSettings):
     # Namespacing to avoid cross-app collisions when sharing a Redis instance.
     redis_namespace: str = Field(default="anyagent", alias="REDIS_NAMESPACE")
     event_store_retention_s: int = Field(default=2 * 60 * 60, alias="EVENT_STORE_RETENTION_S")
+    replay_event_store_retention_s: int = Field(default=60 * 60, alias="REPLAY_EVENT_STORE_RETENTION_S")
     run_store_retention_s: int = Field(default=2 * 60 * 60, alias="RUN_STORE_RETENTION_S")
     session_store_retention_s: int = Field(default=24 * 60 * 60, alias="SESSION_STORE_RETENTION_S")
 

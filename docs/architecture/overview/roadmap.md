@@ -113,50 +113,37 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 
 ### 5.1 执行优先级与完成状态
 
-> 最后更新：2026-05-29
+> 最后更新：2026-05-30
+
+#### 已完成(Phase 1 / 1.5 / 1.8 / 2)
+
+Phase 1 ~ Phase 2 的主路径任务已全部完成。逐条任务历史见 Git 与各 `todo/*.md`,已实现能力的长期口径沉淀在架构文档:
+
+| Phase | 已交付能力 | 架构文档锚点 |
+| ----- | ---------- | ------------ |
+| 1 | Protocol schema bundle 版本化、SDK conformance fixtures、TypeScript SDK 最小可用面 | `api/sdk-public-surface.md`、`api/sdk-compatibility-matrix.md`、`protocol-semantic-rules.md` |
+| 1.5 | Tool Deferred Loading + Search、Skill 注入管道、三类 Replay(prompt context / tool execution / model request)、Plugin Manifest v1 + MCP filter、配置层级 merge + 热重载 + MCP 生命周期/会话池 | `tool-runtime/tool-runtime-contract.md`、`runtime/agent-packs-and-runtime-config.md`、`control-plane/studio-control-plane-and-observability.md`、`integrations/platform-connectors.md` |
+| 1.8 | Sub-Agent 完整版、Agent Loop Middleware 4-hook 接口、上下文压缩、循环检测、Phase 1.8 Stage Events | `runtime/agent-loop-middleware.md`、`multi-agent/multi-agent-collaboration.md` |
+| 2 | Tool Runtime contract 测试矩阵 + standalone 等价验收、Storage replay contract(PG+Redis)、跨节点 Run 调度与 lock contract、第二 sandbox backend、Unified Observability Sink | `tool-runtime/tool-runtime-contract.md`、`storage/storage-minimal-design.md`、`runtime/stateless-agent-service-architecture.md`、`runtime/sandbox-session-filesystem-design.md`、`decisions/`(run-scheduling-lock-contract、sandbox-backend-selection、storage-idempotency-and-cursor-semantics、observability-replay-sink-and-retention) |
+
+#### 未开始
 
 | 优先级 | #   | 任务                                                              | Phase | 状态      | todo 入口                            |
 | ------ | --- | ----------------------------------------------------------------- | ----- | --------- | ------------------------------------ |
-| **P0** | 1   | Protocol schema bundle 版本化                                     | 1     | ✅ 已完成 | `todo/protocol.md` L24               |
-| **P0** | 2   | SDK conformance fixtures → Stage Events + Tool Runtime            | 1     | ✅ 已完成 | `todo/sdk.md` L26                    |
-| **P0** | 3   | TypeScript SDK 最小可用面 (MVU)                                   | 1     | ✅ 已完成 | `todo/sdk.md` L27                    |
-| **P0** | 4   | Tool Deferred Loading + Tool Search                               | 1.5   | ✅ 已完成 | `todo/tool-runtime.md` L26-27        |
-| **P0** | 5   | Skill → Agent Loop 注入管道                                       | 1.5   | ✅ 已完成 | `todo/server-runtime.md` L27         |
-| **P0** | 6   | Prompt Context Replay（rendered fragments 持久化 + 历史查询 API） | 1.5   | ✅ 已完成 | `todo/persistence.md` M1             |
-| **P1** | 7   | Tool Execution Replay（tool full payload 持久化 + 查询）          | 1.5   | ✅ 已完成 | `todo/persistence.md` M2             |
-| **P1** | 8   | Model Request Replay（applied_body 持久化 + replay）              | 1.5   | ✅ 已完成 | `todo/persistence.md` M3             |
-| **P1** | 9   | Plugin Manifest v1 统一（含 middlewares/hooks）+ MCP filter       | 1.5   | ✅ 已完成 | `todo/tool-runtime.md` L28-29        |
-| **P1** | 10  | 配置层级 merge + Config 热重载 + MCP 生命周期 Stage Events        | 1.5   | ✅ 已完成 | `todo/server-runtime.md` L28-30      |
-| **P0** | 11  | Sub-Agent 完整可用版（并发/超时/深度/fork mode/Stage Events）     | 1.8   | ✅ 已完成 | `todo/multi-agent.md` M0             |
-| **P0** | 12  | 上下文压缩（Codex prompt + Pi-mono cut-point + 迭代式摘要）       | 1.8   | ✅ 已完成 | `todo/server-runtime.md`             |
-| **P0** | 13  | 循环检测（DeerFlow 算法：hash + 滑动窗口 + 双阈值）              | 1.8   | ✅ 已完成 | `todo/server-runtime.md`             |
-| **P0** | 14  | Agent Loop Middleware 接口（4-hook：before/after model/tool）     | 1.8   | ✅ 已完成 | `todo/server-runtime.md`             |
-| **P1** | 15  | Phase 1.8 Stage Events（subagent/compaction/loop_detection）      | 1.8   | ✅ 已完成 | `todo/sdk.md`                        |
-| **P2** | 16  | Tool Runtime contract 测试矩阵 + standalone 等价验收              | 2     | 🔲 未开始 | `todo/tool-runtime.md` L33-34        |
-| **P2** | 17  | Storage replay contract: PG + Redis                               | 2     | 🔲 未开始 | `todo/storage.md` L24                |
-| **P3** | 18  | 跨节点 Run 调度与 lock contract                                   | 2     | 🔲 未开始 | `todo/server-runtime.md` L42-43      |
-| **P3** | 19  | 第二 sandbox backend                                              | 2     | 🔲 未开始 | `todo/sandbox.md` L23-24             |
-| **P3** | 20  | Unified Observability Sink（统一 envelope 出口 + 外部审计对接）   | 2     | 🔲 未开始 | `todo/persistence.md` M4             |
-| **P4** | 21  | Credential v2 (DB/Vault/session/轮转/审计)                        | 3     | 🔲 未开始 | `todo/security-compliance.md` L18-22 |
-| **P4** | 22  | Multi-Agent contract（完整 parent/child/root run 语义）           | 4     | 🔲 未开始 | `todo/multi-agent.md` L23-25         |
-| **P4** | 23  | Reference conformance suite + 第二 runtime                        | 4     | 🔲 未开始 | `todo/multi-runtime.md` L25-27       |
+| **P4** | 21  | Credential v2 (DB/Vault/session/轮转/审计)                        | 3     | 🔲 未开始 | `todo/security-compliance.md`        |
+| **P4** | 22  | Multi-Agent contract（完整 parent/child/root run 语义）           | 4     | 🔲 未开始 | `todo/multi-agent.md`                |
+| **P4** | 23  | Reference conformance suite + 第二 runtime                        | 4     | 🔲 未开始 | `todo/multi-runtime.md`              |
 
 状态图例：🔲 未开始 · 🔵 进行中 · ✅ 已完成
 
 依赖关系备注：
 
-- #5 和 #6 可并行（分别改 agent_runtime 注入管道和 persistence 写入路径）
-- #7、#8 依赖 #6（replay event 格式需要 prompt context rendered event 形状稳定后对齐）
-- #9 依赖 #4（Plugin Manifest 需要 Tool Registry/Search 形状稳定）
-- #14 无阻塞依赖，可立即启动；#12 和 #13 依赖 #14（压缩和循环检测作为内置 middleware 实现）
-- #11 依赖 #13（Sub-Agent 需要循环检测作为安全网）；不依赖 #9/#10（MVP 用内置 tool 注册）
-- #15 依赖 #11 + #12 + #13（Stage Events 需要 runtime 逻辑稳定后定义 schema）
-- #18 依赖 #17（lock contract 需要 storage adapter 就绪）
-- #20 依赖 #6 + #7 + #8（统一 sink 需要所有 replay event 类型就绪）
-- #21 依赖 #16 + #20（Credential v2 需要 Tool Runtime GA + audit sink）
+- #21 依赖 Tool Runtime GA + audit sink（均已完成),可立即启动；前置决策见 `todo/security-compliance.md` 决策点(DB vs Vault、密钥管理)
+- #22 依赖 #21 与已就绪的 Multi-Agent runtime primitives；#23 依赖 #22 的跨 runtime 一致性基线
 
 > **决策记录（2026-05-29）**：当前仅公司内部使用，多租户/水平扩展需求推迟。Phase 2 中的分布式加固（#18 跨节点调度、#19 第二 sandbox backend）降为 P3，有外部用户需求后再投入。新增 Phase 1.8 聚焦内部高频需求：Sub-Agent、上下文压缩、循环检测、Middleware 接口。
 >
+
 > **决策记录（2026-05-29 技术调研）**：基于工作区仓库（Codex/DeerFlow/Pi-mono/OpenClaw/HiClaw）技术调研，Phase 1.8 新增 Middleware 接口（#14）作为框架扩展基础，循环检测和上下文压缩均作为内置 middleware 实现。Plugin Manifest v1（#9）扩展为含 middlewares/hooks 字段。详见 `docs/_notes/third-party/workspace-repos-tech-survey.md`。
 
 ---

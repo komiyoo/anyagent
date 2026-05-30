@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Set as AbstractSet
+from datetime import datetime, timezone
 from time import monotonic, time
 from typing import Any
 
@@ -398,6 +400,18 @@ class SqlAlchemyEventStore(SqlAlchemyBackendBase):
                 )
             )
         return out
+
+    async def prune_replay_events(self, *, before_ms: int, event_types: AbstractSet[str]) -> int:
+        if not event_types:
+            return 0
+        cutoff = datetime.fromtimestamp(max(before_ms, 0) / 1000, tz=timezone.utc)
+        stmt = delete(self._tables.events).where(
+            self._tables.events.c.event_type.in_(tuple(sorted(event_types))),
+            self._tables.events.c.created_at < cutoff,
+        )
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return int(result.rowcount or 0)
 
 
 class SqlAlchemyLeaseLock(SqlAlchemyBackendBase):

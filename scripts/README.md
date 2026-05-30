@@ -23,6 +23,7 @@
   - `anyagent_progress.py` 扫描 `todo/*.md`，支持 checkbox 后缩进子项里的 `Impl:` / `Module:` 证据。
 - 协议与 SDK：
   - `export_protocol_schema.py` 从 `anyagent.protocol.schema_export` 导出确定性的协议 JSON schema bundle，或用 `--format openapi` 导出同源 OpenAPI 3.1 文档，供多语言 SDK、Studio 和 contract tests 消费；需要在 `packages/anyagent` 项目环境中运行。
+  - `protocol_schema_diff.py` 对比两份协议 schema bundle，检测 schema / endpoint 的 breaking change，供本地审查与 CI 护栏复用。
 
 ## 常用命令
 
@@ -34,6 +35,7 @@ python3 scripts/docs/check.py --root . --check-index --check-code-refs
 python3 scripts/docs/pack.py --root . --tags sdk
 uv run --project packages/anyagent python scripts/export_protocol_schema.py --out build/protocol-schema.json
 uv run --project packages/anyagent python scripts/export_protocol_schema.py --format openapi --out build/openapi.json
+uv run --project packages/anyagent python scripts/protocol_schema_diff.py --old build/base-protocol-schema.json --new build/protocol-schema.json
 npm --prefix sdks/typescript run smoke
 bash scripts/ci/run_offline_smokes.sh
 bash scripts/ci/run_pytest_regressions.sh

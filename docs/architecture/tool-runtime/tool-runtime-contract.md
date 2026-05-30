@@ -2,9 +2,9 @@
 ---
 doc_kind: architecture
 status: stable
-tags: ["tool-runtime", "manifest", "execute", "tool-policy", "federation"]
-summary: Tool Runtime manifest/execute、registry、tool naming、context、idempotency、cancel 与 federation contract。
-req: ["requirements.md#req-5", "requirements.md#req-5-1", "requirements.md#req-5-2", "requirements.md#req-5-3", "requirements.md#req-5-8"]
+tags: ["tool-runtime", "manifest", "execute", "tool-policy", "federation", "tool-exposure", "tool-search"]
+summary: Tool Runtime manifest/execute、registry、tool exposure 分级与按需发现、tool naming、context、idempotency、cancel 与 federation contract。
+req: ["requirements.md#req-5", "requirements.md#req-5-1", "requirements.md#req-5-2", "requirements.md#req-5-2-1", "requirements.md#req-5-3", "requirements.md#req-5-8"]
 ---
 -->
 
@@ -67,6 +67,34 @@ v0 启动时加载：
 - 重复注册同名 tool 必须拒绝。
 - 业务方不得注册 `core.*` / `sandbox.*`；平台插件只能注册自身 `<channel>.*`。
 - 热更新工具包走控制面 `register/heartbeat`，必须受信任、可审计、可回滚，`toolset_version` 单调递增。
+
+## Tool Exposure 分级与按需发现
+
+为避免把全部工具 schema 一次性灌进 agent loop 而浪费 context token，每个 `ToolDefinition` 携带 `exposure` 分级，registry 据此决定哪些工具进入初始 manifest、哪些只能按需发现。字段定义见 `packages/anyagent/src/anyagent/tool_runtime/models.py:9`（`ToolExposure = Literal["direct","deferred","hidden"]`）与 `packages/anyagent/src/anyagent/tool_runtime/models.py:29`（`exposure: ToolExposure = "direct"`，默认 direct）。
+
+三种 exposure 语义：
+
+- `direct`：默认值。工具完整 schema 直接进入 manifest，对 agent loop 全量暴露，适合高频/通用工具。
+- `deferred`：不进入初始 manifest，agent 初始上下文里看不到其 schema，必须通过 `core.tool_search` 检索后才拿到 schema 再调用。适合数量大、低频或领域专属的工具，用以压缩初始 context。
+- `hidden`：既不进 manifest 也不可被 search 命中，仅供内部路由或显式按名调用，对 agent 完全不可发现。
+
+registry 据 exposure 区分两条列举路径（`packages/anyagent/src/anyagent/tool_runtime/registry.py:165`）：
+
+- `list_tools()` 只返回 `exposure == "direct"` 的工具定义，是 manifest 构建的权威来源，`deferred`/`hidden` 不在其中（`packages/anyagent/src/anyagent/tool_runtime/registry.py:165`）。
+- `list_all_tools()` 返回全部已注册工具，仅供健康检查与调试，不用于披露（`packages/anyagent/src/anyagent/tool_runtime/registry.py:175`）。
+
+### core.tool_search 与 search_tools 匹配逻辑
+
+`deferred` 工具由内置工具 `core.tool_search` 在运行期按需发现。该工具作为 framework-owned built-in 在 `packages/anyagent/src/anyagent/tool_runtime/builtin_tools.py:130` 注册（handler 见 `packages/anyagent/src/anyagent/tool_runtime/builtin_tools.py:108`），入参 `query` 必填、`limit` 可选（1..20），返回命中工具的 `name`/`description`/`category`/`kind`/`parameters`，让模型据此发起后续 tool call。
+
+`core.tool_search` 委托 registry 的 `search_tools(query, *, limit=10)`（`packages/anyagent/src/anyagent/tool_runtime/registry.py:181`），匹配规则：
+
+- 候选集仅为 `exposure == "deferred"` 的工具，`direct`/`hidden` 永不出现在 search 结果中。
+- query 归一化为小写并按空白切成词项；query 为空时直接返回前 `limit` 个候选。
+- 每个候选拼接 `name + description + category + kind` 作为 haystack，逐词项计分：命中 `name` 计 3 分，命中其它字段计 1 分；总分 0 的候选被丢弃。
+- 按总分降序、同分按 `name` 升序排序，截断到 `limit`。
+
+这套设计让 agent loop 的初始 `tools[]` 只承载 `direct` 工具，`deferred` 工具的 schema 成本被推迟到模型显式检索时才支付，`hidden` 工具则彻底退出可发现面。需求锚点见 `requirements.md#req-5-2` 与 `requirements.md#req-5-2-1`。
 
 ## 工具分类与联邦式 Tool Runtime
 

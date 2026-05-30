@@ -4672,6 +4672,12 @@
           "title": "Cached Input Tokens",
           "type": "integer"
         },
+        "compaction_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Compaction Count",
+          "type": "integer"
+        },
         "effective_run_status": {
           "anyOf": [
             {
@@ -4712,6 +4718,12 @@
           "default": 0,
           "minimum": 0,
           "title": "Input Tokens",
+          "type": "integer"
+        },
+        "loop_warnings_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Loop Warnings Count",
           "type": "integer"
         },
         "mcp_call_count": {
@@ -4764,6 +4776,12 @@
           "default": 0,
           "minimum": 0,
           "title": "Skill View Count",
+          "type": "integer"
+        },
+        "subagent_spawns": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Subagent Spawns",
           "type": "integer"
         },
         "tool_call_count": {

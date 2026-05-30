@@ -4,7 +4,7 @@ doc_kind: architecture
 status: stable
 tags: ["agent-packs", "agents-md", "agent-spec", "session", "runtime-config"]
 summary: Agent Packs、AGENTS.md 注入、AgentSpec、agent_id 路由与 session runtime config 的稳定约束。
-req: ["requirements.md#req-2-1", "requirements.md#req-2-1-1", "requirements.md#req-2-2", "requirements.md#req-4-3-1", "requirements.md#req-4-6"]
+req: ["requirements.md#req-2-1", "requirements.md#req-2-1-1", "requirements.md#req-2-2", "requirements.md#req-4-3-1", "requirements.md#req-4-6", "requirements.md#req-5", "requirements.md#req-5-13"]
 ---
 -->
 
@@ -78,6 +78,32 @@ multiagent:
 - `skills.disabled_paths` 配置时填写 skill name，运行时解析为当前可见 skill 的 stable id。
 - `multiagent.spawn_allow_agent_ids` 缺省为空，表示禁止 spawn。
 
+## 配置层级与 merge
+
+`agent.yaml` 与 `mcp.json` 并非只有 workspace 单层，而是按固定优先级跨四层 deep-merge 后再交给运行时消费。层级在 `resolve_config_layers` 中冻结为 system → user → workspace → session（`packages/anyagent/src/anyagent/agent_packs.py:172`）：
+
+1. **system**：`ANYAGENT_SYSTEM_CONFIG_DIR`，默认 `/etc/anyagent`，承载平台运维下发的基线管控。
+2. **user**：`ANYAGENT_USER_CONFIG_DIR`，默认 `~/.anyagent`，承载部署者个人默认值。
+3. **workspace**：`<workspace_dir>/.anyagent`，业务工作区自带的 agent pack 配置。
+4. **session**：单次请求经 `metadata.context` 注入的 `session_overrides`，不落盘，优先级最高。
+
+merge 语义：
+
+- 同名字段后层覆盖前层，dict 递归合并、标量/列表整体替换，由纯函数 `deep_merge` 实现（`packages/anyagent/src/anyagent/config_merge.py:18`）；`agent.yaml` 走 `_merged_agent_yaml`、`mcp.json` 走 `_merged_mcp_config`（`packages/anyagent/src/anyagent/agent_packs.py:299`、`packages/anyagent/src/anyagent/agent_packs.py:324`）。
+- agent 发现是各层并集：任一层在 `agents/<agent_id>/` 下出现目录、或 session override 声明该 `agent_id`，即纳入 catalog（`_discover_layered_agent_ids`，`packages/anyagent/src/anyagent/agent_packs.py:263`），因此上层可定义基线 agent，workspace 仅做增量裁剪。
+
+### workspace override denylist
+
+为防止业务工作区把上层运维管控的安全敏感值改低，merge 在写入 workspace 层前先过 denylist 校验。受管路径定义为 `SENSITIVE_WORKSPACE_OVERRIDE_PATHS = {sandbox.mode, storage}`（`packages/anyagent/src/anyagent/config_merge.py:8`），校验逻辑在 `validate_workspace_override_denylist`（`packages/anyagent/src/anyagent/config_merge.py:30`），并只在 `_merged_agent_yaml` 处理 `name == "workspace"` 这一层时触发（`packages/anyagent/src/anyagent/agent_packs.py:315`）。
+
+关键语义是“**拦截覆盖，而非禁止设置**”：仅当 base（已合并的 system+user 结果）与 workspace payload **同时**包含该路径时才 fail-fast。
+
+- system/user 已设 `sandbox.mode` → workspace 再设同字段：拦截，报 `ConfigMergeError`（被包成 `AgentPackError`）。
+- 上层未设该字段 → workspace **首次**设置：放行。即 denylist 防的是“workspace 下调上层既有管控值”，不阻止 workspace 在无人管控时自行声明。
+
+session 层不受此 denylist 约束，因其属于受控内部注入而非外部业务配置。
+
+
 ## agent_id 选择与隔离
 
 `agent_id` 来源优先级：
@@ -134,3 +160,47 @@ run 完成后写回新的恢复游标，保证下一次请求可继续承接。
 - 同一个 run 内后续 tool 回合必须沿用同一个 `effective_runtime_config`。
 - run 终态提交时将最终 `effective_runtime_config` 写回 Session Store。
 - 更新快照必须带 CAS 或等价版本语义，防止并发覆盖造成配置回退。
+
+## Config 热重载与冷/热字段边界
+
+为支持改 agent 配置而无需重启进程，每个 HTTP 请求进入业务路由前都会经 `_config_hot_reload_middleware` 触发一次按需重载检查（`packages/anyagent/src/anyagent/server/app.py:739`）。设计动因是配置即服务下“边解析边消费”，但又要避免每请求全量重载的开销，故以 mtime 轮询做廉价变更检测。
+
+检测与重载流程（`AppState.refresh_config_if_needed`，`packages/anyagent/src/anyagent/server/app.py:548`）：
+
+1. `stat_config_mtimes` 跨四层 stat 每个 `agent.yaml`/`mcp.json` 的 `st_mtime_ns`，得到指纹（`packages/anyagent/src/anyagent/agent_packs.py:190`）。
+2. 指纹与缓存 `config_mtimes` 相等：直接返回，零额外开销。
+3. 指纹变化：取 `config_reload_lock` 后**双检**（再 stat 一次比对），避免并发请求重复重载。
+4. 重载 catalog 后校验“至少一个 exposed agent”，否则报错拒绝该次重载。
+
+冷/热字段边界（`_catalog_has_cold_restart_change`，`packages/anyagent/src/anyagent/server/app.py:311`）：
+
+- **热字段**：`model`/`tools`/`skills`/`middlewares` 等行为字段变化 → 即时换上新 catalog、刷新 models 配置、重置 manifest 缓存、更新 mtime 指纹，对后续请求立即生效（`packages/anyagent/src/anyagent/server/app.py:564`）。
+- **冷字段**：`sandbox`（含 `sandbox.mode`）与 `storage` 这类影响进程级资源装配的字段变化 → **只更新 mtime 指纹并 log warning `restart required`，不替换运行 catalog**（`packages/anyagent/src/anyagent/server/app.py:560`）。
+
+冷字段与上文 denylist 受管路径一致：这些字段在进程启动时已绑定 SandboxManager/Storage 等资源，热替换会造成运行态与配置态不一致，故强制走重启。更新 mtime 指纹是为了避免每请求重复刷同一条 warning。`AppState.reload_catalog`（`packages/anyagent/src/anyagent/server/app.py:537`）则是 admin 显式触发的全量重载，不区分冷热。
+
+## MCP 生命周期 Stage Events 与 stdio 会话池
+
+### MCP 生命周期 Stage Events
+
+解析 MCP 工具 manifest 时，每个 server 的连接进度以 stage event 透出，供客户端 SDK 呈现 1 级细粒度运行进度。事件类型为 `AnyAgentMcpServerLifecycleEvent`（`packages/anyagent/src/anyagent/protocol/stage_events.py:315`），三态 + 字段：
+
+- `anyagent.mcp.server.starting` / `anyagent.mcp.server.ready` / `anyagent.mcp.server.failed`。
+- `server_label`：MCP server 标签；`transport`：经 `infer_transport()` 推导的传输类型；`error`：仅 failed 态携带 `StageError`。
+
+发射点在 `MCPServerManager.ensure_all_connected`（`packages/anyagent/src/anyagent/mcp/manager.py:91`）：connect 前发 `starting`、成功后发 `ready`、`except` 分支发 `failed`（`packages/anyagent/src/anyagent/mcp/manager.py:104`-`137`）。去重语义是关键——只在 `was_connected` 为假时发射，即已连接的 server 复用时不重复刷生命周期事件。单个 server 连接失败按 `drop_failed` 处理：记 warning、跳过，不阻断其余 server，保证部分 MCP 不可用时 agent 仍可运行。
+
+### stdio 会话池
+
+stdio 与 HTTP/SSE 两类传输的资源代价不同，故池化策略分流（`packages/anyagent/src/anyagent/mcp/manager.py:44`-`55`）：
+
+- **stdio**：每条连接持有一个子进程，代价高。仅 manager 持有其 config（`_stdio_configs`），连接按需从共享的 `MCPStdioConnectionPool` 借取（`_acquire_server`，`packages/anyagent/src/anyagent/mcp/manager.py:69`）。
+- **HTTP/SSE**：连接廉价，由 manager 直接持有整个生命周期（`_servers`），不进池。
+
+池实现 `MCPStdioConnectionPool` 是 `OrderedDict` + `asyncio.Lock` 的 LRU 缓存（`packages/anyagent/src/anyagent/mcp/session_pool.py:32`）：
+
+- 池键为 `(agent_id, server_label, session_key)`，`session_key=None` 时匿名请求共享同一 server 桶（`packages/anyagent/src/anyagent/mcp/session_pool.py:13`）。
+- 容量默认 256，可被环境变量 `ANYAGENT_MCP_STDIO_POOL_SIZE` 覆盖（`packages/anyagent/src/anyagent/mcp/session_pool.py:17`-`29`）。
+- `acquire` 命中时 `move_to_end` 刷新 LRU 顺序并复用已连接 server；未命中时由 `factory` 新建并连接，插入后若超容则 `popitem(last=False)` 逐出最久未用项并优雅 `disconnect`（关闭其子进程）（`packages/anyagent/src/anyagent/mcp/session_pool.py:53`-`77`）。
+
+池由 `MCPManagerRegistry` 单例注入所有 manager（`packages/anyagent/src/anyagent/mcp/manager.py:331`），因此 stdio 连接在所有 agent 与 session 间统一 LRU 受限。`MCPServerManager.cleanup` 只断开自己持有的 HTTP/SSE server，池化 stdio 连接的清理交给池的 `cleanup_all`，避免重复释放（`packages/anyagent/src/anyagent/mcp/manager.py:265`、`packages/anyagent/src/anyagent/mcp/session_pool.py:86`）。

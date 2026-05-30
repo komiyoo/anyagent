@@ -18,16 +18,16 @@
 - M2:网络 sandbox policy 在两种 backend 下行为一致
 - M3:资源限制(CPU / memory / wall-clock)在两种 backend 下行为一致
 
-## 任务
+## 当前状态
 
-- [x] P0 选定第二 backend 候选(container 或 microVM),落 ADR(Req: `requirements.md#req-12`; Impl: `docs/architecture/decisions/sandbox-backend-selection.md:10`; Module: `docs.architecture.decisions`)
-- [x] P0 实装第二 backend,跑通 SandboxPolicy / NetworkSandboxPolicy / ResourceLimits 全字段(Req: `requirements.md#req-12-1` ~ `requirements.md#req-12-8`; Impl: `packages/anyagent/src/anyagent/server/sandbox/manager.py:51`, `packages/anyagent/src/anyagent/server/sandbox/opensandbox_backend.py:402`, `tests/unit/server/test_opensandbox_backend.py:99`; Module: `anyagent.server.sandbox`)
-- [ ] P1 整理 sandbox contract test 矩阵,作为后续 backend 接入基线(Req: `requirements.md#req-12`)
+- 已完成条目已清理,历史记录请查看 Git。
+- 已实现能力的长期口径见架构文档:
+  - sandbox / session filesystem 设计、contract test 矩阵、LocalUnsafe 定位:`docs/architecture/runtime/sandbox-session-filesystem-design.md`
+  - 第二 backend 候选选型(OpenSandbox on Kubernetes):`docs/architecture/decisions/sandbox-backend-selection.md`
 
-## 决策 & 争议点
+## 待处理
 
-- [ ] 第二 backend 候选:容器(Docker / containerd / runc 之一)vs microVM(Firecracker / Kata)
-- [ ] LocalUnsafe 是否在生产 build 中保留(默认应禁用)
+- 本模块当前无未完成任务。
 
 ## 参考
 

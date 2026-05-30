@@ -13,32 +13,23 @@
 - Credential 注入 & policy:`packages/anyagent/src/anyagent/server/security/`
 - Plugin / connector contract:`packages/anyagent/src/anyagent/plugins/`
 
+## 当前状态
+
+- Phase 1.5 / Phase 2 的 Tool Runtime 任务已全部完成;已完成条目已清理,历史记录请查看 Git。
+- 已实现能力的长期口径见架构文档:
+  - Tool Runtime manifest/execute、registry、exposure 分级(direct/deferred/hidden)与 `core.tool_search` 按需发现:`docs/architecture/tool-runtime/tool-runtime-contract.md`
+  - MCP 工具 sanitize/filter、会话池与生命周期事件:`docs/architecture/runtime/agent-packs-and-runtime-config.md`
+  - Plugin / Connector 公开 contract:`docs/architecture/integrations/platform-connectors.md`、`docs/architecture/decisions/plugin-connector-contract-v1.md`
+
 ## 里程碑
 
-- M1:standalone Tool Runtime 与进程内 runtime 通过同一份 manifest/execute contract test
-- M2:Tool Runtime GA(管理面 + 观测 + credential 注入)
-- M3:Plugin / Connector 公开 contract 与一组参考实现(Phase 4)
+- M1:standalone Tool Runtime 与进程内 runtime 通过同一份 manifest/execute contract test ✅
+- M2:Tool Runtime GA(管理面 + 观测 + credential 注入)✅
+- M3:Plugin / Connector 公开 contract 与一组参考实现 ✅
 
-## 任务
+## 待处理
 
-### Phase 1.5 — Agentic Ecosystem Hardening
-
-- [x] P0 Tool Deferred Loading:在 `ToolDefinition` 增加 `exposure: Literal["direct", "deferred", "hidden"]` 字段,`ToolRegistry.list_tools()` 只返回 direct 工具完整 schema(Req: `requirements.md#req-5-2`、`requirements.md#req-5-2-1`; Impl: `packages/anyagent/src/anyagent/tool_runtime/models.py:29`; Module: `anyagent.tool_runtime`)
-- [x] P0 Tool Search 机制:新增 `ToolRegistry.search_tools(query: str)` 方法 + 注册 `core.tool_search` built-in tool 供 agent loop 按需发现 deferred 工具(Req: `requirements.md#req-5-2-1`; Impl: `packages/anyagent/src/anyagent/tool_runtime/registry.py:180`; Module: `anyagent.tool_runtime`)
-- [x] P1 Plugin Manifest v1 统一:升级 `PluginManifest` model,一个 plugin 可同时声明 skills/ + mcp_servers/ + tools/ + middlewares/ + hooks/。`middlewares` 字段声明 middleware 类路径（如 `"my_plugin.middleware:AuditMiddleware"`），框架按 `agent.yaml` 中 `runtime.middlewares` 顺序加载。`hooks` 字段声明生命周期回调（`on_agent_start`、`on_agent_end`）。参考 Pi-mono Extension manifest + OpenClaw plugin manifest（精简）(Req: `requirements.md#req-6`、`requirements.md#req-5-2`; Impl: `packages/anyagent/src/anyagent/plugins/models.py:45`、`packages/anyagent/src/anyagent/agent_runtime/middleware.py:190`、`packages/anyagent/src/anyagent/plugins/hooks.py:55`、`packages/anyagent/src/anyagent/plugins/loader.py:169`、`packages/anyagent/src/anyagent/server/app.py:141`; Module: `anyagent.plugins`)
-- [x] P1 MCP 工具 filter 与 sanitize:MCP server 注册的工具名自动 sanitize（`^[a-z0-9_.-]+$`）+ 支持 per-server tool filter 配置(Req: `requirements.md#req-5-2`; Impl: `packages/anyagent/src/anyagent/mcp/util.py:11`, `packages/anyagent/src/anyagent/mcp/server.py:155`, `packages/anyagent/src/anyagent/mcp/manager.py:145`, `packages/anyagent/src/anyagent/protocol/mcp.py:28`, `tests/unit/mcp/test_mcp_tool_sanitize.py:15`; Module: `anyagent.mcp`, `anyagent.protocol.mcp`)
-- [x] P1 MCP 会话池:按 `(server_name, session_key)` 池化 stdio 连接,LRU 淘汰（默认 256）。stdio 走池化,HTTP/SSE 不池化。参考 DeerFlow `session_pool.py`(Req: `requirements.md#req-5-2`; Impl: `packages/anyagent/src/anyagent/mcp/session_pool.py:32`, `packages/anyagent/src/anyagent/mcp/manager.py:69`, `packages/anyagent/src/anyagent/mcp/manager.py:324`, `packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:243`, `tests/unit/mcp/test_mcp_session_pool.py:55`; Module: `anyagent.mcp`)
-
-### Phase 2 — Production Runtime Hardening
-
-- [x] P0 整理 Tool Runtime contract 测试矩阵,覆盖 manifest、execute、credential 注入、policy 强制(Req: `requirements.md#req-6`; Impl: `tests/contract/test_tool_runtime_contract_matrix.py:115`; Module: `tool-runtime-contract`)
-- [x] P0 standalone Tool Runtime 管理面与进程内 runtime 的等价性验收(Req: `requirements.md#req-6`; Impl: `tests/contract/test_tool_runtime_contract_matrix.py:147`; Module: `tool-runtime-contract`)
-- [x] P1 Plugin contract 公开化:定义 manifest schema、生命周期 hook 与 capability matrix(Req: `requirements.md#req-6`; Impl: `packages/anyagent/src/anyagent/plugins/schema_export.py:12`, `packages/anyagent/src/anyagent/protocol/plugin_capabilities.py:8`, `packages/anyagent/src/anyagent/server/app.py:363`, `packages/anyagent/src/anyagent/server/app.py:776`, `packages/anyagent/src/anyagent/server/app.py:1562`, `packages/anyagent/src/anyagent/tool_runtime/server.py:228`, `docs/schemas/plugin-manifest.schema.json`; Module: `anyagent.plugins`, `anyagent.protocol.plugin_capabilities`, `anyagent.server.app`)
-- [x] P2 参考实现:至少一个内置 Plugin 与一个 Connector 走完 contract,作为后续生态接入样板(Req: `requirements.md#req-6`; Impl: `packages/anyagent/src/anyagent/plugins/builtin/lifecycle_echo/plugin.json`, `packages/anyagent/src/anyagent/plugins/builtin/lifecycle_echo/plugin.py`, `tests/unit/plugins/test_gateway_plugin_lifecycle.py:70`; Module: `anyagent.plugins.builtin.lifecycle_echo`)
-
-## 决策 & 争议点
-
-- [x] Plugin 与 Connector 是统一 contract 还是分层 contract(Decision: `docs/architecture/decisions/plugin-connector-contract-v1.md`; Req: `requirements.md#req-6`; Impl: `docs/architecture/decisions/plugin-connector-contract-v1.md`; Module: `architecture`)
+- 本模块当前无未完成任务。Credential v2(Phase 3)见 `todo/security-compliance.md`。
 
 ## 参考
 

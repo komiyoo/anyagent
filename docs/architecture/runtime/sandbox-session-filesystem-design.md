@@ -69,6 +69,26 @@ req: ["requirements.md#req-3-1", "requirements.md#req-5", "requirements.md#req-5
 - v1 不把 `external` 模式扩展成服务化持久文件系统主路径
 - v1 不支持在运行时由模型申请提权或变更持久化策略
 
+### 2.3 Backend Contract Matrix
+
+后续新增 sandbox backend 时，至少要通过以下 reference contract。矩阵以 protocol policy 为入口，而不是以后端私有字段为入口。
+
+| Contract | Policy / model | Reference implementation | Verification |
+|---|---|---|---|
+| Mode selection | `SandboxPolicy.mode` | `SandboxManager` routes local / external / opensandbox | `tests/unit/protocol/test_sandbox_protocol.py`, `tests/unit/server/test_opensandbox_backend.py` |
+| Session filesystem | per-session `/workspace` | local workspace + OpenSandbox workspace restore/checkpoint | `tests/unit/server/test_sandbox_workspace.py`, `tests/unit/server/test_workspace_service.py` |
+| Network policy | `NetworkSandboxPolicy` | backend egress config / deny-by-default posture | `tests/unit/server/test_opensandbox_backend.py` |
+| Resource limits | `ResourceLimits` | backend command runtime limits | `tests/unit/protocol/test_sandbox_protocol.py`, `tests/unit/server/test_exec_handler.py` |
+| Workspace events | workspace lifecycle event store | in-memory / JSONL workspace events | `tests/unit/server/test_workspace_events.py`, `tests/unit/server/test_workspace_persistence.py` |
+| Snapshot lifecycle | hot restore + cold checkpoint | workspace service snapshot adapters | `tests/unit/server/test_workspace_snapshots.py`, `tests/unit/server/test_workspace_runtime.py` |
+
+接入规则：
+
+- 新 backend 必须先声明如何消费 `SandboxPolicy` / `NetworkSandboxPolicy` / `ResourceLimits`。
+- backend 私有配置只能作为 adapter 参数，不能替代 protocol policy。
+- `local-unsafe` 只作为开发/reference backend；生产 build 默认不得把它作为安全隔离能力宣传。
+- OpenSandbox on Kubernetes 是当前第二 backend 决策，详见 [../decisions/sandbox-backend-selection.md](../decisions/sandbox-backend-selection.md)。
+
 ## 3. 结论先行：v1 决策
 
 ### 3.1 主路径

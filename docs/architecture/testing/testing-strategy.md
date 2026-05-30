@@ -101,6 +101,32 @@ flowchart TD
 - 保护 `anyagent` 自己的 typed events / internal APIs
 - 尽量使用固定 fixture 或最小 fake provider，避免把契约验证和复杂环境强耦合
 
+### 3.1 Reference Conformance Suite
+
+Reference conformance suite 是第二 server runtime 与新语言 SDK 的接入基线。当前入口由以下部分组成：
+
+| Scope | Entry | Covers | Known gap |
+|---|---|---|---|
+| Protocol schema bundle | `tests/contract/test_protocol_schema_export.py` | exported models, type adapters, endpoint manifest, SDK fixtures | OpenAPI semantic diff 尚未覆盖所有 HTTP response variants |
+| Responses / SSE | `tests/contract/test_sse_protocol_contract.py` | SSE block shape, terminal `[DONE]`, response id normalization | live provider streaming 不在默认 contract 内 |
+| Stage Events SDK | `tests/contract/test_events_sdk_contract.py` | typed stage event decode and SDK event stream semantics | multi-agent replay e2e 仍在 Phase 4 缺口 |
+| Tool Runtime | `tests/contract/test_tool_runtime_contract_matrix.py` | manifest / execute request-response shapes | external Tool Runtime process matrix 仍需 live adapter 验收 |
+| Import boundaries | `tests/contract/test_sdk_import_boundaries.py` | SDK-facing type boundary and protocol import discipline | 只覆盖 Python package boundary |
+| SDK fixture matrix | `tests/fixtures/sdk_conformance/core_surface.json`, `tests/fixtures/sdk_conformance/minimum_matrix.json` | cross-language minimum payloads and negative cases | non-TypeScript SDK 尚未接入自动 smoke |
+
+运行入口：
+
+```bash
+uv run --project packages/anyagent pytest tests/contract -q
+npm --prefix sdks/typescript run smoke
+```
+
+接入规则：
+
+- 新 runtime 必须先能生成或消费同一 `protocol-schema.json` bundle。
+- 新 SDK 必须消费 `minimum_matrix.json` 中标注的 `protocol_version`，并验证每个 fixture。
+- 若新增 public operation 或 stage event，必须同步更新 core surface fixture、minimum matrix 和 protocol schema diff 预期。
+
 ## 4. Acceptance / Smoke
 
 位置：

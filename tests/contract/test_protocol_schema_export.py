@@ -322,6 +322,7 @@ def test_sdk_conformance_negative_request_payloads_fail_protocol_models() -> Non
 
 
 def test_sdk_minimum_matrix_references_existing_conformance_fixtures() -> None:
+    bundle = export_protocol_schema_bundle()
     fixture = json.loads(SDK_CONFORMANCE_FIXTURE.read_text(encoding="utf-8"))
     matrix = json.loads(SDK_MINIMUM_MATRIX.read_text(encoding="utf-8"))
 
@@ -338,6 +339,7 @@ def test_sdk_minimum_matrix_references_existing_conformance_fixtures() -> None:
     for operation in matrix["operations"]:
         kind = operation["kind"]
         reference = operation["fixture"]
+        assert operation["protocol_version"] == bundle["protocol_version"], operation["name"]
         if kind == "protocol_model":
             assert reference in protocol_cases, operation["name"]
         elif kind == "openai_response":

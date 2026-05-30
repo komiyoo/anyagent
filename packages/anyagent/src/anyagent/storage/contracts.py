@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Set as AbstractSet
 from typing import Protocol
 
 from .models import EventRecord, LeaseLockHandle, RunRecord, SessionRecord, SessionWorkspaceRecord
@@ -88,6 +89,10 @@ class EventStoreWithWaitNew(EventStore, Protocol):
 
 class EventStoreWithTailSeq(EventStore, Protocol):
     async def tail_seq(self, *, response_id: str) -> int: ...
+
+
+class EventStoreWithReplayPrune(EventStore, Protocol):
+    async def prune_replay_events(self, *, before_ms: int, event_types: AbstractSet[str]) -> int: ...
 
 
 class SessionStore(Protocol):

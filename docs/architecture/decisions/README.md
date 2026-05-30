@@ -15,6 +15,9 @@
 5. [sandbox-backend-selection.md](sandbox-backend-selection.md)：第二 sandbox backend 选定 OpenSandbox on Kubernetes，`local-unsafe` 仅作为本地 reference/dev backend。
 6. [run-scheduling-lock-contract.md](run-scheduling-lock-contract.md)：跨节点 Run 调度以 `session_partition_key` 为 keyed serialization 边界，锁统一为可续租 LeaseLock contract，并要求 Redis/PostgreSQL adapter 共享语义。
 7. [plugin-connector-contract-v1.md](plugin-connector-contract-v1.md)：Plugin / Connector 采用统一 manifest schema，并用 capability matrix 区分 Gateway 与 Tool Runtime 的 host 能力面。
+8. [observability-replay-sink-and-retention.md](observability-replay-sink-and-retention.md)：Replay-grade observability payload 与 public protocol 解耦，采用 server-internal envelope、多 sink adapter、独立 retention 与 rendered context 总体积截断策略。
+9. [protocol-versioning.md](protocol-versioning.md)：Protocol schema bundle 作为兼容性审查制品，CI 用 bundle diff 拦截字段删除、required 新增、类型/枚举收窄与 endpoint 破坏性变更。
+10. [storage-idempotency-and-cursor-semantics.md](storage-idempotency-and-cursor-semantics.md)：Run Store 负责 idempotency，Event Store 负责 seq cursor/replay，明确 retention 后允许 seq gaps 且不得重排事件。
 
 维护约定：
 
