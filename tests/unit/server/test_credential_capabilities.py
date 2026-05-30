@@ -45,7 +45,12 @@ def test_credential_capability_matrix_documents_resolver_and_admin_modes() -> No
     assert resolver_modes["env"].supports_set is False
     assert admin_modes["file-write"].supports_set is True
     assert admin_modes["infisical-write"].read_only is True
-    assert admin_modes["db"].status == "planned"
+    assert admin_modes["db"].status == "preview"
+    assert admin_modes["db"].supports_resolve is True
+    assert admin_modes["db"].supports_set is True
+    assert admin_modes["vault"].status == "preview"
+    assert admin_modes["vault"].supports_resolve is True
+    assert admin_modes["vault"].supports_set is True
 
     payload = matrix.model_dump(mode="json")
     text = json.dumps(payload)

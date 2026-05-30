@@ -66,7 +66,12 @@ from anyagent.observability import emit_observability_event, get_observability_e
 from anyagent.plugins import LoadedPlugin, load_plugins_from_roots
 from anyagent.plugins.hooks import HookContext
 from anyagent.plugins.models import PluginManifest
-from anyagent.protocol.credential_vault import AdminCredentialDeleteResponse, AdminCredentialSetRequest
+from anyagent.protocol.credential_vault import (
+    AdminCredentialDeleteResponse,
+    AdminCredentialListResponse,
+    AdminCredentialRef,
+    AdminCredentialSetRequest,
+)
 from anyagent.protocol.health import HealthResponse
 from anyagent.protocol.agent_api_internal import (
     AdminAgentCreateRequest,
@@ -225,9 +230,11 @@ from anyagent.server.runtime import InProcessToolRuntimeService
 from anyagent.server.sandbox import OpenSandboxWorkspaceBackend, SandboxManager
 from anyagent.server.security import (
     CredentialRuntimeConfig,
+    CredentialStore,
     InMemoryCredentialStore,
     build_credential_backend_capability_matrix,
     build_credential_resolver_from_config,
+    emit_credential_audit_for_store,
 )
 from anyagent.server.settings import ResolvedServerStorageSettings, ServerSettings
 from anyagent.server.storage_backends import (
@@ -499,7 +506,7 @@ class AnyAgentServerApp:
     resolved_storage: ResolvedServerStorageSettings
     storage_settings: StorageSettings
     events: EventStore
-    credentials: InMemoryCredentialStore
+    credentials: CredentialStore
     mcp_credentials: CredentialResolver | None
     sandbox_manager: SandboxManager
     runtime: InProcessToolRuntimeService
@@ -602,9 +609,7 @@ def create_app(
         raise RuntimeError("workspace must define at least one exposed agent")
     opensandbox_backend = _build_opensandbox_backend_if_needed(catalog)
     sandbox_manager = SandboxManager(root_dir=sandbox_root_dir, opensandbox_backend=opensandbox_backend)
-    credential_store = InMemoryCredentialStore()
-    mcp_credential_store = build_credential_resolver_from_config(
-        CredentialRuntimeConfig(
+    credential_runtime_config = CredentialRuntimeConfig(
             backend=server_settings.mcp_credential_store_backend,
             file_root=server_settings.mcp_credential_store_file_root,
             workspace_dir=workspace,
@@ -616,8 +621,24 @@ def create_app(
             infisical_cache_ttl_seconds=server_settings.infisical_cache_ttl_seconds,
             infisical_credential_root_path=server_settings.infisical_credential_root_path,
             infisical_path_layout=server_settings.infisical_path_layout,
-        ),
+            credential_postgres_dsn=server_settings.credential_postgres_dsn,
+            credential_postgres_schema=server_settings.credential_postgres_schema,
+            credential_encryption_key=server_settings.credential_encryption_key,
+            credential_db_create_schema=server_settings.credential_db_create_schema,
+            vault_addr=server_settings.vault_addr,
+            vault_token=server_settings.vault_token,
+            vault_mount=server_settings.vault_mount,
+            vault_credential_root_path=server_settings.vault_credential_root_path,
+        )
+    mcp_credential_store = build_credential_resolver_from_config(
+        credential_runtime_config,
         fallback_to_memory=False,
+    )
+    credential_store = (
+        mcp_credential_store
+        if isinstance(mcp_credential_store, CredentialStore)
+        and (server_settings.mcp_credential_store_backend or "").strip().lower() in {"env-write", "env_write", "file-write", "file_write", "db-write", "db_write", "vault-write", "vault_write"}
+        else InMemoryCredentialStore()
     )
     storage_bundle: ServerStorageBundle = build_server_storage_bundle(
         event_store_backend=resolved_storage.event_store_backend,
@@ -757,14 +778,44 @@ def create_app(
         _require_admin_auth(state, authorization)
         body = await req.json()
         model = AdminCredentialSetRequest.model_validate(body)
-        ref = await state.credentials.set(model)
-        return JSONResponse(ref.model_dump(exclude_none=True))
+        if isinstance(state.credentials, InMemoryCredentialStore):
+            ref = await state.credentials.set(model)
+        else:
+            await state.credentials.set(
+                credential_id=model.credential_id,
+                kind=model.kind,
+                value=model.value,
+                scope=model.scope,
+                metadata=model.metadata,
+                expires_at=model.expires_at,
+                rotate_before=model.rotate_before,
+            )
+            ref = AdminCredentialRef(
+                credential_id=model.credential_id,
+                kind=model.kind,
+                scope=model.scope,
+                metadata=model.metadata,
+                expires_at=model.expires_at,
+                rotate_before=model.rotate_before,
+            )
+            await emit_credential_audit_for_store(
+                state.credentials,
+                operation="set",
+                credential_id=model.credential_id,
+                kind=model.kind,
+                scope=model.scope,
+            )
+        return JSONResponse(ref.model_dump(mode="json", exclude_none=True))
 
     @app.get("/admin/credentials")
     async def admin_list_credentials(authorization: str | None = Header(default=None)) -> JSONResponse:
         _require_admin_auth(state, authorization)
-        resp = await state.credentials.list()
-        return JSONResponse(resp.model_dump(exclude_none=True))
+        if isinstance(state.credentials, InMemoryCredentialStore):
+            resp = await state.credentials.list()
+        else:
+            refs = await state.credentials.list_refs()
+            resp = AdminCredentialListResponse(credentials=[AdminCredentialRef.model_validate(ref) for ref in refs])
+        return JSONResponse(resp.model_dump(mode="json", exclude_none=True))
 
     @app.get("/admin/credentials/capabilities")
     async def admin_credential_capabilities(authorization: str | None = Header(default=None)) -> JSONResponse:
@@ -835,7 +886,22 @@ def create_app(
     @app.delete("/admin/credentials/{credential_id}")
     async def admin_delete_credential(credential_id: str, authorization: str | None = Header(default=None)) -> JSONResponse:
         _require_admin_auth(state, authorization)
+        refs = await state.credentials.list_refs() if not isinstance(state.credentials, InMemoryCredentialStore) else []
         deleted = await state.credentials.delete(credential_id)
+        if not isinstance(state.credentials, InMemoryCredentialStore):
+            matching_refs = [AdminCredentialRef.model_validate(ref) for ref in refs if ref.get("credential_id") == credential_id]
+            if matching_refs:
+                for ref in matching_refs:
+                    await emit_credential_audit_for_store(
+                        state.credentials,
+                        operation="delete",
+                        credential_id=credential_id,
+                        kind=ref.kind,
+                        scope=ref.scope,
+                        deleted=bool(deleted),
+                    )
+            else:
+                await emit_credential_audit_for_store(state.credentials, operation="delete", credential_id=credential_id, deleted=bool(deleted))
         resp = AdminCredentialDeleteResponse(ok=True, deleted=bool(deleted), credential_id=credential_id)
         return JSONResponse(resp.model_dump())
 

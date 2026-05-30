@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Double, Index, Text, func
+from sqlalchemy import BigInteger, Boolean, Computed, DateTime, Double, Index, LargeBinary, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -102,4 +102,41 @@ class TelemetryEvent(Base):
         Index("telemetry_events_response_idx", "response_id", "ts_ms"),
         Index("telemetry_events_trace_idx", "trace_id", "ts_ms"),
         Index("telemetry_events_tool_idx", "tool_name", "ts_ms"),
+    )
+
+
+class Credential(Base):
+    __tablename__ = "credentials"
+
+    credential_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    scope_level: Mapped[str] = mapped_column(Text, primary_key=True)
+    agent_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    session_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agent_id_norm: Mapped[str] = mapped_column(Text, Computed("COALESCE(agent_id, '')", persisted=True), primary_key=True)
+    session_key_norm: Mapped[str] = mapped_column(Text, Computed("COALESCE(session_key, '')", persisted=True), primary_key=True)
+    value_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rotate_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class CredentialAudit(Base):
+    __tablename__ = "credential_audit"
+
+    audit_ref: Mapped[str] = mapped_column(Text, primary_key=True)
+    operation: Mapped[str] = mapped_column(Text, nullable=False)
+    credential_id: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scope_level: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agent_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    session_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deleted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    payload_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("credential_audit_credential_idx", "credential_id", "created_at"),
     )

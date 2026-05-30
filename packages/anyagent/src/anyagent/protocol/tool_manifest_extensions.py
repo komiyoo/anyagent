@@ -51,17 +51,20 @@ def tool_kind_for_tool_name(tools: list[dict[str, Any]], tool_name: str) -> AnyA
     return None
 
 
-def model_tool_name_for_name(name: str) -> str:
+def model_tool_name_for_name(name: str, *, max_len: int | None = None) -> str:
     """Return an OpenAI-compatible function name for an AnyAgent tool name."""
 
     value = name.strip()
     if _OPENAI_TOOL_NAME_RE.fullmatch(value):
-        return value
-    normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_")
-    return normalized or "tool"
+        normalized = value
+    else:
+        normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_") or "tool"
+    if isinstance(max_len, int) and max_len > 0 and len(normalized) > max_len:
+        normalized = normalized[:max_len].rstrip("_-") or "tool"
+    return normalized
 
 
-def build_model_tool_name_map(tools: list[dict[str, Any]]) -> dict[str, str]:
+def build_model_tool_name_map(tools: list[dict[str, Any]], *, max_len: int | None = None) -> dict[str, str]:
     """Build `model-visible name -> AnyAgent manifest name` for renamed tools."""
 
     out: dict[str, str] = {}
@@ -73,11 +76,15 @@ def build_model_tool_name_map(tools: list[dict[str, Any]]) -> dict[str, str]:
         if not isinstance(raw_name, str) or not raw_name.strip():
             continue
         source_name = raw_name.strip()
-        model_name = model_tool_name_for_name(source_name)
+        model_name = model_tool_name_for_name(source_name, max_len=max_len)
         base = model_name
         suffix = 2
         while model_name in used:
-            model_name = f"{base}_{suffix}"
+            suffix_text = f"_{suffix}"
+            if isinstance(max_len, int) and max_len > 0 and len(base) + len(suffix_text) > max_len:
+                model_name = f"{base[: max_len - len(suffix_text)].rstrip('_-')}{suffix_text}"
+            else:
+                model_name = f"{base}{suffix_text}"
             suffix += 1
         used.add(model_name)
         if model_name != source_name:

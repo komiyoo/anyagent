@@ -12,6 +12,8 @@ class StorageTables:
     sessions: Table
     events: Table
     leases: Table
+    credentials: Table
+    credential_audit: Table
 
 
 def build_storage_tables(*, schema_name: str | None = None, dialect: str = "postgresql") -> StorageTables:
@@ -69,7 +71,46 @@ def build_storage_tables(*, schema_name: str | None = None, dialect: str = "post
         Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()),
         schema=schema_name,
     )
-    return StorageTables(metadata=metadata, runs=runs, sessions=sessions, events=events, leases=leases)
+    credentials = Table(
+        "credentials",
+        metadata,
+        Column("credential_id", key_type, primary_key=True),
+        Column("kind", key_type, primary_key=True),
+        Column("scope_level", String(length=32), primary_key=True),
+        Column("agent_id", key_type, nullable=True),
+        Column("session_key", key_type, nullable=True),
+        Column("value_ciphertext", _binary_column_type(dialect), nullable=False),
+        Column("metadata_json", JSON, nullable=False, default={}),
+        Column("expires_at", DateTime(timezone=True), nullable=True),
+        Column("rotate_before", DateTime(timezone=True), nullable=True),
+        Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+        Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()),
+        schema=schema_name,
+    )
+    credential_audit = Table(
+        "credential_audit",
+        metadata,
+        Column("audit_ref", key_type, primary_key=True),
+        Column("operation", String(length=64), nullable=False),
+        Column("credential_id", key_type, nullable=False),
+        Column("kind", key_type, nullable=True),
+        Column("scope_level", String(length=32), nullable=True),
+        Column("agent_id", key_type, nullable=True),
+        Column("session_key", key_type, nullable=True),
+        Column("deleted", Boolean, nullable=True),
+        Column("payload_json", JSON, nullable=False, default={}),
+        Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+        schema=schema_name,
+    )
+    return StorageTables(
+        metadata=metadata,
+        runs=runs,
+        sessions=sessions,
+        events=events,
+        leases=leases,
+        credentials=credentials,
+        credential_audit=credential_audit,
+    )
 
 
 def _identity_column_type(dialect: str):
@@ -100,3 +141,9 @@ def _json_column_type(dialect: str):
     if dialect == "sqlite":
         return JSON
     return JSON
+
+
+def _binary_column_type(dialect: str):
+    from sqlalchemy import LargeBinary
+
+    return LargeBinary

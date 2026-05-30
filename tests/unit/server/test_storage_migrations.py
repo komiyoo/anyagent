@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from anyagent.storage.external.migrations import _render_postgres_migration_sql
+from anyagent.server.migrations import list_storage_migrations
+from anyagent.storage.external.migrations import default_postgres_migrations_dir
 
 
-def test_render_postgres_migration_sql_replaces_schema_placeholder() -> None:
-    rendered = _render_postgres_migration_sql(
-        sql="CREATE TABLE IF NOT EXISTS {{schema}}.sessions (id text);",
-        schema_name="anyagent_test",
-    )
+def test_postgres_storage_migrations_are_owned_by_alembic() -> None:
+    migrations = list_storage_migrations()
+    versions_dir = default_postgres_migrations_dir()
 
-    assert rendered == 'CREATE TABLE IF NOT EXISTS "anyagent_test".sessions (id text);'
+    assert versions_dir.name == "versions"
+    assert {migration.version for migration in migrations} >= {"0001_baseline_storage_core", "0002_credential_v2"}
+    assert not list(versions_dir.parent.parent.parent.joinpath("server", "migrations").glob("*.sql"))

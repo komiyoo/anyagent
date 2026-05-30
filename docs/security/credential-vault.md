@@ -1,4 +1,4 @@
-# Credential Vault：凭证管理与工具鉴权注入（v1 设计）
+# Credential Vault：凭证管理与工具鉴权注入
 
 对应需求：`requirements.md#req-8`、`requirements.md#req-5-9`
 
@@ -50,21 +50,24 @@ kind            : str           # 凭证类型，如 "bearer_token", "api_key", 
 value           : str (secret)  # 明文值（仅存储层可见，永不暴露到 API 响应或日志）
 scope           : CredentialScope
 metadata        : dict          # 描述信息（display_name, provider, 创建时间等，不含敏感值）
+expires_at      : datetime?     # 到期后 resolve 不再返回明文
+rotate_before   : datetime?     # 操作侧轮转建议时间，不暴露明文
 ```
 
 ### 1.2 CredentialScope（作用域）
 
 ```python
 class CredentialScope(BaseModel):
-    level: Literal["global", "agent"]  # v1 只实现 global + agent
-    agent_id: str | None = None        # level=agent 时必填
+    level: Literal["global", "agent", "session"]
+    agent_id: str | None = None        # level=agent/session 时必填
+    session_key: str | None = None     # level=session 时必填
 ```
 
 - `global`：全局凭证，所有 Agent 共享（企业级预配置场景）
 - `agent`：Agent 级凭证，仅指定 Agent 可用（多 Agent 隔离场景）
-- ~~`session`~~：会话级临时凭据（**v2 规划，暂不实现**）
+- `session`：会话级临时凭据，仅指定 `agent_id + session_key` 可用，解析优先级高于 agent/global。
 
-当前协议层 `CredentialScope` 已强制校验 `level=agent` 时必须带 `agent_id`、`level=global` 时不得带 `agent_id`；schema bundle 会把该 Pydantic-only 语义导出给多语言 SDK scaffold。`DatabaseBackend` 加密列存储、Vault/Secrets Manager adapter、session 级临时凭据、轮转过期与持久化合规审计表仍作为 v2 规划跟踪。
+当前协议层 `CredentialScope` 已强制校验 scope 所需字段；schema bundle 会把该 Pydantic-only 语义导出给多语言 SDK scaffold。`expires_at` 到期后所有 reference backend 都不得返回明文；`rotate_before` 是操作侧轮转信号，保留在引用响应和后端 metadata 中。
 
 ### 1.3 CredentialRef（凭证引用）
 
@@ -226,7 +229,9 @@ class CredentialStore(ABC):
 
     @abstractmethod
     async def set(self, credential_id: str, kind: str, value: str,
-                  scope: CredentialScope, metadata: dict | None = None) -> None:
+                  scope: CredentialScope, metadata: dict | None = None,
+                  expires_at: datetime | None = None,
+                  rotate_before: datetime | None = None) -> None:
         """写入或更新凭证（幂等）"""
 
     @abstractmethod
@@ -235,7 +240,7 @@ class CredentialStore(ABC):
         """
         根据 auth_ref 解析凭证明文值。
         仅供 Tool Runtime 内部调用，不暴露为 HTTP API。
-        scope_context 用于传递 agent_id 等上下文（用于 scope 匹配）。
+        scope_context 用于传递 agent_id/session_key 等上下文（用于 scope 匹配）。
         返回 None 表示凭证不存在或 scope 不匹配。
         """
 
@@ -246,7 +251,7 @@ class CredentialStore(ABC):
     @abstractmethod
     async def list_refs(self, scope: CredentialScope | None = None) -> list[dict]:
         """
-        列出凭证引用（credential_id + kind + scope + metadata）。
+        列出凭证引用（credential_id + kind + scope + metadata + 生命周期字段）。
         不返回 value 明文。
         """
 ```
@@ -286,13 +291,30 @@ credential_id 也可以直接映射到现有环境变量名：
         └── cred_custom_api.json
 ```
 
-#### DatabaseBackend（v2 规划）
+#### DatabaseBackend（preview）
 
-使用 PostgreSQL 加密列存储，支持审计日志和凭证轮转历史。
+使用 PostgreSQL `pgcrypto` 加密列存储，表结构由 Alembic 管理（`anyagent db migrate` 或兼容入口 `anyagent storage migrate`）。配置：
 
-#### VaultBackend（v2 规划）
+```bash
+MCP_CREDENTIAL_STORE_BACKEND=db-write
+POSTGRES_DSN=postgresql://...
+POSTGRES_SCHEMA=public
+CREDENTIAL_ENCRYPTION_KEY=...
+```
 
-对接 HashiCorp Vault / AWS Secrets Manager 等外部密钥管理服务。
+`credentials.value_ciphertext` 仅保存密文；`credential_audit` 持久化 set/delete 审计 envelope。默认不在运行期建表，生产环境应先跑 Alembic 迁移；开发兜底可显式设 `CREDENTIAL_DB_CREATE_SCHEMA=true`。
+
+#### VaultBackend（preview）
+
+对接 HashiCorp Vault KV v2：
+
+```bash
+MCP_CREDENTIAL_STORE_BACKEND=vault-write
+VAULT_ADDR=https://vault.example.com
+VAULT_TOKEN=...
+VAULT_MOUNT=secret
+VAULT_CREDENTIAL_ROOT_PATH=anyagent/credentials
+```
 
 ## 4. 管理接口
 
@@ -327,6 +349,8 @@ Content-Type: application/json
     "kind": "api_key",
     "value": "sk-...",
     "scope": { "level": "global" },
+    "expires_at": "2026-06-30T00:00:00Z",
+    "rotate_before": "2026-06-23T00:00:00Z",
     "metadata": {
         "display_name": "OpenAI API Key",
         "provider": "openai"
@@ -338,6 +362,8 @@ Content-Type: application/json
     "credential_id": "cred_openai_default",
     "kind": "api_key",
     "scope": { "level": "global" },
+    "expires_at": "2026-06-30T00:00:00Z",
+    "rotate_before": "2026-06-23T00:00:00Z",
     "metadata": { "display_name": "OpenAI API Key", "provider": "openai" },
     "created_at": "2026-03-04T10:00:00Z",
     "updated_at": "2026-03-04T10:00:00Z"
@@ -380,7 +406,17 @@ anyagent credential set \
     --kind api_key \
     --value "$OPENAI_API_KEY" \
     --scope global \
+    --expires-at 2026-06-30T00:00:00Z \
+    --rotate-before 2026-06-23T00:00:00Z \
     --display-name "OpenAI API Key"
+
+anyagent credential set \
+    --id cred_thread_token \
+    --kind bearer_token \
+    --value "$SESSION_TOKEN" \
+    --scope session \
+    --agent-id main \
+    --session-key thread-1
 
 # 从 YAML 文件批量导入
 anyagent credential import --file credentials.yaml

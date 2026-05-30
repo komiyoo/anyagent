@@ -1,0 +1,23 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {
+            "text": "checking"
+          },
+          {
+            "functionCall": {
+              "id": "call_1",
+              "name": "core_lookup",
+              "args": {
+                "query": "x"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

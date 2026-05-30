@@ -27,7 +27,7 @@ async def ensure_postgres_schema_objects(
 
             await cur.execute(
                 "SELECT to_regclass(%s)",
-                (f"{postgres_schema}.schema_migrations",),
+                (f"{postgres_schema}.alembic_version",),
             )
             mig = await cur.fetchone()
             migrations_ready = bool(mig and mig[0])
@@ -43,7 +43,7 @@ async def ensure_postgres_schema_objects(
     if migrations_ready and not missing:
         return
 
-    missing_desc = ", ".join(missing) if missing else "schema_migrations"
+    missing_desc = ", ".join(missing) if missing else "alembic_version"
     raise RuntimeError(
         "postgres schema is not ready; run `anyagent storage migrate` first "
         f"(schema={postgres_schema}, missing={missing_desc}) "

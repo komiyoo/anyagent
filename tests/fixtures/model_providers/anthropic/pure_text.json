@@ -1,0 +1,12 @@
+{
+  "id": "msg_text",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "hello"
+    }
+  ],
+  "model": "claude-test"
+}

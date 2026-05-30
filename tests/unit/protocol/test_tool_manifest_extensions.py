@@ -1,4 +1,6 @@
 from anyagent.protocol.tool_manifest_extensions import (
+    build_model_tool_name_map,
+    model_tool_name_for_name,
     source_tool_name_for_model_name,
     strip_internal_tool_fields,
 )
@@ -32,3 +34,16 @@ def test_source_tool_name_maps_model_tool_names_back_to_manifest_names():
 
     assert source_tool_name_for_model_name(tools, "mcp_amap_run") == "mcp.amap.run"
     assert source_tool_name_for_model_name(tools, "spawn_agent") == "spawn_agent"
+
+
+def test_model_tool_name_max_len_truncates_and_deduplicates():
+    tools = [
+        {"type": "function", "name": "namespace.tool.alpha"},
+        {"type": "function", "name": "namespace_tool_alpha"},
+    ]
+
+    assert model_tool_name_for_name("namespace.tool.alpha", max_len=12) == "namespace_to"
+    assert build_model_tool_name_map(tools, max_len=12) == {
+        "namespace_to": "namespace.tool.alpha",
+        "namespace_2": "namespace_tool_alpha",
+    }

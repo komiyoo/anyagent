@@ -4,29 +4,20 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from anyagent.agent_packs import AgentPack
-from anyagent.agent_runtime.model_providers import (
-    AnthropicMessagesModelProviderSettings,
-    GoogleGeminiModelProviderSettings,
-    ModelProvider,
-    OpenAIResponsesModelProviderSettings,
-    get_default_model_provider,
-    get_default_anthropic_model_provider,
-    get_default_gemini_model_provider,
-    get_default_openai_model_provider,
-)
+from anyagent.agent_runtime.model_providers import ModelProvider, get_default_model_provider
+from anyagent.agent_runtime.model_providers.registry import ModelProviderKind, get_provider_spec, resolve_provider_kind
 
 
 class ModelConfigError(Exception):
     pass
 
 
-ModelProviderKind = Literal["openai", "anthropic", "gemini"]
 _ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -123,7 +114,7 @@ def resolve_effective_model_selection(
     if not provider_name:
         provider_name = "openai"
     provider_cfg = workspace_config.providers.get(provider_name)
-    provider_kind: ModelProviderKind = _provider_kind_from_name(provider_name)
+    provider_kind: ModelProviderKind = resolve_provider_kind(provider_name)
     if provider_cfg is not None:
         provider_kind = provider_cfg.kind
 
@@ -148,76 +139,10 @@ def model_provider_for_selection(selection: EffectiveModelSelection) -> ModelPro
     if not selection.uses_workspace_provider and selection.provider_kind == "openai":
         return get_default_model_provider()
 
-    api_key = _env_value(selection.api_key_env) or _default_api_key(selection.provider_kind)
-    base_url = _env_value(selection.base_url_env) or selection.base_url or _default_base_url(selection.provider_kind)
-    if not api_key:
-        source = selection.api_key_env or _default_api_key_env(selection.provider_kind)
-        raise ModelConfigError(f"missing API key for model provider {selection.provider_name}: set {source}")
-
-    if selection.provider_kind == "openai":
-        return get_default_openai_model_provider(
-            OpenAIResponsesModelProviderSettings(
-                OPENAI_API_KEY=api_key,
-                OPENAI_BASE_URL=base_url,
-            )
-        )
-    if selection.provider_kind == "anthropic":
-        anthropic_version = (
-            _env_value(selection.anthropic_version_env)
-            or selection.anthropic_version
-            or os.getenv("ANTHROPIC_VERSION")
-            or "2023-06-01"
-        )
-        return get_default_anthropic_model_provider(
-            AnthropicMessagesModelProviderSettings(
-                ANTHROPIC_API_KEY=api_key,
-                ANTHROPIC_BASE_URL=base_url,
-                ANTHROPIC_VERSION=anthropic_version,
-                ANYAGENT_ANTHROPIC_STATE_MAX=int(os.getenv("ANYAGENT_ANTHROPIC_STATE_MAX", "1024")),
-            )
-        )
-    if selection.provider_kind == "gemini":
-        return get_default_gemini_model_provider(
-            GoogleGeminiModelProviderSettings(
-                GOOGLE_API_KEY=api_key,
-                GEMINI_BASE_URL=base_url,
-                ANYAGENT_GEMINI_STATE_MAX=int(os.getenv("ANYAGENT_GEMINI_STATE_MAX", "1024")),
-            )
-        )
-    raise ModelConfigError(f"unsupported model provider kind: {selection.provider_kind}")
-
-
-def _provider_kind_from_name(provider_name: str) -> ModelProviderKind:
-    value = provider_name.strip().lower()
-    if value in {"anthropic", "claude"}:
-        return "anthropic"
-    if value in {"gemini", "google", "google_gemini"}:
-        return "gemini"
-    return "openai"
-
-
-def _default_api_key_env(kind: ModelProviderKind) -> str:
-    if kind == "anthropic":
-        return "ANTHROPIC_API_KEY"
-    if kind == "gemini":
-        return "GOOGLE_API_KEY or GEMINI_API_KEY"
-    return "OPENAI_API_KEY"
-
-
-def _default_api_key(kind: ModelProviderKind) -> str | None:
-    if kind == "anthropic":
-        return os.getenv("ANTHROPIC_API_KEY")
-    if kind == "gemini":
-        return os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    return os.getenv("OPENAI_API_KEY")
-
-
-def _default_base_url(kind: ModelProviderKind) -> str:
-    if kind == "anthropic":
-        return os.getenv("ANTHROPIC_BASE_URL") or "https://api.anthropic.com/v1"
-    if kind == "gemini":
-        return os.getenv("GEMINI_BASE_URL") or "https://generativelanguage.googleapis.com/v1beta"
-    return os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1"
+    try:
+        return get_provider_spec(selection.provider_kind).build_from_selection(selection)
+    except RuntimeError as e:
+        raise ModelConfigError(str(e)) from e
 
 
 def _env_value(name: str | None) -> str | None:

@@ -13,6 +13,7 @@
   - 配置层级 merge / 热重载 / MCP 生命周期:`docs/architecture/runtime/agent-packs-and-runtime-config.md`
   - Agent Loop Middleware / 上下文压缩 / 循环检测:`docs/architecture/runtime/agent-loop-middleware.md`
   - 跨节点 Run 调度 & lock contract:`docs/architecture/runtime/stateless-agent-service-architecture.md`、`docs/architecture/decisions/run-scheduling-lock-contract.md`
+  - Model Provider translator / capability / registry:`docs/architecture/api/model-provider-translators.md`
 
 ## 当前事实
 
@@ -30,6 +31,10 @@
 - M4:第二 server runtime（异语言）通过 reference conformance suite（Phase 4）
 
 ## 任务
+
+### Phase 1 — Responses API Provider Hardening
+
+- [x] P1 统一 Anthropic/Gemini provider 翻译宿主,补齐 Gemini function calling、Anthropic `tool_choice=required` 与 developer/system prompt 映射,并收敛 provider registry（Req: `requirements.md#req-4-5`; Impl: `packages/anyagent/src/anyagent/agent_runtime/model_providers/_translating_provider.py`; Module: `anyagent.agent_runtime.model_providers`）
 
 ### Phase 1.5 — Agentic Ecosystem Hardening
 

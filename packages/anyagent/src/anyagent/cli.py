@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ import uvicorn
 import yaml
 
 from anyagent.agent_packs import AgentPackError, load_agent_catalog, preferred_agents_root, preferred_config_root, resolve_agents_root
+from anyagent.agent_runtime.model_providers.registry import get_provider_spec, resolve_provider_kind
 from anyagent.model_config import WorkspaceModelsConfig, workspace_models_config_path
 from anyagent.observability import configure_observability_from_env
 from anyagent.protocol.admin_storage import StorageHealthResponse
@@ -402,8 +404,11 @@ def main(argv: list[str] | None = None) -> int:
     p_set.add_argument("--kind", required=True)
     p_set.add_argument("--value", default=None, help="Plaintext value (avoid shell history).")
     p_set.add_argument("--value-from-env", default=None, help="Read plaintext value from env var.")
-    p_set.add_argument("--scope", choices=["global", "agent"], default="global")
-    p_set.add_argument("--agent-id", default=None, help="Required when --scope=agent.")
+    p_set.add_argument("--scope", choices=["global", "agent", "session"], default="global")
+    p_set.add_argument("--agent-id", default=None, help="Required when --scope=agent or --scope=session.")
+    p_set.add_argument("--session-key", default=None, help="Required when --scope=session.")
+    p_set.add_argument("--expires-at", default=None, help="Credential expiration timestamp (ISO 8601).")
+    p_set.add_argument("--rotate-before", default=None, help="Credential rotation timestamp (ISO 8601).")
     p_set.add_argument("--display-name", default=None)
     p_set.add_argument("--provider", default=None)
     p_set.add_argument("--env-var-name", default=None, help="Optional: metadata.env_var_name for EnvBackend.")
@@ -519,7 +524,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cred_cmd == "set":
         value = _resolve_value(value=args.value, value_from_env=args.value_from_env)
-        scope = _parse_scope(level=args.scope, agent_id=args.agent_id)
+        scope = _parse_scope(level=args.scope, agent_id=args.agent_id, session_key=args.session_key)
         metadata = _build_metadata(
             display_name=args.display_name,
             provider=args.provider,
@@ -533,6 +538,8 @@ def main(argv: list[str] | None = None) -> int:
                 value=value,
                 scope=scope,
                 metadata=metadata,
+                expires_at=_parse_datetime_arg(args.expires_at, flag="--expires-at"),
+                rotate_before=_parse_datetime_arg(args.rotate_before, flag="--rotate-before"),
             )
         )
         print(json.dumps(ref.model_dump(exclude_none=True), ensure_ascii=False))
@@ -1232,15 +1239,12 @@ def _render_models_yaml(
     base_url: str | None,
     base_url_env: str | None,
 ) -> str:
-    provider: dict[str, str] = {"kind": provider_kind}
+    spec = get_provider_spec(resolve_provider_kind(provider_kind))
+    provider: dict[str, str] = {"kind": spec.kind}
     if api_key_env:
         provider["api_key_env"] = api_key_env
-    elif provider_kind == "anthropic":
-        provider["api_key_env"] = "ANTHROPIC_API_KEY"
-    elif provider_kind == "gemini":
-        provider["api_key_env"] = "GOOGLE_API_KEY"
     else:
-        provider["api_key_env"] = "OPENAI_API_KEY"
+        provider["api_key_env"] = spec.default_api_key_envs[0]
     if base_url:
         provider["base_url"] = base_url
     if base_url_env:
@@ -1705,14 +1709,32 @@ def _resolve_value(*, value: str | None, value_from_env: str | None) -> str:
     return str(value).strip()
 
 
-def _parse_scope(*, level: str, agent_id: str | None) -> CredentialScope:
+def _parse_scope(*, level: str, agent_id: str | None, session_key: str | None = None) -> CredentialScope:
     if level == "global":
         return CredentialScope(level="global")
     if level == "agent":
         if not agent_id or not agent_id.strip():
             raise SystemExit("--agent-id is required when --scope=agent")
         return CredentialScope(level="agent", agent_id=agent_id.strip())
+    if level == "session":
+        if not agent_id or not agent_id.strip():
+            raise SystemExit("--agent-id is required when --scope=session")
+        if not session_key or not session_key.strip():
+            raise SystemExit("--session-key is required when --scope=session")
+        return CredentialScope(level="session", agent_id=agent_id.strip(), session_key=session_key.strip())
     raise SystemExit(f"unsupported scope: {level}")
+
+
+def _parse_datetime_arg(value: str | None, *, flag: str) -> datetime | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise SystemExit(f"{flag} must be an ISO 8601 timestamp") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _build_metadata(
@@ -1764,6 +1786,8 @@ def _cmd_import(client: _AdminClient, *, file_path: str, dry_run: bool, skip_mis
         kind = raw.get("kind")
         scope_raw = raw.get("scope")
         metadata = raw.get("metadata") or {}
+        expires_at = raw.get("expires_at")
+        rotate_before = raw.get("rotate_before")
 
         if not isinstance(credential_id, str) or not credential_id.strip():
             raise SystemExit(f"credentials[{i}].credential_id must be non-empty string")
@@ -1789,6 +1813,8 @@ def _cmd_import(client: _AdminClient, *, file_path: str, dry_run: bool, skip_mis
             value=value,
             scope=scope,
             metadata=dict(metadata),
+            expires_at=_parse_datetime_arg(expires_at, flag=f"credentials[{i}].expires_at") if isinstance(expires_at, str) else None,
+            rotate_before=_parse_datetime_arg(rotate_before, flag=f"credentials[{i}].rotate_before") if isinstance(rotate_before, str) else None,
         )
         if not dry_run:
             client.set_credential(req)

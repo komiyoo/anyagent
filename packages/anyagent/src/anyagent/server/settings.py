@@ -62,6 +62,14 @@ class ServerSettings(BaseSettings):
     infisical_cache_ttl_seconds: int = Field(default=60, alias="INFISICAL_CACHE_TTL_SECONDS")
     infisical_credential_root_path: str = Field(default="/anyagent/credentials", alias="INFISICAL_CREDENTIAL_ROOT_PATH")
     infisical_path_layout: str = Field(default="scoped", alias="INFISICAL_PATH_LAYOUT")
+    credential_postgres_dsn: str | None = Field(default=None, alias="CREDENTIAL_POSTGRES_DSN")
+    credential_postgres_schema: str = Field(default="public", alias="CREDENTIAL_POSTGRES_SCHEMA")
+    credential_encryption_key: str | None = Field(default=None, alias="CREDENTIAL_ENCRYPTION_KEY")
+    credential_db_create_schema: bool = Field(default=False, alias="CREDENTIAL_DB_CREATE_SCHEMA")
+    vault_addr: str | None = Field(default=None, alias="VAULT_ADDR")
+    vault_token: str | None = Field(default=None, alias="VAULT_TOKEN")
+    vault_mount: str = Field(default="secret", alias="VAULT_MOUNT")
+    vault_credential_root_path: str = Field(default="anyagent/credentials", alias="VAULT_CREDENTIAL_ROOT_PATH")
 
     def resolve(
         self,

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from .base import (
     BufferedLiveResponseStream,
     ModelProvider,
@@ -29,6 +27,7 @@ from .openai_responses import (
     create_openai_responses_model_provider,
     get_default_model_provider as get_default_openai_model_provider,
 )
+from .registry import PROVIDER_REGISTRY, ProviderSpec, get_provider_spec, is_registered_provider_name, resolve_provider_kind
 
 __all__ = [
     "ModelProvider",
@@ -49,6 +48,11 @@ __all__ = [
     "OpenAIResponsesModelProvider",
     "OpenAIResponsesModelProviderSettings",
     "create_openai_responses_model_provider",
+    "PROVIDER_REGISTRY",
+    "ProviderSpec",
+    "get_provider_spec",
+    "is_registered_provider_name",
+    "resolve_provider_kind",
     "get_default_model_provider",
     "get_default_openai_model_provider",
 ]
@@ -62,11 +66,9 @@ def get_default_model_provider() -> ModelProvider:
     - ANYAGENT_MODEL_PROVIDER: "openai" (default) | "anthropic" | "gemini"
     """
 
+    import os
+
     kind = (os.getenv("ANYAGENT_MODEL_PROVIDER") or "openai").strip().lower()
-    if kind in {"openai", "openai_responses", "responses"}:
-        return get_default_openai_model_provider()
-    if kind in {"anthropic", "claude"}:
-        return get_default_anthropic_model_provider()
-    if kind in {"gemini", "google", "google_gemini"}:
-        return get_default_gemini_model_provider()
+    if kind and is_registered_provider_name(kind):
+        return get_provider_spec(kind).build_default()
     raise ValueError(f"unsupported ANYAGENT_MODEL_PROVIDER: {kind}")

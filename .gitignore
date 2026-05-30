@@ -39,3 +39,6 @@ vite.config.d.ts
 # Generated docs indexes
 docs/_manifest.txt
 docs/.generated/
+
+# Rust build artifacts (second-runtime PoC)
+runtimes/**/target/

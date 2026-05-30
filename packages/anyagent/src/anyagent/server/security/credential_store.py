@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from anyagent.mcp.auth import CredentialResolver
@@ -11,6 +12,7 @@ from anyagent.protocol.credential_vault import (
     AdminCredentialListResponse,
     AdminCredentialRef,
     AdminCredentialSetRequest,
+    CredentialScope,
 )
 from anyagent.protocol.tool_runtime import AuthRef
 from anyagent.server.security.credential_backends import CredentialStore
@@ -30,8 +32,9 @@ def _log_credential_audit(
     kind: str | None = None,
     scope_level: str | None = None,
     agent_id: str | None = None,
+    session_key: str | None = None,
     deleted: bool | None = None,
-) -> None:
+) -> dict[str, Any]:
     payload = {
         "audit_ref": _build_credential_audit_ref(operation=operation, credential_id=credential_id),
         "operation": operation,
@@ -39,10 +42,109 @@ def _log_credential_audit(
         "kind": kind,
         "scope_level": scope_level,
         "agent_id": agent_id,
+        "session_key": session_key,
         "deleted": deleted,
     }
     event = emit_observability_event("credential_audit", category="audit", level="info", payload=payload)
     logger.info("credential_audit %s", event.model_dump_json(exclude_none=True))
+    return payload
+
+
+async def _persist_credential_audit(store: Any, payload: dict[str, Any]) -> None:
+    recorder = getattr(store, "record_audit", None)
+    if not callable(recorder):
+        return
+    result = recorder(payload)
+    if hasattr(result, "__await__"):
+        await result
+
+
+async def emit_credential_audit_for_store(
+    store: Any,
+    *,
+    operation: str,
+    credential_id: str,
+    kind: str | None = None,
+    scope: CredentialScope | None = None,
+    deleted: bool | None = None,
+) -> None:
+    payload = _log_credential_audit(
+        operation=operation,
+        credential_id=credential_id,
+        kind=kind,
+        scope_level=scope.level if scope is not None else None,
+        agent_id=scope.agent_id if scope is not None else None,
+        session_key=scope.session_key if scope is not None else None,
+        deleted=deleted,
+    )
+    await _persist_credential_audit(store, payload)
+
+
+class AuditedCredentialStore(CredentialStore, CredentialResolver):
+    """Adds observability and backend audit persistence around a credential store."""
+
+    def __init__(self, inner: CredentialStore) -> None:
+        self.inner = inner
+
+    async def set(
+        self,
+        credential_id: str,
+        kind: str,
+        value: str,
+        scope: CredentialScope,
+        metadata: dict[str, Any] | None = None,
+        expires_at: datetime | None = None,
+        rotate_before: datetime | None = None,
+    ) -> None:
+        await self.inner.set(
+            credential_id=credential_id,
+            kind=kind,
+            value=value,
+            scope=scope,
+            metadata=metadata,
+            expires_at=expires_at,
+            rotate_before=rotate_before,
+        )
+        payload = _log_credential_audit(
+            operation="set",
+            credential_id=credential_id,
+            kind=kind,
+            scope_level=scope.level,
+            agent_id=scope.agent_id,
+            session_key=scope.session_key,
+        )
+        await _persist_credential_audit(self.inner, payload)
+
+    async def resolve(self, auth_ref: AuthRef, scope_context: dict[str, Any] | None = None) -> str | None:
+        return await self.inner.resolve(auth_ref, scope_context=scope_context)
+
+    async def delete(self, credential_id: str) -> bool:
+        refs = await self.inner.list_refs()
+        deleted = await self.inner.delete(credential_id)
+        matching_refs = [AdminCredentialRef.model_validate(ref) for ref in refs if ref.get("credential_id") == credential_id]
+        if matching_refs:
+            for ref in matching_refs:
+                payload = _log_credential_audit(
+                    operation="delete",
+                    credential_id=credential_id,
+                    kind=ref.kind,
+                    scope_level=ref.scope.level,
+                    agent_id=ref.scope.agent_id,
+                    session_key=ref.scope.session_key,
+                    deleted=deleted,
+                )
+                await _persist_credential_audit(self.inner, payload)
+        else:
+            payload = _log_credential_audit(operation="delete", credential_id=credential_id, deleted=deleted)
+            await _persist_credential_audit(self.inner, payload)
+        return deleted
+
+    async def list_refs(self, scope: CredentialScope | None = None) -> list[dict[str, Any]]:
+        return await self.inner.list_refs(scope=scope)
+
+    async def list(self) -> AdminCredentialListResponse:
+        refs = await self.list_refs()
+        return AdminCredentialListResponse(credentials=[AdminCredentialRef.model_validate(ref) for ref in refs])
 
 
 class InMemoryCredentialStore(CredentialStore, CredentialResolver):
@@ -51,8 +153,11 @@ class InMemoryCredentialStore(CredentialStore, CredentialResolver):
         self._values: dict[tuple[str, str, str | None], str] = {}
 
     @staticmethod
-    def _key(*, credential_id: str, scope_level: str, agent_id: str | None) -> tuple[str, str, str | None]:
-        return credential_id.strip(), scope_level.strip(), agent_id.strip() if isinstance(agent_id, str) else None
+    def _key(*, credential_id: str, scope_level: str, agent_id: str | None, session_key: str | None = None) -> tuple[str, str, str | None]:
+        scoped_id = agent_id.strip() if isinstance(agent_id, str) else None
+        if scope_level == "session":
+            scoped_id = f"{scoped_id or ''}:{session_key.strip() if isinstance(session_key, str) else ''}"
+        return credential_id.strip(), scope_level.strip(), scoped_id
 
     async def set(
         self,
@@ -63,6 +168,8 @@ class InMemoryCredentialStore(CredentialStore, CredentialResolver):
         value: str | None = None,
         scope: CredentialScope | None = None,
         metadata: dict[str, Any] | None = None,
+        expires_at: datetime | None = None,
+        rotate_before: datetime | None = None,
     ) -> AdminCredentialRef:
         if req is None:
             if credential_id is None or kind is None or value is None or scope is None:
@@ -73,17 +180,24 @@ class InMemoryCredentialStore(CredentialStore, CredentialResolver):
                 value=value,
                 scope=scope,
                 metadata=dict(metadata or {}),
+                expires_at=expires_at,
+                rotate_before=rotate_before,
             )
+        if req.expires_at is not None and req.rotate_before is not None and req.rotate_before > req.expires_at:
+            raise ValueError("rotate_before must be before or equal to expires_at")
         ref = AdminCredentialRef(
             credential_id=req.credential_id,
             kind=req.kind,
             scope=req.scope,
             metadata=dict(req.metadata or {}),
+            expires_at=req.expires_at,
+            rotate_before=req.rotate_before,
         )
         key = self._key(
             credential_id=req.credential_id,
             scope_level=req.scope.level,
             agent_id=req.scope.agent_id,
+            session_key=req.scope.session_key,
         )
         self._refs[req.credential_id] = ref
         self._values[key] = req.value
@@ -93,6 +207,7 @@ class InMemoryCredentialStore(CredentialStore, CredentialResolver):
             kind=req.kind,
             scope_level=req.scope.level,
             agent_id=req.scope.agent_id,
+            session_key=req.scope.session_key,
         )
         return ref
 
@@ -107,6 +222,7 @@ class InMemoryCredentialStore(CredentialStore, CredentialResolver):
                 credential_id=ref.credential_id,
                 scope_level=ref.scope.level,
                 agent_id=ref.scope.agent_id,
+                session_key=ref.scope.session_key,
             )
             self._values.pop(key, None)
         _log_credential_audit(
@@ -115,6 +231,7 @@ class InMemoryCredentialStore(CredentialStore, CredentialResolver):
             kind=ref.kind if ref is not None else None,
             scope_level=ref.scope.level if ref is not None else None,
             agent_id=ref.scope.agent_id if ref is not None else None,
+            session_key=ref.scope.session_key if ref is not None else None,
             deleted=ref is not None,
         )
         return ref is not None
@@ -127,6 +244,8 @@ class InMemoryCredentialStore(CredentialStore, CredentialResolver):
                 if ref.scope.level != scope.level:
                     continue
                 if scope.level == "agent" and ref.scope.agent_id != scope.agent_id:
+                    continue
+                if scope.level == "session" and (ref.scope.agent_id != scope.agent_id or ref.scope.session_key != scope.session_key):
                     continue
             out.append(ref.model_dump(exclude_none=True))
         return out
@@ -146,9 +265,29 @@ class InMemoryCredentialStore(CredentialStore, CredentialResolver):
         agent_id = None
         if isinstance(scope_context, dict) and isinstance(scope_context.get("agent_id"), str):
             agent_id = scope_context["agent_id"].strip()
+        session_key = None
+        if isinstance(scope_context, dict) and isinstance(scope_context.get("session_key"), str):
+            session_key = scope_context["session_key"].strip()
+        if ref.expires_at is not None and _is_expired(ref.expires_at):
+            return None
+        if agent_id and session_key:
+            session_key_tuple = self._key(
+                credential_id=credential_id,
+                scope_level="session",
+                agent_id=agent_id,
+                session_key=session_key,
+            )
+            if session_key_tuple in self._values:
+                return self._values[session_key_tuple]
         if agent_id:
             agent_key = self._key(credential_id=credential_id, scope_level="agent", agent_id=agent_id)
             if agent_key in self._values:
                 return self._values[agent_key]
         global_key = self._key(credential_id=credential_id, scope_level="global", agent_id=None)
         return self._values.get(global_key)
+
+
+def _is_expired(expires_at: datetime) -> bool:
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at <= datetime.now(timezone.utc)

@@ -98,6 +98,14 @@ class ToolRuntimeSettings(BaseSettings):
     infisical_cache_ttl_seconds: int = Field(default=60, alias="INFISICAL_CACHE_TTL_SECONDS")
     infisical_credential_root_path: str = Field(default="/anyagent/credentials", alias="INFISICAL_CREDENTIAL_ROOT_PATH")
     infisical_path_layout: str = Field(default="scoped", alias="INFISICAL_PATH_LAYOUT")
+    credential_postgres_dsn: str | None = Field(default=None, alias="CREDENTIAL_POSTGRES_DSN")
+    credential_postgres_schema: str = Field(default="public", alias="CREDENTIAL_POSTGRES_SCHEMA")
+    credential_encryption_key: str | None = Field(default=None, alias="CREDENTIAL_ENCRYPTION_KEY")
+    credential_db_create_schema: bool = Field(default=False, alias="CREDENTIAL_DB_CREATE_SCHEMA")
+    vault_addr: str | None = Field(default=None, alias="VAULT_ADDR")
+    vault_token: str | None = Field(default=None, alias="VAULT_TOKEN")
+    vault_mount: str = Field(default="secret", alias="VAULT_MOUNT")
+    vault_credential_root_path: str = Field(default="anyagent/credentials", alias="VAULT_CREDENTIAL_ROOT_PATH")
 
 
 def build_tool_runtime_server_config(
@@ -142,6 +150,14 @@ def build_tool_runtime_server_config(
             infisical_cache_ttl_seconds=src.infisical_cache_ttl_seconds,
             infisical_credential_root_path=src.infisical_credential_root_path,
             infisical_path_layout=src.infisical_path_layout,
+            credential_postgres_dsn=src.credential_postgres_dsn,
+            credential_postgres_schema=src.credential_postgres_schema,
+            credential_encryption_key=src.credential_encryption_key,
+            credential_db_create_schema=src.credential_db_create_schema,
+            vault_addr=src.vault_addr,
+            vault_token=src.vault_token,
+            vault_mount=src.vault_mount,
+            vault_credential_root_path=src.vault_credential_root_path,
         ),
         workspace_runtime=WorkspaceRuntimeConfig(
             allow_sandbox=bool(src.allow_sandbox),

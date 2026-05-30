@@ -40,6 +40,7 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 | Server         | `packages/anyagent/src/anyagent/server/app.py`                               | 提供 `/v1/responses`、`/internal/*`、`/admin/*` typed endpoints。                                      |
 | CLI            | `packages/anyagent/src/anyagent/cli.py`                                      | 提供 `serve`、`init`、`doctor`、config、storage、workspace 等 control-plane 入口。                     |
 | Python SDK     | `packages/anyagent/src/anyagent/agent_api_client.py`、`anyagent.types`       | OpenAI 兼容 client + events、agents、skills、tools、prompts、observability、admin、health namespaces。 |
+| Model Provider | `packages/anyagent/src/anyagent/agent_runtime/model_providers/`、`docs/architecture/api/model-provider-translators.md` | OpenAI Responses provider 直透；Anthropic/Gemini 经统一 translator 宿主、capability 裁决与 registry 路由。 |
 | TypeScript SDK | `sdks/typescript/`                                                           | 从 protocol export 生成 schema/types,通过 endpoint manifest 解析 schema-backed paths。                 |
 | Stage Events   | `anyagent.protocol.events`                                                   | 覆盖 prompt context、model stream、tool planned/result、command planned/result 与 done 主路径。        |
 | Storage        | `anyagent.storage`、server storage adapters                                  | 支持 in-memory、SQLite、PostgreSQL、Redis hot path 与 typed external SQL backend config。              |
@@ -126,20 +127,21 @@ Phase 1 ~ Phase 2 的主路径任务已全部完成。逐条任务历史见 Git 
 | 1.8 | Sub-Agent 完整版、Agent Loop Middleware 4-hook 接口、上下文压缩、循环检测、Phase 1.8 Stage Events | `runtime/agent-loop-middleware.md`、`multi-agent/multi-agent-collaboration.md` |
 | 2 | Tool Runtime contract 测试矩阵 + standalone 等价验收、Storage replay contract(PG+Redis)、跨节点 Run 调度与 lock contract、第二 sandbox backend、Unified Observability Sink | `tool-runtime/tool-runtime-contract.md`、`storage/storage-minimal-design.md`、`runtime/stateless-agent-service-architecture.md`、`runtime/sandbox-session-filesystem-design.md`、`decisions/`(run-scheduling-lock-contract、sandbox-backend-selection、storage-idempotency-and-cursor-semantics、observability-replay-sink-and-retention) |
 
-#### 未开始
+#### 已完成
 
-| 优先级 | #   | 任务                                                              | Phase | 状态      | todo 入口                            |
-| ------ | --- | ----------------------------------------------------------------- | ----- | --------- | ------------------------------------ |
-| **P4** | 21  | Credential v2 (DB/Vault/session/轮转/审计)                        | 3     | 🔲 未开始 | `todo/security-compliance.md`        |
-| **P4** | 22  | Multi-Agent contract（完整 parent/child/root run 语义）           | 4     | 🔲 未开始 | `todo/multi-agent.md`                |
-| **P4** | 23  | Reference conformance suite + 第二 runtime                        | 4     | 🔲 未开始 | `todo/multi-runtime.md`              |
+| 优先级 | #   | 任务                                       | Phase | 状态      | todo 入口                     |
+| ------ | --- | ------------------------------------------ | ----- | --------- | ----------------------------- |
+| **P4** | 21  | Credential v2 (DB/Vault/session/轮转/审计) | 3     | ✅ 已完成 | `todo/security-compliance.md` |
+| **P4** | 22  | Multi-Agent contract（quota/replay contract） | 4  | ✅ 已完成 | `todo/multi-agent.md`        |
+| **P4** | 23  | Reference conformance suite + Rust runtime PoC | 4 | ✅ 已完成 | `todo/multi-runtime.md`      |
 
 状态图例：🔲 未开始 · 🔵 进行中 · ✅ 已完成
 
 依赖关系备注：
 
-- #21 依赖 Tool Runtime GA + audit sink（均已完成),可立即启动；前置决策见 `todo/security-compliance.md` 决策点(DB vs Vault、密钥管理)
-- #22 依赖 #21 与已就绪的 Multi-Agent runtime primitives；#23 依赖 #22 的跨 runtime 一致性基线
+- #21 已完成 preview 实现；PostgreSQL schema 由 Alembic 管理，长期口径见 `docs/security/credential-vault.md`。
+- #22 已完成 storage lock quota primitive 与 multi-agent replay contract；长期口径见 `docs/architecture/multi-agent/multi-agent-collaboration.md`。
+- #23 已完成 reference conformance suite M1 补齐、Rust second-runtime ADR 与 PoC target；长期口径见 `docs/architecture/decisions/second-runtime-rust-reference.md`。
 
 > **决策记录（2026-05-29）**：当前仅公司内部使用，多租户/水平扩展需求推迟。Phase 2 中的分布式加固（#18 跨节点调度、#19 第二 sandbox backend）降为 P3，有外部用户需求后再投入。新增 Phase 1.8 聚焦内部高频需求：Sub-Agent、上下文压缩、循环检测、Middleware 接口。
 >

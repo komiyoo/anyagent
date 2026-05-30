@@ -157,17 +157,17 @@ Multi-Agent 是 Phase 2+ 能力。它通过一组系统保留工具让主 agent 
 - depth 从 parent 递增，超过 `runtime.subagent.max_depth` 时不得注册或执行新的 `task()` tool。
 - parent run 通过 `subagent.spawned`、`subagent.completed`、`subagent.timeout` stage events 关联 child run。
 - replay 与观测链路必须保留 `parent_run_id`、`child_run_id`、`agent_id`、`depth` 与 `tool_call_id` 等稳定键。
+- quota 跨节点一致性基线由 `MultiAgentQuota` 绑定到 storage `LeaseLock` contract：同一 `root_response_id` 下按 slot key 竞争租约，PostgreSQL/Redis/in-memory lock 共享同一语义。
 
 Contract test 入口：
 
 - `tests/unit/agent_runtime/test_multiagent_task_schema.py` 覆盖 task schema、in-process executor、并发/深度/超时和 fork mode 主路径。
+- `tests/contract/test_multiagent_contract.py` 覆盖 storage lock quota 语义，以及 parent/child run 在 replay 中保留 `child_response_id` / `parent_response_id` / `tool_call_id` 的端到端 contract。
 - `tests/fixtures/sdk_conformance/core_surface.json` 固化 `stage_event.subagent.spawned` / `stage_event.subagent.completed` / `stage_event.subagent.timeout` 的跨 SDK fixture。
 - `tests/contract/test_protocol_schema_export.py` 校验上述 stage event fixture 被 minimum matrix 引用。
 
 尚未承诺的 Phase 4 缺口：
 
-- quota 在跨节点 storage 下的一致性验收。
-- multi-agent event replay 的端到端 contract。
 - AgentControl 多线程生命周期 API 的 public protocol 形态。
 
 ## AgentControl

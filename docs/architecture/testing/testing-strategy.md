@@ -109,8 +109,11 @@ Reference conformance suite 是第二 server runtime 与新语言 SDK 的接入�
 |---|---|---|---|
 | Protocol schema bundle | `tests/contract/test_protocol_schema_export.py` | exported models, type adapters, endpoint manifest, SDK fixtures | OpenAPI semantic diff 尚未覆盖所有 HTTP response variants |
 | Responses / SSE | `tests/contract/test_sse_protocol_contract.py` | SSE block shape, terminal `[DONE]`, response id normalization | live provider streaming 不在默认 contract 内 |
-| Stage Events SDK | `tests/contract/test_events_sdk_contract.py` | typed stage event decode and SDK event stream semantics | multi-agent replay e2e 仍在 Phase 4 缺口 |
+| Stage Events SDK | `tests/contract/test_events_sdk_contract.py` | typed stage event decode and SDK event stream semantics | live SDK streaming matrix 仍需真实服务适配 |
+| Internal/Admin API | `tests/contract/test_admin_runtime_contract.py` | health/admin credential/tool catalog/storage health behavior | 第二 runtime 当前仅 Rust PoC target 覆盖部分 admin surface |
 | Tool Runtime | `tests/contract/test_tool_runtime_contract_matrix.py` | manifest / execute request-response shapes | external Tool Runtime process matrix 仍需 live adapter 验收 |
+| Storage / Multi-Agent replay | `tests/contract/test_multiagent_contract.py` | LeaseLock quota slots, parent/child replay linkage | 外部 Postgres/Redis live matrix 仍在 acceptance 层 |
+| Second runtime target | `tests/contract/test_second_runtime_poc.py`, `runtimes/rust-reference/conformance.json` | Rust PoC build gate and conformance target discovery | Responses API / execute loop 尚未实现 |
 | Import boundaries | `tests/contract/test_sdk_import_boundaries.py` | SDK-facing type boundary and protocol import discipline | 只覆盖 Python package boundary |
 | SDK fixture matrix | `tests/fixtures/sdk_conformance/core_surface.json`, `tests/fixtures/sdk_conformance/minimum_matrix.json` | cross-language minimum payloads and negative cases | non-TypeScript SDK 尚未接入自动 smoke |
 

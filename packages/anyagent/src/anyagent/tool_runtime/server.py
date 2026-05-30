@@ -187,6 +187,8 @@ def create_tool_runtime_app(
                 value=req.value,
                 scope=req.scope,
                 metadata=req.metadata,
+                expires_at=req.expires_at,
+                rotate_before=req.rotate_before,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -197,6 +199,8 @@ def create_tool_runtime_app(
             kind=req.kind,
             scope=req.scope,
             metadata=req.metadata,
+            expires_at=req.expires_at,
+            rotate_before=req.rotate_before,
         )
         return JSONResponse(ref.model_dump(mode="json", exclude_none=True))
 

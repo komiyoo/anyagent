@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
+import re
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 from anyagent.storage.alembic.orm import Base
 
@@ -23,11 +24,19 @@ def _get_url() -> str:
     return url
 
 
+def _get_schema() -> str:
+    schema = os.environ.get("POSTGRES_SCHEMA", "public").strip() or "public"
+    if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]{0,62}", schema):
+        raise ValueError("invalid POSTGRES_SCHEMA")
+    return schema
+
+
 def run_migrations_offline() -> None:
     url = _get_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        version_table_schema=_get_schema() if _get_schema() != "public" else None,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -44,7 +53,15 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        schema = _get_schema()
+        if schema != "public":
+            connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+            connection.execute(text(f'SET search_path TO "{schema}"'))
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            version_table_schema=schema if schema != "public" else None,
+        )
         with context.begin_transaction():
             context.run_migrations()
 

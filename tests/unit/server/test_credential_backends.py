@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import stat
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,11 +12,15 @@ import pytest
 from anyagent.protocol.credential_vault import CredentialScope
 from anyagent.protocol.tool_runtime import AuthRef
 from anyagent.server.security.credential_backends import (
+    DatabaseBackend,
+    DatabaseBackendConfig,
     EnvBackend,
     FileBackend,
     InfisicalBackend,
     InfisicalBackendConfig,
     ReadOnlyCredentialStoreError,
+    VaultBackend,
+    VaultBackendConfig,
 )
 from anyagent.server.security.credential_runtime import (
     CredentialRuntimeConfig,
@@ -73,6 +78,47 @@ class _FakeClient:
     def __init__(self, *, host: str, cache_ttl: int) -> None:
         self.auth = SimpleNamespace(universal_auth=_FakeUniversalAuth())
         self.secrets = _FakeSecrets()
+
+
+class _FakeVaultResponse:
+    def __init__(self, status_code: int, payload: dict | None = None) -> None:
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.content = b"{}" if payload is not None else b""
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise RuntimeError(f"vault http {self.status_code}")
+
+    def json(self) -> dict:
+        return dict(self._payload)
+
+
+class _FakeVaultClient:
+    def __init__(self) -> None:
+        self.data: dict[str, dict] = {}
+
+    async def request(self, method: str, url: str, *, headers: dict, json: dict | None = None) -> _FakeVaultResponse:
+        if method == "POST":
+            self.data[url] = dict(json or {})
+            return _FakeVaultResponse(204)
+        if method == "GET":
+            if url not in self.data:
+                return _FakeVaultResponse(404)
+            return _FakeVaultResponse(200, {"data": self.data[url]})
+        if method == "DELETE":
+            self.data.pop(url, None)
+            return _FakeVaultResponse(204)
+        if method == "LIST":
+            prefix = url.replace("/metadata/", "/data/").rstrip("/") + "/"
+            keys = set()
+            for data_url in self.data:
+                if not data_url.startswith(prefix):
+                    continue
+                rest = data_url[len(prefix) :]
+                keys.add(rest.split("/", 1)[0] + ("/" if "/" in rest else ""))
+            return _FakeVaultResponse(200, {"data": {"keys": sorted(keys)}})
+        raise AssertionError(method)
 
 
 def test_env_backend_prefers_scoped_metadata_env_then_memory() -> None:
@@ -139,6 +185,54 @@ def test_file_backend_set_list_resolve_delete(tmp_path: Path) -> None:
         assert agent_refs[0]["scope"] == {"level": "agent", "agent_id": "main"}
         assert await backend.delete("cred_api") is True
         assert await backend.resolve(AuthRef(kind="bearer_token", ref="cred_api"), scope_context={"agent_id": "main"}) is None
+
+    asyncio.run(_run())
+
+
+def test_file_backend_supports_session_scope_and_expiration(tmp_path: Path) -> None:
+    async def _run() -> None:
+        backend = FileBackend(root=tmp_path / "credentials")
+        await backend.set(
+            credential_id="cred_api",
+            kind="bearer_token",
+            value="global-token",
+            scope=CredentialScope(level="global"),
+        )
+        await backend.set(
+            credential_id="cred_api",
+            kind="bearer_token",
+            value="session-token",
+            scope=CredentialScope(level="session", agent_id="main", session_key="thread-1"),
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            rotate_before=datetime.now(timezone.utc) + timedelta(minutes=1),
+        )
+        await backend.set(
+            credential_id="expired_api",
+            kind="bearer_token",
+            value="expired-token",
+            scope=CredentialScope(level="session", agent_id="main", session_key="thread-1"),
+            expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        )
+
+        scoped = await backend.resolve(
+            AuthRef(kind="bearer_token", ref="cred_api"),
+            scope_context={"agent_id": "main", "session_key": "thread-1"},
+        )
+        fallback = await backend.resolve(
+            AuthRef(kind="bearer_token", ref="cred_api"),
+            scope_context={"agent_id": "main", "session_key": "thread-2"},
+        )
+        expired = await backend.resolve(
+            AuthRef(kind="bearer_token", ref="expired_api"),
+            scope_context={"agent_id": "main", "session_key": "thread-1"},
+        )
+        refs = await backend.list_refs(CredentialScope(level="session", agent_id="main", session_key="thread-1"))
+
+        assert scoped == "session-token"
+        assert fallback == "global-token"
+        assert expired is None
+        assert {ref["credential_id"] for ref in refs} == {"cred_api", "expired_api"}
+        assert refs[0]["scope"]["level"] == "session"
 
     asyncio.run(_run())
 
@@ -301,3 +395,45 @@ def test_infisical_backend_flat_layout_resolves_secret_key_at_root(monkeypatch: 
         ]
 
     asyncio.run(_run())
+
+
+def test_vault_backend_set_resolve_list_and_delete() -> None:
+    async def _run() -> None:
+        client = _FakeVaultClient()
+        backend = VaultBackend(
+            config=VaultBackendConfig(base_url="https://vault.test", token="vault-token", root_path="anyagent/credentials"),
+            client=client,
+        )
+        scope = CredentialScope(level="session", agent_id="main", session_key="thread-1")
+        await backend.set(
+            credential_id="cred_api",
+            kind="bearer_token",
+            value="session-token",
+            scope=scope,
+            metadata={"provider": "test"},
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+
+        resolved = await backend.resolve(
+            AuthRef(kind="bearer_token", ref="cred_api"),
+            scope_context={"agent_id": "main", "session_key": "thread-1"},
+        )
+        refs = await backend.list_refs(scope)
+        deleted = await backend.delete("cred_api")
+        after_delete = await backend.resolve(
+            AuthRef(kind="bearer_token", ref="cred_api"),
+            scope_context={"agent_id": "main", "session_key": "thread-1"},
+        )
+
+        assert resolved == "session-token"
+        assert refs[0]["credential_id"] == "cred_api"
+        assert refs[0]["scope"] == {"level": "session", "agent_id": "main", "session_key": "thread-1"}
+        assert deleted is True
+        assert after_delete is None
+
+    asyncio.run(_run())
+
+
+def test_database_backend_requires_encryption_key() -> None:
+    with pytest.raises(RuntimeError, match="CREDENTIAL_ENCRYPTION_KEY"):
+        DatabaseBackend(config=DatabaseBackendConfig(postgres_dsn="postgresql://user:pass@localhost/db", encryption_key=""))

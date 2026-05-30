@@ -1,22 +1,30 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 
 class CredentialScope(BaseModel):
-    """Declares where a credential is allowed to be used (v1: global/agent)."""
+    """Declares where a credential is allowed to be used."""
 
-    level: Literal["global", "agent"] = Field(description="v1 only supports global/agent")
+    level: Literal["global", "agent", "session"] = Field(description="Credential visibility level")
     agent_id: str | None = Field(default=None, description="Required when level=agent")
+    session_key: str | None = Field(default=None, description="Required when level=session")
 
     @model_validator(mode="after")
-    def _validate_agent_scope(self) -> "CredentialScope":
+    def _validate_scope(self) -> "CredentialScope":
         if self.level == "agent" and not self.agent_id:
             raise ValueError("agent_id is required when scope.level=agent")
-        if self.level != "agent" and self.agent_id is not None:
-            raise ValueError("agent_id must be null unless scope.level=agent")
+        if self.level == "session" and not self.session_key:
+            raise ValueError("session_key is required when scope.level=session")
+        if self.level == "global" and (self.agent_id is not None or self.session_key is not None):
+            raise ValueError("agent_id and session_key must be null when scope.level=global")
+        if self.level == "agent" and self.session_key is not None:
+            raise ValueError("session_key must be null unless scope.level=session")
+        if self.level == "session" and self.agent_id is None:
+            raise ValueError("agent_id is required when scope.level=session")
         return self
 
 
@@ -28,6 +36,14 @@ class AdminCredentialSetRequest(BaseModel):
     value: str
     scope: CredentialScope
     metadata: dict[str, Any] = Field(default_factory=dict)
+    expires_at: datetime | None = Field(default=None, description="UTC expiration time; expired credentials are not resolved")
+    rotate_before: datetime | None = Field(default=None, description="UTC time at which operators should rotate the credential")
+
+    @model_validator(mode="after")
+    def _validate_lifecycle(self) -> "AdminCredentialSetRequest":
+        if self.expires_at is not None and self.rotate_before is not None and self.rotate_before > self.expires_at:
+            raise ValueError("rotate_before must be before or equal to expires_at")
+        return self
 
 
 class AdminCredentialRef(BaseModel):
@@ -37,6 +53,8 @@ class AdminCredentialRef(BaseModel):
     kind: str
     scope: CredentialScope
     metadata: dict[str, Any] = Field(default_factory=dict)
+    expires_at: datetime | None = None
+    rotate_before: datetime | None = None
 
 
 class AdminCredentialListResponse(BaseModel):

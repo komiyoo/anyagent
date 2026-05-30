@@ -52,6 +52,9 @@ __all__ = [
     "InMemoryThreadStore",
     "MultiAgentLimitsResolved",
     "MultiAgentManager",
+    "MultiAgentQuota",
+    "MultiAgentQuotaExceeded",
+    "MultiAgentQuotaSpec",
     "ResumeAgentResult",
     "SubmissionRecord",
     "SubAgentExecutor",
@@ -137,3 +140,4 @@ from .multiagent import (
     task_tool_schema,
     wait_tool_schema,
 )
+from .multiagent_quota import MultiAgentQuota, MultiAgentQuotaExceeded, MultiAgentQuotaSpec
