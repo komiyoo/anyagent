@@ -189,7 +189,13 @@ class _FakeToolRuntimeClient:
 class _FakeMCPManager:
     """Minimal MCP manager stub used for SDK helper smoke."""
 
-    async def list_all_tools(self) -> list[dict[str, Any]]:
+    async def list_all_tools(
+        self,
+        *,
+        session_key: str | None = None,
+        stage_event_sink: Any | None = None,
+        response_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         return [
             {
                 "type": "function",
