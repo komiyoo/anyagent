@@ -1101,6 +1101,7 @@ export type AnyAgentFunctionToolParam = {
   "parameters"?: Record<string, unknown>;
   "strict"?: boolean;
   "type"?: "function";
+  "x-anyagent-cli"?: Record<string, unknown> | null;
   "x-anyagent-kind"?: "command" | "mcp" | null;
 };
 

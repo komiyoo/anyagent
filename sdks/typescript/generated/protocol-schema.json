@@ -7386,6 +7386,19 @@
               "title": "Type",
               "type": "string"
             },
+            "x-anyagent-cli": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "X-Anyagent-Cli"
+            },
             "x-anyagent-kind": {
               "anyOf": [
                 {
@@ -10014,6 +10027,19 @@
               "default": "function",
               "title": "Type",
               "type": "string"
+            },
+            "x-anyagent-cli": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "X-Anyagent-Cli"
             },
             "x-anyagent-kind": {
               "anyOf": [
@@ -16583,6 +16609,19 @@
           "title": "Type",
           "type": "string"
         },
+        "x-anyagent-cli": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "X-Anyagent-Cli"
+        },
         "x-anyagent-kind": {
           "anyOf": [
             {
@@ -22854,6 +22893,19 @@
               "default": "function",
               "title": "Type",
               "type": "string"
+            },
+            "x-anyagent-cli": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "X-Anyagent-Cli"
             },
             "x-anyagent-kind": {
               "anyOf": [
