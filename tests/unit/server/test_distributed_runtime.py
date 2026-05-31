@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from anyagent.server.distributed_runtime import (
+from anyagent.server.runtime.distributed_runtime import (
     DistributedAgentRuntimeConfig,
     close_distributed_agent_runtime,
     create_distributed_agent_runtime,

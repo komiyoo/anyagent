@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from anyagent.agent_packs import load_agent_catalog
 from anyagent.server.app import create_app
-from anyagent.server.internal_skills import create_internal_skills_router
+from anyagent.server.routes.internal_skills import create_internal_skills_router
 from anyagent.skills import load_skills_from_root
 from anyagent.skills.discovery import default_skill_roots
 

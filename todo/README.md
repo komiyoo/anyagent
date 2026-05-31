@@ -56,8 +56,9 @@
 - `todo/multi-runtime.md`：reference conformance suite 与第二 server runtime（`requirements.md#req-5`、`requirements.md#req-7`）
 - `todo/multi-agent.md`：parent/child/root run、quota、replay 语义验收（`requirements.md#req-13`）
 
-**Studio — 独立产品迭代线**
+**Phase 2.5 — Control-Plane Backend（控制面后端 API）**
 
-- `todo/studio.md`：Studio 控制台的架构治理、Chat 体验、表单反馈、Eval/Playground、搜索过滤、版本管理、响应式与可访问性（Phase S1–S8）
+- `todo/studio-backend.md`：Studio/SDK 控制台消费的 server typed API——Sessions 编排、MCP 管理 API、Sandbox/Workspace 运维、Audit 独立查询、Evaluations/Dataset、Prompt 版本管理、Alert/告警（`requirements.md#req-14`）
+- Studio 前端页面设计（页面布局、Chat 体验、视觉规范、响应式与可访问性）是独立前端设计，真源在 `packages/anyagent/studio/DESIGN.md`，不在 todo 主表登记。
 
 已完成或暂无待办的模块不保留空 TODO 文件；历史记录请查看 Git，稳定设计请优先查看 `docs/architecture/`、`docs/security/`、`docs/acceptance/`。

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
-from anyagent.server.events import InMemoryEventStore as InternalInMemoryEventStore
-from anyagent.server.events import prune_expired_replay_events
+from anyagent.server.persistence.events import InMemoryEventStore as InternalInMemoryEventStore
+from anyagent.server.persistence.events import prune_expired_replay_events
 from anyagent.storage.inmemory import InMemoryEventStore as StorageInMemoryEventStore
 from anyagent.storage.settings import StorageSettings
 

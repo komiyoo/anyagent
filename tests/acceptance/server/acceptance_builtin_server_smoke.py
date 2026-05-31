@@ -15,9 +15,10 @@ from openai.types.responses.response_function_tool_call import ResponseFunctionT
 from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_output_text import ResponseOutputText
 
-from anyagent.server.app import _build_created_sse_block, create_app
-from anyagent.server.migrations import apply_storage_migrations
-from anyagent.server.events import (
+from anyagent.server.app import create_app
+from anyagent.server.handlers.sse_blocks import _build_created_sse_block
+from anyagent.server.db.migrations import apply_storage_migrations
+from anyagent.server.persistence.events import (
     CachedEventStore,
     InMemoryEventStore,
     PostgresEventStore,
@@ -25,7 +26,7 @@ from anyagent.server.events import (
     build_redis_event_list_key,
     build_redis_event_meta_key,
 )
-from anyagent.server.lock_service import (
+from anyagent.server.runtime.lock_service import (
     ExternalSessionLockService,
     InMemorySessionLockService,
     RedisSessionLockClient,
@@ -36,7 +37,7 @@ from anyagent.server.lock_service import (
     hold_session_lease,
 )
 from anyagent.protocol.sse import parse_sse_events
-from anyagent.server.run_store import (
+from anyagent.server.persistence.run_store import (
     CachedRunStore,
     InMemoryRunStore,
     PostgresRunStore,
@@ -44,8 +45,8 @@ from anyagent.server.run_store import (
     build_redis_run_store_idempotency_key,
     build_redis_run_store_key,
 )
-from anyagent.server.settings import ServerSettings
-from anyagent.server.session_store import (
+from anyagent.server.config.settings import ServerSettings
+from anyagent.server.persistence.session_store import (
     CachedSessionStore,
     InMemorySessionStore,
     PostgresSessionStore,
@@ -204,7 +205,7 @@ def test_builtin_server_exec_and_events_smoke(tmp_path: Path, monkeypatch) -> No
 
 async def _run_builtin_server_exec_and_events_smoke(*, tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _FakeProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -320,7 +321,7 @@ async def _run_builtin_server_ignores_caller_policy_for_exec(*, tmp_path: Path, 
                 ResponseCompletedEvent(type="response.completed", sequence_number=1, response=resp),
             ], resp
 
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _ObserveProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _ObserveProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -394,8 +395,8 @@ async def _run_builtin_server_nonstream_best_effort_cancel(*, tmp_path: Path, mo
             await asyncio.sleep(30)
             raise AssertionError("provider should be cancelled before completion")
 
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _BlockingProvider())
-    monkeypatch.setattr("anyagent.server.app.uuid.uuid4", lambda: type("_U", (), {"hex": "canceltest"})())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _BlockingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.uuid.uuid4", lambda: type("_U", (), {"hex": "canceltest"})())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -439,7 +440,7 @@ def test_internal_events_stream_replays_and_tails(tmp_path: Path, monkeypatch) -
 
 async def _run_internal_events_stream_replays_and_tails(*, tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _FakeProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -501,7 +502,7 @@ def test_internal_tool_cancel_cancels_active_exec(tmp_path: Path, monkeypatch) -
 
 async def _run_internal_tool_cancel_cancels_active_exec(*, tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _FakeProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -551,7 +552,7 @@ def test_internal_tool_execute_idempotent_after_completion(tmp_path: Path, monke
 
 async def _run_internal_tool_execute_idempotent_after_completion(*, tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _FakeProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -587,7 +588,7 @@ def test_internal_tool_execute_idempotent_while_running(tmp_path: Path, monkeypa
 
 async def _run_internal_tool_execute_idempotent_while_running(*, tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _FakeProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -632,7 +633,7 @@ def test_internal_tools_execute_returns_409_on_toolset_version_mismatch(tmp_path
 
 async def _run_internal_tools_execute_returns_409_on_toolset_version_mismatch(*, tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _FakeProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -668,7 +669,7 @@ def test_agent_loop_retries_once_on_toolset_version_mismatch(tmp_path: Path, mon
 
 async def _run_agent_loop_retries_once_on_toolset_version_mismatch(*, tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _FakeProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -716,7 +717,7 @@ def test_manifest_cache_hits_within_ttl(tmp_path: Path, monkeypatch) -> None:
 
 async def _run_manifest_cache_hits_within_ttl(*, tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _FakeProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -790,7 +791,7 @@ async def _run_nonstream_idempotency_returns_cached_final_response(*, tmp_path: 
             ], resp
 
     provider = _SimpleFinalProvider()
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: provider)
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: provider)
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -815,7 +816,7 @@ def test_stream_idempotency_replays_persisted_events(tmp_path: Path, monkeypatch
 
 async def _run_stream_idempotency_replays_persisted_events(*, tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _FakeProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -883,7 +884,7 @@ async def _run_session_runtime_config_reused_across_requests(*, tmp_path: Path, 
                 ResponseCompletedEvent(type="response.completed", sequence_number=1, response=resp),
             ], resp
 
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -918,8 +919,8 @@ async def _run_admin_storage_health_reports_backends(*, tmp_path: Path, monkeypa
     monkeypatch.setenv("POSTGRES_DSN", "postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent")
     monkeypatch.setenv("REDIS_DSN", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("STORAGE_MODE", "external")
-    monkeypatch.setattr("anyagent.server.app._check_postgres_connection", lambda *_args, **_kwargs: asyncio.sleep(0, result=True))
-    monkeypatch.setattr("anyagent.server.app._check_redis_connection", lambda *_args, **_kwargs: asyncio.sleep(0, result=True))
+    monkeypatch.setattr("anyagent.server.handlers.storage_health._check_postgres_connection", lambda *_args, **_kwargs: asyncio.sleep(0, result=True))
+    monkeypatch.setattr("anyagent.server.handlers.storage_health._check_redis_connection", lambda *_args, **_kwargs: asyncio.sleep(0, result=True))
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -1041,7 +1042,7 @@ async def _run_session_previous_response_id_injected_from_snapshot(*, tmp_path: 
                 ResponseCompletedEvent(type="response.completed", sequence_number=1, response=resp),
             ], resp
 
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -1812,7 +1813,7 @@ async def _run_session_redis_lease_active_during_inflight_request_live(
     monkeypatch.setenv("SESSION_LOCK_BACKEND", "redis")
     monkeypatch.setenv("REDIS_DSN", redis_dsn)
     monkeypatch.setenv("REDIS_NAMESPACE", namespace)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app = create_app(
         workspace_dir=tmp_path,
@@ -1901,7 +1902,7 @@ async def _run_session_redis_session_store_roundtrip_live(
 
     monkeypatch.setenv("REDIS_DSN", redis_dsn)
     monkeypatch.setenv("REDIS_NAMESPACE", namespace)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app = create_app(
         workspace_dir=tmp_path,
@@ -1998,7 +1999,7 @@ async def _run_session_cached_store_pg_primary_redis_hot_roundtrip_live(
     monkeypatch.setenv("REDIS_DSN", redis_dsn)
     _prepare_live_postgres_schema(monkeypatch=monkeypatch, postgres_dsn=postgres_dsn)
     monkeypatch.setenv("REDIS_NAMESPACE", namespace)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app1 = create_app(
         workspace_dir=tmp_path,
@@ -2123,7 +2124,7 @@ async def _run_pg_redis_session_run_event_replay_contract_live(
     monkeypatch.setenv("REDIS_DSN", redis_dsn)
     _prepare_live_postgres_schema(monkeypatch=monkeypatch, postgres_dsn=postgres_dsn)
     monkeypatch.setenv("REDIS_NAMESPACE", namespace)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app1 = create_app(
         workspace_dir=tmp_path,
@@ -2253,7 +2254,7 @@ async def _run_event_store_redis_roundtrip_live(
     if postgres_dsn and postgres_dsn.strip():
         _prepare_live_postgres_schema(monkeypatch=monkeypatch, postgres_dsn=postgres_dsn.strip())
     monkeypatch.setenv("REDIS_NAMESPACE", namespace)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app1 = create_app(
         workspace_dir=tmp_path,
@@ -2350,7 +2351,7 @@ async def _run_redis_store_ttl_policy_live(
 
     monkeypatch.setenv("REDIS_DSN", redis_dsn)
     monkeypatch.setenv("REDIS_NAMESPACE", namespace)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app = create_app(
         workspace_dir=tmp_path,
@@ -2454,7 +2455,7 @@ async def _run_run_store_redis_idempotency_roundtrip_live(
     if postgres_dsn and postgres_dsn.strip():
         _prepare_live_postgres_schema(monkeypatch=monkeypatch, postgres_dsn=postgres_dsn.strip())
     monkeypatch.setenv("REDIS_NAMESPACE", namespace)
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app1 = create_app(
         workspace_dir=tmp_path,
@@ -2543,7 +2544,7 @@ async def _run_session_fallback_transcript_items_used_when_last_response_id_miss
                 ResponseCompletedEvent(type="response.completed", sequence_number=1, response=resp),
             ], resp
 
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -2644,7 +2645,7 @@ async def _run_session_lease_active_during_inflight_request(*, tmp_path: Path, m
                 ResponseCompletedEvent(type="response.completed", sequence_number=1, response=resp),
             ], resp
 
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",
@@ -2716,7 +2717,7 @@ async def _run_session_concurrent_requests_are_serialized(*, tmp_path: Path, mon
                 ResponseCompletedEvent(type="response.completed", sequence_number=1, response=resp),
             ], resp
 
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: _RecordingProvider())
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
     app = create_app(
         workspace_dir=tmp_path,
         api_key="user-key",

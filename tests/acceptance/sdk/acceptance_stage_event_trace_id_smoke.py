@@ -17,7 +17,7 @@ from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_output_text import ResponseOutputText
 
 from anyagent import AnyAgent
-import anyagent.server.app as server_app
+import anyagent.server.routes.responses as server_app
 from anyagent.server.app import create_app
 
 

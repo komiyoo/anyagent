@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from anyagent.observability import ObservabilityEmitter, ObservabilitySink
 from anyagent.protocol.observability import NormalizedTelemetryEvent, ObservabilityEvent
-from anyagent.server.telemetry_store import PostgresTelemetryEventStore, _telemetry_event_from_row, _telemetry_row
+from anyagent.server.persistence.telemetry_store import PostgresTelemetryEventStore, _telemetry_event_from_row, _telemetry_row
 
 
 class _MemorySink(ObservabilitySink):

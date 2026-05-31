@@ -35,12 +35,15 @@ req: ["requirements.md#req-4", "requirements.md#req-9"]
 | `client.openai` / `client.async_openai` | OpenAI official SDK `responses.*` | `/v1/responses` | OpenAI SDK models |
 | `client.responses` | `retrieve()` / `cancel()` | `/v1/responses/{id}` | dict / OpenAI-compatible payload |
 | `client.events` | `list()` / `list_typed()` / `latest_prompt_context()` / `replay_summary()` / `stream_typed()` | `/internal/events/list`、`/internal/events/stream` | `InternalEventsListResponse`、`StageEvent`、`InternalEventsReplaySummary` |
-| `client.observability` | `summary()` / `runs()` / `timeline()` / `metrics()` / `tools()` / `errors()` / `trace()` | `/internal/observability/*` | `InternalObservability*` models |
+| `client.sessions` | `list()` / `get()` | `/internal/sessions`、`/internal/sessions/{session_key}` | `InternalSessionsListResponse`、`InternalSessionDetailResponse` |
+| `client.evaluations` | `list_datasets()` / `upsert_dataset()` / `get_dataset()` / `delete_dataset()` / `run()` / `list_runs()` / `get_run()` | `/internal/evaluations/*` | `EvalDataset*`、`EvalRun*` models |
+| `client.observability` | `summary()` / `runs()` / `timeline()` / `metrics()` / `tools()` / `errors()` / `trace()` / `alerts()` | `/internal/observability/*` | `InternalObservability*` models, `AlertEventsResponse` |
+| `client.audit` | `events()` | `/internal/audit/events` | `InternalAuditEventsResponse` |
 | `client.agents` | `list()` / `get()` | `/internal/agents` | `InternalAgentsListResponse`、`InternalAgentDetailResponse` |
 | `client.skills` | `list()` | `/internal/skills/list` | `InternalSkillsListResponse` |
 | `client.tools` | `catalog()` / `explain()` | `/internal/tools/catalog` + SDK-side composition | `InternalToolCatalogResponse`、`ToolVisibilityExplanation` |
-| `client.prompts` | `preview()` / `example_run_bundle()` / `example_scenarios()` | `/internal/prompt/bundle` or local typed examples | `InternalPromptBundlePreviewResponse`、`PromptRunBundleExampleResponse` |
-| `client.admin` | storage, plugins, credentials, workspace files, agent config, skill import/install/update, tool catalog | `/admin/*` | `Admin*` models and refs |
+| `client.prompts` | `preview()` / `list_versions()` / `create_version()` / `get_version()` / `diff_versions()` / `restore_version()` / `example_run_bundle()` / `example_scenarios()` | `/internal/prompt/*` or local typed examples | `InternalPromptBundlePreviewResponse`、`PromptVersion*`、`PromptRunBundleExampleResponse` |
+| `client.admin` | storage, plugins, credentials, sandbox/workspace list/snapshots/reclaim, workspace files, agent config, MCP server list/toggle/test, skill import/install/update, tool catalog | `/admin/*` | `Admin*` models and refs |
 | `client.health()` | health check | `/healthz` | `HealthResponse` |
 
 ## 3. Public Model Facade

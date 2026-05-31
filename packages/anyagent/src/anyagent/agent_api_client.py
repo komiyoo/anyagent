@@ -10,7 +10,10 @@ anyagent Client SDK — 资源型命名空间入口。
 - ``client.agents``    — Agent catalog / detail（/internal/agents）
 - ``client.tools``     — Tool catalog / effective manifest discovery
 - ``client.events``    — 内部观测 / replay（/internal/events/*）
+- ``client.sessions``  — Session 编排查询（/internal/sessions）
+- ``client.evaluations`` — Dataset / evaluation run 后端（/internal/evaluations/*）
 - ``client.observability`` — typed telemetry query helpers（/internal/observability/*）
+- ``client.audit``     — 独立审计查询（/internal/audit/*）
 - ``client.skills``    — 技能发现（/internal/skills/list）
 - ``client.prompts``   — prompt explain / preview（preview + local example bundle）
 - ``client.admin``     — 管理面 helpers（如 `/admin/storage/health`）
@@ -27,6 +30,7 @@ from pydantic import AnyHttpUrl, BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from anyagent.types import (
+    AlertEventsResponse,
     AdminAgentConfigUpdateRequest,
     AdminAgentCreateRequest,
     AdminAgentCreateResponse,
@@ -35,6 +39,13 @@ from anyagent.types import (
     AdminCredentialListResponse,
     AdminCredentialRef,
     AdminCredentialSetRequest,
+    AdminMcpServerEnableRequest,
+    AdminMcpServerEnableResponse,
+    AdminMcpServersResponse,
+    AdminMcpServerTestResponse,
+    AdminSandboxWorkspaceListResponse,
+    AdminSandboxWorkspaceReclaimResponse,
+    AdminSandboxWorkspaceSnapshotsResponse,
     AdminSkillImportRequest,
     AdminSkillImportResponse,
     AdminSkillRegistryInstallRequest,
@@ -47,9 +58,16 @@ from anyagent.types import (
     AnyAgentFunctionToolParam,
     AnyAgentPromptContextEvent,
     AnyAgentResponseStatusPayload,
+    EvalDatasetResponse,
+    EvalDatasetsResponse,
+    EvalDatasetUpsertRequest,
+    EvalRunRequest,
+    EvalRunResponse,
+    EvalRunsResponse,
     HealthResponse,
     InternalAgentDetailResponse,
     InternalAgentsListResponse,
+    InternalAuditEventsResponse,
     InternalEventsListResponse,
     InternalEventsReplaySummary,
     InternalObservabilityErrorsResponse,
@@ -63,11 +81,18 @@ from anyagent.types import (
     InternalResponseModelRequestResponse,
     InternalResponsePromptContextResponse,
     InternalResponseToolExecutionsResponse,
+    InternalSessionDetailResponse,
+    InternalSessionsListResponse,
     InternalToolCatalogResponse,
     PromptRunBundleExampleResponse,
     PromptRunBundleExampleOptions,
     PromptRunBundleScenario,
     PromptRunBundleScenarioDescriptor,
+    PromptVersionCreateRequest,
+    PromptVersionDiffResponse,
+    PromptVersionResponse,
+    PromptVersionRestoreResponse,
+    PromptVersionsResponse,
     SSEBlock,
     StageEvent,
     InternalSkillsListResponse,
@@ -140,14 +165,14 @@ class _Namespace:
         r.raise_for_status()
         return r.json()
 
-    async def _post(self, path: str, *, timeout: float = 10.0) -> Any:
+    async def _post(self, path: str, *, params: dict[str, Any] | None = None, timeout: float = 10.0) -> Any:
         """Issue POST (no body) and return parsed JSON."""
         url = f"{self._base_url}{path}"
         if self._http is None:
             async with httpx.AsyncClient(timeout=timeout) as c:
-                r = await c.post(url, headers=self._headers())
+                r = await c.post(url, headers=self._headers(), params=params)
         else:
-            r = await self._http.post(url, headers=self._headers(), timeout=timeout)
+            r = await self._http.post(url, headers=self._headers(), params=params, timeout=timeout)
         r.raise_for_status()
         return r.json()
 
@@ -561,6 +586,137 @@ class Observability(_Namespace):
         data = await self._get(f"/internal/observability/traces/{trace_id}", params={"limit": int(limit)})
         return _validate_response(InternalObservabilityTraceResponse, data)
 
+    async def alerts(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        trace_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 100,
+    ) -> AlertEventsResponse:
+        data = await self._get(
+            "/internal/observability/alerts",
+            params=_observability_params(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                trace_id=trace_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=limit,
+            ),
+        )
+        return _validate_response(AlertEventsResponse, data)
+
+
+class Sessions(_Namespace):
+    """Session orchestration query helpers (``/internal/sessions``)."""
+
+    async def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        cursor_updated_before_ms: int | None = None,
+        limit: int = 100,
+    ) -> InternalSessionsListResponse:
+        params: dict[str, Any] = {"limit": int(limit)}
+        if agent_id:
+            params["agent_id"] = agent_id
+        if session_key:
+            params["session_key"] = session_key
+        if cursor_updated_before_ms is not None:
+            params["cursor_updated_before_ms"] = int(cursor_updated_before_ms)
+        data = await self._get("/internal/sessions", params=params)
+        return _validate_response(InternalSessionsListResponse, data)
+
+    async def get(
+        self,
+        session_key: str,
+        *,
+        agent_id: str | None = None,
+        limit: int = 100,
+    ) -> InternalSessionDetailResponse:
+        params: dict[str, Any] = {"limit": int(limit)}
+        if agent_id:
+            params["agent_id"] = agent_id
+        data = await self._get(f"/internal/sessions/{session_key}", params=params)
+        return _validate_response(InternalSessionDetailResponse, data)
+
+
+class Evaluations(_Namespace):
+    """Dataset and evaluation run helpers (``/internal/evaluations/*``)."""
+
+    async def list_datasets(self, *, agent_id: str | None = None) -> EvalDatasetsResponse:
+        params = {"agent_id": agent_id} if agent_id else None
+        data = await self._get("/internal/evaluations/datasets", params=params)
+        return _validate_response(EvalDatasetsResponse, data)
+
+    async def upsert_dataset(self, request: EvalDatasetUpsertRequest | dict[str, Any]) -> EvalDatasetResponse:
+        model = _validate_request(EvalDatasetUpsertRequest, request)
+        data = await self._post_json("/internal/evaluations/datasets", json_body=model.model_dump(exclude_none=True))
+        return _validate_response(EvalDatasetResponse, data)
+
+    async def get_dataset(self, dataset_id: str) -> EvalDatasetResponse:
+        data = await self._get(f"/internal/evaluations/datasets/{dataset_id}")
+        return _validate_response(EvalDatasetResponse, data)
+
+    async def delete_dataset(self, dataset_id: str) -> dict[str, Any]:
+        data = await self._delete(f"/internal/evaluations/datasets/{dataset_id}")
+        return dict(data or {})
+
+    async def run(self, request: EvalRunRequest | dict[str, Any]) -> EvalRunResponse:
+        model = _validate_request(EvalRunRequest, request)
+        data = await self._post_json("/internal/evaluations/run", json_body=model.model_dump(exclude_none=True))
+        return _validate_response(EvalRunResponse, data)
+
+    async def list_runs(self, *, dataset_id: str | None = None, limit: int = 100) -> EvalRunsResponse:
+        params = {"limit": int(limit)}
+        if dataset_id:
+            params["dataset_id"] = dataset_id
+        data = await self._get("/internal/evaluations/runs", params=params)
+        return _validate_response(EvalRunsResponse, data)
+
+    async def get_run(self, eval_run_id: str) -> EvalRunResponse:
+        data = await self._get(f"/internal/evaluations/runs/{eval_run_id}")
+        return _validate_response(EvalRunResponse, data)
+
+
+class Audit(_Namespace):
+    """Audit query helpers (``/internal/audit/*``)."""
+
+    async def events(
+        self,
+        *,
+        credential_id: str | None = None,
+        agent_id: str | None = None,
+        session_key: str | None = None,
+        response_id: str | None = None,
+        trace_id: str | None = None,
+        created_after_ms: int | None = None,
+        created_before_ms: int | None = None,
+        limit: int = 100,
+    ) -> InternalAuditEventsResponse:
+        params: dict[str, Any] = {"limit": int(limit)}
+        if credential_id:
+            params["credential_id"] = credential_id
+        params.update(
+            _observability_params(
+                agent_id=agent_id,
+                session_key=session_key,
+                response_id=response_id,
+                trace_id=trace_id,
+                created_after_ms=created_after_ms,
+                created_before_ms=created_before_ms,
+                limit=None,
+            )
+        )
+        data = await self._get("/internal/audit/events", params=params)
+        return _validate_response(InternalAuditEventsResponse, data)
+
 
 def _observability_params(
     *,
@@ -796,6 +952,30 @@ class Prompts(_Namespace):
         )
         return _validate_response(InternalPromptBundlePreviewResponse, data)
 
+    async def list_versions(self, agent_id: str, *, limit: int = 100) -> PromptVersionsResponse:
+        data = await self._get("/internal/prompt/versions", params={"agent_id": agent_id, "limit": int(limit)})
+        return _validate_response(PromptVersionsResponse, data)
+
+    async def create_version(self, request: PromptVersionCreateRequest | dict[str, Any]) -> PromptVersionResponse:
+        model = _validate_request(PromptVersionCreateRequest, request)
+        data = await self._post_json("/internal/prompt/versions", json_body=model.model_dump(exclude_none=True))
+        return _validate_response(PromptVersionResponse, data)
+
+    async def get_version(self, agent_id: str, version_id: str) -> PromptVersionResponse:
+        data = await self._get(f"/internal/prompt/versions/{version_id}", params={"agent_id": agent_id})
+        return _validate_response(PromptVersionResponse, data)
+
+    async def diff_versions(self, agent_id: str, from_version_id: str, to_version_id: str) -> PromptVersionDiffResponse:
+        data = await self._get(
+            "/internal/prompt/versions/diff",
+            params={"agent_id": agent_id, "from_version_id": from_version_id, "to_version_id": to_version_id},
+        )
+        return _validate_response(PromptVersionDiffResponse, data)
+
+    async def restore_version(self, agent_id: str, version_id: str) -> PromptVersionRestoreResponse:
+        data = await self._post(f"/internal/prompt/versions/{version_id}/restore", params={"agent_id": agent_id})
+        return _validate_response(PromptVersionRestoreResponse, data)
+
     def example_run_bundle(
         self,
         *,
@@ -888,6 +1068,18 @@ class Admin(_Namespace):
         data = await self._get("/admin/tools/catalog")
         return _validate_response(AdminToolCatalogResponse, data)
 
+    async def list_sandboxes(self) -> AdminSandboxWorkspaceListResponse:
+        data = await self._get("/admin/sandboxes")
+        return _validate_response(AdminSandboxWorkspaceListResponse, data)
+
+    async def list_workspace_snapshots(self, workspace_id: str) -> AdminSandboxWorkspaceSnapshotsResponse:
+        data = await self._get(f"/admin/sandboxes/workspaces/{workspace_id}/snapshots")
+        return _validate_response(AdminSandboxWorkspaceSnapshotsResponse, data)
+
+    async def reclaim_workspace(self, workspace_id: str) -> AdminSandboxWorkspaceReclaimResponse:
+        data = await self._post(f"/admin/sandboxes/workspaces/{workspace_id}/reclaim")
+        return _validate_response(AdminSandboxWorkspaceReclaimResponse, data)
+
     async def plugin_catalog(self) -> PluginCatalogResponse:
         data = await self._get("/admin/plugins/catalog")
         return _validate_response(PluginCatalogResponse, data)
@@ -930,6 +1122,35 @@ class Admin(_Namespace):
             json_body=model.model_dump(exclude_none=True),
         )
         return _validate_response(AdminWorkspaceAgentFileUpdateResponse, data)
+
+    async def list_agent_mcp_servers(self, agent_id: str) -> AdminMcpServersResponse:
+        data = await self._get(f"/admin/workspace/agents/{agent_id}/mcp/servers")
+        return _validate_response(AdminMcpServersResponse, data)
+
+    async def set_agent_mcp_server_enabled(
+        self,
+        agent_id: str,
+        server_label: str,
+        request: AdminMcpServerEnableRequest | dict[str, Any],
+    ) -> AdminMcpServerEnableResponse:
+        model = _validate_request(AdminMcpServerEnableRequest, request)
+        data = await self._put_json(
+            f"/admin/workspace/agents/{agent_id}/mcp/servers/{server_label}/enabled",
+            json_body=model.model_dump(exclude_none=True),
+        )
+        return _validate_response(AdminMcpServerEnableResponse, data)
+
+    async def test_agent_mcp_server(
+        self,
+        agent_id: str,
+        server_label: str,
+        *,
+        session_key: str | None = None,
+    ) -> AdminMcpServerTestResponse:
+        path = f"/admin/workspace/agents/{agent_id}/mcp/servers/{server_label}/test"
+        params = {"session_key": session_key} if session_key else None
+        data = await self._post(path, params=params)
+        return _validate_response(AdminMcpServerTestResponse, data)
 
     async def import_agent_skill(
         self,
@@ -1058,7 +1279,10 @@ class AnyAgent:
         self.agents = Agents(**shared)
         self.tools = Tools(**shared)
         self.events = Events(**shared)
+        self.sessions = Sessions(**shared)
+        self.evaluations = Evaluations(**shared)
         self.observability = Observability(**shared)
+        self.audit = Audit(**shared)
         self.skills = Skills(**shared)
         self.prompts = Prompts(**shared)
         self.admin = Admin(**shared)

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from anyagent.storage import build_storage_capability_matrix
 from anyagent.storage.external import ExternalSqlBackendConfig, resolve_external_sql_backend_config
-from anyagent.server.events import InMemoryEventStore
-from anyagent.server.lock_service import InMemorySessionLockService
-from anyagent.server.run_store import InMemoryRunStore
-from anyagent.server.session_store import InMemorySessionStore
+from anyagent.server.persistence.events import InMemoryEventStore
+from anyagent.server.runtime.lock_service import InMemorySessionLockService
+from anyagent.server.persistence.run_store import InMemoryRunStore
+from anyagent.server.persistence.session_store import InMemorySessionStore
 from anyagent.server.sandbox.workspace import LocalSessionWorkspaceService
-from anyagent.server.storage_backends import build_event_store, build_run_store, build_session_store
+from anyagent.server.persistence.storage_backends import build_event_store, build_run_store, build_session_store
 
 
 def test_build_storage_capability_matrix_reports_reference_inmemory_components() -> None:

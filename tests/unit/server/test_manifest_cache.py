@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import patch
 
-from anyagent.server.manifest_cache import ManifestCache, build_manifest_cache_key, extract_requested_tool_names
+from anyagent.server.persistence.manifest_cache import ManifestCache, build_manifest_cache_key, extract_requested_tool_names
 
 
 def test_build_manifest_cache_key_normalizes_order_and_whitespace() -> None:
@@ -78,7 +78,7 @@ def test_manifest_cache_expires_entries() -> None:
             requested_tool_names=None,
             context={},
         )
-        with patch("anyagent.server.manifest_cache.time.monotonic", side_effect=[100.0, 100.5, 101.5]):
+        with patch("anyagent.server.persistence.manifest_cache.time.monotonic", side_effect=[100.0, 100.5, 101.5]):
             await cache.put(key, ([{"name": "exec"}], 1))
             assert await cache.get(key) == ([{"name": "exec"}], 1)
             assert await cache.get(key) is None

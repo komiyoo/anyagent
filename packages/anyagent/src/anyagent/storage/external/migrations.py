@@ -39,7 +39,7 @@ def default_postgres_migrations_dir() -> Path:
 def _apply_postgres_migrations(*, config: ExternalSqlBackendConfig) -> None:
     if config.postgres_dsn is None:
         raise RuntimeError("POSTGRES_DSN is required to run PostgreSQL migrations")
-    from anyagent.server.migrations import apply_storage_migrations
+    from anyagent.server.db.migrations import apply_storage_migrations
 
     apply_storage_migrations(postgres_dsn=str(config.postgres_dsn), postgres_schema=_validate_schema_name(config.schema_name or "public"))
 

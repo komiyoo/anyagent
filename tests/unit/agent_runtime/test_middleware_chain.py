@@ -19,7 +19,7 @@ from anyagent.agent_runtime.middleware import (
     MiddlewareContext,
 )
 from anyagent.agent_runtime.middlewares import ContextCompactionMiddleware, LoopDetectionMiddleware
-from anyagent.server.app import _build_agent_middleware_chain
+from anyagent.server.handlers.middleware import _build_agent_middleware_chain
 
 
 def test_middleware_chain_orders_hooks_and_accumulates_results() -> None:

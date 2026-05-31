@@ -132,6 +132,35 @@ class AdminSandboxWorkspaceListResponse(BaseModel):
     workspaces: list[AdminSandboxWorkspaceRef] = Field(default_factory=list)
 
 
+class AdminSandboxWorkspaceSnapshotItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_id: str
+    session_partition_key: str
+    generation: int = Field(ge=0)
+    snapshot_uri: str
+    snapshot_digest: str | None = None
+    snapshot_bytes: int | None = Field(default=None, ge=0)
+    created_at_ms: int | None = Field(default=None, ge=0)
+
+
+class AdminSandboxWorkspaceSnapshotsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_id: str
+    session_partition_key: str
+    snapshots: list[AdminSandboxWorkspaceSnapshotItem] = Field(default_factory=list)
+
+
+class AdminSandboxWorkspaceReclaimResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool
+    workspace_id: str
+    session_partition_key: str
+    reclaimed: bool
+
+
 class AdminSandboxWorkspaceHealthResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from anyagent.server.app import create_app
-from anyagent.server.request_validation import (
+from anyagent.server.config.request_validation import (
     ResponsesRequestValidationError,
     ensure_metadata_object,
     ensure_request_body_object,

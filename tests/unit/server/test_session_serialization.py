@@ -7,7 +7,7 @@ from typing import Any
 from fastapi.responses import JSONResponse
 
 from anyagent.gateway.sequencer import KeyedSequencer
-from anyagent.server.session_serialization import (
+from anyagent.server.responses.session_serialization import (
     DistributedSessionSerializationConfig,
     run_distributed_response_with_session_serialization,
     run_with_storage_session_lease,

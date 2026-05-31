@@ -502,3 +502,57 @@ Multi-Agent 设计已经模块化到：
 ### 13.8 内部服务：AgentControl
 
 见 [docs/architecture/multi-agent/multi-agent-collaboration.md](docs/architecture/multi-agent/multi-agent-collaboration.md#agentcontrol)。
+
+<a id="req-14"></a>
+
+## 14. 控制面后端 API（Control-Plane Backend）
+
+Studio 与 SDK 控制台消费的 server typed API。当前 `/v1/responses`、agent catalog、tool/skill 治理、单 run observability 与三类 replay 已落地（见 §4、§5、§12、§13）。本章只登记**尚未实现**的控制面后端能力：运营态查询面（Sessions）、配置面破洞（MCP 管理 API）、运维面盲区（Sandbox/Workspace ops）、合规查询面（Audit）、质量闭环后端（Evaluations/Dataset）、Prompt 版本管理与主动监控（Alert）。
+
+口径约束：
+
+- 这些都是 `/internal/*` 或 `/admin/*` typed endpoints，遵循 §0.3 协议治理——先回 `anyagent.protocol.*` 定义 wire model，再落 server handler 与 Studio 消费。
+- 「查询面缺失」类（14.1/14.2/14.3/14.4）底层事件/数据已在 event store / telemetry / lifecycle event 中产生，只缺聚合查询出口；「需要新存储」类（14.5/14.6）与「需要新运行时机制」类（14.7）需要新增持久化模型或后台评估器。
+- 长期设计口径落到 [docs/architecture/control-plane/studio-control-plane-and-observability.md](docs/architecture/control-plane/studio-control-plane-and-observability.md)，任务清单见 [todo/studio-backend.md](todo/studio-backend.md)。
+
+<a id="req-14-1"></a>
+
+### 14.1 Sessions 编排查询面
+
+按 `session_key` / `session_partition_key` 列会话、看会话级聚合与一个会话内的多 run 串联。当前 Studio Sessions 页只能从 `/internal/observability/runs` 反推，缺 `GET /internal/sessions`（列表+过滤）与 `GET /internal/sessions/{key}`（会话详情+run 列表）。关联一等公民键见 `AGENTS.md §8`。
+
+<a id="req-14-2"></a>
+
+### 14.2 MCP 管理 API
+
+结构化的 MCP server 列表、单 server enable/disable、连接测试与运行态查询。当前只能 `PUT /admin/workspace/agents/{id}/files/mcp_json` 整文件回写，`anyagent.mcp.server.{starting,ready,failed}` lifecycle event 已发但无查询面。需要 `GET /admin/workspace/agents/{id}/mcp/servers`（含 enablement 摘要）、连接测试端点与运行态查询。
+
+<a id="req-14-3"></a>
+
+### 14.3 Sandbox / Workspace 运维 API
+
+生产运维所需的 sandbox/workspace 可见性与回收能力。`AnyAgentWorkspaceLifecycleEvent` 已覆盖 restore/checkpoint/hibernate，但缺 `GET /admin/sandboxes`（活跃列表）、`GET .../workspaces/{id}/snapshots`（快照列表）与强制回收/reclaim 端点。Sandbox 隔离面口径见 §5.5、[docs/architecture/runtime/sandbox-session-filesystem-design.md](docs/architecture/runtime/sandbox-session-filesystem-design.md)。
+
+<a id="req-14-4"></a>
+
+### 14.4 Audit 独立查询面
+
+合规视角的审计流水查询，与「错误」解耦。当前 audit 数据只能从 `/internal/observability/errors`（`source=audit`）过滤。需要独立端点支持按 `credential_id` / `agent_id` / 时间窗查审计事件。审计语义真源见 §5.13、[docs/security/audit-logging.md](docs/security/audit-logging.md)。
+
+<a id="req-14-5"></a>
+
+### 14.5 Evaluations / Dataset 后端
+
+把真实 run 转成可持久化、可回归、可团队共享的评测资产。当前 Studio Evaluations 页数据全在浏览器 localStorage，server 端零 eval/dataset 端点。需要 dataset 存储（CRUD）、`POST /internal/evaluations/run`（评测执行器）与结果存储/查询。这是 `AGENTS.md §2` 验证闭环支柱在产品层的落点。
+
+<a id="req-14-6"></a>
+
+### 14.6 Prompt 版本管理后端
+
+prompt（AGENTS.md / skill 注入）的版本快照、diff 与回滚。当前只有 `/internal/prompt/bundle`（无状态预览）与单次 rendered prompt replay，缺「版本」概念。需要 prompt 版本快照存储 + `GET .../prompt/versions` + 版本 diff，与 §5.13 replay 互补（replay 逐字还原单次，本节管跨版本演进）。
+
+<a id="req-14-7"></a>
+
+### 14.7 监控告警（Alert）
+
+把被动拉取式 observability 升级为主动监控。`anyagent.agent.loop_warning` / `loop_terminated`（runaway loop）等 stage event 已在发，但后端不存储告警状态、不暴露订阅端点。需要 alert rule 存储 + 后台评估器 + `GET /internal/observability/alerts` + webhook fan-out。监控数据源见 §5.13 与 stage events。

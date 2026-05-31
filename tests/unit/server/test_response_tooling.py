@@ -6,8 +6,8 @@ from typing import Any
 
 from anyagent.agent_packs import AgentPack, AgentSpec
 from anyagent.mcp import MCPManagerRegistry
-from anyagent.server.manifest_cache import ManifestCache
-from anyagent.server.response_tooling import ResponseToolingContextError, prepare_response_tooling_context
+from anyagent.server.persistence.manifest_cache import ManifestCache
+from anyagent.server.responses.response_tooling import ResponseToolingContextError, prepare_response_tooling_context
 
 
 def _pack() -> AgentPack:

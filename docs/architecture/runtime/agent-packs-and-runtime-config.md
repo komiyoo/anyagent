@@ -163,21 +163,21 @@ run 完成后写回新的恢复游标，保证下一次请求可继续承接。
 
 ## Config 热重载与冷/热字段边界
 
-为支持改 agent 配置而无需重启进程，每个 HTTP 请求进入业务路由前都会经 `_config_hot_reload_middleware` 触发一次按需重载检查（`packages/anyagent/src/anyagent/server/app.py:739`）。设计动因是配置即服务下“边解析边消费”，但又要避免每请求全量重载的开销，故以 mtime 轮询做廉价变更检测。
+为支持改 agent 配置而无需重启进程，每个 HTTP 请求进入业务路由前都会经 `_config_hot_reload_middleware` 触发一次按需重载检查（`packages/anyagent/src/anyagent/server/app.py:467`）。设计动因是配置即服务下“边解析边消费”，但又要避免每请求全量重载的开销，故以 mtime 轮询做廉价变更检测。
 
-检测与重载流程（`AppState.refresh_config_if_needed`，`packages/anyagent/src/anyagent/server/app.py:548`）：
+检测与重载流程（`AnyAgentServerApp.refresh_config_if_needed`，`packages/anyagent/src/anyagent/server/app_state.py:98`）：
 
 1. `stat_config_mtimes` 跨四层 stat 每个 `agent.yaml`/`mcp.json` 的 `st_mtime_ns`，得到指纹（`packages/anyagent/src/anyagent/agent_packs.py:190`）。
 2. 指纹与缓存 `config_mtimes` 相等：直接返回，零额外开销。
 3. 指纹变化：取 `config_reload_lock` 后**双检**（再 stat 一次比对），避免并发请求重复重载。
 4. 重载 catalog 后校验“至少一个 exposed agent”，否则报错拒绝该次重载。
 
-冷/热字段边界（`_catalog_has_cold_restart_change`，`packages/anyagent/src/anyagent/server/app.py:311`）：
+冷/热字段边界（`_catalog_has_cold_restart_change`，`packages/anyagent/src/anyagent/server/app_builders.py:38`）：
 
-- **热字段**：`model`/`tools`/`skills`/`middlewares` 等行为字段变化 → 即时换上新 catalog、刷新 models 配置、重置 manifest 缓存、更新 mtime 指纹，对后续请求立即生效（`packages/anyagent/src/anyagent/server/app.py:564`）。
-- **冷字段**：`sandbox`（含 `sandbox.mode`）与 `storage` 这类影响进程级资源装配的字段变化 → **只更新 mtime 指纹并 log warning `restart required`，不替换运行 catalog**（`packages/anyagent/src/anyagent/server/app.py:560`）。
+- **热字段**：`model`/`tools`/`skills`/`middlewares` 等行为字段变化 → 即时换上新 catalog、刷新 models 配置、重置 manifest 缓存、更新 mtime 指纹，对后续请求立即生效（`packages/anyagent/src/anyagent/server/app_state.py:113`）。
+- **冷字段**：`sandbox`（含 `sandbox.mode`）与 `storage` 这类影响进程级资源装配的字段变化 → **只更新 mtime 指纹并 log warning `restart required`，不替换运行 catalog**（`packages/anyagent/src/anyagent/server/app_state.py:109`）。
 
-冷字段与上文 denylist 受管路径一致：这些字段在进程启动时已绑定 SandboxManager/Storage 等资源，热替换会造成运行态与配置态不一致，故强制走重启。更新 mtime 指纹是为了避免每请求重复刷同一条 warning。`AppState.reload_catalog`（`packages/anyagent/src/anyagent/server/app.py:537`）则是 admin 显式触发的全量重载，不区分冷热。
+冷字段与上文 denylist 受管路径一致：这些字段在进程启动时已绑定 SandboxManager/Storage 等资源，热替换会造成运行态与配置态不一致，故强制走重启。更新 mtime 指纹是为了避免每请求重复刷同一条 warning。`AnyAgentServerApp.reload_catalog`（`packages/anyagent/src/anyagent/server/app_state.py:87`）则是 admin 显式触发的全量重载，不区分冷热。
 
 ## MCP 生命周期 Stage Events 与 stdio 会话池
 

@@ -7,12 +7,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from anyagent.protocol.openai_responses import build_minimal_openai_response_json
-from anyagent.server.responses_optional import (
+from anyagent.server.handlers.http_errors import (
     cancelled_response_error_json,
-    create_optional_responses_router,
     optional_response_payload_from_run,
     optional_response_status_from_run,
 )
+from anyagent.server.routes.responses_optional_router import create_optional_responses_router
 from anyagent.storage import stream_external_response_blocks
 from anyagent.storage.inmemory import InMemoryEventStore, InMemoryLeaseLock, InMemoryRunStore, InMemorySessionStore
 from anyagent.storage.runtime import StorageRuntime

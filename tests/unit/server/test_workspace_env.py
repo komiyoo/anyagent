@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from anyagent.server.workspace_env import load_workspace_runtime_environment
+from anyagent.server.runtime.workspace_env import load_workspace_runtime_environment
 
 
 def test_workspace_runtime_env_projects_only_listed_credentials(tmp_path: Path, monkeypatch) -> None:

@@ -70,7 +70,7 @@ async def _run_builtin_server_applies_prompt_envelope_to_provider_request(*, tmp
     _write_workspace(tmp_path)
     provider = _RecordingProvider()
 
-    import anyagent.server.app as app_mod
+    import anyagent.server.routes.responses as app_mod
 
     original = app_mod.get_default_model_provider
     app_mod.get_default_model_provider = lambda: provider

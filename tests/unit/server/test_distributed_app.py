@@ -4,8 +4,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from anyagent.server.distributed_app import create_distributed_agent_app
-from anyagent.server.distributed_runtime import DistributedAgentRuntimeConfig
+from anyagent.server.routes.distributed_app import create_distributed_agent_app
+from anyagent.server.runtime.distributed_runtime import DistributedAgentRuntimeConfig
 from anyagent.storage.inmemory import InMemoryEventStore, InMemoryLeaseLock, InMemoryRunStore, InMemorySessionStore
 from anyagent.storage.runtime import StorageRuntime
 

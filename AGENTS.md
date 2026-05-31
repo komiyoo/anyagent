@@ -76,9 +76,16 @@ packages/anyagent/src/anyagent/
   storage/           # 共享存储模型/契约/replay/runtime、reference external adapters 与运维语义
   plugins/           # Core 侧插件 API/loader/model
   server/            # 内置 Agent Server + 共享服务层 + production runtime shell
+    routes/          # APIRouter 路由（distributed/internal/optional responses 与内置 app 路由）
+    handlers/        # 路由共享 helper（auth、HTTP errors、SSE、persistence、health 等）
+    responses/       # Responses 执行/幂等/流式/会话持久化管线
+    persistence/     # server 内部事件/run/session/telemetry store 与 manifest cache
+    runtime/         # in-process/distributed runtime、session lock、workspace env
+    config/          # server settings 与请求边界解析/校验
+    db/              # built-in server storage migration CLI glue 与 Postgres schema helper
+    plugins/         # server 侧插件 capability matrix
     sandbox/         # Sandbox 后端（SandboxManager + OpenSandbox/External/LocalUnsafe）
     security/        # Credential Vault / Tool Policy
-    migrations.py    # built-in server storage migration CLI glue
   agent_packs.py     # Agent Packs 配置加载
   agent_api_client.py # Client SDK
   cli.py             # CLI 入口

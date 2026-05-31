@@ -422,7 +422,7 @@ async def _run_sdk_admin_skill_update_helpers_match_server(tmp_path: Path, monke
 
         return Completed()
 
-    monkeypatch.setattr("anyagent.server.app.subprocess.run", fake_run)
+    monkeypatch.setattr("anyagent.server.handlers.skill_install.subprocess.run", fake_run)
     app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
     transport = httpx.ASGITransport(app=app)
 

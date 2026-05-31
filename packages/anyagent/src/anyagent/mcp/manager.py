@@ -262,6 +262,14 @@ class MCPServerManager:
         )
         return mcp_call_result_to_output_text(result)
 
+    async def test_server_connection(self, label: str, *, session_key: str | None = None) -> tuple[MCPServer, int]:
+        """Connects one server and returns the server plus its visible tool count."""
+        self._start_idle_check_task()
+        server = await self._acquire_server(label, session_key=session_key)
+        await server.ensure_connected()
+        tools = await server.list_tools()
+        return server, len(tools)
+
     async def cleanup(self) -> None:
         """Stops idle checks and disconnects this manager's owned (non-pooled) servers.
 
@@ -366,3 +374,10 @@ class MCPManagerRegistry:
         for manager in managers:
             await manager.cleanup()
         await self._stdio_pool.cleanup_all()
+
+    async def cleanup_agent(self, agent_id: str) -> None:
+        """Drops one cached manager after its MCP config changes."""
+        async with self._lock:
+            manager = self._managers.pop(agent_id, None)
+        if manager is not None:
+            await manager.cleanup()

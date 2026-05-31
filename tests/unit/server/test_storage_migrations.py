@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from anyagent.server.migrations import list_storage_migrations
+from anyagent.server.db.migrations import list_storage_migrations
 from anyagent.storage.external.migrations import default_postgres_migrations_dir
 
 

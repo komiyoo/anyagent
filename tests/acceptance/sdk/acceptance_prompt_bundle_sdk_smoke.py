@@ -89,7 +89,7 @@ async def _run(tmp_path: Path) -> None:
     _write_workspace(tmp_path)
     provider = _RecordingProvider()
 
-    import anyagent.server.app as app_mod
+    import anyagent.server.routes.responses as app_mod
 
     original = app_mod.get_default_model_provider
     original_manifest = app_mod.resolve_manifest_with_mcp

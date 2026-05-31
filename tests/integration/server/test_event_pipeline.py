@@ -13,8 +13,9 @@ from openai.types.responses.response_created_event import ResponseCreatedEvent
 from anyagent.observability import ObservabilitySink, get_observability_emitter
 from anyagent.protocol.observability import ObservabilityEvent
 from anyagent.protocol.sse import SSEBlockDecoder
-from anyagent.server.app import _append_sse_chunk, _build_external_response_stream, _update_session_snapshot, create_app
-from anyagent.server.session_context import prepare_response_session_context
+from anyagent.server.app import create_app
+from anyagent.server.handlers.persistence import _append_sse_chunk, _build_external_response_stream, _update_session_snapshot
+from anyagent.server.responses.session_context import prepare_response_session_context
 from anyagent.tool_runtime.models import ToolDefinition
 
 
@@ -355,7 +356,7 @@ def test_create_response_reuses_manifest_cache_within_app_boundary() -> None:
 
             runtime.manifest = _manifest  # type: ignore[method-assign]
             try:
-                import anyagent.server.app as server_app_module
+                import anyagent.server.routes.responses as server_app_module
 
                 original_provider_factory = server_app_module.get_default_model_provider
                 server_app_module.get_default_model_provider = lambda: _NoToolProvider()
@@ -385,7 +386,7 @@ def test_create_response_emits_server_observability_lifecycle() -> None:
             emitter = get_observability_emitter()
             emitter.configure([sink])
 
-            import anyagent.server.app as server_app_module
+            import anyagent.server.routes.responses as server_app_module
 
             original_provider_factory = server_app_module.get_default_model_provider
             server_app_module.get_default_model_provider = lambda: _NoToolProvider()
@@ -635,7 +636,7 @@ def test_create_response_reuses_session_snapshot_across_app_boundary() -> None:
             _write_workspace(root)
             provider = _RecordingProvider()
 
-            import anyagent.server.app as server_app_module
+            import anyagent.server.routes.responses as server_app_module
 
             original_provider_factory = server_app_module.get_default_model_provider
             server_app_module.get_default_model_provider = lambda: provider
@@ -680,7 +681,7 @@ def test_create_response_does_not_expose_unauthorized_exec_tool_to_provider() ->
             _write_workspace(root)
             provider = _RecordingProvider()
 
-            import anyagent.server.app as server_app_module
+            import anyagent.server.routes.responses as server_app_module
 
             original_provider_factory = server_app_module.get_default_model_provider
             server_app_module.get_default_model_provider = lambda: provider

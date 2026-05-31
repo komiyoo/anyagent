@@ -10,7 +10,7 @@ import httpx
 from anyagent.agent_packs import load_agent_catalog
 from anyagent.mcp.auth import CredentialResolver
 from anyagent.protocol.tool_runtime import AuthRef, ExecuteRequest, ManifestRequest, PolicyHint, ToolContext
-from anyagent.server.runtime import InProcessToolRuntimeService
+from anyagent.server.runtime.in_process import InProcessToolRuntimeService
 from anyagent.server.sandbox import SandboxManager
 from anyagent.tool_runtime import ToolRuntimeClient, create_tool_runtime_app
 from anyagent.tool_runtime.models import ToolCredentialSpec, ToolDefinition

@@ -6,7 +6,7 @@ from typing import Any
 
 from anyagent.observability import ReplayObservabilityEnvelope, ReplayObservabilitySink, get_replay_observability_emitter
 from anyagent.protocol.prompt_context import PromptContextAudit, PromptFragmentSummary, RenderedPromptFragment
-from anyagent.server.response_persistence import create_distributed_response_persistence_context
+from anyagent.server.responses.response_persistence import create_distributed_response_persistence_context
 from anyagent.storage.inmemory import InMemoryEventStore, InMemoryLeaseLock, InMemoryRunStore, InMemorySessionStore
 from anyagent.storage.runtime import StorageRuntime
 

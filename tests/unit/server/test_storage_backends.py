@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from anyagent.server.storage_backends import build_server_storage_bundle
+from anyagent.server.persistence.storage_backends import build_server_storage_bundle
 from anyagent.storage.external import MySQLEventStore, MySQLRunStore, MySQLSessionStore
 
 

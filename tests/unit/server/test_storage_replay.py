@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from anyagent.server.internal_events import create_internal_events_router
+from anyagent.server.routes.internal_events import create_internal_events_router
 from anyagent.storage.models import EventRecord, RunRecord
 from anyagent.storage.replay import (
     InternalEventsCursorOutOfRange,

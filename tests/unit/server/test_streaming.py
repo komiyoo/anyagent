@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from anyagent.protocol.sse import SSEBlockDecoder
-from anyagent.server.streaming import (
+from anyagent.server.responses.streaming import (
     append_sse_chunk,
     build_persisted_sse_block_handler,
     build_response_event_appender,

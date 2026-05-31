@@ -4,7 +4,7 @@ doc_kind: architecture
 status: draft
 tags: ["studio", "control-plane", "observability", "skills", "mcp"]
 summary: AnyAgent Studio mode split, control-plane toggles, skill channels, and observability contract.
-req: ["requirements.md#req-2-1", "requirements.md#req-2-2", "requirements.md#req-4", "requirements.md#req-5-2", "requirements.md#req-5-13", "requirements.md#req-3-1"]
+req: ["requirements.md#req-2-1", "requirements.md#req-2-2", "requirements.md#req-4", "requirements.md#req-5-2", "requirements.md#req-5-13", "requirements.md#req-3-1", "requirements.md#req-14"]
 ---
 -->
 
@@ -51,10 +51,14 @@ Studio 左上角 `AnyAgent` logo 区域应成为工作模式切换入口，提�
 - `/internal/observability/tools`：按 tool name 聚合 planned/result/error、duration 与 audit refs。
 - `/internal/observability/errors`：归一化 run error、stage error、structured log error。
 - `/internal/observability/traces/{trace_id}`：按 trace 串起 response ids、audit refs 与时间线事件。
+- `/internal/observability/alerts`：查询由 alert evaluator 写入的主动监控事件，v0 默认消费 `anyagent.agent.loop_warning` 与 `anyagent.agent.loop_terminated`。
+- `/internal/audit/events`：按 credential_id / agent_id / session_key / response_id / trace_id / 时间窗查询独立审计事件。
 
 Studio Observability 页面现已消费 runs/summary/metrics/tools/errors/timeline/trace：顶部展示 agent/session 级聚合指标，History 可选择具体 response/run 做 drill-down，也可按 `trace_id` 拉取跨 response 时间线；Aggregation 区提供 source/status/tool 过滤、工具聚合、错误列表与 telemetry timeline。`/internal/events/list` 仍作为 Debug 页和单 run 回放的低层入口，不再是 Studio 聚合观测的唯一来源。
 
-AnyAgent SDK 也提供 `client.observability` namespace，覆盖 runs、summary、timeline、metrics、tools、errors 与 trace 查询，用于业务 demo、验收脚本和外部控制台复用同一 typed API。
+AnyAgent SDK 也提供 `client.sessions`、`client.evaluations`、`client.observability` 与 `client.audit` namespace，分别覆盖 session 列表/详情、dataset CRUD/eval run、runs/summary/timeline/metrics/tools/errors/trace/alerts 查询，以及独立 audit event 查询，用于业务 demo、验收脚本和外部控制台复用同一 typed API。
+
+Alert v0 的 wire model 定义在 `anyagent.protocol.alerts`：`AlertRule` / `AlertEvent` / `AlertChannel` / `AlertEventsResponse`。内置 server 启动时创建 in-memory rule store 与周期 evaluator，从 existing telemetry timeline 读取 loop warning/terminated stage event，去重后写入 alert event store；`AlertChannel(kind="webhook")` 是当前唯一 fan-out adapter。error rate / latency threshold 仍沿用同一 rule/evaluator 扩展点添加，不要求 Studio 直连指标库。
 
 ### 2.1 三类 Replay 持久化与查询面
 
@@ -82,7 +86,7 @@ AnyAgent SDK 也提供 `client.observability` namespace，覆盖 runs、summary�
 
 **脱敏策略。** model request 落库前剥离凭证：`ModelRequestPersistence.persist` 在构造事件时对 `applied_body` 调 `redact_replay_payload`（`persistence/model_request.py:68`），同时 envelope 封装时 `payload` 也再过一次 `redact_replay_payload`（`observability.py:236`）。脱敏键集合见 `_is_sensitive_key`（`observability.py:346`），命中 `authorization`、`credential_id`、`api_key`、`token`、`secret`、`auth_ref` 等（连字符/下划线归一）即递归替换为 `[REDACTED]`。因此 Authorization 头、credential_id 等注入材料不会以明文进入持久化 replay 或外部 sink，对应需求锚点 `requirements.md#req-3-1`。
 
-**独立 retention。** replay 事件体积远大于普通审计/run 事件，故走**独立 TTL 且过期更早**：`replay_event_store_retention_s` 默认 1 小时（`storage/settings.py:33`），短于通用 `event_store_retention_s` 的 2 小时（`storage/settings.py:32`）与 `session_store_retention_s` 的 24 小时。清理由 `prune_expired_replay_events`（`server/events.py:799`）按 `REPLAY_EVENT_TYPES` 定向裁剪触发，event store 各后端实现 `prune_replay_events`：内存后端 `storage/inmemory.py:381`、SQLAlchemy 外部后端 `storage/external/sqlalchemy_backend.py:404`、合约定义 `storage/contracts.py:95`。replay TTL 与 run/session retention 各自配置，互不绑定。
+**独立 retention。** replay 事件体积远大于普通审计/run 事件，故走**独立 TTL 且过期更早**：`replay_event_store_retention_s` 默认 1 小时（`storage/settings.py:33`），短于通用 `event_store_retention_s` 的 2 小时（`storage/settings.py:32`）与 `session_store_retention_s` 的 24 小时。清理由 `prune_expired_replay_events`（`server/persistence/events.py:799`）按 `REPLAY_EVENT_TYPES` 定向裁剪触发，event store 各后端实现 `prune_replay_events`：内存后端 `storage/inmemory.py:381`、SQLAlchemy 外部后端 `storage/external/sqlalchemy_backend.py:404`、合约定义 `storage/contracts.py:95`。replay TTL 与 run/session retention 各自配置，互不绑定。
 
 ## 3. 页面功能设计稿
 
@@ -104,10 +108,10 @@ Studio 的页面设计必须从 AnyAgent Server 的真实控制面出发，而�
 |---|---|---|---|
 | Home | 运行当前 agent，快速确认服务与最近运行状态 | `/v1/responses`、`/internal/events/list`、`/internal/agents/{id}` | client session、live stream、最近 run 摘要、agent 能力概览、跳转 Sessions/Observability |
 | Agents | 选择可用 agent 并理解它能做什么 | `/internal/agents?include_unexposed=true`、`/internal/agents/{id}` | agent picker、active agent 摘要、模型/技能/工具能力说明、开始会话入口；不暴露创建/写文件等构建操作 |
-| Sessions | 查看当前 agent/session 的历史运行 | `/internal/observability/runs`、`/v1/responses/{id}`、`/internal/events/list` | run list、status/latency/stream、选择 run、查看消息与事件摘要、查看或取消 response（当 server 支持时） |
-| Observability | 聚合分析 agent 运行质量 | `/internal/observability/metrics|tools|errors|timeline|trace|summary` | token/latency/tool/MCP/error 指标、timeline、tool 聚合、trace drill-down、迭代建议 |
-| Evaluations | 把真实 run 转成评测种子 | observability runs/summary/timeline | candidate runs、按错误/高延迟/高价值筛选、inspect run、生成 evaluation seed 草稿；不假设独立 dataset/eval API 已存在 |
-| Prompts | 面向使用者解释当前请求上下文 | `/internal/prompt/bundle`、`/internal/events/list` 中 `anyagent.prompt.context` | prompt preview 摘要、选中 skills、工具上下文、cache key；默认只展示解释视图，不鼓励直接改源文件 |
+| Sessions | 查看当前 agent/session 的历史运行 | `/internal/sessions`、`/internal/sessions/{key}`、`/internal/observability/runs`、`/v1/responses/{id}`、`/internal/events/list` | session list、会话级聚合、run list、status/latency/stream、选择 run、查看消息与事件摘要、查看或取消 response（当 server 支持时） |
+| Observability | 聚合分析 agent 运行质量 | `/internal/observability/metrics|tools|errors|timeline|trace|alerts|summary` | token/latency/tool/MCP/error 指标、timeline、tool 聚合、trace drill-down、主动告警、迭代建议 |
+| Evaluations | 把真实 run 转成可复跑评测资产 | `/internal/evaluations/datasets`、`/internal/evaluations/run`、`/internal/evaluations/runs`、observability runs/summary/timeline | dataset CRUD、candidate runs、按错误/高延迟/高价值筛选、inspect run、生成 evaluation seed、执行 exact-match v0 评测、查询历史结果 |
+| Prompts | 面向使用者解释当前请求上下文并跟踪跨版本演进 | `/internal/prompt/bundle`、`/internal/prompt/versions`、`/internal/prompt/versions/diff`、`POST .../versions/{id}/restore`、`/internal/events/list` 中 `anyagent.prompt.context` | prompt preview 摘要、选中 skills、工具上下文、cache key、版本快照、版本 diff、admin-gated restore；默认解释当前上下文，版本操作进入显式动作 |
 | Settings | 管理个人 Studio 连接与运行默认值 | localStorage、`/healthz` | server connection、API key、默认 agent/session/model、连接测试；不展示危险 admin 写操作 |
 
 ### 3.3 Build 模式页面
@@ -118,12 +122,12 @@ Studio 的页面设计必须从 AnyAgent Server 的真实控制面出发，而�
 | Agents | 创建、复制、选择和管理 agent pack | `/internal/agents`、`/admin/workspace/agents` | catalog、创建 agent、exposed 状态、spawn-only agents、agent detail、跳转 Configure/Files |
 | Configure | 编辑常用 `agent.yaml` 配置 | `/admin/workspace/agents/{id}/config`、agent detail、workspace files、skills/MCP/credentials admin API | connection draft/apply、create agent、source files、effective config、skills、credentials、MCP drafts；常用开关汇总，源码编辑保留为恢复路径 |
 | Skills | 管理 agent-local skills | `/internal/skills/list`、`/admin/workspace/agents/{id}/skills/*` | import/install/update、channel 选择、enable/disable、default-selected、source metadata |
-| MCP | 管理 MCP server drafts | `/admin/workspace/agents/{id}/files/mcp_json`、`mcp.json` parser/builder | streamable HTTP/SSE/stdio draft、enabled、credential ref、保存 mcp.json、invalid JSON recovery |
+| MCP | 管理 MCP server drafts 与运行态 | `/admin/workspace/agents/{id}/mcp/servers`、`PUT .../mcp/servers/{label}/enabled`、`POST .../mcp/servers/{label}/test`、`/admin/workspace/agents/{id}/files/mcp_json` | streamable HTTP/SSE/stdio draft、enabled/disabled/inherited 摘要、credential ref、连接测试、保存 mcp.json、invalid JSON recovery |
 | Tools | 管理工具披露与 catalog | `/internal/tools/catalog`、`/admin/tools/catalog`、agent config | effective tools、available tools、requested tool names toggle、kind/reason/toolset version |
 | Credentials | 管理 Credential Vault refs | `/admin/credentials`、`/admin/credentials/capabilities` | create/list/delete refs、scope、kind、只写 secret、能力矩阵 |
-| Debug | 调试 run 的低层事件与协议 payload | `/internal/events/list|stream`、`/internal/prompt/bundle` | stage events、tool/command/result、raw event JSON、response id selector、prompt bundle raw view |
+| Debug | 调试 run 的低层事件与协议 payload | `/internal/events/list|stream`、`/internal/prompt/bundle`、`/admin/sandboxes`、`/admin/sandboxes/workspaces/{id}/snapshots`、`POST .../reclaim` | stage events、tool/command/result、raw event JSON、response id selector、prompt bundle raw view、sandbox workspace 列表、snapshot drill-down、强制回收 |
 | Files | 编辑 agent pack 源文件 | `/admin/workspace/agents/{id}/files`、`PUT .../files/{kind}` | AGENTS.md/agent.yaml/mcp.json editor、sha256 optimistic save、reload、disabled editor state |
-| Settings | 管理 Studio 与 server 管理面 | localStorage、health/admin endpoints | connection、admin key test、storage health、credential capability、server management diagnostics |
+| Settings | 管理 Studio 与 server 管理面 | localStorage、health/admin endpoints | connection、admin key test、storage health、credential capability、sandbox/workspace diagnostics、server management diagnostics |
 
 ### 3.4 页面拆分验收
 
@@ -146,7 +150,7 @@ Studio 前端代码按 protocol-first 和页面职责拆分，避免继续把所
 | `sampleData.ts` | 本地 UI 草稿样例，例如 MCP draft、SKILL.md seed。 |
 | `hooks/useWorkspaceCatalog.ts` | workspace agent/skill catalog 加载与状态。 |
 | `hooks/useAgentFiles.ts` | agent pack 源文件加载、编辑器状态、sha256 optimistic save 和文件启用态。 |
-| `hooks/useMcpDrafts.ts` | 从 `mcp_json` 源文件解析 MCP draft、维护 invalid/recovery 状态，并通过 admin file API 写回 `mcp.json`。 |
+| `hooks/useMcpDrafts.ts` | 从 MCP admin API 与 `mcp_json` 源文件解析 MCP draft、维护 invalid/recovery 状态，并通过 server toggle/test 或 admin file API 写回 `mcp.json`。 |
 | `hooks/useToolCatalog.ts` | effective tool catalog 与 registered tool pool 的 typed API 加载、状态和刷新。 |
 | `hooks/useCredentials.ts` | Credential Vault refs 的列表、表单状态、只写 secret 保存和删除。 |
 | `hooks/useSkillsManagement.ts` | agent-local skills 的 channel install/import、default-selected、disablement、update check/apply 与 source file refresh。 |
@@ -196,7 +200,10 @@ Studio 前端代码按 protocol-first 和页面职责拆分，避免继续把所
 - Sidebar page key 唯一；Use 模式 Home/Agents/Sessions/Observability/Evaluations/Prompts/Settings 与 Build 模式 Credentials/Debug/Skills/MCP/Tools/Files/Configure/Settings 均对应独立页面模块。
 - Configure 的 connection、create-agent、effective-config 和 tool catalog 已下沉为组合组件；agent files、MCP drafts、tool catalog、credentials、skills management 与 Use 模式 observability 已收敛到专用 hooks。
 - Studio 前端已做页面级 code splitting；主 bundle 不再携带所有 Use/Build 页面实现，页面模块按需加载。
-- Evaluation handoff 当前基于 observability run/timeline 选择和 inspection，不定义独立 dataset/eval backend contract。
+- Sandbox / Workspace 运维 API 已提供 `GET /admin/sandboxes`、`GET /admin/sandboxes/workspaces/{id}/snapshots` 与 `POST /admin/sandboxes/workspaces/{id}/reclaim`，控制面可从 workspace ref 追到 generation、snapshot digest/bytes 与强制回收结果。
+- Alert 后端已提供 `AlertRule` / `AlertEvent` / `AlertChannel` protocol、in-memory rule/event store、后台 evaluator、`GET /internal/observability/alerts` 查询面与 webhook fan-out；默认规则覆盖 loop warning / loop terminated。
+- Evaluations 后端已提供 `EvalDataset` / `EvalCase` / `EvalRun` protocol、workspace-local `.anyagent/evaluations.json` reference store、dataset CRUD、`POST /internal/evaluations/run` 执行器与 run result 查询；执行器通过 server 内部 ASGI 调用复用 `/v1/responses` 主路径。
+- Prompt 版本后端已提供 `PromptVersionSnapshot` / `PromptVersionSource` protocol、workspace-local `.anyagent/prompt_versions.json` reference store、`GET/POST /internal/prompt/versions`、`GET /internal/prompt/versions/{id}`、`GET /internal/prompt/versions/diff` 与 admin-gated `POST /internal/prompt/versions/{id}/restore`；它记录 workspace/agent prompt source 文件快照，与单次 rendered prompt replay 互补。
 
 ## 7. TypeScript SDK 集成策略
 
@@ -209,7 +216,7 @@ Studio 前端当前通过 `anyagentClient.ts` 以原始 fetch 重新实现了所
 | Phase 0 (当前) | `anyagentClient.ts` 原始 fetch | 零依赖、快速迭代 |
 | Phase 1 | 将 SDK `client.ts` 作为 Studio 的 typed facade，替换 `anyagentClient.ts` 中的请求/响应类型 | 类型安全、schema 校验、协议版本锁定 |
 | Phase 2 | 消费 SDK 的 `client.responses.stream()` SSE 方法替代 OpenAI SDK 直连 | 统一流式协议、支持 cancel/retrieve |
-| Phase 3 | 消费 SDK 的 `client.observability` namespace 替代手动 fetch | 减少重复代码、自动 retry/cache |
+| Phase 3 | 消费 SDK 的 `client.sessions` / `client.observability` namespace 替代手动 fetch | 减少重复代码、自动 retry/cache |
 
 ### 7.2 当前未消费的 SDK 能力
 
@@ -217,6 +224,7 @@ Studio 应补充消费以下 SDK 端点：
 
 - `client.responses.retrieve(responseId)` — 用于 Sessions 页展示 response 状态
 - `client.responses.cancel(responseId)` — 用于 Home 页 chat 运行中取消
+- `client.sessions.list()` / `client.sessions.get(sessionKey)` — 用于 Sessions 页展示会话聚合与 drill-down
 - `client.events.stream(responseId)` — 用于 Debug 页实时 SSE 事件流
 - `client.admin.plugins.catalog()` — 用于 Build/Tools 页展示 plugin 来源
 - `GET /admin/credentials/capabilities` — 用于 Credentials 页展示 vault 能力矩阵（当前 Studio 已调用但 TS SDK 未暴露，需补充 SDK 方法）

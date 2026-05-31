@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from anyagent.server.finalization import (
+from anyagent.server.responses.finalization import (
     build_nonstream_response_finalizer,
     finalize_nonstream_response,
     internal_run_status_from_effective,
@@ -288,7 +288,7 @@ def test_persist_run_final_and_session_updates_session_when_no_atomic_path() -> 
 
 def test_build_session_snapshot_advancer_updates_snapshot() -> None:
     async def _run() -> None:
-        from anyagent.server.finalization import build_session_snapshot_advancer
+        from anyagent.server.responses.finalization import build_session_snapshot_advancer
 
         session_store = _SessionStore()
         warnings: list[str] = []
@@ -327,7 +327,7 @@ def test_build_session_snapshot_advancer_updates_snapshot() -> None:
 
 def test_build_session_snapshot_advancer_warns_on_cas_conflict() -> None:
     async def _run() -> None:
-        from anyagent.server.finalization import build_session_snapshot_advancer
+        from anyagent.server.responses.finalization import build_session_snapshot_advancer
 
         session_store = _SessionStore()
         session_store.records["main::sess"] = _SessionRecord(
@@ -371,7 +371,7 @@ def test_build_session_snapshot_advancer_warns_on_cas_conflict() -> None:
 
 def test_build_run_final_and_session_persister_updates_run_and_session() -> None:
     async def _run() -> None:
-        from anyagent.server.finalization import build_run_final_and_session_persister
+        from anyagent.server.responses.finalization import build_run_final_and_session_persister
 
         run_store = _SimpleRunStore()
         session_store = _SessionStore()

@@ -66,7 +66,7 @@ async def _run_mysql_builtin_smoke(*, mysql_dsn: str, redis_dsn: str) -> None:
                     }
                 )
 
-        import anyagent.server.app as app_mod
+        import anyagent.server.routes.responses as app_mod
 
         app_mod.get_default_model_provider = lambda: _FakeProvider()
         os.environ["STORAGE_MODE"] = "external"

@@ -16,7 +16,7 @@ v0 阶段先以结构化日志满足“可追踪/可复盘”的最小线：对�
 
 当前实现通过 `anyagent.protocol.observability.ObservabilityEvent` 统一封装审计/运行时事件，并由 `anyagent.observability.ObservabilityEmitter` fan-out 到 Python logging、Core normalized telemetry sink 与可选第三方 HTTP JSON collector。`ANYAGENT_LOG_FORMAT=json` 可开启本地 JSON 日志；`ANYAGENT_OBSERVABILITY_HTTP_URL` 可配置远端采集地址。
 
-Studio 的日志观测、性能分析与聚合不直接读取日志文件或第三方 collector，而是通过 Core typed query 面消费：`/internal/observability/timeline`、`/metrics`、`/tools`、`/errors`、`/traces/{trace_id}`。显式写入侧使用 `NormalizedTelemetryEvent` / `TelemetrySource`，可把 workspace/audit/tool policy 等事件统一 ingest 到 `TelemetryStore`。启用 `STORAGE_MODE=external` 且配置 `POSTGRES_DSN` 时，审计与运行日志会持久化到 PostgreSQL `telemetry_events`，支持跨进程、跨重启查询；其他持久化分析后端暂不接入。
+Studio 的日志观测、性能分析与聚合不直接读取日志文件或第三方 collector，而是通过 Core typed query 面消费：`/internal/audit/events`、`/internal/observability/timeline`、`/metrics`、`/tools`、`/errors`、`/traces/{trace_id}`。显式写入侧使用 `NormalizedTelemetryEvent` / `TelemetrySource`，可把 workspace/audit/tool policy 等事件统一 ingest 到 `TelemetryStore`。启用 `STORAGE_MODE=external` 且配置 `POSTGRES_DSN` 时，审计与运行日志会持久化到 PostgreSQL `telemetry_events`，支持跨进程、跨重启查询；其他持久化分析后端暂不接入。
 
 已纳入统一事件面的最小集合：
 

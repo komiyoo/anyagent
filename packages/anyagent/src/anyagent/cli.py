@@ -29,7 +29,7 @@ from anyagent.protocol.credential_vault import (
 from anyagent.protocol.plugins import PluginCatalogResponse
 from anyagent.protocol.workspace import WorkspaceDoctorFinding, WorkspaceDoctorReport, WorkspaceInitResult
 from anyagent.server import DistributedAgentRuntimeConfig, create_app, create_distributed_agent_app
-from anyagent.server.migrations import apply_storage_migrations
+from anyagent.server.db.migrations import apply_storage_migrations
 from anyagent.skills import SkillRoot, default_skill_roots, discover_skills, resolve_disabled_skill_stable_ids
 from anyagent.storage.runtime import create_storage_runtime
 from anyagent.storage.settings import StorageSettings
@@ -181,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     serve.add_argument("--sandbox-root", default=None, help="Optional root dir for local sandbox sessions.")
     serve.add_argument("--no-studio", action="store_true", help="Do not mount the bundled Studio at /studio.")
+    serve.add_argument("--quiet", action="store_true", help="Suppress the JSON configuration banner printed on startup.")
     serve.add_argument(
         "--plugin-root",
         action="append",
@@ -255,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
         default=False,
         help="Continue serving when one or more plugins fail to load (default: fail closed).",
     )
+    dev.add_argument("--quiet", action="store_true", help="Suppress the JSON configuration banner printed on startup.")
     dev.add_argument(
         "--storage-mode",
         choices=["none", "external"],
@@ -664,9 +666,32 @@ def _cmd_storage_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_workspace_dotenv(workspace: Path) -> None:
+    """Load ``.env`` and ``.env.local`` from *workspace* into ``os.environ``.
+
+    Keys already present in the environment are **not** overwritten, so
+    CLI flags and exported shell vars always take precedence.
+    """
+    for name in (".env", ".env.local"):
+        env_path = workspace / name
+        if not env_path.is_file():
+            continue
+        with open(env_path, "r", encoding="utf-8") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     configure_observability_from_env()
     workspace = Path(args.workspace).expanduser().resolve()
+    _load_workspace_dotenv(workspace)
     api_key = args.api_key or os.getenv("ANYAGENT_API_KEY")
     admin_key = args.admin_key or os.getenv("ADMIN_API_KEY")
     enable_studio = not bool(args.no_studio)
@@ -694,6 +719,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         api_key=api_key,
         admin_key=admin_key,
         enable_studio=enable_studio,
+        quiet=getattr(args, "quiet", False),
     )
     uvicorn.run(app, host=args.host, port=int(args.port), log_level="info")
     return 0
@@ -736,29 +762,33 @@ def _print_serve_banner(
     api_key: str | None,
     admin_key: str | None,
     enable_studio: bool,
+    quiet: bool = False,
 ) -> None:
+    if quiet:
+        return
     base_url = _format_local_base_url(host=host, port=port)
-    print("anyagent serve")
-    print(f"workspace: {workspace}")
-    print(f"api: {base_url}/v1")
-    print(f"openapi: {base_url}/openapi.json")
-    if enable_studio:
-        print(f"studio: {base_url}/studio/")
-    else:
-        print("studio: disabled")
-    print(f"api_key: {'set' if api_key else 'unset'}")
-    print(f"admin_key: {'set' if admin_key else 'unset'}")
+    agents_exposed: list[str] = []
+    agents_hidden: list[str] = []
     try:
         catalog = load_agent_catalog(workspace_dir=workspace)
-    except Exception as exc:  # noqa: BLE001
-        print(f"agents: unavailable ({exc})")
-        return
-    rows = _agent_catalog_rows(catalog)
-    exposed = [row["agent_id"] for row in rows if row["exposed"]]
-    hidden = [row["agent_id"] for row in rows if not row["exposed"]]
-    print(f"agents: {', '.join(exposed) if exposed else '-'}")
-    if hidden:
-        print(f"hidden_agents: {', '.join(hidden)}")
+        rows = _agent_catalog_rows(catalog)
+        agents_exposed = [row["agent_id"] for row in rows if row["exposed"]]
+        agents_hidden = [row["agent_id"] for row in rows if not row["exposed"]]
+    except Exception:  # noqa: BLE001
+        pass
+    config: dict[str, Any] = {
+        "workspace": str(workspace),
+        "host": host,
+        "port": port,
+        "api": f"{base_url}/v1",
+        "openapi": f"{base_url}/openapi.json",
+        "studio": f"{base_url}/studio/" if enable_studio else "disabled",
+        "api_key": "set" if api_key else "unset",
+        "admin_key": "set" if admin_key else "unset",
+        "agents_exposed": agents_exposed,
+        "agents_hidden": agents_hidden,
+    }
+    print(json.dumps(config, ensure_ascii=False, indent=2))
 
 
 def _format_local_base_url(*, host: str, port: int) -> str:

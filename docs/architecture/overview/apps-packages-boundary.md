@@ -157,15 +157,15 @@ summary: anyagent (框架本体) 与 anyagent-apps (示例与模板) 的职责�
 - `anyagent.storage.external` 已开始承载 runtime 级 `Postgres/Redis` adapter，与 typed `ExternalSqlBackendConfig` / `MySQLDsn` contract
 - built-in server 也已开始通过 `SQL_BACKEND_DIALECT` 选择 SQL backend；当前 MySQL 路径走 `anyagent.storage.external`，PostgreSQL 仍保持默认/稳定主路径
 - `anyagent.storage.external.migrations` 已开始承载共享 schema apply helper；Core CLI 已提供 `storage-migrate` / `storage migrate`、`storage retention` / `storage-retention`、`storage replay` / `storage-replay`
-- built-in `server/storage_backends.py` 已与 `storage.external` 共享 SQL dialect 选择与 MySQL 路径；server 层保留的 glue 只负责 built-in 稳定默认路径、兼容 adapter 与 Redis 热层装配，SQL runtime 真源集中到 `storage.external`
-- `server/run_store.py` / `server/session_store.py` / `server/events.py` 中的 legacy PostgreSQL class 本体已不再作为独立实现存在，源码层只保留 wrapper / builder 级引用
+- built-in `anyagent.server.persistence.storage_backends` 已与 `storage.external` 共享 SQL dialect 选择与 MySQL 路径；server 层保留的 glue 只负责 built-in 稳定默认路径、兼容 adapter 与 Redis 热层装配，SQL runtime 真源集中到 `storage.external`
+- `anyagent.server.persistence.run_store` / `anyagent.server.persistence.session_store` / `anyagent.server.persistence.events` 中的 legacy PostgreSQL class 本体已不再作为独立实现存在，源码层只保留 wrapper / builder 级引用
 - 真实 live matrix 已完成一轮最小闭环：built-in PG primary + Redis hot path、Redis lease live、built-in MySQL external path 与 apps MySQL storage smoke 均已通过
 - `anyagent.storage.capabilities` 与 `/admin/storage/health.capabilities` 已开始作为 reference/external backend capability matrix 的事实来源
 - `anyagent.agent_runtime.session_runtime` 已开始承载 built-in server 与 distributed `agent-api` 共用的 session prepare / snapshot persistence 编排
-- `anyagent.server.responses_optional` 已开始承载 `/v1/responses/{id}` 查询/取消路径共用的状态映射、最小 payload 组装、OpenAI-compatible 错误/鉴权、cancel terminal event append 与可复用 router factory；迁移期 apps Agent API 直接挂载 Core router。
-- `anyagent.gateway.sequencer` 与 `anyagent.server.responses_optional` 中的 OpenAI-compatible auth/error helpers 已成为迁移期 apps Agent API 的 keyed sequencing 与鉴权/错误响应真源；apps 侧旧 `auth.py`、`errors.py`、`keyed_sequencer.py` wrapper 已删除。
+- `anyagent.server.handlers.http_errors` 已开始承载 `/v1/responses/{id}` 查询/取消路径共用的状态映射、最小 payload 组装、OpenAI-compatible 错误/鉴权与 cancel terminal event append；`anyagent.server.routes.responses_optional_router` 提供迁移期 apps Agent API 可直接挂载的 Core router。
+- `anyagent.gateway.sequencer` 与 `anyagent.server.handlers.http_errors` 中的 OpenAI-compatible auth/error helpers 已成为迁移期 apps Agent API 的 keyed sequencing 与鉴权/错误响应真源；apps 侧旧 `auth.py`、`errors.py`、`keyed_sequencer.py` wrapper 已删除。
 - `anyagent.protocol.openai_responses` 已开始承载 `response.completed` 事件的共享解析、canonical `response_id` 归一化与 fallback completion 组装
-- `anyagent.server.finalization` 已开始承载 run finalization / session snapshot persistence 的共享编排与终态状态映射
+- `anyagent.server.responses.finalization` 已开始承载 run finalization / session snapshot persistence 的共享编排与终态状态映射
 
 当前 apps 侧保留的内容：
 

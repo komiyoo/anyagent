@@ -249,6 +249,51 @@ class InternalObservabilityRunsResponse(BaseModel):
     runs: list[InternalObservabilityRunItem] = Field(default_factory=list)
 
 
+class InternalSessionSummary(BaseModel):
+    """One session row aggregated from persisted response runs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    session_key: str
+    session_partition_key: str
+    run_count: int = Field(default=0, ge=0)
+    active_run_count: int = Field(default=0, ge=0)
+    error_run_count: int = Field(default=0, ge=0)
+    latest_response_id: str | None = None
+    latest_status: str | None = None
+    latest_effective_status: str | None = None
+    created_at_ms: int = Field(default=0, ge=0)
+    updated_at_ms: int = Field(default=0, ge=0)
+    snapshot_version: int | None = Field(default=None, ge=0)
+
+
+class InternalSessionsListResponse(BaseModel):
+    """Response model for `GET /internal/sessions`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str | None = None
+    session_key: str | None = None
+    cursor_updated_before_ms: int | None = Field(default=None, ge=0)
+    next_cursor_updated_before_ms: int | None = Field(default=None, ge=0)
+    sessions: list[InternalSessionSummary] = Field(default_factory=list)
+
+
+class InternalSessionDetailResponse(BaseModel):
+    """Response model for `GET /internal/sessions/{session_key}`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    session_key: str
+    session_partition_key: str
+    summary: InternalSessionSummary
+    runs: list[InternalObservabilityRunItem] = Field(default_factory=list)
+    snapshot_version: int | None = Field(default=None, ge=0)
+    snapshot_json: dict[str, Any] | None = None
+
+
 class InternalObservabilityTimelineEvent(NormalizedTelemetryEvent):
     """One normalized observability event for Studio timelines and traces."""
 
@@ -352,6 +397,27 @@ class InternalObservabilityTraceResponse(BaseModel):
     response_ids: list[str] = Field(default_factory=list)
     audit_refs: list[str] = Field(default_factory=list)
     events: list[InternalObservabilityTimelineEvent] = Field(default_factory=list)
+
+
+class InternalAuditEventItem(NormalizedTelemetryEvent):
+    """One audit event with credential correlation promoted for filtering."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    credential_id: str | None = None
+
+
+class InternalAuditEventsResponse(BaseModel):
+    """Response model for `GET /internal/audit/events`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    credential_id: str | None = None
+    agent_id: str | None = None
+    session_key: str | None = None
+    response_id: str | None = None
+    trace_id: str | None = None
+    events: list[InternalAuditEventItem] = Field(default_factory=list)
 
 
 class InternalSkillListItem(BaseModel):
@@ -607,6 +673,74 @@ class AdminWorkspaceAgentFileUpdateResponse(BaseModel):
     agent_id: str
     file: AdminWorkspaceAgentFile
     reloaded_agent_ids: list[str] = Field(default_factory=list)
+
+
+class AdminMcpServerItem(BaseModel):
+    """One MCP server configuration row for the admin control plane."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    enabled: bool
+    enablement: Literal["enabled", "disabled", "inherited", "invalid"]
+    transport: str | None = None
+    url: str | None = None
+    command: str | None = None
+    credential_id: str | None = None
+    timeout_seconds: float | None = None
+    idle_timeout_seconds: float | None = None
+    tool_filter: dict[str, Any] | None = None
+    source: Literal["agent", "inherited", "unknown"] = "unknown"
+    error: str | None = None
+
+
+class AdminMcpServersResponse(BaseModel):
+    """Response model for `GET /admin/workspace/agents/{agent_id}/mcp/servers`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    configured: bool
+    enabled_count: int = Field(default=0, ge=0)
+    disabled_count: int = Field(default=0, ge=0)
+    inherited_count: int = Field(default=0, ge=0)
+    invalid_count: int = Field(default=0, ge=0)
+    servers: list[AdminMcpServerItem] = Field(default_factory=list)
+
+
+class AdminMcpServerEnableRequest(BaseModel):
+    """Request model for toggling one MCP server's enabled flag."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class AdminMcpServerEnableResponse(BaseModel):
+    """Response model for `PUT /admin/workspace/agents/{agent_id}/mcp/servers/{label}/enabled`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    server_label: str
+    enabled: bool
+    file: AdminWorkspaceAgentFile
+    servers: AdminMcpServersResponse
+    reloaded_agent_ids: list[str] = Field(default_factory=list)
+
+
+class AdminMcpServerTestResponse(BaseModel):
+    """Response model for MCP server connection tests."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    server_label: str
+    ok: bool
+    status: Literal["ready", "failed", "skipped"]
+    message: str | None = None
+    transport: str | None = None
+    tool_count: int | None = Field(default=None, ge=0)
 
 
 class AdminAgentCreateRequest(BaseModel):

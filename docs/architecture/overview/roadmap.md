@@ -127,13 +127,14 @@ Phase 1 ~ Phase 2 的主路径任务已全部完成。逐条任务历史见 Git 
 | 1.8 | Sub-Agent 完整版、Agent Loop Middleware 4-hook 接口、上下文压缩、循环检测、Phase 1.8 Stage Events | `runtime/agent-loop-middleware.md`、`multi-agent/multi-agent-collaboration.md` |
 | 2 | Tool Runtime contract 测试矩阵 + standalone 等价验收、Storage replay contract(PG+Redis)、跨节点 Run 调度与 lock contract、第二 sandbox backend、Unified Observability Sink | `tool-runtime/tool-runtime-contract.md`、`storage/storage-minimal-design.md`、`runtime/stateless-agent-service-architecture.md`、`runtime/sandbox-session-filesystem-design.md`、`decisions/`(run-scheduling-lock-contract、sandbox-backend-selection、storage-idempotency-and-cursor-semantics、observability-replay-sink-and-retention) |
 
-#### 已完成
+#### Phase 3 / 4 已完成 + Phase 2.5 待启动
 
 | 优先级 | #   | 任务                                       | Phase | 状态      | todo 入口                     |
 | ------ | --- | ------------------------------------------ | ----- | --------- | ----------------------------- |
 | **P4** | 21  | Credential v2 (DB/Vault/session/轮转/审计) | 3     | ✅ 已完成 | `todo/security-compliance.md` |
 | **P4** | 22  | Multi-Agent contract（quota/replay contract） | 4  | ✅ 已完成 | `todo/multi-agent.md`        |
 | **P4** | 23  | Reference conformance suite + Rust runtime PoC | 4 | ✅ 已完成 | `todo/multi-runtime.md`      |
+| **P3** | 24  | Control-Plane Backend API（Sessions/MCP/Sandbox/Audit/Eval/Prompt 版本/Alert） | 2.5 | ✅ 已完成 | `todo/studio-backend.md` |
 
 状态图例：🔲 未开始 · 🔵 进行中 · ✅ 已完成
 
@@ -142,6 +143,7 @@ Phase 1 ~ Phase 2 的主路径任务已全部完成。逐条任务历史见 Git 
 - #21 已完成 preview 实现；PostgreSQL schema 由 Alembic 管理，长期口径见 `docs/security/credential-vault.md`。
 - #22 已完成 storage lock quota primitive 与 multi-agent replay contract；长期口径见 `docs/architecture/multi-agent/multi-agent-collaboration.md`。
 - #23 已完成 reference conformance suite M1 补齐、Rust second-runtime ADR 与 PoC target；长期口径见 `docs/architecture/decisions/second-runtime-rust-reference.md`。
+- #24 已完成 Sessions/MCP/Sandbox/Audit 查询面、Alert 后端、Evaluations/Dataset 后端与 Prompt 版本管理；长期口径见 `docs/architecture/control-plane/studio-control-plane-and-observability.md`。
 
 > **决策记录（2026-05-29）**：当前仅公司内部使用，多租户/水平扩展需求推迟。Phase 2 中的分布式加固（#18 跨节点调度、#19 第二 sandbox backend）降为 P3，有外部用户需求后再投入。新增 Phase 1.8 聚焦内部高频需求：Sub-Agent、上下文压缩、循环检测、Middleware 接口。
 >
@@ -221,6 +223,31 @@ Systematic Persistence（系统性持久化）:
 
 需求锚点:`req-3-1`(存储)、`req-5`(Agent loop & runtime)、`req-5-13`(audit)、`req-6`(Tool Runtime)、`req-12`(sandbox)
 
+### Phase 2.5 — Control-Plane Backend（控制面后端 API）
+
+**目标**:补齐 Studio 与 SDK 控制台消费的 server typed API。Studio 前端 16 页骨架已落地并消费现有 typed API,但从后端能力域看,运营态/治理态整片缺失——本 Phase 把这些控制面后端能力补全。前端页面设计是独立线,真源在 `packages/anyagent/studio/DESIGN.md`,不在本 Phase 范围。
+
+> 背景:`/v1/responses`、agent catalog、tool/skill 治理、单 run observability 与三类 replay 已在 Phase 1.5 落地;本 Phase 聚焦控制面后端 API,而非前端组件。
+
+按缺口性质分三组:
+
+- **查询面缺失（数据已存在,开聚合查询出口,投入轻）**:
+  - Sessions 编排查询面:`GET /internal/sessions` + `GET /internal/sessions/{key}`,按 `session_key` / `session_partition_key` 列会话与多 run 串联
+  - MCP 管理 API:结构化 server 列表 + enablement 摘要 + 连接测试 + 运行态查询,替代整文件 `mcp.json` 回写
+  - Sandbox / Workspace 运维 API:活跃 sandbox 列表、workspace 快照列表、强制回收,消费已有 lifecycle event
+  - Audit 独立查询面:按 `credential_id` / `agent_id` / 时间窗查审计流水,与 observability errors 解耦
+- **主动监控（新运行时机制,杠杆最高）**:
+  - Alert 后端:alert rule 存储 + 后台评估器 + 订阅端点 + webhook fan-out;优先激活已在发的 `loop_warning` / `loop_terminated` 等信号
+- **质量闭环与版本管理（新存储 + 逻辑,投入最重）**:
+  - Evaluations / Dataset 后端:dataset 持久化 + 评测执行器 + 结果查询,替换 Studio 当前 localStorage-only 形态
+  - Prompt 版本管理后端:版本快照 + diff + 回滚,与三类 replay 互补
+
+当前状态：Phase 2.5 后端 API 已完成，证据与验证命令见 [`todo/studio-backend.md`](../../../todo/studio-backend.md)。
+
+入口:[`todo/studio-backend.md`](../../../todo/studio-backend.md)
+
+需求锚点:`req-14`(控制面后端)、`req-14-1` ~ `req-14-7`、`req-5-13`(observability/audit 数据源)
+
 ### Phase 3 — Security & Credential v2
 
 **目标**:把现有 read-only credential 主路径升级到可承载企业合规的 vault 形态。
@@ -251,7 +278,7 @@ Systematic Persistence（系统性持久化）:
 ### Phase 5 — 长期方向(尚未规划具体 todo)
 
 - 协议独立版本化:把 `anyagent.protocol` 抽成可独立发布的制品,与 reference server 解耦
-- Eval / Replay 平台化:把 event store + replay 升级为可审计的 agent eval 基础设施
+- Eval / Replay 平台化:把 event store + replay 升级为可审计的 agent eval 基础设施(以 Phase 2.5 的 Evaluations/Dataset 后端为前置,本阶段聚焦平台化与可审计性)
 - 端侧形态评估:WebChat / 桌面 / IDE 插件;仅在 typed API 与 SDK 稳定后才进入主路径
 - IM 渠道接入:飞书(Lark)为首选,后续可扩展 Slack / 钉钉;参考 DeerFlow channels 实现(见 `docs/_notes/third-party/deer-flow.md`)
 

@@ -128,10 +128,10 @@ def test_dev_serve_uses_local_defaults_and_prints_urls(monkeypatch, tmp_path, ca
     assert isinstance(uvicorn_call, dict)
     assert uvicorn_call["host"] == "127.0.0.1"
     assert uvicorn_call["port"] == 8787
-    out = capsys.readouterr().out
-    assert "api: http://127.0.0.1:8787/v1" in out
-    assert "studio: http://127.0.0.1:8787/studio/" in out
-    assert "agents: main" in out
+    banner = json.loads(capsys.readouterr().out)
+    assert banner["api"] == "http://127.0.0.1:8787/v1"
+    assert banner["studio"] == "http://127.0.0.1:8787/studio/"
+    assert banner["agents_exposed"] == ["main"]
 
 
 def test_config_init_creates_models_config_and_agent_selection(tmp_path, capsys) -> None:

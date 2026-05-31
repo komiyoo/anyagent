@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from anyagent.server.session_context import build_developer_prompt_body, prepare_response_session_context
+from anyagent.server.responses.session_context import build_developer_prompt_body, prepare_response_session_context
 
 
 @dataclass(slots=True)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from anyagent.agent_packs import AgentCatalog, AgentPack, AgentSpec
-from anyagent.server.request_context import ResponsesRequestContextError, prepare_responses_request_context
+from anyagent.server.config.request_context import ResponsesRequestContextError, prepare_responses_request_context
 
 
 def _pack(agent_id: str, *, exposed: bool = True, default_model: str | None = None) -> AgentPack:

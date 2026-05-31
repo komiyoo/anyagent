@@ -231,6 +231,44 @@ class LocalSessionWorkspaceService:
                 out.append(record)
         return out
 
+    def list_snapshots(self, *, session_partition_key: str) -> list[dict]:
+        state_dir = self._state_dir(session_partition_key)
+        record = self._read_record(state_dir)
+        snapshots_dir = state_dir / "snapshots"
+        if record is None or not snapshots_dir.is_dir():
+            return []
+        out: list[dict] = []
+        for child in sorted(snapshots_dir.iterdir()):
+            if not child.is_dir():
+                continue
+            try:
+                generation = int(child.name)
+            except ValueError:
+                continue
+            manifest_path = child / "manifest.json"
+            manifest: dict = {}
+            if manifest_path.is_file():
+                try:
+                    loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    manifest = loaded if isinstance(loaded, dict) else {}
+                except Exception:  # noqa: BLE001
+                    manifest = {}
+            snapshot_dir = self._snapshot_workspace_dir(state_dir, generation=generation)
+            snapshot_bytes, digest = _dir_digest(snapshot_dir)
+            out.append(
+                {
+                    "workspace_id": record.workspace_id,
+                    "session_partition_key": record.session_partition_key,
+                    "generation": generation,
+                    "snapshot_uri": str(snapshot_dir),
+                    "snapshot_digest": manifest.get("digest") if isinstance(manifest.get("digest"), str) else digest,
+                    "snapshot_bytes": int(manifest.get("bytes")) if isinstance(manifest.get("bytes"), int) else snapshot_bytes,
+                    "created_at_ms": int(manifest.get("created_at_ms")) if isinstance(manifest.get("created_at_ms"), int) else None,
+                }
+            )
+        out.sort(key=lambda item: int(item.get("generation", 0)), reverse=True)
+        return out
+
     def _cold_expiry(self, *, now_ms: int, filesystem: FileSystemSandboxPolicy) -> int | None:
         if filesystem.cold_retention_s is None:
             return None

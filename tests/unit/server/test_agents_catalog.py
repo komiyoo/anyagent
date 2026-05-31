@@ -14,22 +14,37 @@ from openai.types.responses.response_output_text import ResponseOutputText
 from anyagent.agent_api_client import AnyAgent
 from anyagent.observability import emit_observability_event, get_observability_emitter
 from anyagent.protocol.observability import NormalizedTelemetryEvent
+from anyagent.protocol.alerts import AlertEventsResponse
+from anyagent.protocol.evaluations import EvalDatasetResponse, EvalDatasetsResponse, EvalRunResponse, EvalRunsResponse
+from anyagent.protocol.prompt_versions import PromptVersionDiffResponse, PromptVersionResponse, PromptVersionsResponse
+from anyagent.protocol.admin_storage import (
+    AdminSandboxWorkspaceListResponse,
+    AdminSandboxWorkspaceReclaimResponse,
+    AdminSandboxWorkspaceSnapshotsResponse,
+)
 from anyagent.protocol.agent_api_internal import (
     AdminAgentCreateResponse,
     AdminSkillImportResponse,
     AdminToolCatalogResponse,
     AdminWorkspaceAgentFilesResponse,
     AdminWorkspaceAgentFileUpdateResponse,
+    AdminMcpServerEnableResponse,
+    AdminMcpServersResponse,
+    AdminMcpServerTestResponse,
     InternalAgentDetailResponse,
     InternalAgentsListResponse,
+    InternalAuditEventsResponse,
     InternalObservabilityErrorsResponse,
     InternalObservabilityMetricsResponse,
     InternalObservabilityRunsResponse,
     InternalObservabilityTimelineResponse,
     InternalObservabilityToolsResponse,
     InternalObservabilityTraceResponse,
+    InternalSessionDetailResponse,
+    InternalSessionsListResponse,
     InternalToolCatalogResponse,
 )
+from anyagent.protocol.sandbox import FileSystemSandboxPolicy, SandboxPolicy
 from anyagent.server.app import create_app
 
 
@@ -124,6 +139,22 @@ def test_create_app_allows_exposed_workspace_without_main_agent(tmp_path: Path) 
     assert sorted(app.state.anyagent.catalog.packs) == ["delivery-agent"]
 
 
+def test_admin_sandbox_workspace_operations(tmp_path: Path) -> None:
+    asyncio.run(_run_admin_sandbox_workspace_operations(tmp_path))
+
+
+def test_internal_observability_alerts_from_loop_events(tmp_path: Path) -> None:
+    asyncio.run(_run_internal_observability_alerts_from_loop_events(tmp_path))
+
+
+def test_internal_evaluations_dataset_and_run(tmp_path: Path, monkeypatch) -> None:
+    asyncio.run(_run_internal_evaluations_dataset_and_run(tmp_path, monkeypatch))
+
+
+def test_internal_prompt_versions_and_diff(tmp_path: Path) -> None:
+    asyncio.run(_run_internal_prompt_versions_and_diff(tmp_path))
+
+
 def test_workspace_model_alias_applies_to_non_main_agent_request(tmp_path: Path, monkeypatch) -> None:
     asyncio.run(_run_workspace_model_alias_applies_to_non_main_agent_request(tmp_path, monkeypatch))
 
@@ -152,7 +183,7 @@ async def _run_workspace_model_alias_applies_to_non_main_agent_request(tmp_path:
         encoding="utf-8",
     )
     provider = _RecordingProvider()
-    monkeypatch.setattr("anyagent.server.app.get_default_model_provider", lambda: provider)
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: provider)
     app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
         resp = await client.post(
@@ -165,6 +196,164 @@ async def _run_workspace_model_alias_applies_to_non_main_agent_request(tmp_path:
     assert provider.seen_bodies
     assert provider.seen_bodies[0]["model"] == "gpt-5.5"
     assert "metadata" not in provider.seen_bodies[0]
+
+
+async def _run_admin_sandbox_workspace_operations(tmp_path: Path) -> None:
+    _write_agent(tmp_path, "main", exposed=True, prompt="Main agent\n", sandbox_mode="local-unsafe")
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key", sandbox_root_dir=tmp_path / ".sandbox")
+    state = app.state.anyagent
+    policy = SandboxPolicy(
+        mode="local-unsafe",
+        filesystem=FileSystemSandboxPolicy(persistence_mode="session_hot_cold"),
+    )
+    await state.sandbox_manager.execute(
+        policy=policy,
+        agent_id="main",
+        session_key="sess-ops",
+        cmd="printf hello > note.txt",
+    )
+    await state.sandbox_manager.checkpoint(policy=policy, agent_id="main", session_key="sess-ops")
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        listed = await client.get("/admin/sandboxes", headers={"Authorization": "Bearer admin-key"})
+        assert listed.status_code == 200, listed.text
+        list_payload = AdminSandboxWorkspaceListResponse.model_validate(listed.json())
+        assert len(list_payload.workspaces) == 1
+        workspace = list_payload.workspaces[0]
+        assert workspace.session_partition_key == "main::sess-ops"
+        assert workspace.state == "active"
+        assert workspace.generation == 1
+
+        snapshots = await client.get(
+            f"/admin/sandboxes/workspaces/{workspace.workspace_id}/snapshots",
+            headers={"Authorization": "Bearer admin-key"},
+        )
+        assert snapshots.status_code == 200, snapshots.text
+        snapshot_payload = AdminSandboxWorkspaceSnapshotsResponse.model_validate(snapshots.json())
+        assert snapshot_payload.workspace_id == workspace.workspace_id
+        assert [item.generation for item in snapshot_payload.snapshots] == [1]
+        assert snapshot_payload.snapshots[0].snapshot_bytes == 5
+
+        sdk = AnyAgent(api_key="admin-key", base_url="http://testserver", http=client)
+        sdk_list = await sdk.admin.list_sandboxes()
+        assert sdk_list.workspaces[0].workspace_id == workspace.workspace_id
+        sdk_snapshots = await sdk.admin.list_workspace_snapshots(workspace.workspace_id)
+        assert sdk_snapshots.snapshots[0].generation == 1
+        reclaimed = await sdk.admin.reclaim_workspace(workspace.workspace_id)
+        assert isinstance(reclaimed, AdminSandboxWorkspaceReclaimResponse)
+        assert reclaimed.reclaimed is True
+
+        after = await client.get("/admin/sandboxes", headers={"Authorization": "Bearer admin-key"})
+        assert after.status_code == 200, after.text
+        assert AdminSandboxWorkspaceListResponse.model_validate(after.json()).workspaces == []
+
+
+async def _run_internal_observability_alerts_from_loop_events(tmp_path: Path) -> None:
+    _write_agent(tmp_path, "main", exposed=True, prompt="Main agent\n")
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    await app.state.anyagent.telemetry_store.ingest(
+        NormalizedTelemetryEvent(
+            source="stage",
+            type="anyagent.agent.loop_terminated",
+            ts_ms=1234,
+            response_id="resp_loop",
+            agent_id="main",
+            session_key="sess-loop",
+            trace_id="trace-loop",
+            seq=7,
+            level="error",
+            category="runtime",
+            payload={
+                "type": "anyagent.agent.loop_terminated",
+                "tool_signature": "exec:{}",
+                "repeat_count": 5,
+                "hard_limit": 5,
+            },
+        )
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        resp = await client.get(
+            "/internal/observability/alerts",
+            params={"agent_id": "main"},
+            headers={"Authorization": "Bearer user-key"},
+        )
+        assert resp.status_code == 200, resp.text
+        payload = AlertEventsResponse.model_validate(resp.json())
+        assert len(payload.alerts) == 1
+        alert = payload.alerts[0]
+        assert alert.rule_id == "builtin.loop_terminated"
+        assert alert.severity == "critical"
+        assert alert.response_id == "resp_loop"
+        assert alert.source_event_type == "anyagent.agent.loop_terminated"
+
+        sdk = AnyAgent(api_key="user-key", base_url="http://testserver", http=client)
+        sdk_payload = await sdk.observability.alerts(response_id="resp_loop")
+        assert [item.alert_id for item in sdk_payload.alerts] == [alert.alert_id]
+
+
+async def _run_internal_evaluations_dataset_and_run(tmp_path: Path, monkeypatch) -> None:
+    _write_agent(tmp_path, "main", exposed=True, prompt="Main agent\n")
+    provider = _RecordingProvider()
+    monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: provider)
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        dataset_resp = await client.post(
+            "/internal/evaluations/datasets",
+            headers={"Authorization": "Bearer user-key"},
+            json={
+                "dataset_id": "ds_smoke",
+                "name": "Smoke",
+                "agent_id": "main",
+                "cases": [{"case_id": "case_1", "input": "hello", "expected_output": "ok"}],
+            },
+        )
+        assert dataset_resp.status_code == 200, dataset_resp.text
+        dataset_payload = EvalDatasetResponse.model_validate(dataset_resp.json())
+        assert dataset_payload.dataset.dataset_id == "ds_smoke"
+
+        listed = await client.get("/internal/evaluations/datasets", headers={"Authorization": "Bearer user-key"})
+        assert listed.status_code == 200, listed.text
+        assert [item.dataset_id for item in EvalDatasetsResponse.model_validate(listed.json()).datasets] == ["ds_smoke"]
+
+        sdk = AnyAgent(api_key="user-key", base_url="http://testserver", http=client)
+        run_payload = await sdk.evaluations.run({"dataset_id": "ds_smoke"})
+        assert isinstance(run_payload, EvalRunResponse)
+        assert run_payload.run.status == "completed"
+        assert run_payload.run.passed_cases == 1
+        assert run_payload.run.results[0].actual_output == "ok"
+        records = await app.state.anyagent.run_store.list(response_id=run_payload.run.results[0].response_id)
+        assert records and records[0].agent_id == "main"
+
+        runs = await sdk.evaluations.list_runs(dataset_id="ds_smoke")
+        assert isinstance(runs, EvalRunsResponse)
+        assert [item.eval_run_id for item in runs.runs] == [run_payload.run.eval_run_id]
+
+
+async def _run_internal_prompt_versions_and_diff(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("Workspace v1\n", encoding="utf-8")
+    agent_md = _write_agent(tmp_path, "main", exposed=True, prompt="Main v1\n")
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        sdk = AnyAgent(api_key="user-key", base_url="http://testserver", http=client)
+        first = await sdk.prompts.create_version({"agent_id": "main", "label": "before"})
+        assert isinstance(first, PromptVersionResponse)
+        assert first.version.label == "before"
+        agent_md.write_text("Main v2\n", encoding="utf-8")
+        second = await sdk.prompts.create_version({"agent_id": "main", "label": "after"})
+        versions = await sdk.prompts.list_versions("main")
+        assert isinstance(versions, PromptVersionsResponse)
+        assert [item.version_id for item in versions.versions] == [second.version.version_id, first.version.version_id]
+        fetched = await sdk.prompts.get_version("main", first.version.version_id)
+        assert fetched.version.combined_sha256 == first.version.combined_sha256
+        diff = await sdk.prompts.diff_versions("main", first.version.version_id, second.version.version_id)
+        assert isinstance(diff, PromptVersionDiffResponse)
+        assert "-Main v1" in diff.diff
+        assert "+Main v2" in diff.diff
+        admin_sdk = AnyAgent(api_key="admin-key", base_url="http://testserver", http=client)
+        restored = await admin_sdk.prompts.restore_version("main", first.version.version_id)
+        assert restored.restored_paths
+        assert agent_md.read_text(encoding="utf-8") == "Main v1\n"
 
 
 async def _run_studio_static_is_mounted_by_default_and_can_be_disabled(tmp_path: Path) -> None:
@@ -309,6 +498,10 @@ def test_internal_observability_runs(tmp_path: Path) -> None:
     asyncio.run(_run_internal_observability_runs(tmp_path))
 
 
+def test_internal_sessions_query_surface(tmp_path: Path) -> None:
+    asyncio.run(_run_internal_sessions_query_surface(tmp_path))
+
+
 def test_internal_observability_query_surfaces(tmp_path: Path) -> None:
     asyncio.run(_run_internal_observability_query_surfaces(tmp_path))
 
@@ -449,7 +642,7 @@ Use this skill for registry install tests.
         (skill_dir / "references" / "note.md").write_text("kept", encoding="utf-8")
         return subprocess.CompletedProcess(cmd, 0, stdout="installed")
 
-    monkeypatch.setattr("anyagent.server.app.subprocess.run", fake_run)
+    monkeypatch.setattr("anyagent.server.handlers.skill_install.subprocess.run", fake_run)
     app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
     transport = httpx.ASGITransport(app=app)
 
@@ -528,7 +721,7 @@ Use this skill for github install tests.
         )
         return subprocess.CompletedProcess(cmd, 0, stdout="cloned")
 
-    monkeypatch.setattr("anyagent.server.app.subprocess.run", fake_run)
+    monkeypatch.setattr("anyagent.server.handlers.skill_install.subprocess.run", fake_run)
     app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
     transport = httpx.ASGITransport(app=app)
 
@@ -795,6 +988,43 @@ async def _run_admin_workspace_agent_files_update_and_reload(tmp_path: Path) -> 
         assert detail_after_mcp.mcp.configured is True
         assert detail_after_mcp.mcp.server_labels == ["demo"]
 
+        servers = await admin_client.admin.list_agent_mcp_servers("main")
+        assert isinstance(servers, AdminMcpServersResponse)
+        assert servers.enabled_count == 1
+        assert servers.disabled_count == 1
+        by_label = {item.label: item for item in servers.servers}
+        assert by_label["demo"].enablement == "enabled"
+        assert by_label["demo"].transport == "streamable_http"
+        assert by_label["off"].enablement == "disabled"
+
+        skipped = await admin_client.admin.test_agent_mcp_server("main", "off")
+        assert isinstance(skipped, AdminMcpServerTestResponse)
+        assert skipped.status == "skipped"
+        assert skipped.ok is False
+
+        disabled = await admin_client.admin.set_agent_mcp_server_enabled("main", "demo", {"enabled": False})
+        assert isinstance(disabled, AdminMcpServerEnableResponse)
+        assert disabled.enabled is False
+        assert {item.label: item.enabled for item in disabled.servers.servers} == {"demo": False, "off": False}
+        assert '"enabled": false' in disabled.file.text
+
+        enabled = await admin_client.admin.set_agent_mcp_server_enabled("main", "off", {"enabled": True})
+        assert enabled.enabled is True
+        assert {item.label: item.enabled for item in enabled.servers.servers} == {"demo": False, "off": True}
+
+        unknown = await http.put(
+            "/admin/workspace/agents/main/mcp/servers/missing/enabled",
+            headers={"Authorization": "Bearer admin-key"},
+            json={"enabled": False},
+        )
+        assert unknown.status_code == 404, unknown.text
+
+        user_forbidden = await http.get(
+            "/admin/workspace/agents/main/mcp/servers",
+            headers={"Authorization": "Bearer user-key"},
+        )
+        assert user_forbidden.status_code == 401, user_forbidden.text
+
 
 async def _run_internal_tools_catalog(tmp_path: Path) -> None:
     _write_agent(
@@ -1038,6 +1268,92 @@ async def _run_internal_observability_runs(tmp_path: Path) -> None:
         assert InternalObservabilityRunsResponse.model_validate(resp.json()).runs == []
 
 
+async def _run_internal_sessions_query_surface(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        "main",
+        exposed=True,
+        prompt="main prompt\n",
+        sandbox_mode="disabled",
+        requested_tool_names=[],
+    )
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    transport = httpx.ASGITransport(app=app)
+
+    partition_key = "main::sess-a"
+    await app.state.anyagent.session_store.upsert(
+        session_partition_key=partition_key,
+        agent_id="main",
+        session_key="sess-a",
+        snapshot_json={"transcript_items": [{"role": "user", "content": "hello"}]},
+        expected_snapshot_version=None,
+    )
+    await app.state.anyagent.run_store.create_started(
+        response_id="resp_sess_old",
+        agent_id="main",
+        session_key="sess-a",
+        stream=False,
+        idempotency_key=None,
+    )
+    await app.state.anyagent.run_store.mark_final(
+        response_id="resp_sess_old",
+        status="completed",
+        effective_status="completed",
+        final_response_json={"id": "resp_sess_old"},
+    )
+    await app.state.anyagent.run_store.create_started(
+        response_id="resp_sess_new",
+        agent_id="main",
+        session_key="sess-a",
+        stream=True,
+        idempotency_key=None,
+    )
+    await app.state.anyagent.run_store.create_started(
+        response_id="resp_other_session",
+        agent_id="main",
+        session_key="sess-b",
+        stream=False,
+        idempotency_key=None,
+    )
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+        listed = await client.sessions.list(agent_id="main", limit=1)
+        assert isinstance(listed, InternalSessionsListResponse)
+        assert listed.agent_id == "main"
+        assert len(listed.sessions) == 1
+        assert listed.next_cursor_updated_before_ms is not None
+        assert listed.sessions[0].session_key in {"sess-a", "sess-b"}
+
+        filtered_resp = await http.get(
+            "/internal/sessions",
+            params={"agent_id": "main", "session_key": "sess-a"},
+            headers={"Authorization": "Bearer user-key"},
+        )
+        assert filtered_resp.status_code == 200, filtered_resp.text
+        filtered = InternalSessionsListResponse.model_validate(filtered_resp.json())
+        assert [item.session_key for item in filtered.sessions] == ["sess-a"]
+        assert filtered.sessions[0].session_partition_key == partition_key
+        assert filtered.sessions[0].run_count == 2
+        assert filtered.sessions[0].active_run_count == 1
+        assert filtered.sessions[0].snapshot_version == 0
+
+        detail = await client.sessions.get("sess-a", agent_id="main")
+        assert isinstance(detail, InternalSessionDetailResponse)
+        assert detail.session_partition_key == partition_key
+        assert detail.summary.run_count == 2
+        assert [item.response_id for item in detail.runs] == ["resp_sess_new", "resp_sess_old"]
+        assert detail.snapshot_version == 0
+        assert detail.snapshot_json == {"transcript_items": [{"role": "user", "content": "hello"}]}
+
+        missing = await http.get(
+            "/internal/sessions/missing",
+            params={"agent_id": "main"},
+            headers={"Authorization": "Bearer user-key"},
+        )
+        assert missing.status_code == 404, missing.text
+
+
 async def _run_internal_observability_query_surfaces(tmp_path: Path) -> None:
     _write_agent(
         tmp_path,
@@ -1175,6 +1491,7 @@ async def _run_internal_observability_query_surfaces(tmp_path: Path) -> None:
                 "session_key": "sess",
                 "trace_id": trace_id,
                 "audit_ref": "aud_2",
+                "credential_id": "cred_db",
                 "message": "credential denied",
             },
         )
@@ -1236,6 +1553,13 @@ async def _run_internal_observability_query_surfaces(tmp_path: Path) -> None:
         trace = InternalObservabilityTraceResponse.model_validate(resp.json())
         assert trace.response_ids == [response_id]
         assert trace.audit_refs == ["aud_1", "aud_2", "aud_policy", "aud_workspace"]
+
+        client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)
+        audit = await client.audit.events(credential_id="cred_db", agent_id="main")
+        assert isinstance(audit, InternalAuditEventsResponse)
+        assert audit.credential_id == "cred_db"
+        assert [item.audit_ref for item in audit.events] == ["aud_2"]
+        assert audit.events[0].credential_id == "cred_db"
 
 
 async def _run_postgres_telemetry_store_is_selected_for_external_storage(tmp_path: Path, monkeypatch) -> None:

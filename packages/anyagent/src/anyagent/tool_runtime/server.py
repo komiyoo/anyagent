@@ -32,7 +32,7 @@ from anyagent.protocol.plugins import LoadedPluginCatalogItem, PluginCatalogResp
 from anyagent.protocol.sandbox import FileSystemSandboxPolicy
 from anyagent.protocol.stage_events import AnyAgentWorkspaceLifecycleEvent
 from anyagent.protocol.tool_runtime import CancelRequest, ExecuteRequest, ManifestRequest
-from anyagent.server.runtime import InProcessToolRuntimeService
+from anyagent.server.runtime.in_process import InProcessToolRuntimeService
 from anyagent.server.sandbox import SandboxManager, WorkspaceEventStore, build_workspace_event_store
 from anyagent.server.sandbox import (
     WorkspaceAwareSandboxManagerAdapter,
@@ -47,8 +47,8 @@ from anyagent.server.security import (
     build_credential_backend_capability_matrix,
     build_credential_resolver_from_config,
 )
-from anyagent.server.plugin_capabilities import build_plugin_capability_matrix
-from anyagent.server.workspace_env import load_workspace_runtime_environment
+from anyagent.server.plugins.capabilities import build_plugin_capability_matrix
+from anyagent.server.runtime.workspace_env import load_workspace_runtime_environment
 from anyagent.tool_runtime.plugins import ToolRuntimePluginAPI
 from anyagent.tool_runtime.settings import ToolRuntimeServerConfig, build_tool_runtime_server_config
 
