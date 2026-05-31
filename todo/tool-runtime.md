@@ -16,6 +16,13 @@
 ## 当前状态
 
 - Phase 1.5 / Phase 2 的 Tool Runtime 任务已全部完成;已完成条目已清理,历史记录请查看 Git。
+- CLI Profile（`tools.cli`）主路径已完成并进入当前长期口径:
+  - Req: `requirements.md#req-6`
+  - Impl: `packages/anyagent/src/anyagent/tool_runtime/cli_profile.py`
+  - Impl: `packages/anyagent/src/anyagent/tool_runtime/cli_env.py`
+  - Impl: `packages/anyagent/src/anyagent/server/runtime/in_process.py`
+  - Module: `tests/unit/tool_runtime/test_cli_profile.py`
+  - Module: `tests/acceptance/server/acceptance_cli_profile_smoke.py`
 - 已实现能力的长期口径见架构文档:
   - Tool Runtime manifest/execute、registry、exposure 分级(direct/deferred/hidden)与 `core.tool_search` 按需发现:`docs/architecture/tool-runtime/tool-runtime-contract.md`
   - MCP 工具 sanitize/filter、会话池与生命周期事件:`docs/architecture/runtime/agent-packs-and-runtime-config.md`

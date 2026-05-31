@@ -219,6 +219,19 @@ class ToolDefinition(BaseModel):
     credentials: list[ToolCredentialSpec] = []   # 新增：凭证需求声明
 ```
 
+### 3.1.1 CLI Profile 的 env/file 注入
+
+CLI Profile 在同一个 `ToolCredentialSpec` contract 上复用 Credential Vault，但把 `injection_target` 从传统的 `header:*` 扩展到了受控子进程场景：
+
+- `env:NAME`：把 resolved secret 写入 CLI 子进程环境变量 `NAME`
+- `file:relative/path.txt`：把 resolved secret 物化为 profile `cwd` 下的临时文件，命令退出后清理
+
+补充约束：
+
+- `ToolCredentialSpec.credential_id` 可显式绑定具体凭证；当它非空时，优先于 `context.auth_ref.ref` 解析，适合“profile 固定吃某个 vault 引用”的场景。
+- manifest / agent list / doctor 输出只能暴露 credential target 名，例如 `env:API_TOKEN`，不得回显 secret 明文，也不得暴露 `credential_id`。
+- CLI Profile 的 credential 只进入子进程环境或临时文件；agent prompt、manifest、tool arguments 与普通 context 中都不应携带 secret。
+
 ### 3.2 CredentialStore 抽象
 
 ```python

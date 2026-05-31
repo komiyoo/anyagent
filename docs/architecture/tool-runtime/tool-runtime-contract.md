@@ -12,6 +12,23 @@ req: ["requirements.md#req-5", "requirements.md#req-5-1", "requirements.md#req-5
 
 Tool Runtime 是工具可见性、工具执行、策略校验、幂等、取消与审计的真源。Agent API 可以计算“希望披露”的工具集合，但最终 `tools[]` 与 execute 权限必须由 Tool Runtime 收口。
 
+## CLI Profile 工具
+
+`AgentToolsSpec.cli` 允许 agent pack 在 `agent.yaml` 里声明受控 CLI profile，并由 Tool Runtime 自动注册成 `kind="command"` 的工具。实现真源见：
+
+- `packages/anyagent/src/anyagent/tool_runtime/cli_profile_spec.py`：profile schema、环境策略与解释器壳黑名单
+- `packages/anyagent/src/anyagent/tool_runtime/cli_env.py`：`inherit -> sensitive filter -> exclude -> set -> include_only` 环境求值
+- `packages/anyagent/src/anyagent/tool_runtime/cli_profile.py`：tool 定义、manifest 摘要、凭证注入、命令执行与 JSON 输出
+- `packages/anyagent/src/anyagent/server/runtime/in_process.py`：manifest 默认把 `tools.cli` profile 作为 agent 可见工具收进候选集合
+
+契约约束：
+
+- profile 名称沿用 tool 命名规则；`app.*`、`core.*`、`sandbox.*`、`<channel>.*` 的 category 仍由 registry 统一推导。
+- CLI profile 不需要重复写进 `tools.requested_tool_names`；只要出现在 `tools.cli`，manifest 就会把它当作该 agent 默认可见工具的一部分。
+- tool manifest 可附带内部字段 `x-anyagent-cli`，仅暴露 `cwd`、`timeout_ms`、环境策略摘要、`allow_command_prefixes` 与 credential target 名，不暴露密钥或 `credential_id`。
+- 运行时 credential 只通过 `_credentials["env:*" / "file:*"]` 注入到子进程；`file:*` 凭证在 profile `cwd` 下临时物化，并在命令退出后清理。
+- 上游模型调用前仍会通过 `strip_internal_tool_fields()` 去除 `x-anyagent-cli` / `x-anyagent-kind` 等内部字段。
+
 ## Tool Execute API
 
 Agent API 通过标准化 execute 接口完成一次 tool call：
