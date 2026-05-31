@@ -238,7 +238,7 @@ def create_app(
                     if asyncio.iscoroutine(result):
                         await result
 
-    app = FastAPI(title="anyagent", version="0.4.1", lifespan=_lifespan)
+    app = FastAPI(title="anyagent", version="0.4.2", lifespan=_lifespan)
     if enable_studio:
         studio_dir = Path(__file__).resolve().parents[1] / "studio_static"
         if studio_dir.is_dir():

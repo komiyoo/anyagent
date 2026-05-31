@@ -99,9 +99,12 @@ class TranslatingModelProvider(ModelProvider):
         else:
             prev = self._state.get(prev_id)
             if prev is None:
-                raise ModelProviderInvalidRequestError(f"unknown previous_response_id: {prev_id}")
-            names = names.model_copy(update={"call_id_to_model_name": _scan_call_id_to_model_name(prev.turns, body2.get("input"))})
-            turns = [*prev.turns, *self._translator.input_to_turns(input_=body2.get("input"), names=names)]
+                import logging
+                logging.getLogger(__name__).warning("previous_response_id not in state, using input as-is: %s", prev_id)
+                turns = self._translator.input_to_turns(input_=body2.get("input"), names=names)
+            else:
+                names = names.model_copy(update={"call_id_to_model_name": _scan_call_id_to_model_name(prev.turns, body2.get("input"))})
+                turns = [*prev.turns, *self._translator.input_to_turns(input_=body2.get("input"), names=names)]
 
         req = self._translator.build_request(body=body2, turns=turns, names=names, settings=self._settings)
         data = await post_json_normalized(
@@ -115,7 +118,7 @@ class TranslatingModelProvider(ModelProvider):
             request_id_header=self._request_id_header,
         )
         translated = self._translator.parse_response(data=data, names=names)
-        resp = _build_response(body=body2, model=model.strip(), text=translated.text, tool_calls=translated.tool_calls)
+        resp = _build_response(body=body2, model=model.strip(), text=translated.text, tool_calls=translated.tool_calls, usage=data.get("usage"))
         self._state.remember(resp.id, turns, assistant_turn=translated.raw_assistant_turn)
         return resp
 
@@ -178,6 +181,7 @@ def _scan_call_id_to_model_name(turns: list[dict[str, Any]], input_: object = No
 
 
 def _scan_turn_for_tool_calls(turn: dict[str, Any], out: dict[str, str]) -> None:
+    # Anthropic format
     content = turn.get("content")
     if isinstance(content, list):
         for block in content:
@@ -186,6 +190,7 @@ def _scan_turn_for_tool_calls(turn: dict[str, Any], out: dict[str, str]) -> None
                 name = block.get("name")
                 if isinstance(call_id, str) and isinstance(name, str):
                     out[call_id] = name
+    # Gemini format
     parts = turn.get("parts")
     if isinstance(parts, list):
         for part in parts:
@@ -197,6 +202,17 @@ def _scan_turn_for_tool_calls(turn: dict[str, Any], out: dict[str, str]) -> None
                 name = fc.get("name")
                 if isinstance(call_id, str) and isinstance(name, str):
                     out[call_id] = name
+    # Chat Completions format
+    tool_calls = turn.get("tool_calls")
+    if isinstance(tool_calls, list):
+        for tc in tool_calls:
+            if isinstance(tc, dict) and tc.get("type") == "function":
+                call_id = tc.get("id")
+                func = tc.get("function")
+                if isinstance(func, dict):
+                    name = func.get("name")
+                    if isinstance(call_id, str) and isinstance(name, str):
+                        out[call_id] = name
 
 
 def _source_tool_names(tools: list[object]) -> set[str]:
@@ -209,12 +225,35 @@ def _source_tool_names(tools: list[object]) -> set[str]:
     return out
 
 
+def _normalize_usage(raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalize Chat Completions usage format to Responses API format."""
+    input_tokens = raw.get("input_tokens") or raw.get("prompt_tokens") or 0
+    output_tokens = raw.get("output_tokens") or raw.get("completion_tokens") or 0
+    result: dict[str, Any] = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": raw.get("total_tokens") or (input_tokens + output_tokens),
+    }
+    input_details = raw.get("input_tokens_details") or raw.get("prompt_tokens_details")
+    if isinstance(input_details, dict):
+        result["input_tokens_details"] = {"cached_tokens": input_details.get("cached_tokens", 0)}
+    else:
+        result["input_tokens_details"] = {"cached_tokens": 0}
+    output_details = raw.get("output_tokens_details") or raw.get("completion_tokens_details")
+    if isinstance(output_details, dict):
+        result["output_tokens_details"] = {"reasoning_tokens": output_details.get("reasoning_tokens", 0)}
+    else:
+        result["output_tokens_details"] = {"reasoning_tokens": 0}
+    return result
+
+
 def _build_response(
     *,
     body: dict[str, Any],
     model: str,
     text: str,
     tool_calls: list[Any],
+    usage: dict[str, Any] | None = None,
 ) -> Response:
     out_items: list[dict[str, Any]] = []
     for tool_call in tool_calls:
@@ -250,4 +289,6 @@ def _build_response(
         "tools": body.get("tools") if isinstance(body.get("tools"), list) else [],
         "status": "completed",
     }
+    if isinstance(usage, dict) and usage:
+        payload["usage"] = _normalize_usage(usage)
     return Response.model_validate(payload)

@@ -8,13 +8,14 @@ from ._capabilities import ANTHROPIC_CAPS, GEMINI_CAPS, OPENAI_FULL, ProviderCap
 from .anthropic_messages import AnthropicMessagesModelProviderSettings, get_default_anthropic_model_provider
 from .base import ModelProvider
 from .google_gemini import GoogleGeminiModelProviderSettings, get_default_gemini_model_provider
+from .openai_chat_completions import OpenAIChatCompletionsModelProviderSettings, get_default_openai_chat_model_provider
 from .openai_responses import OpenAIResponsesModelProviderSettings, get_default_model_provider as get_default_openai_model_provider
 
 if TYPE_CHECKING:
     from anyagent.model_config import EffectiveModelSelection
 
 
-ModelProviderKind = Literal["openai", "anthropic", "gemini"]
+ModelProviderKind = Literal["openai", "openai_chat", "anthropic", "gemini"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +42,7 @@ class ProviderSpec:
     def read_default_base_url(self) -> str:
         env_name = {
             "openai": "OPENAI_BASE_URL",
+            "openai_chat": "OPENAI_BASE_URL",
             "anthropic": "ANTHROPIC_BASE_URL",
             "gemini": "GEMINI_BASE_URL",
         }[self.kind]
@@ -83,6 +85,16 @@ def _build_gemini_from_selection(selection: "EffectiveModelSelection") -> ModelP
     )
 
 
+def _build_openai_chat_from_selection(selection: "EffectiveModelSelection") -> ModelProvider:
+    return get_default_openai_chat_model_provider(
+        OpenAIChatCompletionsModelProviderSettings(
+            OPENAI_API_KEY=_api_key_for_selection(selection),
+            OPENAI_BASE_URL=_base_url_for_selection(selection),
+            ANYAGENT_OPENAI_CHAT_STATE_MAX=int(os.getenv("ANYAGENT_OPENAI_CHAT_STATE_MAX", "1024")),
+        )
+    )
+
+
 PROVIDER_REGISTRY: dict[ModelProviderKind, ProviderSpec] = {
     "openai": ProviderSpec(
         kind="openai",
@@ -110,6 +122,15 @@ PROVIDER_REGISTRY: dict[ModelProviderKind, ProviderSpec] = {
         capabilities=GEMINI_CAPS,
         build_default=get_default_gemini_model_provider,
         build_from_selection=_build_gemini_from_selection,
+    ),
+    "openai_chat": ProviderSpec(
+        kind="openai_chat",
+        aliases=frozenset({"openai_chat", "openai_chat_completions", "chat_completions"}),
+        default_api_key_envs=("OPENAI_API_KEY",),
+        default_base_url="https://api.openai.com/v1",
+        capabilities=OPENAI_FULL,
+        build_default=get_default_openai_chat_model_provider,
+        build_from_selection=_build_openai_chat_from_selection,
     ),
 }
 

@@ -27,6 +27,12 @@ from .openai_responses import (
     create_openai_responses_model_provider,
     get_default_model_provider as get_default_openai_model_provider,
 )
+from .openai_chat_completions import (
+    OpenAIChatCompletionsModelProvider,
+    OpenAIChatCompletionsModelProviderSettings,
+    create_openai_chat_completions_model_provider,
+    get_default_openai_chat_model_provider,
+)
 from .registry import PROVIDER_REGISTRY, ProviderSpec, get_provider_spec, is_registered_provider_name, resolve_provider_kind
 
 __all__ = [
@@ -48,6 +54,10 @@ __all__ = [
     "OpenAIResponsesModelProvider",
     "OpenAIResponsesModelProviderSettings",
     "create_openai_responses_model_provider",
+    "OpenAIChatCompletionsModelProvider",
+    "OpenAIChatCompletionsModelProviderSettings",
+    "create_openai_chat_completions_model_provider",
+    "get_default_openai_chat_model_provider",
     "PROVIDER_REGISTRY",
     "ProviderSpec",
     "get_provider_spec",

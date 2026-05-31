@@ -175,13 +175,16 @@ def apply_session_resume_to_body(*, body: dict[str, Any], session_snapshot: dict
 
     snapshot_model = coerce_persisted_session_snapshot(session_snapshot)
     last_response_id = snapshot_model.resume_cursor.last_response_id
-    if isinstance(last_response_id, str) and last_response_id.strip():
-        out["previous_response_id"] = last_response_id.strip()
-        return out, last_response_id.strip()
     fallback_transcript_items = input_to_transcript_items(snapshot_model.resume_cursor.fallback_transcript_items)
+
     if fallback_transcript_items:
         request_items = input_to_transcript_items(out.get("input"))
         out["input"] = [*fallback_transcript_items, *request_items]
+
+    if isinstance(last_response_id, str) and last_response_id.strip():
+        out["previous_response_id"] = last_response_id.strip()
+        return out, last_response_id.strip()
+
     return out, None
 
 
