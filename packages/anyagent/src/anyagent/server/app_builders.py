@@ -131,6 +131,17 @@ def _resolve_plugin_roots(plugin_roots: list[str | Path] | tuple[str | Path, ...
             continue
         seen.add(key)
         roots.append(resolved)
+
+    # Auto-discover builtin plugins shipped with the anyagent package.
+    try:
+        import anyagent.plugins.builtin as _builtin_pkg  # noqa: F811
+    except ImportError:
+        _builtin_pkg = None
+    if _builtin_pkg is not None and hasattr(_builtin_pkg, "__path__") and _builtin_pkg.__path__:
+        builtin_dir = Path(_builtin_pkg.__path__[0]).resolve()
+        key = str(builtin_dir)
+        if key not in seen:
+            roots.append(builtin_dir)
     return roots
 
 
