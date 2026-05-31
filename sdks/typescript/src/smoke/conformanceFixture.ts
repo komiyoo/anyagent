@@ -200,6 +200,21 @@ export class SdkConformanceFixtureStore {
       "admin.skill.update.apply",
       "admin.agent.skills.update",
       "admin.agent.config.update",
+      "sessions.list",
+      "sessions.get",
+      "evaluations.datasets.list",
+      "evaluations.datasets.upsert",
+      "evaluations.run",
+      "evaluations.runs.list",
+      "observability.alerts",
+      "audit.events",
+      "prompts.versions.list",
+      "prompts.versions.create",
+      "prompts.versions.restore",
+      "admin.sandboxes.list",
+      "admin.sandboxes.workspace.reclaim",
+      "admin.workspace.agent.mcp.servers",
+      "admin.workspace.agent.mcp.server.enabled",
     ]) {
       if (!operations.has(required)) {
         throw new Error(`SDK minimum matrix missing required operation: ${required}`);

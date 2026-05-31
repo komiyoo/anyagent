@@ -62,6 +62,25 @@
       "response_model": "anyagent.protocol.plugins.PluginCatalogResponse"
     },
     {
+      "method": "GET",
+      "operation": "admin.sandboxes.list",
+      "path": "/admin/sandboxes",
+      "response_model": "anyagent.protocol.admin_storage.AdminSandboxWorkspaceListResponse"
+    },
+    {
+      "method": "POST",
+      "operation": "admin.sandboxes.workspace.reclaim",
+      "path": "/admin/sandboxes/workspaces/{workspace_id}/reclaim",
+      "request_format": "empty",
+      "response_model": "anyagent.protocol.admin_storage.AdminSandboxWorkspaceReclaimResponse"
+    },
+    {
+      "method": "GET",
+      "operation": "admin.sandboxes.workspace.snapshots",
+      "path": "/admin/sandboxes/workspaces/{workspace_id}/snapshots",
+      "response_model": "anyagent.protocol.admin_storage.AdminSandboxWorkspaceSnapshotsResponse"
+    },
+    {
       "method": "POST",
       "operation": "admin.skill.import",
       "path": "/admin/workspace/agents/{agent_id}/skills/import",
@@ -127,6 +146,26 @@
       "response_model": "anyagent.protocol.agent_api_internal.InternalAgentDetailResponse"
     },
     {
+      "method": "PUT",
+      "operation": "admin.workspace.agent.mcp.server.enabled",
+      "path": "/admin/workspace/agents/{agent_id}/mcp/servers/{server_label}/enabled",
+      "request_model": "anyagent.protocol.agent_api_internal.AdminMcpServerEnableRequest",
+      "response_model": "anyagent.protocol.agent_api_internal.AdminMcpServerEnableResponse"
+    },
+    {
+      "method": "POST",
+      "operation": "admin.workspace.agent.mcp.server.test",
+      "path": "/admin/workspace/agents/{agent_id}/mcp/servers/{server_label}/test",
+      "request_format": "empty",
+      "response_model": "anyagent.protocol.agent_api_internal.AdminMcpServerTestResponse"
+    },
+    {
+      "method": "GET",
+      "operation": "admin.workspace.agent.mcp.servers",
+      "path": "/admin/workspace/agents/{agent_id}/mcp/servers",
+      "response_model": "anyagent.protocol.agent_api_internal.AdminMcpServersResponse"
+    },
+    {
       "method": "GET",
       "operation": "agents.get",
       "path": "/internal/agents/{agent_id}",
@@ -140,6 +179,56 @@
     },
     {
       "method": "GET",
+      "operation": "audit.events",
+      "path": "/internal/audit/events",
+      "response_model": "anyagent.protocol.agent_api_internal.InternalAuditEventsResponse"
+    },
+    {
+      "method": "DELETE",
+      "operation": "evaluations.datasets.delete",
+      "path": "/internal/evaluations/datasets/{dataset_id}",
+      "response_format": "json_object"
+    },
+    {
+      "method": "GET",
+      "operation": "evaluations.datasets.get",
+      "path": "/internal/evaluations/datasets/{dataset_id}",
+      "response_model": "anyagent.protocol.evaluations.EvalDatasetResponse"
+    },
+    {
+      "method": "GET",
+      "operation": "evaluations.datasets.list",
+      "path": "/internal/evaluations/datasets",
+      "response_model": "anyagent.protocol.evaluations.EvalDatasetsResponse"
+    },
+    {
+      "method": "POST",
+      "operation": "evaluations.datasets.upsert",
+      "path": "/internal/evaluations/datasets",
+      "request_model": "anyagent.protocol.evaluations.EvalDatasetUpsertRequest",
+      "response_model": "anyagent.protocol.evaluations.EvalDatasetResponse"
+    },
+    {
+      "method": "POST",
+      "operation": "evaluations.run",
+      "path": "/internal/evaluations/run",
+      "request_model": "anyagent.protocol.evaluations.EvalRunRequest",
+      "response_model": "anyagent.protocol.evaluations.EvalRunResponse"
+    },
+    {
+      "method": "GET",
+      "operation": "evaluations.runs.get",
+      "path": "/internal/evaluations/runs/{eval_run_id}",
+      "response_model": "anyagent.protocol.evaluations.EvalRunResponse"
+    },
+    {
+      "method": "GET",
+      "operation": "evaluations.runs.list",
+      "path": "/internal/evaluations/runs",
+      "response_model": "anyagent.protocol.evaluations.EvalRunsResponse"
+    },
+    {
+      "method": "GET",
       "operation": "events.list",
       "path": "/internal/events/list",
       "response_model": "anyagent.protocol.agent_api_internal.InternalEventsListResponse"
@@ -149,6 +238,12 @@
       "operation": "health",
       "path": "/healthz",
       "response_model": "anyagent.protocol.health.HealthResponse"
+    },
+    {
+      "method": "GET",
+      "operation": "observability.alerts",
+      "path": "/internal/observability/alerts",
+      "response_model": "anyagent.protocol.alerts.AlertEventsResponse"
     },
     {
       "method": "GET",
@@ -201,6 +296,38 @@
     },
     {
       "method": "POST",
+      "operation": "prompts.versions.create",
+      "path": "/internal/prompt/versions",
+      "request_model": "anyagent.protocol.prompt_versions.PromptVersionCreateRequest",
+      "response_model": "anyagent.protocol.prompt_versions.PromptVersionResponse"
+    },
+    {
+      "method": "GET",
+      "operation": "prompts.versions.diff",
+      "path": "/internal/prompt/versions/diff",
+      "response_model": "anyagent.protocol.prompt_versions.PromptVersionDiffResponse"
+    },
+    {
+      "method": "GET",
+      "operation": "prompts.versions.get",
+      "path": "/internal/prompt/versions/{version_id}",
+      "response_model": "anyagent.protocol.prompt_versions.PromptVersionResponse"
+    },
+    {
+      "method": "GET",
+      "operation": "prompts.versions.list",
+      "path": "/internal/prompt/versions",
+      "response_model": "anyagent.protocol.prompt_versions.PromptVersionsResponse"
+    },
+    {
+      "method": "POST",
+      "operation": "prompts.versions.restore",
+      "path": "/internal/prompt/versions/{version_id}/restore",
+      "request_format": "empty",
+      "response_model": "anyagent.protocol.prompt_versions.PromptVersionRestoreResponse"
+    },
+    {
+      "method": "POST",
       "operation": "responses.cancel",
       "path": "/v1/responses/{response_id}/cancel",
       "request_format": "empty",
@@ -243,6 +370,18 @@
       "operation": "responses.tool_executions",
       "path": "/internal/responses/{response_id}/tool-executions",
       "response_model": "anyagent.protocol.agent_api_internal.InternalResponseToolExecutionsResponse"
+    },
+    {
+      "method": "GET",
+      "operation": "sessions.get",
+      "path": "/internal/sessions/{session_key}",
+      "response_model": "anyagent.protocol.agent_api_internal.InternalSessionDetailResponse"
+    },
+    {
+      "method": "GET",
+      "operation": "sessions.list",
+      "path": "/internal/sessions",
+      "response_model": "anyagent.protocol.agent_api_internal.InternalSessionsListResponse"
     },
     {
       "method": "GET",
@@ -788,6 +927,35 @@
       "title": "AdminSandboxWorkspaceListResponse",
       "type": "object"
     },
+    "anyagent.protocol.admin_storage.AdminSandboxWorkspaceReclaimResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "reclaimed": {
+          "title": "Reclaimed",
+          "type": "boolean"
+        },
+        "session_partition_key": {
+          "title": "Session Partition Key",
+          "type": "string"
+        },
+        "workspace_id": {
+          "title": "Workspace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "workspace_id",
+        "session_partition_key",
+        "reclaimed"
+      ],
+      "title": "AdminSandboxWorkspaceReclaimResponse",
+      "type": "object"
+    },
     "anyagent.protocol.admin_storage.AdminSandboxWorkspaceRef": {
       "$defs": {
         "AdminSandboxRuntimeDiagnostics": {
@@ -1100,6 +1268,170 @@
         "session_key"
       ],
       "title": "AdminSandboxWorkspaceRequest",
+      "type": "object"
+    },
+    "anyagent.protocol.admin_storage.AdminSandboxWorkspaceSnapshotItem": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Created At Ms"
+        },
+        "generation": {
+          "minimum": 0,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "session_partition_key": {
+          "title": "Session Partition Key",
+          "type": "string"
+        },
+        "snapshot_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot Bytes"
+        },
+        "snapshot_digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot Digest"
+        },
+        "snapshot_uri": {
+          "title": "Snapshot Uri",
+          "type": "string"
+        },
+        "workspace_id": {
+          "title": "Workspace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace_id",
+        "session_partition_key",
+        "generation",
+        "snapshot_uri"
+      ],
+      "title": "AdminSandboxWorkspaceSnapshotItem",
+      "type": "object"
+    },
+    "anyagent.protocol.admin_storage.AdminSandboxWorkspaceSnapshotsResponse": {
+      "$defs": {
+        "AdminSandboxWorkspaceSnapshotItem": {
+          "additionalProperties": false,
+          "properties": {
+            "created_at_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Created At Ms"
+            },
+            "generation": {
+              "minimum": 0,
+              "title": "Generation",
+              "type": "integer"
+            },
+            "session_partition_key": {
+              "title": "Session Partition Key",
+              "type": "string"
+            },
+            "snapshot_bytes": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snapshot Bytes"
+            },
+            "snapshot_digest": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snapshot Digest"
+            },
+            "snapshot_uri": {
+              "title": "Snapshot Uri",
+              "type": "string"
+            },
+            "workspace_id": {
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspace_id",
+            "session_partition_key",
+            "generation",
+            "snapshot_uri"
+          ],
+          "title": "AdminSandboxWorkspaceSnapshotItem",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "session_partition_key": {
+          "title": "Session Partition Key",
+          "type": "string"
+        },
+        "snapshots": {
+          "items": {
+            "$ref": "#/$defs/AdminSandboxWorkspaceSnapshotItem"
+          },
+          "title": "Snapshots",
+          "type": "array"
+        },
+        "workspace_id": {
+          "title": "Workspace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace_id",
+        "session_partition_key"
+      ],
+      "title": "AdminSandboxWorkspaceSnapshotsResponse",
       "type": "object"
     },
     "anyagent.protocol.admin_storage.StorageBackendConfig": {
@@ -2207,6 +2539,707 @@
         }
       },
       "title": "AdminAgentSkillsUpdateRequest",
+      "type": "object"
+    },
+    "anyagent.protocol.agent_api_internal.AdminMcpServerEnableRequest": {
+      "additionalProperties": false,
+      "description": "Request model for toggling one MCP server's enabled flag.",
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "title": "AdminMcpServerEnableRequest",
+      "type": "object"
+    },
+    "anyagent.protocol.agent_api_internal.AdminMcpServerEnableResponse": {
+      "$defs": {
+        "AdminMcpServerItem": {
+          "additionalProperties": false,
+          "description": "One MCP server configuration row for the admin control plane.",
+          "properties": {
+            "command": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Command"
+            },
+            "credential_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Credential Id"
+            },
+            "enabled": {
+              "title": "Enabled",
+              "type": "boolean"
+            },
+            "enablement": {
+              "enum": [
+                "enabled",
+                "disabled",
+                "inherited",
+                "invalid"
+              ],
+              "title": "Enablement",
+              "type": "string"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error"
+            },
+            "idle_timeout_seconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Idle Timeout Seconds"
+            },
+            "label": {
+              "title": "Label",
+              "type": "string"
+            },
+            "source": {
+              "default": "unknown",
+              "enum": [
+                "agent",
+                "inherited",
+                "unknown"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "timeout_seconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Timeout Seconds"
+            },
+            "tool_filter": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tool Filter"
+            },
+            "transport": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Transport"
+            },
+            "url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Url"
+            }
+          },
+          "required": [
+            "label",
+            "enabled",
+            "enablement"
+          ],
+          "title": "AdminMcpServerItem",
+          "type": "object"
+        },
+        "AdminMcpServersResponse": {
+          "additionalProperties": false,
+          "description": "Response model for `GET /admin/workspace/agents/{agent_id}/mcp/servers`.",
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "configured": {
+              "title": "Configured",
+              "type": "boolean"
+            },
+            "disabled_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Disabled Count",
+              "type": "integer"
+            },
+            "enabled_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Enabled Count",
+              "type": "integer"
+            },
+            "inherited_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Inherited Count",
+              "type": "integer"
+            },
+            "invalid_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Invalid Count",
+              "type": "integer"
+            },
+            "servers": {
+              "items": {
+                "$ref": "#/$defs/AdminMcpServerItem"
+              },
+              "title": "Servers",
+              "type": "array"
+            }
+          },
+          "required": [
+            "agent_id",
+            "configured"
+          ],
+          "title": "AdminMcpServersResponse",
+          "type": "object"
+        },
+        "AdminWorkspaceAgentFile": {
+          "additionalProperties": false,
+          "description": "One editable agent-pack source file exposed to admin control surfaces.",
+          "properties": {
+            "exists": {
+              "title": "Exists",
+              "type": "boolean"
+            },
+            "kind": {
+              "enum": [
+                "agents_md",
+                "agent_yaml",
+                "mcp_json"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "sha256": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Sha256"
+            },
+            "text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Text"
+            }
+          },
+          "required": [
+            "kind",
+            "path",
+            "exists"
+          ],
+          "title": "AdminWorkspaceAgentFile",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Response model for `PUT /admin/workspace/agents/{agent_id}/mcp/servers/{label}/enabled`.",
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "file": {
+          "$ref": "#/$defs/AdminWorkspaceAgentFile"
+        },
+        "reloaded_agent_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reloaded Agent Ids",
+          "type": "array"
+        },
+        "server_label": {
+          "title": "Server Label",
+          "type": "string"
+        },
+        "servers": {
+          "$ref": "#/$defs/AdminMcpServersResponse"
+        }
+      },
+      "required": [
+        "agent_id",
+        "server_label",
+        "enabled",
+        "file",
+        "servers"
+      ],
+      "title": "AdminMcpServerEnableResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.agent_api_internal.AdminMcpServerItem": {
+      "additionalProperties": false,
+      "description": "One MCP server configuration row for the admin control plane.",
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        },
+        "credential_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Credential Id"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "enablement": {
+          "enum": [
+            "enabled",
+            "disabled",
+            "inherited",
+            "invalid"
+          ],
+          "title": "Enablement",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "idle_timeout_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idle Timeout Seconds"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "source": {
+          "default": "unknown",
+          "enum": [
+            "agent",
+            "inherited",
+            "unknown"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeout Seconds"
+        },
+        "tool_filter": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Filter"
+        },
+        "transport": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transport"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "label",
+        "enabled",
+        "enablement"
+      ],
+      "title": "AdminMcpServerItem",
+      "type": "object"
+    },
+    "anyagent.protocol.agent_api_internal.AdminMcpServerTestResponse": {
+      "additionalProperties": false,
+      "description": "Response model for MCP server connection tests.",
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "server_label": {
+          "title": "Server Label",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ready",
+            "failed",
+            "skipped"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "tool_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Count"
+        },
+        "transport": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transport"
+        }
+      },
+      "required": [
+        "agent_id",
+        "server_label",
+        "ok",
+        "status"
+      ],
+      "title": "AdminMcpServerTestResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.agent_api_internal.AdminMcpServersResponse": {
+      "$defs": {
+        "AdminMcpServerItem": {
+          "additionalProperties": false,
+          "description": "One MCP server configuration row for the admin control plane.",
+          "properties": {
+            "command": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Command"
+            },
+            "credential_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Credential Id"
+            },
+            "enabled": {
+              "title": "Enabled",
+              "type": "boolean"
+            },
+            "enablement": {
+              "enum": [
+                "enabled",
+                "disabled",
+                "inherited",
+                "invalid"
+              ],
+              "title": "Enablement",
+              "type": "string"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error"
+            },
+            "idle_timeout_seconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Idle Timeout Seconds"
+            },
+            "label": {
+              "title": "Label",
+              "type": "string"
+            },
+            "source": {
+              "default": "unknown",
+              "enum": [
+                "agent",
+                "inherited",
+                "unknown"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "timeout_seconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Timeout Seconds"
+            },
+            "tool_filter": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tool Filter"
+            },
+            "transport": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Transport"
+            },
+            "url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Url"
+            }
+          },
+          "required": [
+            "label",
+            "enabled",
+            "enablement"
+          ],
+          "title": "AdminMcpServerItem",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Response model for `GET /admin/workspace/agents/{agent_id}/mcp/servers`.",
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "configured": {
+          "title": "Configured",
+          "type": "boolean"
+        },
+        "disabled_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Disabled Count",
+          "type": "integer"
+        },
+        "enabled_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Enabled Count",
+          "type": "integer"
+        },
+        "inherited_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Inherited Count",
+          "type": "integer"
+        },
+        "invalid_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Invalid Count",
+          "type": "integer"
+        },
+        "servers": {
+          "items": {
+            "$ref": "#/$defs/AdminMcpServerItem"
+          },
+          "title": "Servers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "agent_id",
+        "configured"
+      ],
+      "title": "AdminMcpServersResponse",
       "type": "object"
     },
     "anyagent.protocol.agent_api_internal.AdminSkillImportRequest": {
@@ -3540,6 +4573,527 @@
         }
       },
       "title": "InternalAgentsListResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.agent_api_internal.InternalAuditEventItem": {
+      "additionalProperties": false,
+      "description": "One audit event with credential correlation promoted for filtering.",
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Id"
+        },
+        "audit_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audit Ref"
+        },
+        "category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category"
+        },
+        "credential_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Credential Id"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "level": {
+          "anyOf": [
+            {
+              "enum": [
+                "debug",
+                "info",
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Level"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "response_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Response Id"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Key"
+        },
+        "source": {
+          "enum": [
+            "run",
+            "event",
+            "stage",
+            "observability",
+            "workspace",
+            "audit"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "tool_call_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Call Id"
+        },
+        "tool_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Name"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "type"
+      ],
+      "title": "InternalAuditEventItem",
+      "type": "object"
+    },
+    "anyagent.protocol.agent_api_internal.InternalAuditEventsResponse": {
+      "$defs": {
+        "InternalAuditEventItem": {
+          "additionalProperties": false,
+          "description": "One audit event with credential correlation promoted for filtering.",
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "audit_ref": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audit Ref"
+            },
+            "category": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Category"
+            },
+            "credential_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Credential Id"
+            },
+            "duration_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Duration Ms"
+            },
+            "level": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "warning",
+                    "error"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Level"
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Message"
+            },
+            "payload": {
+              "additionalProperties": true,
+              "title": "Payload",
+              "type": "object"
+            },
+            "response_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Response Id"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "session_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Session Key"
+            },
+            "source": {
+              "enum": [
+                "run",
+                "event",
+                "stage",
+                "observability",
+                "workspace",
+                "audit"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status"
+            },
+            "tool_call_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tool Call Id"
+            },
+            "tool_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tool Name"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "type"
+          ],
+          "title": "InternalAuditEventItem",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Response model for `GET /internal/audit/events`.",
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Id"
+        },
+        "credential_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Credential Id"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/InternalAuditEventItem"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "response_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Response Id"
+        },
+        "session_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Key"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        }
+      },
+      "title": "InternalAuditEventsResponse",
       "type": "object"
     },
     "anyagent.protocol.agent_api_internal.InternalEventItem": {
@@ -6884,6 +8438,514 @@
         "response_id"
       ],
       "title": "InternalResponseToolExecutionsResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.agent_api_internal.InternalSessionDetailResponse": {
+      "$defs": {
+        "InternalObservabilityRunItem": {
+          "additionalProperties": false,
+          "description": "One run row for agent/session observability history.",
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "created_at_ms": {
+              "minimum": 0,
+              "title": "Created At Ms",
+              "type": "integer"
+            },
+            "effective_status": {
+              "title": "Effective Status",
+              "type": "string"
+            },
+            "ended_at_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ended At Ms"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "session_key": {
+              "title": "Session Key",
+              "type": "string"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            },
+            "stream": {
+              "title": "Stream",
+              "type": "boolean"
+            },
+            "updated_at_ms": {
+              "minimum": 0,
+              "title": "Updated At Ms",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "response_id",
+            "agent_id",
+            "session_key",
+            "stream",
+            "status",
+            "effective_status",
+            "created_at_ms",
+            "updated_at_ms"
+          ],
+          "title": "InternalObservabilityRunItem",
+          "type": "object"
+        },
+        "InternalSessionSummary": {
+          "additionalProperties": false,
+          "description": "One session row aggregated from persisted response runs.",
+          "properties": {
+            "active_run_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Active Run Count",
+              "type": "integer"
+            },
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "created_at_ms": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Created At Ms",
+              "type": "integer"
+            },
+            "error_run_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Error Run Count",
+              "type": "integer"
+            },
+            "latest_effective_status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Latest Effective Status"
+            },
+            "latest_response_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Latest Response Id"
+            },
+            "latest_status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Latest Status"
+            },
+            "run_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Run Count",
+              "type": "integer"
+            },
+            "session_key": {
+              "title": "Session Key",
+              "type": "string"
+            },
+            "session_partition_key": {
+              "title": "Session Partition Key",
+              "type": "string"
+            },
+            "snapshot_version": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snapshot Version"
+            },
+            "updated_at_ms": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Updated At Ms",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "agent_id",
+            "session_key",
+            "session_partition_key"
+          ],
+          "title": "InternalSessionSummary",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Response model for `GET /internal/sessions/{session_key}`.",
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/InternalObservabilityRunItem"
+          },
+          "title": "Runs",
+          "type": "array"
+        },
+        "session_key": {
+          "title": "Session Key",
+          "type": "string"
+        },
+        "session_partition_key": {
+          "title": "Session Partition Key",
+          "type": "string"
+        },
+        "snapshot_json": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot Json"
+        },
+        "snapshot_version": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot Version"
+        },
+        "summary": {
+          "$ref": "#/$defs/InternalSessionSummary"
+        }
+      },
+      "required": [
+        "agent_id",
+        "session_key",
+        "session_partition_key",
+        "summary"
+      ],
+      "title": "InternalSessionDetailResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.agent_api_internal.InternalSessionSummary": {
+      "additionalProperties": false,
+      "description": "One session row aggregated from persisted response runs.",
+      "properties": {
+        "active_run_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Active Run Count",
+          "type": "integer"
+        },
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "created_at_ms": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Created At Ms",
+          "type": "integer"
+        },
+        "error_run_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Error Run Count",
+          "type": "integer"
+        },
+        "latest_effective_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latest Effective Status"
+        },
+        "latest_response_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latest Response Id"
+        },
+        "latest_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latest Status"
+        },
+        "run_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Run Count",
+          "type": "integer"
+        },
+        "session_key": {
+          "title": "Session Key",
+          "type": "string"
+        },
+        "session_partition_key": {
+          "title": "Session Partition Key",
+          "type": "string"
+        },
+        "snapshot_version": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot Version"
+        },
+        "updated_at_ms": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Updated At Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agent_id",
+        "session_key",
+        "session_partition_key"
+      ],
+      "title": "InternalSessionSummary",
+      "type": "object"
+    },
+    "anyagent.protocol.agent_api_internal.InternalSessionsListResponse": {
+      "$defs": {
+        "InternalSessionSummary": {
+          "additionalProperties": false,
+          "description": "One session row aggregated from persisted response runs.",
+          "properties": {
+            "active_run_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Active Run Count",
+              "type": "integer"
+            },
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "created_at_ms": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Created At Ms",
+              "type": "integer"
+            },
+            "error_run_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Error Run Count",
+              "type": "integer"
+            },
+            "latest_effective_status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Latest Effective Status"
+            },
+            "latest_response_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Latest Response Id"
+            },
+            "latest_status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Latest Status"
+            },
+            "run_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Run Count",
+              "type": "integer"
+            },
+            "session_key": {
+              "title": "Session Key",
+              "type": "string"
+            },
+            "session_partition_key": {
+              "title": "Session Partition Key",
+              "type": "string"
+            },
+            "snapshot_version": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snapshot Version"
+            },
+            "updated_at_ms": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Updated At Ms",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "agent_id",
+            "session_key",
+            "session_partition_key"
+          ],
+          "title": "InternalSessionSummary",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Response model for `GET /internal/sessions`.",
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Id"
+        },
+        "cursor_updated_before_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor Updated Before Ms"
+        },
+        "next_cursor_updated_before_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Cursor Updated Before Ms"
+        },
+        "session_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Key"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/InternalSessionSummary"
+          },
+          "title": "Sessions",
+          "type": "array"
+        }
+      },
+      "title": "InternalSessionsListResponse",
       "type": "object"
     },
     "anyagent.protocol.agent_api_internal.InternalSkillListItem": {
@@ -10668,6 +12730,549 @@
       "title": "ToolVisibilityExplanation",
       "type": "object"
     },
+    "anyagent.protocol.alerts.AlertChannel": {
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        },
+        "kind": {
+          "const": "webhook",
+          "default": "webhook",
+          "title": "Kind",
+          "type": "string"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "AlertChannel",
+      "type": "object"
+    },
+    "anyagent.protocol.alerts.AlertEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Id"
+        },
+        "alert_id": {
+          "title": "Alert Id",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "response_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Response Id"
+        },
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "rule_name": {
+          "title": "Rule Name",
+          "type": "string"
+        },
+        "session_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Key"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "critical"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "source_event_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Event Type"
+        },
+        "source_seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Seq"
+        },
+        "status": {
+          "default": "active",
+          "enum": [
+            "active",
+            "resolved"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "minimum": 0,
+          "title": "Ts Ms",
+          "type": "integer"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alert_id",
+        "rule_id",
+        "rule_name",
+        "severity",
+        "type",
+        "message"
+      ],
+      "title": "AlertEvent",
+      "type": "object"
+    },
+    "anyagent.protocol.alerts.AlertEventsResponse": {
+      "$defs": {
+        "AlertEvent": {
+          "additionalProperties": false,
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "alert_id": {
+              "title": "Alert Id",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": true,
+              "title": "Payload",
+              "type": "object"
+            },
+            "response_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Response Id"
+            },
+            "rule_id": {
+              "title": "Rule Id",
+              "type": "string"
+            },
+            "rule_name": {
+              "title": "Rule Name",
+              "type": "string"
+            },
+            "session_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Session Key"
+            },
+            "severity": {
+              "enum": [
+                "info",
+                "warning",
+                "critical"
+              ],
+              "title": "Severity",
+              "type": "string"
+            },
+            "source_event_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Event Type"
+            },
+            "source_seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Seq"
+            },
+            "status": {
+              "default": "active",
+              "enum": [
+                "active",
+                "resolved"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "minimum": 0,
+              "title": "Ts Ms",
+              "type": "integer"
+            },
+            "type": {
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "alert_id",
+            "rule_id",
+            "rule_name",
+            "severity",
+            "type",
+            "message"
+          ],
+          "title": "AlertEvent",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Id"
+        },
+        "alerts": {
+          "items": {
+            "$ref": "#/$defs/AlertEvent"
+          },
+          "title": "Alerts",
+          "type": "array"
+        },
+        "response_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Response Id"
+        },
+        "session_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Key"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        }
+      },
+      "title": "AlertEventsResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.alerts.AlertRule": {
+      "$defs": {
+        "AlertChannel": {
+          "additionalProperties": false,
+          "properties": {
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "title": "Headers",
+              "type": "object"
+            },
+            "kind": {
+              "const": "webhook",
+              "default": "webhook",
+              "title": "Kind",
+              "type": "string"
+            },
+            "url": {
+              "title": "Url",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "title": "AlertChannel",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "channels": {
+          "items": {
+            "$ref": "#/$defs/AlertChannel"
+          },
+          "title": "Channels",
+          "type": "array"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "event_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Event Types",
+          "type": "array"
+        },
+        "kind": {
+          "const": "stage_event",
+          "default": "stage_event",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "severity": {
+          "default": "warning",
+          "enum": [
+            "info",
+            "warning",
+            "critical"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "name"
+      ],
+      "title": "AlertRule",
+      "type": "object"
+    },
+    "anyagent.protocol.alerts.AlertRulesResponse": {
+      "$defs": {
+        "AlertChannel": {
+          "additionalProperties": false,
+          "properties": {
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "title": "Headers",
+              "type": "object"
+            },
+            "kind": {
+              "const": "webhook",
+              "default": "webhook",
+              "title": "Kind",
+              "type": "string"
+            },
+            "url": {
+              "title": "Url",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "title": "AlertChannel",
+          "type": "object"
+        },
+        "AlertRule": {
+          "additionalProperties": false,
+          "properties": {
+            "channels": {
+              "items": {
+                "$ref": "#/$defs/AlertChannel"
+              },
+              "title": "Channels",
+              "type": "array"
+            },
+            "enabled": {
+              "default": true,
+              "title": "Enabled",
+              "type": "boolean"
+            },
+            "event_types": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Event Types",
+              "type": "array"
+            },
+            "kind": {
+              "const": "stage_event",
+              "default": "stage_event",
+              "title": "Kind",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "rule_id": {
+              "title": "Rule Id",
+              "type": "string"
+            },
+            "severity": {
+              "default": "warning",
+              "enum": [
+                "info",
+                "warning",
+                "critical"
+              ],
+              "title": "Severity",
+              "type": "string"
+            }
+          },
+          "required": [
+            "rule_id",
+            "name"
+          ],
+          "title": "AlertRule",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/AlertRule"
+          },
+          "title": "Rules",
+          "type": "array"
+        }
+      },
+      "title": "AlertRulesResponse",
+      "type": "object"
+    },
     "anyagent.protocol.command_derivation.CommandPlannedFields": {
       "additionalProperties": false,
       "description": "Extracted command planned fields derived from tool arguments.",
@@ -10896,6 +13501,19 @@
               "title": "Credential Id",
               "type": "string"
             },
+            "expires_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Expires At"
+            },
             "kind": {
               "title": "Kind",
               "type": "string"
@@ -10904,6 +13522,19 @@
               "additionalProperties": true,
               "title": "Metadata",
               "type": "object"
+            },
+            "rotate_before": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Rotate Before"
             },
             "scope": {
               "$ref": "#/$defs/CredentialScope"
@@ -10918,7 +13549,7 @@
           "type": "object"
         },
         "CredentialScope": {
-          "description": "Declares where a credential is allowed to be used (v1: global/agent).",
+          "description": "Declares where a credential is allowed to be used.",
           "properties": {
             "agent_id": {
               "anyOf": [
@@ -10934,13 +13565,27 @@
               "title": "Agent Id"
             },
             "level": {
-              "description": "v1 only supports global/agent",
+              "description": "Credential visibility level",
               "enum": [
                 "global",
-                "agent"
+                "agent",
+                "session"
               ],
               "title": "Level",
               "type": "string"
+            },
+            "session_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Required when level=session",
+              "title": "Session Key"
             }
           },
           "required": [
@@ -10969,7 +13614,7 @@
     "anyagent.protocol.credential_vault.AdminCredentialRef": {
       "$defs": {
         "CredentialScope": {
-          "description": "Declares where a credential is allowed to be used (v1: global/agent).",
+          "description": "Declares where a credential is allowed to be used.",
           "properties": {
             "agent_id": {
               "anyOf": [
@@ -10985,13 +13630,27 @@
               "title": "Agent Id"
             },
             "level": {
-              "description": "v1 only supports global/agent",
+              "description": "Credential visibility level",
               "enum": [
                 "global",
-                "agent"
+                "agent",
+                "session"
               ],
               "title": "Level",
               "type": "string"
+            },
+            "session_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Required when level=session",
+              "title": "Session Key"
             }
           },
           "required": [
@@ -11007,6 +13666,19 @@
           "title": "Credential Id",
           "type": "string"
         },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At"
+        },
         "kind": {
           "title": "Kind",
           "type": "string"
@@ -11015,6 +13687,19 @@
           "additionalProperties": true,
           "title": "Metadata",
           "type": "object"
+        },
+        "rotate_before": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rotate Before"
         },
         "scope": {
           "$ref": "#/$defs/CredentialScope"
@@ -11031,7 +13716,7 @@
     "anyagent.protocol.credential_vault.AdminCredentialSetRequest": {
       "$defs": {
         "CredentialScope": {
-          "description": "Declares where a credential is allowed to be used (v1: global/agent).",
+          "description": "Declares where a credential is allowed to be used.",
           "properties": {
             "agent_id": {
               "anyOf": [
@@ -11047,13 +13732,27 @@
               "title": "Agent Id"
             },
             "level": {
-              "description": "v1 only supports global/agent",
+              "description": "Credential visibility level",
               "enum": [
                 "global",
-                "agent"
+                "agent",
+                "session"
               ],
               "title": "Level",
               "type": "string"
+            },
+            "session_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Required when level=session",
+              "title": "Session Key"
             }
           },
           "required": [
@@ -11069,6 +13768,20 @@
           "title": "Credential Id",
           "type": "string"
         },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "UTC expiration time; expired credentials are not resolved",
+          "title": "Expires At"
+        },
         "kind": {
           "title": "Kind",
           "type": "string"
@@ -11077,6 +13790,20 @@
           "additionalProperties": true,
           "title": "Metadata",
           "type": "object"
+        },
+        "rotate_before": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "UTC time at which operators should rotate the credential",
+          "title": "Rotate Before"
         },
         "scope": {
           "$ref": "#/$defs/CredentialScope"
@@ -11321,7 +14048,7 @@
       "type": "object"
     },
     "anyagent.protocol.credential_vault.CredentialScope": {
-      "description": "Declares where a credential is allowed to be used (v1: global/agent).",
+      "description": "Declares where a credential is allowed to be used.",
       "properties": {
         "agent_id": {
           "anyOf": [
@@ -11337,19 +14064,1244 @@
           "title": "Agent Id"
         },
         "level": {
-          "description": "v1 only supports global/agent",
+          "description": "Credential visibility level",
           "enum": [
             "global",
-            "agent"
+            "agent",
+            "session"
           ],
           "title": "Level",
           "type": "string"
+        },
+        "session_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Required when level=session",
+          "title": "Session Key"
         }
       },
       "required": [
         "level"
       ],
       "title": "CredentialScope",
+      "type": "object"
+    },
+    "anyagent.protocol.evaluations.EvalCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "title": "Case Id",
+          "type": "string"
+        },
+        "expected_output": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Output"
+        },
+        "input": {
+          "title": "Input",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        }
+      },
+      "required": [
+        "case_id",
+        "input"
+      ],
+      "title": "EvalCase",
+      "type": "object"
+    },
+    "anyagent.protocol.evaluations.EvalCaseResult": {
+      "additionalProperties": false,
+      "properties": {
+        "actual_output": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual Output"
+        },
+        "case_id": {
+          "title": "Case Id",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "expected_output": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Output"
+        },
+        "response_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Response Id"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "unscored",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "case_id",
+        "status"
+      ],
+      "title": "EvalCaseResult",
+      "type": "object"
+    },
+    "anyagent.protocol.evaluations.EvalDataset": {
+      "$defs": {
+        "EvalCase": {
+          "additionalProperties": false,
+          "properties": {
+            "case_id": {
+              "title": "Case Id",
+              "type": "string"
+            },
+            "expected_output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Expected Output"
+            },
+            "input": {
+              "title": "Input",
+              "type": "string"
+            },
+            "metadata": {
+              "additionalProperties": true,
+              "title": "Metadata",
+              "type": "object"
+            }
+          },
+          "required": [
+            "case_id",
+            "input"
+          ],
+          "title": "EvalCase",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Id"
+        },
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/EvalCase"
+          },
+          "title": "Cases",
+          "type": "array"
+        },
+        "created_at_ms": {
+          "minimum": 0,
+          "title": "Created At Ms",
+          "type": "integer"
+        },
+        "dataset_id": {
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "updated_at_ms": {
+          "minimum": 0,
+          "title": "Updated At Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dataset_id",
+        "name"
+      ],
+      "title": "EvalDataset",
+      "type": "object"
+    },
+    "anyagent.protocol.evaluations.EvalDatasetResponse": {
+      "$defs": {
+        "EvalCase": {
+          "additionalProperties": false,
+          "properties": {
+            "case_id": {
+              "title": "Case Id",
+              "type": "string"
+            },
+            "expected_output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Expected Output"
+            },
+            "input": {
+              "title": "Input",
+              "type": "string"
+            },
+            "metadata": {
+              "additionalProperties": true,
+              "title": "Metadata",
+              "type": "object"
+            }
+          },
+          "required": [
+            "case_id",
+            "input"
+          ],
+          "title": "EvalCase",
+          "type": "object"
+        },
+        "EvalDataset": {
+          "additionalProperties": false,
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "cases": {
+              "items": {
+                "$ref": "#/$defs/EvalCase"
+              },
+              "title": "Cases",
+              "type": "array"
+            },
+            "created_at_ms": {
+              "minimum": 0,
+              "title": "Created At Ms",
+              "type": "integer"
+            },
+            "dataset_id": {
+              "title": "Dataset Id",
+              "type": "string"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Description"
+            },
+            "metadata": {
+              "additionalProperties": true,
+              "title": "Metadata",
+              "type": "object"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "updated_at_ms": {
+              "minimum": 0,
+              "title": "Updated At Ms",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "dataset_id",
+            "name"
+          ],
+          "title": "EvalDataset",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "dataset": {
+          "$ref": "#/$defs/EvalDataset"
+        }
+      },
+      "required": [
+        "dataset"
+      ],
+      "title": "EvalDatasetResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.evaluations.EvalDatasetUpsertRequest": {
+      "$defs": {
+        "EvalCase": {
+          "additionalProperties": false,
+          "properties": {
+            "case_id": {
+              "title": "Case Id",
+              "type": "string"
+            },
+            "expected_output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Expected Output"
+            },
+            "input": {
+              "title": "Input",
+              "type": "string"
+            },
+            "metadata": {
+              "additionalProperties": true,
+              "title": "Metadata",
+              "type": "object"
+            }
+          },
+          "required": [
+            "case_id",
+            "input"
+          ],
+          "title": "EvalCase",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Id"
+        },
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/EvalCase"
+          },
+          "title": "Cases",
+          "type": "array"
+        },
+        "dataset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dataset Id"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "EvalDatasetUpsertRequest",
+      "type": "object"
+    },
+    "anyagent.protocol.evaluations.EvalDatasetsResponse": {
+      "$defs": {
+        "EvalCase": {
+          "additionalProperties": false,
+          "properties": {
+            "case_id": {
+              "title": "Case Id",
+              "type": "string"
+            },
+            "expected_output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Expected Output"
+            },
+            "input": {
+              "title": "Input",
+              "type": "string"
+            },
+            "metadata": {
+              "additionalProperties": true,
+              "title": "Metadata",
+              "type": "object"
+            }
+          },
+          "required": [
+            "case_id",
+            "input"
+          ],
+          "title": "EvalCase",
+          "type": "object"
+        },
+        "EvalDataset": {
+          "additionalProperties": false,
+          "properties": {
+            "agent_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Id"
+            },
+            "cases": {
+              "items": {
+                "$ref": "#/$defs/EvalCase"
+              },
+              "title": "Cases",
+              "type": "array"
+            },
+            "created_at_ms": {
+              "minimum": 0,
+              "title": "Created At Ms",
+              "type": "integer"
+            },
+            "dataset_id": {
+              "title": "Dataset Id",
+              "type": "string"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Description"
+            },
+            "metadata": {
+              "additionalProperties": true,
+              "title": "Metadata",
+              "type": "object"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "updated_at_ms": {
+              "minimum": 0,
+              "title": "Updated At Ms",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "dataset_id",
+            "name"
+          ],
+          "title": "EvalDataset",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "datasets": {
+          "items": {
+            "$ref": "#/$defs/EvalDataset"
+          },
+          "title": "Datasets",
+          "type": "array"
+        }
+      },
+      "title": "EvalDatasetsResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.evaluations.EvalRun": {
+      "$defs": {
+        "EvalCaseResult": {
+          "additionalProperties": false,
+          "properties": {
+            "actual_output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Actual Output"
+            },
+            "case_id": {
+              "title": "Case Id",
+              "type": "string"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error"
+            },
+            "expected_output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Expected Output"
+            },
+            "response_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Response Id"
+            },
+            "score": {
+              "anyOf": [
+                {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Score"
+            },
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "unscored",
+                "error"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "case_id",
+            "status"
+          ],
+          "title": "EvalCaseResult",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "completed_at_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At Ms"
+        },
+        "created_at_ms": {
+          "minimum": 0,
+          "title": "Created At Ms",
+          "type": "integer"
+        },
+        "dataset_id": {
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "error_cases": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Error Cases",
+          "type": "integer"
+        },
+        "eval_run_id": {
+          "title": "Eval Run Id",
+          "type": "string"
+        },
+        "failed_cases": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Failed Cases",
+          "type": "integer"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "passed_cases": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Passed Cases",
+          "type": "integer"
+        },
+        "results": {
+          "items": {
+            "$ref": "#/$defs/EvalCaseResult"
+          },
+          "title": "Results",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "running",
+            "completed",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "total_cases": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Total Cases",
+          "type": "integer"
+        },
+        "unscored_cases": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Unscored Cases",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "eval_run_id",
+        "dataset_id",
+        "agent_id",
+        "status"
+      ],
+      "title": "EvalRun",
+      "type": "object"
+    },
+    "anyagent.protocol.evaluations.EvalRunRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Id"
+        },
+        "dataset_id": {
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "max_cases": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Cases"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "session_key_prefix": {
+          "default": "eval",
+          "title": "Session Key Prefix",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataset_id"
+      ],
+      "title": "EvalRunRequest",
+      "type": "object"
+    },
+    "anyagent.protocol.evaluations.EvalRunResponse": {
+      "$defs": {
+        "EvalCaseResult": {
+          "additionalProperties": false,
+          "properties": {
+            "actual_output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Actual Output"
+            },
+            "case_id": {
+              "title": "Case Id",
+              "type": "string"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error"
+            },
+            "expected_output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Expected Output"
+            },
+            "response_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Response Id"
+            },
+            "score": {
+              "anyOf": [
+                {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Score"
+            },
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "unscored",
+                "error"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "case_id",
+            "status"
+          ],
+          "title": "EvalCaseResult",
+          "type": "object"
+        },
+        "EvalRun": {
+          "additionalProperties": false,
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "completed_at_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Completed At Ms"
+            },
+            "created_at_ms": {
+              "minimum": 0,
+              "title": "Created At Ms",
+              "type": "integer"
+            },
+            "dataset_id": {
+              "title": "Dataset Id",
+              "type": "string"
+            },
+            "error_cases": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Error Cases",
+              "type": "integer"
+            },
+            "eval_run_id": {
+              "title": "Eval Run Id",
+              "type": "string"
+            },
+            "failed_cases": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Failed Cases",
+              "type": "integer"
+            },
+            "metadata": {
+              "additionalProperties": true,
+              "title": "Metadata",
+              "type": "object"
+            },
+            "passed_cases": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Passed Cases",
+              "type": "integer"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/$defs/EvalCaseResult"
+              },
+              "title": "Results",
+              "type": "array"
+            },
+            "status": {
+              "enum": [
+                "queued",
+                "running",
+                "completed",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "total_cases": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Total Cases",
+              "type": "integer"
+            },
+            "unscored_cases": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Unscored Cases",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "eval_run_id",
+            "dataset_id",
+            "agent_id",
+            "status"
+          ],
+          "title": "EvalRun",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "run": {
+          "$ref": "#/$defs/EvalRun"
+        }
+      },
+      "required": [
+        "run"
+      ],
+      "title": "EvalRunResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.evaluations.EvalRunsResponse": {
+      "$defs": {
+        "EvalCaseResult": {
+          "additionalProperties": false,
+          "properties": {
+            "actual_output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Actual Output"
+            },
+            "case_id": {
+              "title": "Case Id",
+              "type": "string"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error"
+            },
+            "expected_output": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Expected Output"
+            },
+            "response_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Response Id"
+            },
+            "score": {
+              "anyOf": [
+                {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Score"
+            },
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "unscored",
+                "error"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "case_id",
+            "status"
+          ],
+          "title": "EvalCaseResult",
+          "type": "object"
+        },
+        "EvalRun": {
+          "additionalProperties": false,
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "completed_at_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Completed At Ms"
+            },
+            "created_at_ms": {
+              "minimum": 0,
+              "title": "Created At Ms",
+              "type": "integer"
+            },
+            "dataset_id": {
+              "title": "Dataset Id",
+              "type": "string"
+            },
+            "error_cases": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Error Cases",
+              "type": "integer"
+            },
+            "eval_run_id": {
+              "title": "Eval Run Id",
+              "type": "string"
+            },
+            "failed_cases": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Failed Cases",
+              "type": "integer"
+            },
+            "metadata": {
+              "additionalProperties": true,
+              "title": "Metadata",
+              "type": "object"
+            },
+            "passed_cases": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Passed Cases",
+              "type": "integer"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/$defs/EvalCaseResult"
+              },
+              "title": "Results",
+              "type": "array"
+            },
+            "status": {
+              "enum": [
+                "queued",
+                "running",
+                "completed",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "total_cases": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Total Cases",
+              "type": "integer"
+            },
+            "unscored_cases": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Unscored Cases",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "eval_run_id",
+            "dataset_id",
+            "agent_id",
+            "status"
+          ],
+          "title": "EvalRun",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "dataset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dataset Id"
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/EvalRun"
+          },
+          "title": "Runs",
+          "type": "array"
+        }
+      },
+      "title": "EvalRunsResponse",
       "type": "object"
     },
     "anyagent.protocol.health.HealthResponse": {
@@ -13690,6 +17642,411 @@
         "rendered_text"
       ],
       "title": "RenderedPromptFragment",
+      "type": "object"
+    },
+    "anyagent.protocol.prompt_versions.PromptVersionCreateRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        }
+      },
+      "required": [
+        "agent_id"
+      ],
+      "title": "PromptVersionCreateRequest",
+      "type": "object"
+    },
+    "anyagent.protocol.prompt_versions.PromptVersionDiffResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "diff": {
+          "title": "Diff",
+          "type": "string"
+        },
+        "from_version_id": {
+          "title": "From Version Id",
+          "type": "string"
+        },
+        "to_version_id": {
+          "title": "To Version Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "from_version_id",
+        "to_version_id",
+        "diff"
+      ],
+      "title": "PromptVersionDiffResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.prompt_versions.PromptVersionResponse": {
+      "$defs": {
+        "PromptVersionSnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "combined_sha256": {
+              "title": "Combined Sha256",
+              "type": "string"
+            },
+            "created_at_ms": {
+              "minimum": 0,
+              "title": "Created At Ms",
+              "type": "integer"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Label"
+            },
+            "sources": {
+              "items": {
+                "$ref": "#/$defs/PromptVersionSource"
+              },
+              "title": "Sources",
+              "type": "array"
+            },
+            "version_id": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "version_id",
+            "agent_id",
+            "combined_sha256"
+          ],
+          "title": "PromptVersionSnapshot",
+          "type": "object"
+        },
+        "PromptVersionSource": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "workspace_agents_md",
+                "agent_agents_md",
+                "agent_yaml",
+                "mcp_json"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "sha256": {
+              "title": "Sha256",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path",
+            "sha256",
+            "text"
+          ],
+          "title": "PromptVersionSource",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/PromptVersionSnapshot"
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "title": "PromptVersionResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.prompt_versions.PromptVersionRestoreResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "restored_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Restored Paths",
+          "type": "array"
+        },
+        "version_id": {
+          "title": "Version Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "version_id"
+      ],
+      "title": "PromptVersionRestoreResponse",
+      "type": "object"
+    },
+    "anyagent.protocol.prompt_versions.PromptVersionSnapshot": {
+      "$defs": {
+        "PromptVersionSource": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "workspace_agents_md",
+                "agent_agents_md",
+                "agent_yaml",
+                "mcp_json"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "sha256": {
+              "title": "Sha256",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path",
+            "sha256",
+            "text"
+          ],
+          "title": "PromptVersionSource",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "combined_sha256": {
+          "title": "Combined Sha256",
+          "type": "string"
+        },
+        "created_at_ms": {
+          "minimum": 0,
+          "title": "Created At Ms",
+          "type": "integer"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/PromptVersionSource"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "version_id": {
+          "title": "Version Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version_id",
+        "agent_id",
+        "combined_sha256"
+      ],
+      "title": "PromptVersionSnapshot",
+      "type": "object"
+    },
+    "anyagent.protocol.prompt_versions.PromptVersionSource": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "workspace_agents_md",
+            "agent_agents_md",
+            "agent_yaml",
+            "mcp_json"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "sha256",
+        "text"
+      ],
+      "title": "PromptVersionSource",
+      "type": "object"
+    },
+    "anyagent.protocol.prompt_versions.PromptVersionsResponse": {
+      "$defs": {
+        "PromptVersionSnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "combined_sha256": {
+              "title": "Combined Sha256",
+              "type": "string"
+            },
+            "created_at_ms": {
+              "minimum": 0,
+              "title": "Created At Ms",
+              "type": "integer"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Label"
+            },
+            "sources": {
+              "items": {
+                "$ref": "#/$defs/PromptVersionSource"
+              },
+              "title": "Sources",
+              "type": "array"
+            },
+            "version_id": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "version_id",
+            "agent_id",
+            "combined_sha256"
+          ],
+          "title": "PromptVersionSnapshot",
+          "type": "object"
+        },
+        "PromptVersionSource": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "workspace_agents_md",
+                "agent_agents_md",
+                "agent_yaml",
+                "mcp_json"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "sha256": {
+              "title": "Sha256",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path",
+            "sha256",
+            "text"
+          ],
+          "title": "PromptVersionSource",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "versions": {
+          "items": {
+            "$ref": "#/$defs/PromptVersionSnapshot"
+          },
+          "title": "Versions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "agent_id"
+      ],
+      "title": "PromptVersionsResponse",
       "type": "object"
     },
     "anyagent.protocol.responses_optional.AnyAgentResponseError": {

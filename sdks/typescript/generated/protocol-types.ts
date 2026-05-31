@@ -41,6 +41,13 @@ export type AdminSandboxWorkspaceListResponse = {
   "workspaces"?: Array<AdminSandboxWorkspaceRef>;
 };
 
+export type AdminSandboxWorkspaceReclaimResponse = {
+  "ok": boolean;
+  "reclaimed": boolean;
+  "session_partition_key": string;
+  "workspace_id": string;
+};
+
 export type AdminSandboxWorkspaceRef = {
   "cold_expires_at_ms"?: number | null;
   "failure_code"?: string | null;
@@ -63,6 +70,22 @@ export type AdminSandboxWorkspaceRef = {
 export type AdminSandboxWorkspaceRequest = {
   "agent_id": string;
   "session_key": string;
+};
+
+export type AdminSandboxWorkspaceSnapshotItem = {
+  "created_at_ms"?: number | null;
+  "generation": number;
+  "session_partition_key": string;
+  "snapshot_bytes"?: number | null;
+  "snapshot_digest"?: string | null;
+  "snapshot_uri": string;
+  "workspace_id": string;
+};
+
+export type AdminSandboxWorkspaceSnapshotsResponse = {
+  "session_partition_key": string;
+  "snapshots"?: Array<AdminSandboxWorkspaceSnapshotItem>;
+  "workspace_id": string;
 };
 
 export type StorageBackendConfig = {
@@ -151,6 +174,54 @@ export type AdminAgentCreateResponse = {
 
 export type AdminAgentSkillsUpdateRequest = {
   "default_selected"?: Array<string>;
+};
+
+export type AdminMcpServerEnableRequest = {
+  "enabled": boolean;
+};
+
+export type AdminMcpServerEnableResponse = {
+  "agent_id": string;
+  "enabled": boolean;
+  "file": AdminWorkspaceAgentFile;
+  "reloaded_agent_ids"?: Array<string>;
+  "server_label": string;
+  "servers": AdminMcpServersResponse;
+};
+
+export type AdminMcpServerItem = {
+  "command"?: string | null;
+  "credential_id"?: string | null;
+  "enabled": boolean;
+  "enablement": "enabled" | "disabled" | "inherited" | "invalid";
+  "error"?: string | null;
+  "idle_timeout_seconds"?: number | null;
+  "label": string;
+  "source"?: "agent" | "inherited" | "unknown";
+  "timeout_seconds"?: number | null;
+  "tool_filter"?: Record<string, unknown> | null;
+  "transport"?: string | null;
+  "url"?: string | null;
+};
+
+export type AdminMcpServersResponse = {
+  "agent_id": string;
+  "configured": boolean;
+  "disabled_count"?: number;
+  "enabled_count"?: number;
+  "inherited_count"?: number;
+  "invalid_count"?: number;
+  "servers"?: Array<AdminMcpServerItem>;
+};
+
+export type AdminMcpServerTestResponse = {
+  "agent_id": string;
+  "message"?: string | null;
+  "ok": boolean;
+  "server_label": string;
+  "status": "ready" | "failed" | "skipped";
+  "tool_count"?: number | null;
+  "transport"?: string | null;
 };
 
 export type AdminSkillImportRequest = {
@@ -286,6 +357,36 @@ export type InternalAgentToolsConfig = {
   "allow_tools"?: Array<string> | null;
   "deny_tools"?: Array<string> | null;
   "requested_tool_names"?: Array<string>;
+};
+
+export type InternalAuditEventItem = {
+  "agent_id"?: string | null;
+  "audit_ref"?: string | null;
+  "category"?: string | null;
+  "credential_id"?: string | null;
+  "duration_ms"?: number | null;
+  "level"?: "debug" | "info" | "warning" | "error" | null;
+  "message"?: string | null;
+  "payload"?: Record<string, unknown>;
+  "response_id"?: string | null;
+  "seq"?: number | null;
+  "session_key"?: string | null;
+  "source": "run" | "event" | "stage" | "observability" | "workspace" | "audit";
+  "status"?: string | null;
+  "tool_call_id"?: string | null;
+  "tool_name"?: string | null;
+  "trace_id"?: string | null;
+  "ts_ms"?: number | null;
+  "type": string;
+};
+
+export type InternalAuditEventsResponse = {
+  "agent_id"?: string | null;
+  "credential_id"?: string | null;
+  "events"?: Array<InternalAuditEventItem>;
+  "response_id"?: string | null;
+  "session_key"?: string | null;
+  "trace_id"?: string | null;
 };
 
 export type InternalEventItem = {
@@ -498,6 +599,39 @@ export type InternalResponseToolExecutionsResponse = {
   "tool_executions"?: Array<AnyAgentToolExecutionDetailEvent>;
 };
 
+export type InternalSessionDetailResponse = {
+  "agent_id": string;
+  "runs"?: Array<InternalObservabilityRunItem>;
+  "session_key": string;
+  "session_partition_key": string;
+  "snapshot_json"?: Record<string, unknown> | null;
+  "snapshot_version"?: number | null;
+  "summary": InternalSessionSummary;
+};
+
+export type InternalSessionsListResponse = {
+  "agent_id"?: string | null;
+  "cursor_updated_before_ms"?: number | null;
+  "next_cursor_updated_before_ms"?: number | null;
+  "session_key"?: string | null;
+  "sessions"?: Array<InternalSessionSummary>;
+};
+
+export type InternalSessionSummary = {
+  "active_run_count"?: number;
+  "agent_id": string;
+  "created_at_ms"?: number;
+  "error_run_count"?: number;
+  "latest_effective_status"?: string | null;
+  "latest_response_id"?: string | null;
+  "latest_status"?: string | null;
+  "run_count"?: number;
+  "session_key": string;
+  "session_partition_key": string;
+  "snapshot_version"?: number | null;
+  "updated_at_ms"?: number;
+};
+
 export type InternalSkillListItem = {
   "description"?: string | null;
   "enabled": boolean;
@@ -617,6 +751,52 @@ export type ToolVisibilityExplanation = {
   "visible_without_probe": boolean;
 };
 
+export type AlertChannel = {
+  "headers"?: Record<string, string>;
+  "kind"?: "webhook";
+  "url": string;
+};
+
+export type AlertEvent = {
+  "agent_id"?: string | null;
+  "alert_id": string;
+  "message": string;
+  "payload"?: Record<string, unknown>;
+  "response_id"?: string | null;
+  "rule_id": string;
+  "rule_name": string;
+  "session_key"?: string | null;
+  "severity": "info" | "warning" | "critical";
+  "source_event_type"?: string | null;
+  "source_seq"?: number | null;
+  "status"?: "active" | "resolved";
+  "trace_id"?: string | null;
+  "ts_ms"?: number;
+  "type": string;
+};
+
+export type AlertEventsResponse = {
+  "agent_id"?: string | null;
+  "alerts"?: Array<AlertEvent>;
+  "response_id"?: string | null;
+  "session_key"?: string | null;
+  "trace_id"?: string | null;
+};
+
+export type AlertRule = {
+  "channels"?: Array<AlertChannel>;
+  "enabled"?: boolean;
+  "event_types"?: Array<string>;
+  "kind"?: "stage_event";
+  "name": string;
+  "rule_id": string;
+  "severity"?: "info" | "warning" | "critical";
+};
+
+export type AlertRulesResponse = {
+  "rules"?: Array<AlertRule>;
+};
+
 export type CommandPlannedFields = {
   "command": string;
   "timeout_ms"?: number | null;
@@ -654,15 +834,19 @@ export type AdminCredentialListResponse = {
 
 export type AdminCredentialRef = {
   "credential_id": string;
+  "expires_at"?: string | null;
   "kind": string;
   "metadata"?: Record<string, unknown>;
+  "rotate_before"?: string | null;
   "scope": CredentialScope;
 };
 
 export type AdminCredentialSetRequest = {
   "credential_id": string;
+  "expires_at"?: string | null;
   "kind": string;
   "metadata"?: Record<string, unknown>;
+  "rotate_before"?: string | null;
   "scope": CredentialScope;
   "value": string;
 };
@@ -693,7 +877,87 @@ export type CredentialBackendCapabilityMatrix = {
 
 export type CredentialScope = {
   "agent_id"?: string | null;
-  "level": "global" | "agent";
+  "level": "global" | "agent" | "session";
+  "session_key"?: string | null;
+};
+
+export type EvalCase = {
+  "case_id": string;
+  "expected_output"?: string | null;
+  "input": string;
+  "metadata"?: Record<string, unknown>;
+};
+
+export type EvalCaseResult = {
+  "actual_output"?: string | null;
+  "case_id": string;
+  "error"?: string | null;
+  "expected_output"?: string | null;
+  "response_id"?: string | null;
+  "score"?: number | null;
+  "status": "passed" | "failed" | "unscored" | "error";
+};
+
+export type EvalDataset = {
+  "agent_id"?: string | null;
+  "cases"?: Array<EvalCase>;
+  "created_at_ms"?: number;
+  "dataset_id": string;
+  "description"?: string | null;
+  "metadata"?: Record<string, unknown>;
+  "name": string;
+  "updated_at_ms"?: number;
+};
+
+export type EvalDatasetResponse = {
+  "dataset": EvalDataset;
+};
+
+export type EvalDatasetsResponse = {
+  "datasets"?: Array<EvalDataset>;
+};
+
+export type EvalDatasetUpsertRequest = {
+  "agent_id"?: string | null;
+  "cases"?: Array<EvalCase>;
+  "dataset_id"?: string | null;
+  "description"?: string | null;
+  "metadata"?: Record<string, unknown>;
+  "name": string;
+};
+
+export type EvalRun = {
+  "agent_id": string;
+  "completed_at_ms"?: number | null;
+  "created_at_ms"?: number;
+  "dataset_id": string;
+  "error_cases"?: number;
+  "eval_run_id": string;
+  "failed_cases"?: number;
+  "metadata"?: Record<string, unknown>;
+  "passed_cases"?: number;
+  "results"?: Array<EvalCaseResult>;
+  "status": "queued" | "running" | "completed" | "failed";
+  "total_cases"?: number;
+  "unscored_cases"?: number;
+};
+
+export type EvalRunRequest = {
+  "agent_id"?: string | null;
+  "dataset_id": string;
+  "max_cases"?: number | null;
+  "metadata"?: Record<string, unknown>;
+  "model"?: string | null;
+  "session_key_prefix"?: string;
+};
+
+export type EvalRunResponse = {
+  "run": EvalRun;
+};
+
+export type EvalRunsResponse = {
+  "dataset_id"?: string | null;
+  "runs"?: Array<EvalRun>;
 };
 
 export type HealthResponse = {
@@ -928,6 +1192,49 @@ export type RenderedPromptFragment = {
   "source_hash"?: string | null;
   "source_path"?: string | null;
   "stable_id"?: string | null;
+};
+
+export type PromptVersionCreateRequest = {
+  "agent_id": string;
+  "label"?: string | null;
+};
+
+export type PromptVersionDiffResponse = {
+  "agent_id": string;
+  "diff": string;
+  "from_version_id": string;
+  "to_version_id": string;
+};
+
+export type PromptVersionResponse = {
+  "version": PromptVersionSnapshot;
+};
+
+export type PromptVersionRestoreResponse = {
+  "agent_id": string;
+  "restored_paths"?: Array<string>;
+  "version_id": string;
+};
+
+export type PromptVersionSnapshot = {
+  "agent_id": string;
+  "combined_sha256": string;
+  "created_at_ms"?: number;
+  "label"?: string | null;
+  "sources"?: Array<PromptVersionSource>;
+  "version_id": string;
+};
+
+export type PromptVersionSource = {
+  "kind": "workspace_agents_md" | "agent_agents_md" | "agent_yaml" | "mcp_json";
+  "path": string;
+  "sha256": string;
+  "text": string;
+};
+
+export type PromptVersionsResponse = {
+  "agent_id": string;
+  "versions"?: Array<PromptVersionSnapshot>;
 };
 
 export type AnyAgentResponseError = {

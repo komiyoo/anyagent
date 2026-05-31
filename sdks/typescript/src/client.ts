@@ -2,24 +2,40 @@ import type {
   AdminAgentConfigUpdateRequest,
   AdminAgentCreateRequest,
   AdminAgentCreateResponse,
-  AdminSkillImportRequest,
-  AdminSkillImportResponse,
-  AdminSkillRegistryInstallRequest,
-  AdminSkillUpdateCheckResponse,
-  AdminToolCatalogResponse,
   AdminAgentSkillsUpdateRequest,
   AdminCredentialDeleteResponse,
   AdminCredentialListResponse,
   AdminCredentialRef,
   AdminCredentialSetRequest,
+  AdminMcpServerEnableRequest,
+  AdminMcpServerEnableResponse,
+  AdminMcpServersResponse,
+  AdminMcpServerTestResponse,
+  AdminSandboxWorkspaceListResponse,
+  AdminSandboxWorkspaceReclaimResponse,
+  AdminSandboxWorkspaceSnapshotsResponse,
+  AdminSkillImportRequest,
+  AdminSkillImportResponse,
+  AdminSkillRegistryInstallRequest,
+  AdminSkillUpdateCheckResponse,
+  AdminToolCatalogResponse,
   AdminWorkspaceAgentFileUpdateRequest,
   AdminWorkspaceAgentFileUpdateResponse,
   AdminWorkspaceAgentFilesResponse,
+  AlertEventsResponse,
   AnyAgentResponseStatusPayload,
+  EvalDatasetResponse,
+  EvalDatasetsResponse,
+  EvalDatasetUpsertRequest,
+  EvalRunRequest,
+  EvalRunResponse,
+  EvalRunsResponse,
   HealthResponse,
   InternalAgentDetailResponse,
   InternalAgentsListResponse,
+  InternalAuditEventsResponse,
   InternalEventsListResponse,
+  InternalEventsReplaySummary,
   InternalObservabilityErrorsResponse,
   InternalObservabilityMetricsResponse,
   InternalObservabilityRunsResponse,
@@ -31,10 +47,18 @@ import type {
   InternalResponseModelRequestResponse,
   InternalResponsePromptContextResponse,
   InternalResponseToolExecutionsResponse,
+  InternalSessionDetailResponse,
+  InternalSessionsListResponse,
   InternalSkillsListResponse,
   InternalToolCatalogResponse,
   PluginCatalogResponse,
+  PromptVersionCreateRequest,
+  PromptVersionDiffResponse,
+  PromptVersionResponse,
+  PromptVersionRestoreResponse,
+  PromptVersionsResponse,
   StorageHealthResponse,
+  ToolVisibilityExplanation,
 } from "../generated/protocol-types.js";
 import { getProtocolEndpoint, type ProtocolEndpoint } from "./schemaBundle.js";
 import { validateProtocolModel, validateProtocolRequest } from "./validate.js";
@@ -104,6 +128,7 @@ interface EndpointRequestOptions {
 interface EndpointJsonRequestOptions {
   operation: string;
   pathParams?: EndpointPathParams;
+  params?: RequestOptions["params"];
   body?: unknown;
   headers?: Record<string, string | undefined>;
 }
@@ -346,8 +371,14 @@ class AnyAgentHttp {
 
   async postEndpoint<T>(options: EndpointJsonRequestOptions): Promise<T> {
     const endpoint = this.endpoint(options.operation);
+    let path = applyPathParams(endpoint.path, options.pathParams);
+    if (options.params) {
+      const url = new URL(`${this.baseUrl}${path}`);
+      appendParams(url, options.params);
+      path = url.pathname + url.search;
+    }
     return this.post<T>({
-      path: applyPathParams(endpoint.path, options.pathParams),
+      path,
       body: options.body,
       headers: options.headers,
       requestSchemaName: endpoint.request_model,
@@ -361,8 +392,14 @@ class AnyAgentHttp {
 
   async putEndpoint<T>(options: EndpointJsonRequestOptions): Promise<T> {
     const endpoint = this.endpoint(options.operation);
+    let path = applyPathParams(endpoint.path, options.pathParams);
+    if (options.params) {
+      const url = new URL(`${this.baseUrl}${path}`);
+      appendParams(url, options.params);
+      path = url.pathname + url.search;
+    }
     return this.put<T>({
-      path: applyPathParams(endpoint.path, options.pathParams),
+      path,
       body: options.body,
       headers: options.headers,
       requestSchemaName: endpoint.request_model,
@@ -518,6 +555,131 @@ export class AnyAgentEvents {
   }
 }
 
+export class AnyAgentSessions {
+  constructor(private readonly http: AnyAgentHttp) {}
+
+  async list(
+    options: {
+      agentId?: string;
+      sessionKey?: string;
+      cursorUpdatedBeforeMs?: number;
+      limit?: number;
+    } = {},
+  ): Promise<InternalSessionsListResponse> {
+    return this.http.getEndpoint<InternalSessionsListResponse>({
+      operation: "sessions.list",
+      params: {
+        agent_id: options.agentId,
+        session_key: options.sessionKey,
+        cursor_updated_before_ms: options.cursorUpdatedBeforeMs,
+        limit: options.limit ?? 100,
+      },
+    });
+  }
+
+  async get(
+    sessionKey: string,
+    options: { agentId?: string; limit?: number } = {},
+  ): Promise<InternalSessionDetailResponse> {
+    return this.http.getEndpoint<InternalSessionDetailResponse>({
+      operation: "sessions.get",
+      pathParams: { session_key: sessionKey },
+      params: {
+        agent_id: options.agentId,
+        limit: options.limit ?? 100,
+      },
+    });
+  }
+}
+
+export class AnyAgentEvaluations {
+  constructor(private readonly http: AnyAgentHttp) {}
+
+  async listDatasets(options: { agentId?: string } = {}): Promise<EvalDatasetsResponse> {
+    return this.http.getEndpoint<EvalDatasetsResponse>({
+      operation: "evaluations.datasets.list",
+      params: options.agentId ? { agent_id: options.agentId } : undefined,
+    });
+  }
+
+  async upsertDataset(request: EvalDatasetUpsertRequest): Promise<EvalDatasetResponse> {
+    return this.http.postEndpoint<EvalDatasetResponse>({
+      operation: "evaluations.datasets.upsert",
+      body: request,
+    });
+  }
+
+  async getDataset(datasetId: string): Promise<EvalDatasetResponse> {
+    return this.http.getEndpoint<EvalDatasetResponse>({
+      operation: "evaluations.datasets.get",
+      pathParams: { dataset_id: datasetId },
+    });
+  }
+
+  async deleteDataset(datasetId: string): Promise<Record<string, unknown>> {
+    return this.http.delete<Record<string, unknown>>({
+      path: this.http.endpointPath("evaluations.datasets.delete", { dataset_id: datasetId }),
+    });
+  }
+
+  async run(request: EvalRunRequest): Promise<EvalRunResponse> {
+    return this.http.postEndpoint<EvalRunResponse>({
+      operation: "evaluations.run",
+      body: request,
+    });
+  }
+
+  async listRuns(
+    options: { datasetId?: string; limit?: number } = {},
+  ): Promise<EvalRunsResponse> {
+    return this.http.getEndpoint<EvalRunsResponse>({
+      operation: "evaluations.runs.list",
+      params: {
+        dataset_id: options.datasetId,
+        limit: options.limit ?? 100,
+      },
+    });
+  }
+
+  async getRun(evalRunId: string): Promise<EvalRunResponse> {
+    return this.http.getEndpoint<EvalRunResponse>({
+      operation: "evaluations.runs.get",
+      pathParams: { eval_run_id: evalRunId },
+    });
+  }
+}
+
+export class AnyAgentAudit {
+  constructor(private readonly http: AnyAgentHttp) {}
+
+  async events(
+    options: {
+      credentialId?: string;
+      agentId?: string;
+      sessionKey?: string;
+      responseId?: string;
+      traceId?: string;
+      createdAfterMs?: number;
+      createdBeforeMs?: number;
+      limit?: number;
+    } = {},
+  ): Promise<InternalAuditEventsResponse> {
+    return this.http.getEndpoint<InternalAuditEventsResponse>({
+      operation: "audit.events",
+      params: {
+        credential_id: options.credentialId,
+        agent_id: options.agentId,
+        session_key: options.sessionKey,
+        response_id: options.responseId,
+        trace_id: options.traceId,
+        created_after_ms: options.createdAfterMs,
+        created_before_ms: options.createdBeforeMs,
+        limit: options.limit ?? 100,
+      },
+    });
+  }
+}
+
 export class AnyAgentAgents {
   constructor(private readonly http: AnyAgentHttp) {}
 
@@ -625,6 +787,60 @@ export class AnyAgentPrompts {
       },
     });
   }
+
+  async listVersions(
+    agentId: string,
+    options: { limit?: number } = {},
+  ): Promise<PromptVersionsResponse> {
+    return this.http.getEndpoint<PromptVersionsResponse>({
+      operation: "prompts.versions.list",
+      params: {
+        agent_id: agentId,
+        limit: options.limit ?? 100,
+      },
+    });
+  }
+
+  async createVersion(request: PromptVersionCreateRequest): Promise<PromptVersionResponse> {
+    return this.http.postEndpoint<PromptVersionResponse>({
+      operation: "prompts.versions.create",
+      body: request,
+    });
+  }
+
+  async getVersion(agentId: string, versionId: string): Promise<PromptVersionResponse> {
+    return this.http.getEndpoint<PromptVersionResponse>({
+      operation: "prompts.versions.get",
+      pathParams: { version_id: versionId },
+      params: { agent_id: agentId },
+    });
+  }
+
+  async diffVersions(
+    agentId: string,
+    fromVersionId: string,
+    toVersionId: string,
+  ): Promise<PromptVersionDiffResponse> {
+    return this.http.getEndpoint<PromptVersionDiffResponse>({
+      operation: "prompts.versions.diff",
+      params: {
+        agent_id: agentId,
+        from_version_id: fromVersionId,
+        to_version_id: toVersionId,
+      },
+    });
+  }
+
+  async restoreVersion(
+    agentId: string,
+    versionId: string,
+  ): Promise<PromptVersionRestoreResponse> {
+    return this.http.postEndpoint<PromptVersionRestoreResponse>({
+      operation: "prompts.versions.restore",
+      pathParams: { version_id: versionId },
+      params: { agent_id: agentId },
+    });
+  }
 }
 
 export class AnyAgentObservability {
@@ -681,6 +897,13 @@ export class AnyAgentObservability {
       params: {
         limit: options.limit ?? 500,
       },
+    });
+  }
+
+  async alerts(options: ObservabilityQueryOptions = {}): Promise<AlertEventsResponse> {
+    return this.http.getEndpoint<AlertEventsResponse>({
+      operation: "observability.alerts",
+      params: observabilityParams({ limit: 100, ...options }),
     });
   }
 }
@@ -809,11 +1032,65 @@ export class AnyAgentAdmin {
       body: request,
     });
   }
+
+  async listSandboxes(): Promise<AdminSandboxWorkspaceListResponse> {
+    return this.http.getEndpoint<AdminSandboxWorkspaceListResponse>({
+      operation: "admin.sandboxes.list",
+    });
+  }
+
+  async listWorkspaceSnapshots(workspaceId: string): Promise<AdminSandboxWorkspaceSnapshotsResponse> {
+    return this.http.getEndpoint<AdminSandboxWorkspaceSnapshotsResponse>({
+      operation: "admin.sandboxes.workspace.snapshots",
+      pathParams: { workspace_id: workspaceId },
+    });
+  }
+
+  async reclaimWorkspace(workspaceId: string): Promise<AdminSandboxWorkspaceReclaimResponse> {
+    return this.http.postEndpoint<AdminSandboxWorkspaceReclaimResponse>({
+      operation: "admin.sandboxes.workspace.reclaim",
+      pathParams: { workspace_id: workspaceId },
+    });
+  }
+
+  async listAgentMcpServers(agentId: string): Promise<AdminMcpServersResponse> {
+    return this.http.getEndpoint<AdminMcpServersResponse>({
+      operation: "admin.workspace.agent.mcp.servers",
+      pathParams: { agent_id: agentId },
+    });
+  }
+
+  async setAgentMcpServerEnabled(
+    agentId: string,
+    serverLabel: string,
+    request: AdminMcpServerEnableRequest,
+  ): Promise<AdminMcpServerEnableResponse> {
+    return this.http.putEndpoint<AdminMcpServerEnableResponse>({
+      operation: "admin.workspace.agent.mcp.server.enabled",
+      pathParams: { agent_id: agentId, server_label: serverLabel },
+      body: request,
+    });
+  }
+
+  async testAgentMcpServer(
+    agentId: string,
+    serverLabel: string,
+    options: { sessionKey?: string } = {},
+  ): Promise<AdminMcpServerTestResponse> {
+    return this.http.postEndpoint<AdminMcpServerTestResponse>({
+      operation: "admin.workspace.agent.mcp.server.test",
+      pathParams: { agent_id: agentId, server_label: serverLabel },
+      params: options.sessionKey ? { session_key: options.sessionKey } : undefined,
+    });
+  }
 }
 
 export class AnyAgentClient {
   readonly responses: AnyAgentResponses;
   readonly events: AnyAgentEvents;
+  readonly sessions: AnyAgentSessions;
+  readonly evaluations: AnyAgentEvaluations;
+  readonly audit: AnyAgentAudit;
   readonly agents: AnyAgentAgents;
   readonly tools: AnyAgentTools;
   readonly skills: AnyAgentSkills;
@@ -827,6 +1104,9 @@ export class AnyAgentClient {
     this.http = new AnyAgentHttp(options);
     this.responses = new AnyAgentResponses(this.http);
     this.events = new AnyAgentEvents(this.http);
+    this.sessions = new AnyAgentSessions(this.http);
+    this.evaluations = new AnyAgentEvaluations(this.http);
+    this.audit = new AnyAgentAudit(this.http);
     this.agents = new AnyAgentAgents(this.http);
     this.tools = new AnyAgentTools(this.http);
     this.skills = new AnyAgentSkills(this.http);

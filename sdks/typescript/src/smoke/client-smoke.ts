@@ -112,6 +112,50 @@ const fakeFetch: AnyAgentFetch = async (input, init) => {
     body = fixture.payload("admin.agent.skills.update");
   } else if (url.pathname === "/admin/workspace/agents/main/config" && init?.method === "PUT") {
     body = fixture.payload("admin.agent.config.update");
+  } else if (url.pathname === "/internal/sessions" && init?.method === "GET") {
+    body = fixture.payload("sessions.list");
+  } else if (url.pathname === "/internal/sessions/session_1") {
+    body = fixture.payload("sessions.get");
+  } else if (url.pathname === "/internal/evaluations/datasets" && init?.method === "GET") {
+    body = fixture.payload("evaluations.datasets.list");
+  } else if (url.pathname === "/internal/evaluations/datasets" && init?.method === "POST") {
+    body = fixture.payload("evaluations.dataset.upsert");
+  } else if (url.pathname === "/internal/evaluations/datasets/ds_1" && init?.method === "GET") {
+    body = fixture.payload("evaluations.dataset.get");
+  } else if (url.pathname === "/internal/evaluations/datasets/ds_1" && init?.method === "DELETE") {
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+  } else if (url.pathname === "/internal/evaluations/run") {
+    body = fixture.payload("evaluations.run");
+  } else if (url.pathname === "/internal/evaluations/runs" && init?.method === "GET") {
+    body = fixture.payload("evaluations.runs.list");
+  } else if (url.pathname === "/internal/evaluations/runs/run_1") {
+    body = fixture.payload("evaluations.run");
+  } else if (url.pathname === "/internal/observability/alerts") {
+    body = fixture.payload("observability.alerts");
+  } else if (url.pathname === "/internal/audit/events") {
+    body = fixture.payload("audit.events");
+  } else if (url.pathname === "/internal/prompt/versions" && init?.method === "GET") {
+    body = fixture.payload("prompts.versions.list");
+  } else if (url.pathname === "/internal/prompt/versions" && init?.method === "POST") {
+    body = fixture.payload("prompts.version.create");
+  } else if (url.pathname === "/internal/prompt/versions/v1") {
+    body = fixture.payload("prompts.version.create");
+  } else if (url.pathname === "/internal/prompt/versions/diff") {
+    body = fixture.payload("prompts.versions.diff");
+  } else if (url.pathname === "/internal/prompt/versions/v1/restore") {
+    body = fixture.payload("prompts.version.restore");
+  } else if (url.pathname === "/admin/sandboxes" && init?.method === "GET") {
+    body = fixture.payload("admin.sandboxes.list");
+  } else if (url.pathname.startsWith("/admin/sandboxes/workspaces/ws_1/snapshots")) {
+    body = fixture.payload("admin.sandboxes.snapshots");
+  } else if (url.pathname.startsWith("/admin/sandboxes/workspaces/ws_1/reclaim")) {
+    body = fixture.payload("admin.sandboxes.reclaim");
+  } else if (url.pathname === "/admin/workspace/agents/main/mcp/servers" && init?.method === "GET") {
+    body = fixture.payload("admin.mcp.servers.list");
+  } else if (url.pathname === "/admin/workspace/agents/main/mcp/servers/demo/enabled" && init?.method === "PUT") {
+    body = fixture.payload("admin.mcp.server.enabled");
+  } else if (url.pathname === "/admin/workspace/agents/main/mcp/servers/demo/test") {
+    body = fixture.payload("admin.mcp.server.test");
   } else {
     return new Response(JSON.stringify({ error: "not found" }), { status: 404 });
   }
@@ -314,6 +358,89 @@ const configUpdated = await client.admin.updateAgentConfig("main", {
   requested_tool_names: ["core.web_fetch"],
 });
 assert(configUpdated.agent.exposed === false, "admin.updateAgentConfig should decode updated agent detail");
+
+// Sessions
+const sessions = await client.sessions.list({ agentId: "main", limit: 10 });
+assert(Array.isArray(sessions.sessions), "sessions.list should decode sessions");
+
+const session = await client.sessions.get("session_1", { agentId: "main" });
+assert(session.session_key === "session_1", "sessions.get should decode session detail");
+
+// Evaluations
+const datasets = await client.evaluations.listDatasets({ agentId: "main" });
+assert(Array.isArray(datasets.datasets), "evaluations.listDatasets should decode datasets");
+
+const dataset = await client.evaluations.upsertDataset({
+  name: "test-dataset",
+  agent_id: "main",
+  cases: [],
+});
+assert(dataset.dataset.dataset_id === "ds_1", "evaluations.upsertDataset should decode dataset");
+
+const fetchedDs = await client.evaluations.getDataset("ds_1");
+assert(fetchedDs.dataset.dataset_id === "ds_1", "evaluations.getDataset should decode dataset");
+
+const deletedDs = await client.evaluations.deleteDataset("ds_1");
+assert(typeof deletedDs === "object", "evaluations.deleteDataset should return object");
+
+const evalRun = await client.evaluations.run({
+  dataset_id: "ds_1",
+  agent_id: "main",
+  max_cases: 5,
+});
+assert(evalRun.run.eval_run_id === "run_1", "evaluations.run should decode run");
+
+const evalRuns = await client.evaluations.listRuns({ datasetId: "ds_1", limit: 10 });
+assert(Array.isArray(evalRuns.runs), "evaluations.listRuns should decode runs");
+
+const evalRunDetail = await client.evaluations.getRun("run_1");
+assert(evalRunDetail.run.eval_run_id === "run_1", "evaluations.getRun should decode run");
+
+// Audit
+const auditEvents = await client.audit.events({ agentId: "main", limit: 5 });
+assert(Array.isArray(auditEvents.events), "audit.events should decode events");
+
+// Observability alerts
+const alerts = await client.observability.alerts({ agentId: "main" });
+assert(Array.isArray(alerts.alerts), "observability.alerts should decode alerts");
+
+// Prompts versions
+const versions = await client.prompts.listVersions("main", { limit: 10 });
+assert(Array.isArray(versions.versions), "prompts.listVersions should decode versions");
+
+const createdVersion = await client.prompts.createVersion({ agent_id: "main", label: "v1" });
+assert(createdVersion.version.version_id === "v1", "prompts.createVersion should decode version");
+
+const versionDetail = await client.prompts.getVersion("main", "v1");
+assert(versionDetail.version.version_id === "v1", "prompts.getVersion should decode version");
+
+const diff = await client.prompts.diffVersions("main", "v1", "v2");
+assert(typeof diff.diff === "string", "prompts.diffVersions should decode diff");
+
+const restored = await client.prompts.restoreVersion("main", "v1");
+assert(restored.version_id === "v1", "prompts.restoreVersion should decode restored version");
+
+// Admin sandboxes
+const sandboxes = await client.admin.listSandboxes();
+assert(Array.isArray(sandboxes.workspaces), "admin.listSandboxes should decode workspaces");
+
+const snapshots = await client.admin.listWorkspaceSnapshots("ws_1");
+assert(Array.isArray(snapshots.snapshots), "admin.listWorkspaceSnapshots should decode snapshots");
+
+const reclaimed = await client.admin.reclaimWorkspace("ws_1");
+assert(typeof reclaimed.reclaimed === "boolean", "admin.reclaimWorkspace should decode reclaim result");
+
+// Admin MCP servers
+const mcpServers = await client.admin.listAgentMcpServers("main");
+assert(Array.isArray(mcpServers.servers), "admin.listAgentMcpServers should decode MCP servers");
+
+const mcpEnabled = await client.admin.setAgentMcpServerEnabled("main", "demo", {
+  enabled: true,
+});
+assert(typeof mcpEnabled.enabled === "boolean", "admin.setAgentMcpServerEnabled should decode result");
+
+const mcpTest = await client.admin.testAgentMcpServer("main", "demo");
+assert(typeof mcpTest.ok === "boolean", "admin.testAgentMcpServer should decode test result");
 
 assert(
   seen.some((item) => item.url.endsWith("/v1/responses/resp_1/cancel") && item.method === "POST"),
