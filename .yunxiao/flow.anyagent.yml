@@ -39,6 +39,7 @@ stages:
                 export PIP_TRUSTED_HOST=mirrors.aliyun.com
                 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/root/.cache/pip}"
                 export UV_CACHE_DIR="${UV_CACHE_DIR:-/root/.cache/uv}"
+                export UV_LINK_MODE=copy
                 mkdir -p "$PIP_CACHE_DIR" "$UV_CACHE_DIR"
                 if ! python -c "import ctypes" >/dev/null 2>&1; then
                   echo "Python ctypes is unavailable after libffi setup; check libffi runtime." >&2
@@ -93,6 +94,7 @@ stages:
                 export PIP_TRUSTED_HOST=mirrors.aliyun.com
                 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/root/.cache/pip}"
                 export UV_CACHE_DIR="${UV_CACHE_DIR:-/root/.cache/uv}"
+                export UV_LINK_MODE=copy
                 mkdir -p "$PIP_CACHE_DIR" "$UV_CACHE_DIR"
                 ensure_node22() {
                   if command -v node >/dev/null 2>&1 && [ "$(node -p 'Number(process.versions.node.split(".")[0])')" -ge 22 ]; then
