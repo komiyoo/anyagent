@@ -173,7 +173,7 @@ async def _run_chatwoot_live_smoke(*, tmp_path: Path, monkeypatch) -> None:
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as local_http:
         response = await local_http.post(
             "/gateway/chatwoot/webhook",
-            headers={"x-chatwoot-signature": signature},
+            headers={"x-chatwoot-signature": signature, "x-chatwoot-timestamp": str(payload["timestamp"])},
             content=raw_body,
         )
         assert response.status_code == 200, response.text

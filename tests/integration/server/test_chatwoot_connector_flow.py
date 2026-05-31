@@ -182,7 +182,7 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
 
         response = await http.post(
             "/gateway/chatwoot/webhook",
-            headers={"x-chatwoot-signature": signature},
+            headers={"x-chatwoot-signature": signature, "x-chatwoot-timestamp": str(payload["timestamp"])},
             content=raw_body,
         )
         assert response.status_code == 200, response.text
