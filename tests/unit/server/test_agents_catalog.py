@@ -1644,6 +1644,9 @@ async def _run_admin_tools_catalog(tmp_path: Path) -> None:
         assert isinstance(catalog, AdminToolCatalogResponse)
         assert catalog.toolset_version >= 1
         assert [tool.name for tool in catalog.tools] == [
+            "app.chatwoot.handoff",
+            "app.chatwoot.send_message",
+            "app.lifecycle_echo.echo",
             "core.tool_search",
             "exec",
             "gateway.handoff",
