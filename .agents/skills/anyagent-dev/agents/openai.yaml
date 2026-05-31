@@ -1,0 +1,4 @@
+interface:
+  display_name: "AnyAgent Dev"
+  short_description: "开发、配置和调试 anyagent Agent Server"
+  default_prompt: "Use $anyagent-dev to initialize, configure, debug, or deploy an anyagent Agent Server workspace."

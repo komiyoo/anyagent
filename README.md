@@ -145,6 +145,8 @@ anyagent config init --workspace ./tool-workspace --agent-id worker --tool core.
 
 `anyagent serve` 默认使用进程内 Tool Runtime，适合本地开发和单进程业务 demo；需要水平扩容、独立工具执行池或更强隔离时，再拆成 `anyagent agent-api serve` + `anyagent tool-runtime serve`。只有使用 `exec` 这类命令执行工具时才需要开启 sandbox；普通 `core.web_fetch` / MCP HTTP 工具不需要本地 sandbox。`local-unsafe` 只适合可信本地开发，生产建议接 `opensandbox` 或 `external`。
 
+如果你希望给某个 agent 暴露“受控 CLI 能力”而不是裸 `exec`，可以在 `agent.yaml` 里使用 `tools.cli` 定义 CLI profile。每个 profile 会自动注册成一个 `kind="command"` 工具，不需要重复写进 `tools.requested_tool_names`；它支持 `cwd`、`timeout_ms`、`allow_command_prefixes`、受限环境继承策略，以及把 Credential Vault 引用注入到子进程 `env:*` / `file:*`。当前 env/file 注入只在 `local-unsafe` 下跑通，OpenSandbox 仍保留明确 TODO。
+
 **agent.yaml 示例**：
 
 ```yaml
@@ -422,6 +424,8 @@ await client.admin.delete_credential("cred_bocha_mcp")
 ```
 
 `anyagent serve` 默认使用 Admin API 的 write-only 内存凭据库解析 MCP 引用；需要从环境变量、文件或 Infisical 读取 MCP 凭据时，可以设置 `MCP_CREDENTIAL_STORE_BACKEND=env|file|infisical`。`file` 后端默认读取 `<workspace>/.anyagent/credentials`；`infisical` 后端需安装 `anyagent[infisical]`，并配置 `INFISICAL_PROJECT_ID`、`INFISICAL_ENVIRONMENT`、`INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` 和 `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET`。独立 `anyagent tool-runtime serve` 的 process settings 由 `anyagent.tool_runtime.settings.ToolRuntimeSettings` / `ToolRuntimeServerConfig` 统一解析；它也可用同一变量解析凭据，需要 Tool Runtime credential store 的 `set/list_refs/delete` backend 时，可使用过渡模式 `env-write`、`file-write` 或 read-only `infisical-write`，并通过 `--admin-key` 或 `ADMIN_API_KEY` 启用 `/admin/credentials`。这些 resolver/admin-store 后端由 Core `anyagent.server.security.credential_runtime.CredentialRuntimeConfig` 统一组装。Core server 与 standalone Tool Runtime 都提供 `/admin/credentials/capabilities`，用于查看 resolver/admin-store、read-only 状态、required extras/env 与 planned db/vault 后端，不返回任何凭证明文。
+
+CLI Profile 也复用这条 Credential Vault 注入链路：`ToolCredentialSpec.injection_target` 现在除了 `header:*` 外，还支持 `env:NAME` 和 `file:relative/path`。manifest 只会暴露 target 名，不会暴露 secret，也不会暴露 `credential_id`；运行时若 profile 声明了 `credential_id`，它会优先于 request `auth_ref.ref` 被解析。
 
 独立 Tool Runtime 可通过 `--plugin-root` 或 `TOOL_RUNTIME_PLUGIN_ROOTS` 扫描包含 `plugin.json` 的插件目录，并使用 Core `anyagent.plugins` loader 与 `ToolRuntimePluginAPI` 将插件工具注册到统一 registry；加载失败默认 fail-closed，可用 `--plugins-fail-open` 或 `TOOL_RUNTIME_PLUGINS_FAIL_OPEN=1` 改为记录错误后继续启动。启用 `--admin-key` 或 `ADMIN_API_KEY` 后，`GET /admin/plugins/catalog`、SDK `client.admin.plugin_catalog()` 或 CLI `anyagent plugin catalog --admin-url <url> --admin-key <key>` 会返回 plugin roots、loaded plugin、registered tools、manifest/entrypoint cite、docs/schemas/tests refs 与 load errors，便于从工具追回插件来源。`anyagent init` / `anyagent config init` 生成的 `plugins/demo/` 只是脚手架示例；要让示例工具生效，需要启动独立 Tool Runtime 时传 `--plugin-root plugins`，并手动把 `app.demo.echo` 加入目标 agent 的 `tools.requested_tool_names`。
 

@@ -44,6 +44,7 @@ anyagent = **配置即服务的 Agent Server 内核 + SDK**：
 | 架构/契约 | `docs/architecture/`、`docs/security/`、`docs/acceptance/`、`docs/performance/` | How/Contract,长期维护 | 完整相对路径 `docs/architecture/overview/roadmap.md` |
 | 代码 | `packages/anyagent/src/anyagent/` | 行为真源(How/Truth) | Python 模块路径 `anyagent.protocol.*` 或文件路径 `path:line` |
 | 研发草案 | `docs/_dev/`、`docs/_notes/` | 非稳定,不作为引用目标 | — |
+| Repo 内置技能 | `.anyagent/skills/` | 指导基于 anyagent 开发、调试和配置业务仓库的 agent 可复用能力 | `.anyagent/skills/<skill>/SKILL.md` |
 | 人类入口 | `README.md` | 业务使用者主入口 | — |
 
 #### 引用约定
@@ -61,6 +62,8 @@ anyagent = **配置即服务的 Agent Server 内核 + SDK**：
    - `docs/architecture/decisions/*.md` 必须被至少一个 `todo/*.md` 或 `roadmap.md` cite
 
 当代码变更影响公开 API、wire contract、SDK 类型、配置、运行方式、用户可见行为或模块归属时，同轮更新最贴近的真源文档。不要把同一条规则复制到多个地方；必要时用链接指向真源。
+
+当框架迭代影响业务仓库如何基于 anyagent 开发 Agent Server、初始化 `.anyagent/`、配置 agent/tool/skill/MCP/sandbox/credential/storage、调试运行时或部署各模块时，同轮检查并必要时更新 `.anyagent/skills/anyagent-dev/`。该 skill 是面向消费侧仓库的 repo-level 开发助手，不替代 `README.md`、`requirements.md` 或 `docs/architecture/` 真源；只沉淀 agent 执行业务仓库开发所需的最小工作流与索引。
 
 ### 1.3 核心目录结构
 
