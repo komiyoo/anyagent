@@ -82,7 +82,7 @@ def create_responses_router() -> APIRouter:
         agent_id = _resolve_agent_id(body=body, x_agent_id=x_agent_id)
         pack = state.require_pack(agent_id, external=True)
         model_selection = resolve_effective_model_selection(workspace_config=state.models_config, pack=pack)
-        apply_effective_model_to_body(body=body, selection=model_selection)
+        apply_effective_model_to_body(body=body, selection=model_selection, workspace_config=state.models_config)
         session_key = _resolve_session_key(body=body)
         session_partition_key_value = session_partition_key(agent_id=agent_id, session_key=session_key)
         stream_requested = bool(body.get("stream"))

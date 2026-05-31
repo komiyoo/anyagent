@@ -50,13 +50,13 @@ class ChatwootWebhookAuth(ConnectorWebhookAuth):
     Chatwoot HMAC-SHA256 签名验证。
 
     Chatwoot 签名算法：
-        signature = HMAC-SHA256(secret, "{timestamp}.{body}")
+        signature = "sha256=" + HMAC-SHA256(secret, "{timestamp}.{body}").hexdigest
 
-    签名在请求头 X-Chatwoot-Signature 中。
-    时间戳在请求体 JSON 的 timestamp 字段中。
+    签名在请求头 X-Chatwoot-Signature 中，时间戳在请求头 X-Chatwoot-Timestamp 中。
     """
 
     SIGNATURE_HEADER = "x-chatwoot-signature"
+    TIMESTAMP_HEADER = "x-chatwoot-timestamp"
 
     async def verify(
         self,
@@ -64,23 +64,18 @@ class ChatwootWebhookAuth(ConnectorWebhookAuth):
         raw_body: bytes,
         secret: str,
     ) -> WebhookAuthSuccess:
-        # 1. 提取签名
-        signature = headers.get(self.SIGNATURE_HEADER, "")
-        if not signature:
+        # 1. 提取签名（Chatwoot 格式: "sha256=<hex_digest>"）
+        raw_signature = headers.get(self.SIGNATURE_HEADER, "")
+        if not raw_signature:
             raise WebhookAuthError("missing X-Chatwoot-Signature header", status_code=401)
+        signature = raw_signature.removeprefix("sha256=")
 
-        # 2. 解析 JSON body
-        try:
-            body_json = json.loads(raw_body.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise WebhookAuthError(f"invalid JSON body: {exc}", status_code=400) from exc
-
-        # 3. 提取时间戳
-        timestamp = body_json.get("timestamp")
+        # 2. 提取时间戳（来自 X-Chatwoot-Timestamp 请求头）
+        timestamp = headers.get(self.TIMESTAMP_HEADER, "")
         if not timestamp:
-            raise WebhookAuthError("missing timestamp in webhook body", status_code=400)
+            raise WebhookAuthError("missing X-Chatwoot-Timestamp header", status_code=401)
 
-        # 4. HMAC 计算
+        # 3. HMAC-SHA256 计算（hexdigest，与 Chatwoot Ruby hexdigest 一致）
         payload = f"{timestamp}.{raw_body.decode('utf-8')}"
         computed = hmac.new(
             secret.encode("utf-8"),
@@ -88,9 +83,15 @@ class ChatwootWebhookAuth(ConnectorWebhookAuth):
             hashlib.sha256,
         ).hexdigest()
 
-        # 5. 常量时间比较
+        # 4. 常量时间比较
         if not hmac.compare_digest(computed, signature):
             raise WebhookAuthError("HMAC signature mismatch", status_code=403)
+
+        # 5. 解析 JSON body（提取平台上下文）
+        try:
+            body_json = json.loads(raw_body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise WebhookAuthError(f"invalid JSON body: {exc}", status_code=400) from exc
 
         # 6. 提取平台上下文
         account_id = str(body_json.get("account", {}).get("id", ""))
@@ -366,7 +367,7 @@ def build_platform_event_from_webhook(
         webhook_body: Chatwoot webhook 请求体 JSON。
     """
     conversation = webhook_body.get("conversation", {})
-    conversation_id = str(conversation.get("id", ""))
+    conversation_id = str(conversation.get("id", "") or webhook_body.get("id", ""))
     event_name = str(webhook_body.get("event", ""))
 
     session_key = chatwoot_session_key(account_id=account_id, conversation_id=conversation_id)
@@ -380,6 +381,6 @@ def build_platform_event_from_webhook(
         metadata={
             "chatwoot_event": event_name,
             "account_id": str(account_id),
-            "webhook_timestamp": webhook_body.get("timestamp"),
+            "webhook_timestamp": webhook_body.get("timestamp") or webhook_body.get("created_at"),
         },
     )

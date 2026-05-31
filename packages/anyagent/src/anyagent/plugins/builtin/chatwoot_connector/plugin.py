@@ -69,12 +69,17 @@ async def _handle_chatwoot_webhook(
     """
     Chatwoot webhook 入口处理器。
 
+    路由规则：
+    - POST /gateway/chatwoot/webhook/{agent_id} → 路由到指定 agent
+    - POST /gateway/chatwoot/webhook             → fallback 到 catalog 第一个 exposed agent
+
     处理流程：
     1. 签名验证（已在 _mount_webhook_route 中完成）
-    2. 解析 webhook body
-    3. 构建 platform event 并注入到 event store
-    4. 如果是 message_created 事件 → 调用 Agent API 处理
-    5. 将 agent 回复写回 Chatwoot 会话
+    2. 从 URL path 提取目标 agent_id
+    3. 解析 webhook body
+    4. 构建 platform event 并注入到 event store
+    5. 如果是 message_created 事件 → 调用 Agent API 处理
+    6. 将 agent 回复写回 Chatwoot 会话
     """
     try:
         body = json.loads(raw_body.decode("utf-8"))
@@ -85,9 +90,13 @@ async def _handle_chatwoot_webhook(
     _LOGGER.info("chatwoot webhook received: event=%s", event_name)
 
     # 构建 platform event 并写入 event store（供 agent 感知会话状态）
+    # message_created: account/conversation 在顶层（message.webhook_data 展开）
+    # conversation_*:   account 不出现，conversation 字段直接展开到顶层，id=display_id
+    account_id = str(body.get("account", {}).get("id", "")
+                      or (verified_auth.account_id if verified_auth else "")
+                      or "")
     conversation = body.get("conversation", {})
-    account_id = str(body.get("account", {}).get("id", ""))
-    conversation_id = str(conversation.get("id", ""))
+    conversation_id = str(conversation.get("id", "") or body.get("id", ""))
 
     platform_event = build_platform_event_from_webhook(
         account_id=account_id,
@@ -106,6 +115,12 @@ async def _handle_chatwoot_webhook(
 
     # 如果是 message_created（用户发送消息），触发 Agent 处理
     if event_name == "message_created":
+        # 只处理 incoming 消息（来自客户），跳过 outgoing（bot/agent 发出的）避免无限循环
+        message_type = body.get("message_type")
+        if message_type != "incoming":
+            _LOGGER.debug("skipping non-incoming message: message_type=%s", message_type)
+            return {"ok": True, "event": event_name, "skipped": True, "reason": f"message_type={message_type}"}
+
         result = await _process_incoming_message(
             body=body,
             account_id=account_id,
@@ -146,21 +161,26 @@ async def _process_incoming_message(
     # 构建 session key
     session_key = chatwoot_session_key(account_id=account_id, conversation_id=conversation_id)
 
-    # 获取默认 agent ID
-    default_agent_id = "main"
-    if hasattr(state, "catalog") and state.catalog.packs:
-        exposed = [aid for aid, pack in state.catalog.packs.items() if pack.spec.exposed]
-        if exposed:
-            default_agent_id = exposed[0]
+    # 从 URL path param 提取目标 agent_id（/gateway/chatwoot/webhook/{agent_id}）
+    target_agent_id = ""
+    path_params = getattr(request, "path_params", {})
+    if isinstance(path_params, dict):
+        target_agent_id = str(path_params.get("agent_id", "")).strip()
+    if not target_agent_id:
+        if hasattr(state, "catalog") and state.catalog.packs:
+            exposed = [aid for aid, pack in state.catalog.packs.items() if pack.spec.exposed]
+            if exposed:
+                target_agent_id = exposed[0]
+        if not target_agent_id:
+            target_agent_id = "main"
 
     request_body: dict[str, Any] = {
-        "model": os.getenv("ANYAGENT_CHATWOOT_MODEL", default_agent_id),
         "input": [
             {"role": "user", "content": message_content}
         ],
         "tools": [_gateway_handoff_tool_schema()],
         "metadata": {
-            "agent_id": default_agent_id,
+            "agent_id": target_agent_id,
             "session_key": session_key,
             "channel": "chatwoot",
             "platform_conversation_id": conversation_id,
@@ -232,14 +252,17 @@ async def _process_incoming_message(
 
 
 def _extract_message_content(body: dict[str, Any]) -> str | None:
-    """从 Chatwoot webhook body 中提取消息文本。"""
-    # message_created 事件：content 在 message.content 或 message.content_attributes
-    message = body.get("message", {})
-    content = message.get("content")
+    """从 Chatwoot webhook body 中提取消息文本。
+
+    Chatwoot message_created 事件：content 位于顶层（message.webhook_data 展开）。
+    结构参考: app/models/message.rb #webhook_data
+    """
+    # message_created/updated: content 在顶层
+    content = body.get("content")
     if isinstance(content, str) and content.strip():
         return content.strip()
 
-    # conversation.created 可能有 messages 数组
+    # conversation_created: 回退到 conversation.messages 中第一条
     conversation = body.get("conversation", {})
     messages = conversation.get("messages", [])
     if isinstance(messages, list) and messages:
@@ -385,14 +408,22 @@ def register(api: Any) -> None:
         api.registerChannel(connector_instance)
 
     # 注册 webhook 路由
+    # 两条路由共享同一个 handler：
+    #   /chatwoot/webhook/{agent_id} — 路径绑定目标 agent（推荐）
+    #   /chatwoot/webhook            — fallback 到 catalog 第一个 exposed agent
     if hasattr(api, "registerWebhookRoute"):
-        webhook_route = WebhookRoute(
+        api.registerWebhookRoute(WebhookRoute(
+            path="/chatwoot/webhook/{agent_id}",
+            channel="chatwoot",
+            methods=("POST",),
+            handler=_handle_chatwoot_webhook,
+        ))
+        api.registerWebhookRoute(WebhookRoute(
             path="/chatwoot/webhook",
             channel="chatwoot",
             methods=("POST",),
             handler=_handle_chatwoot_webhook,
-        )
-        api.registerWebhookRoute(webhook_route)
+        ))
 
     # 注册工具
     if hasattr(api, "registerTool"):

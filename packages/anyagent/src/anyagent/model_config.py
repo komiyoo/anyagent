@@ -37,6 +37,7 @@ class WorkspaceModelConfig(BaseModel):
 
     provider: str
     model: str
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 class WorkspaceModelsConfig(BaseModel):
@@ -130,9 +131,28 @@ def resolve_effective_model_selection(
     )
 
 
-def apply_effective_model_to_body(*, body: dict[str, Any], selection: EffectiveModelSelection) -> None:
+def apply_effective_model_to_body(
+    *, body: dict[str, Any], selection: EffectiveModelSelection, workspace_config: WorkspaceModelsConfig | None = None
+) -> None:
     if (not isinstance(body.get("model"), str) or not body.get("model", "").strip()) and selection.model:
         body["model"] = selection.model
+    if workspace_config is not None:
+        model_alias = _resolve_model_alias(selection, workspace_config)
+        if model_alias and model_alias in workspace_config.models:
+            params = workspace_config.models[model_alias].params
+            if params:
+                for key, value in params.items():
+                    if key not in body:
+                        body[key] = value
+
+
+def _resolve_model_alias(selection: EffectiveModelSelection, workspace_config: WorkspaceModelsConfig) -> str | None:
+    for alias, entry in workspace_config.models.items():
+        if _clean(entry.model) == selection.model:
+            return alias
+        if alias == selection.model:
+            return alias
+    return None
 
 
 def model_provider_for_selection(selection: EffectiveModelSelection) -> ModelProvider:

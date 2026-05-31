@@ -73,7 +73,7 @@ def create_internal_prompt_router() -> APIRouter:
         )
         pack = state.require_pack(agent_id, external=True)
         model_selection = resolve_effective_model_selection(workspace_config=state.models_config, pack=pack)
-        apply_effective_model_to_body(body=body, selection=model_selection)
+        apply_effective_model_to_body(body=body, selection=model_selection, workspace_config=state.models_config)
         session_key = resolve_session_key(
             metadata=metadata if isinstance(metadata, dict) else None,
             user=body.get("user"),
