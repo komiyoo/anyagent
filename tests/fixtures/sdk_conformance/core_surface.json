@@ -851,6 +851,341 @@
       }
     },
     {
+      "name": "sessions.list",
+      "schema": "anyagent.protocol.agent_api_internal.InternalSessionsListResponse",
+      "payload": {
+        "agent_id": "main",
+        "sessions": [
+          {
+            "agent_id": "main",
+            "session_key": "session_1",
+            "session_partition_key": "main::session_1",
+            "run_count": 3,
+            "active_run_count": 0,
+            "error_run_count": 0,
+            "latest_response_id": "resp_1",
+            "latest_status": "completed",
+            "latest_effective_status": "completed",
+            "created_at_ms": 1,
+            "updated_at_ms": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "sessions.get",
+      "schema": "anyagent.protocol.agent_api_internal.InternalSessionDetailResponse",
+      "payload": {
+        "session_key": "session_1",
+        "agent_id": "main",
+        "session_partition_key": "main::session_1",
+        "summary": {
+          "agent_id": "main",
+          "session_key": "session_1",
+          "session_partition_key": "main::session_1",
+          "run_count": 3,
+          "active_run_count": 0,
+          "error_run_count": 0
+        },
+        "runs": [
+          {
+            "response_id": "resp_1",
+            "agent_id": "main",
+            "session_key": "session_1",
+            "stream": false,
+            "status": "completed",
+            "effective_status": "completed",
+            "created_at_ms": 1,
+            "updated_at_ms": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "evaluations.datasets.list",
+      "schema": "anyagent.protocol.evaluations.EvalDatasetsResponse",
+      "payload": {
+        "datasets": [
+          {
+            "dataset_id": "ds_1",
+            "name": "test-dataset",
+            "agent_id": "main",
+            "cases": [],
+            "created_at_ms": 1,
+            "updated_at_ms": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "evaluations.dataset.upsert",
+      "schema": "anyagent.protocol.evaluations.EvalDatasetResponse",
+      "payload": {
+        "dataset": {
+          "dataset_id": "ds_1",
+          "name": "test-dataset",
+          "agent_id": "main",
+          "cases": [],
+          "created_at_ms": 1,
+          "updated_at_ms": 2
+        }
+      }
+    },
+    {
+      "name": "evaluations.dataset.get",
+      "schema": "anyagent.protocol.evaluations.EvalDatasetResponse",
+      "payload": {
+        "dataset": {
+          "dataset_id": "ds_1",
+          "name": "test-dataset",
+          "agent_id": "main",
+          "cases": [
+            {
+              "case_id": "case_1",
+              "input": "What is 2+2?",
+              "expected_output": "4"
+            }
+          ],
+          "created_at_ms": 1,
+          "updated_at_ms": 2
+        }
+      }
+    },
+    {
+      "name": "evaluations.run",
+      "schema": "anyagent.protocol.evaluations.EvalRunResponse",
+      "payload": {
+        "run": {
+          "eval_run_id": "run_1",
+          "dataset_id": "ds_1",
+          "agent_id": "main",
+          "status": "completed",
+          "created_at_ms": 1,
+          "completed_at_ms": 2,
+          "total_cases": 1,
+          "passed_cases": 1,
+          "failed_cases": 0,
+          "unscored_cases": 0,
+          "error_cases": 0,
+          "results": [
+            {
+              "case_id": "case_1",
+              "status": "passed",
+              "score": 1.0,
+              "response_id": "resp_1",
+              "expected_output": "4",
+              "actual_output": "4"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "evaluations.runs.list",
+      "schema": "anyagent.protocol.evaluations.EvalRunsResponse",
+      "payload": {
+        "runs": [
+          {
+            "eval_run_id": "run_1",
+            "dataset_id": "ds_1",
+            "agent_id": "main",
+            "status": "completed",
+            "created_at_ms": 1,
+            "completed_at_ms": 2,
+            "total_cases": 1,
+            "passed_cases": 1,
+            "failed_cases": 0,
+            "unscored_cases": 0,
+            "error_cases": 0,
+            "results": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "observability.alerts",
+      "schema": "anyagent.protocol.alerts.AlertEventsResponse",
+      "payload": {
+        "alerts": [
+          {
+            "alert_id": "alert_1",
+            "rule_id": "rule_loop",
+            "rule_name": "Loop Detection",
+            "status": "active",
+            "severity": "warning",
+            "type": "agent.loop_warning",
+            "message": "Agent entered a repeat loop",
+            "ts_ms": 500,
+            "response_id": "resp_1",
+            "agent_id": "main",
+            "session_key": "session_1",
+            "payload": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "audit.events",
+      "schema": "anyagent.protocol.agent_api_internal.InternalAuditEventsResponse",
+      "payload": {
+        "events": [
+          {
+            "source": "audit",
+            "type": "credential.access",
+            "ts_ms": 100,
+            "response_id": "resp_1",
+            "credential_id": "cred_demo",
+            "message": "credential accessed by agent main"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prompts.versions.list",
+      "schema": "anyagent.protocol.prompt_versions.PromptVersionsResponse",
+      "payload": {
+        "agent_id": "main",
+        "versions": [
+          {
+            "version_id": "v1",
+            "agent_id": "main",
+            "label": "initial",
+            "created_at_ms": 1,
+            "sources": [
+              {
+                "kind": "agent_agents_md",
+                "path": "/tmp/workspace/.anyagent/agents/main/AGENTS.md",
+                "sha256": "abc",
+                "text": "You are AnyAgent."
+              }
+            ],
+            "combined_sha256": "abc"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prompts.version.create",
+      "schema": "anyagent.protocol.prompt_versions.PromptVersionResponse",
+      "payload": {
+        "version": {
+          "version_id": "v1",
+          "agent_id": "main",
+          "label": "v1",
+          "created_at_ms": 1,
+          "sources": [],
+          "combined_sha256": "abc"
+        }
+      }
+    },
+    {
+      "name": "prompts.versions.diff",
+      "schema": "anyagent.protocol.prompt_versions.PromptVersionDiffResponse",
+      "payload": {
+        "agent_id": "main",
+        "from_version_id": "v1",
+        "to_version_id": "v2",
+        "diff": "--- v1\n+++ v2\n@@ -1 +1 @@\n-old\n+new"
+      }
+    },
+    {
+      "name": "prompts.version.restore",
+      "schema": "anyagent.protocol.prompt_versions.PromptVersionRestoreResponse",
+      "payload": {
+        "agent_id": "main",
+        "version_id": "v1",
+        "restored_paths": [
+          "/tmp/workspace/.anyagent/agents/main/AGENTS.md"
+        ]
+      }
+    },
+    {
+      "name": "admin.sandboxes.list",
+      "schema": "anyagent.protocol.admin_storage.AdminSandboxWorkspaceListResponse",
+      "payload": {
+        "workspaces": [
+          {
+            "workspace_id": "ws_1",
+            "session_partition_key": "main::session_1",
+            "state": "active",
+            "generation": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "admin.sandboxes.snapshots",
+      "schema": "anyagent.protocol.admin_storage.AdminSandboxWorkspaceSnapshotsResponse",
+      "payload": {
+        "workspace_id": "ws_1",
+        "session_partition_key": "main::session_1",
+        "snapshots": [
+          {
+            "workspace_id": "ws_1",
+            "session_partition_key": "main::session_1",
+            "generation": 1,
+            "snapshot_uri": "memory://snapshot/ws_1/1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "admin.sandboxes.reclaim",
+      "schema": "anyagent.protocol.admin_storage.AdminSandboxWorkspaceReclaimResponse",
+      "payload": {
+        "ok": true,
+        "workspace_id": "ws_1",
+        "session_partition_key": "main::session_1",
+        "reclaimed": true
+      }
+    },
+    {
+      "name": "admin.mcp.servers.list",
+      "schema": "anyagent.protocol.agent_api_internal.AdminMcpServersResponse",
+      "payload": {
+        "agent_id": "main",
+        "configured": true,
+        "servers": [
+          {
+            "label": "demo",
+            "enabled": true,
+            "enablement": "enabled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "admin.mcp.server.enabled",
+      "schema": "anyagent.protocol.agent_api_internal.AdminMcpServerEnableResponse",
+      "payload": {
+        "agent_id": "main",
+        "server_label": "demo",
+        "enabled": true,
+        "file": {
+          "kind": "mcp_json",
+          "path": "/tmp/mcp.json",
+          "exists": true,
+          "sha256": "abc",
+          "text": "{}"
+        },
+        "servers": {
+          "agent_id": "main",
+          "configured": true,
+          "servers": []
+        }
+      }
+    },
+    {
+      "name": "admin.mcp.server.test",
+      "schema": "anyagent.protocol.agent_api_internal.AdminMcpServerTestResponse",
+      "payload": {
+        "agent_id": "main",
+        "server_label": "demo",
+        "ok": true,
+        "status": "ready"
+      }
+    },
+    {
       "name": "tool_runtime.execute.request",
       "schema": "anyagent.protocol.tool_runtime.ExecuteRequest",
       "payload": {

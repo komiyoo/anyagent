@@ -87,6 +87,39 @@ def _write_web_fetch_workspace(root: Path) -> None:
     )
 
 
+def _write_cli_profile_workspace(root: Path) -> None:
+    agent_dir = root / ".anyagent" / "agents" / "main"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    (agent_dir / "AGENTS.md").write_text("You are main.\n", encoding="utf-8")
+    (agent_dir / "agent.yaml").write_text(
+        "\n".join(
+            [
+                "exposed: true",
+                "tools:",
+                "  requested_tool_names: []",
+                "  cli:",
+                "    - name: app.demo",
+                "      description: Demo CLI profile",
+                "      cwd: repo",
+                "      env:",
+                "        inherit: none",
+                "        set:",
+                "          BASE: workspace",
+                "      credentials:",
+                "        - credential_id: cred_cli",
+                "          ref_kind: api_key",
+                "          injection_target: env:API_TOKEN",
+                "skills:",
+                "  default_selected: []",
+                "sandbox:",
+                "  mode: local-unsafe",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_standalone_tool_runtime_serves_manifest_execute_and_list(tmp_path: Path) -> None:
     asyncio.run(_run_standalone_tool_runtime_serves_manifest_execute_and_list(tmp_path))
 
@@ -198,6 +231,10 @@ def test_standalone_tool_runtime_persists_workspace_events_jsonl(tmp_path: Path,
 
 def test_standalone_tool_runtime_serves_core_web_fetch_with_credentials(tmp_path: Path) -> None:
     asyncio.run(_run_standalone_tool_runtime_serves_core_web_fetch_with_credentials(tmp_path))
+
+
+def test_standalone_tool_runtime_serves_cli_profile_manifest_and_execute(tmp_path: Path) -> None:
+    asyncio.run(_run_standalone_tool_runtime_serves_cli_profile_manifest_and_execute(tmp_path))
 
 
 def test_standalone_tool_runtime_uses_workspace_runtime_cross_instance_recovery(tmp_path: Path) -> None:
@@ -337,6 +374,67 @@ async def _run_standalone_tool_runtime_serves_core_web_fetch_with_credentials(tm
     payload = json.loads(executed.output)
     assert payload["status"] == 200
     assert payload["text"] == "ok"
+
+
+async def _run_standalone_tool_runtime_serves_cli_profile_manifest_and_execute(tmp_path: Path) -> None:
+    _write_cli_profile_workspace(tmp_path)
+    store = EnvBackend()
+    await store.set(
+        credential_id="cred_cli",
+        kind="api_key",
+        value="cli-secret",
+        scope=CredentialScope(level="global"),
+    )
+    app = create_tool_runtime_app(
+        workspace_dir=tmp_path,
+        internal_key="internal-key",
+        credential_store=store,
+        sandbox_root_dir=tmp_path / ".sandbox",
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        client = ToolRuntimeClient(base_url="http://testserver", internal_key="internal-key", http=http)
+        manifest = await client.manifest(
+            ManifestRequest(
+                agent_id="main",
+                session_key="sess-cli",
+                context=ToolContext(auth_ref=AuthRef(kind="api_key", ref="ignored-at-runtime")),
+            )
+        )
+        assert [tool.name for tool in manifest.tools] == ["app.demo"]
+        assert manifest.tools[0].x_anyagent_kind == "command"
+        assert manifest.tools[0].x_anyagent_cli == {
+            "cwd": "repo",
+            "timeout_ms": 60000,
+            "env": {
+                "inherit": "none",
+                "ignore_default_excludes": False,
+                "exclude": [],
+                "include_only": [],
+                "set": {"BASE": "workspace"},
+            },
+            "allow_command_prefixes": [],
+            "credential_targets": ["env:API_TOKEN"],
+        }
+
+        executed = await client.execute(
+            ExecuteRequest(
+                agent_id="main",
+                session_key="sess-cli",
+                response_id="resp-cli",
+                tool_call_id="call-cli",
+                tool_name="app.demo",
+                arguments_json={"cmd": "printf '%s|%s' \"$BASE\" \"$API_TOKEN\""},
+                toolset_version=manifest.toolset_version,
+                context=ToolContext(auth_ref=AuthRef(kind="api_key", ref="ignored-at-runtime")),
+            )
+        )
+
+    assert executed.status == "completed"
+    payload = json.loads(executed.output)
+    assert payload["profile"] == "app.demo"
+    assert payload["stdout"] == "workspace|cli-secret"
 
 
 async def _run_standalone_tool_runtime_uses_workspace_runtime_cross_instance_recovery(tmp_path: Path) -> None:

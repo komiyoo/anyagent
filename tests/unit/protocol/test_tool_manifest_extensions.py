@@ -15,6 +15,7 @@ def test_strip_internal_fields_normalizes_model_tool_names():
             "parameters": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
             "strict": True,
             "x-anyagent-kind": "command",
+            "x-anyagent-cli": {"cwd": "repo"},
         }
     ]
 

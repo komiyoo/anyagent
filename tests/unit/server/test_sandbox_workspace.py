@@ -124,6 +124,47 @@ def test_sandbox_manager_routes_opensandbox_policy_to_backend(tmp_path: Path) ->
     asyncio.run(_run())
 
 
+def test_sandbox_manager_local_unsafe_env_is_env_clear(tmp_path: Path) -> None:
+    async def _run() -> None:
+        manager = SandboxManager(root_dir=tmp_path / ".sandbox")
+        policy = SandboxPolicy(mode="local-unsafe")
+
+        result = await manager.execute(
+            policy=policy,
+            agent_id="main",
+            session_key="sess-env",
+            cmd="printf '%s|%s' \"${ONLY:-}\" \"${HOME:-}\"",
+            env={"ONLY": "present"},
+        )
+
+        assert result.exit_code == 0
+        assert result.stdout == "present|"
+
+    asyncio.run(_run())
+
+
+def test_sandbox_manager_rejects_opensandbox_env_injection(tmp_path: Path) -> None:
+    async def _run() -> None:
+        backend = _FakeOpenSandboxBackend()
+        manager = SandboxManager(root_dir=tmp_path / ".sandbox", opensandbox_backend=backend)  # type: ignore[arg-type]
+        policy = SandboxPolicy(mode="opensandbox")
+
+        try:
+            await manager.execute(
+                policy=policy,
+                agent_id="main",
+                session_key="sess-open-env",
+                cmd="printf ok",
+                env={"ONLY": "present"},
+            )
+        except RuntimeError as exc:
+            assert "cli profiles do not yet support opensandbox env/file injection" in str(exc)
+            return
+        raise AssertionError("opensandbox env injection should be rejected")
+
+    asyncio.run(_run())
+
+
 def test_workspace_checkpoint_enforces_snapshot_size_limit(tmp_path: Path) -> None:
     async def _run() -> None:
         manager = SandboxManager(root_dir=tmp_path / ".sandbox")

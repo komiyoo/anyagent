@@ -315,6 +315,96 @@
       "protocol_version": "0.1.10"
     },
     {
+      "name": "sessions.list",
+      "kind": "protocol_model",
+      "fixture": "sessions.list",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "sessions.get",
+      "kind": "protocol_model",
+      "fixture": "sessions.get",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "evaluations.datasets.list",
+      "kind": "protocol_model",
+      "fixture": "evaluations.datasets.list",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "evaluations.datasets.upsert",
+      "kind": "protocol_model",
+      "fixture": "evaluations.dataset.upsert",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "evaluations.run",
+      "kind": "protocol_model",
+      "fixture": "evaluations.run",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "evaluations.runs.list",
+      "kind": "protocol_model",
+      "fixture": "evaluations.runs.list",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "observability.alerts",
+      "kind": "protocol_model",
+      "fixture": "observability.alerts",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "audit.events",
+      "kind": "protocol_model",
+      "fixture": "audit.events",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "prompts.versions.list",
+      "kind": "protocol_model",
+      "fixture": "prompts.versions.list",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "prompts.versions.create",
+      "kind": "protocol_model",
+      "fixture": "prompts.version.create",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "prompts.versions.restore",
+      "kind": "protocol_model",
+      "fixture": "prompts.version.restore",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "admin.sandboxes.list",
+      "kind": "protocol_model",
+      "fixture": "admin.sandboxes.list",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "admin.sandboxes.workspace.reclaim",
+      "kind": "protocol_model",
+      "fixture": "admin.sandboxes.reclaim",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "admin.workspace.agent.mcp.servers",
+      "kind": "protocol_model",
+      "fixture": "admin.mcp.servers.list",
+      "protocol_version": "0.1.10"
+    },
+    {
+      "name": "admin.workspace.agent.mcp.server.enabled",
+      "kind": "protocol_model",
+      "fixture": "admin.mcp.server.enabled",
+      "protocol_version": "0.1.10"
+    },
+    {
       "name": "tool_runtime.execute.request",
       "kind": "protocol_model",
       "fixture": "tool_runtime.execute.request",

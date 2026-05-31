@@ -199,6 +199,98 @@ def test_doctor_rejects_missing_workspace(tmp_path, capsys) -> None:
     assert payload.findings[0].code == "missing_agent_root"
 
 
+def test_doctor_reports_cli_profile_warnings_and_conflicts(tmp_path, capsys) -> None:
+    agents_root = tmp_path / ".anyagent" / "agents"
+    main_dir = agents_root / "main"
+    worker_dir = agents_root / "worker"
+    main_dir.mkdir(parents=True)
+    worker_dir.mkdir(parents=True)
+    (main_dir / "AGENTS.md").write_text("main\n", encoding="utf-8")
+    (worker_dir / "AGENTS.md").write_text("worker\n", encoding="utf-8")
+    (main_dir / "agent.yaml").write_text(
+        "\n".join(
+            [
+                "exposed: true",
+                "tools:",
+                "  requested_tool_names: []",
+                "  cli:",
+                "    - name: app.demo",
+                "      cwd: repo",
+                "      env:",
+                "        inherit: all",
+                "        ignore_default_excludes: true",
+                "skills:",
+                "  default_selected: []",
+                "sandbox:",
+                "  mode: local-unsafe",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (worker_dir / "agent.yaml").write_text(
+        "\n".join(
+            [
+                "exposed: false",
+                "tools:",
+                "  requested_tool_names: []",
+                "  cli:",
+                "    - name: app.demo",
+                "      cwd: other-repo",
+                "skills:",
+                "  default_selected: []",
+                "sandbox:",
+                "  mode: disabled",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = main(["doctor", "--workspace", str(tmp_path), "--json"])
+
+    assert rc == 1
+    payload = WorkspaceDoctorReport.model_validate_json(capsys.readouterr().out)
+    codes = {item.code for item in payload.findings}
+    assert "cli_profile_local_unsafe_exposed" in codes
+    assert "cli_profile_inherit_all_without_filter" in codes
+    assert "cli_profile_conflict" in codes
+
+
+def test_doctor_reports_cli_profile_schema_errors(tmp_path, capsys) -> None:
+    agent_dir = tmp_path / ".anyagent" / "agents" / "main"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "AGENTS.md").write_text("main\n", encoding="utf-8")
+    (agent_dir / "agent.yaml").write_text(
+        "\n".join(
+            [
+                "exposed: true",
+                "tools:",
+                "  requested_tool_names: []",
+                "  cli:",
+                "    - name: app.demo",
+                "      cwd: repo",
+                "      env:",
+                "        set:",
+                "          API_KEY: should-fail",
+                "skills:",
+                "  default_selected: []",
+                "sandbox:",
+                "  mode: local-unsafe",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = main(["doctor", "--workspace", str(tmp_path), "--json"])
+
+    assert rc == 1
+    payload = WorkspaceDoctorReport.model_validate_json(capsys.readouterr().out)
+    assert payload.findings[0].code == "agent_catalog_invalid"
+    assert "env.set contains sensitive key" in payload.findings[0].message
+
+
 def test_agent_catalog_ignores_legacy_agents_directory(tmp_path: Path) -> None:
     legacy_agent_dir = tmp_path / ".agents" / "agents" / "main"
     legacy_agent_dir.mkdir(parents=True)
