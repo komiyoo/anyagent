@@ -31,7 +31,10 @@ def test_apply_session_resume_to_body_injects_previous_response_id() -> None:
 
     assert previous_response_id == "resp_prev_1"
     assert body["previous_response_id"] == "resp_prev_1"
-    assert body["input"] == "hello"
+    assert body["input"] == [
+        {"role": "user", "content": "old"},
+        {"role": "user", "content": "hello"},
+    ]
 
 
 def test_apply_session_resume_to_body_uses_fallback_transcript_when_previous_id_missing() -> None:

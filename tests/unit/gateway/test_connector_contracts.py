@@ -138,7 +138,7 @@ def test_chatwoot_webhook_auth_valid_signature():
     payload = f"{timestamp}.{json.dumps(body)}"
     signature = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
 
-    headers = {"x-chatwoot-signature": signature}
+    headers = {"x-chatwoot-signature": signature, "x-chatwoot-timestamp": str(timestamp)}
 
     import asyncio
     result = asyncio.run(auth.verify(headers=headers, raw_body=body_bytes, secret=secret))
@@ -162,7 +162,7 @@ def test_chatwoot_webhook_auth_invalid_signature():
     secret = "test_secret"
     timestamp = 1717000000
     body = json.dumps({"timestamp": timestamp}).encode("utf-8")
-    headers = {"x-chatwoot-signature": "invalid_signature_here"}
+    headers = {"x-chatwoot-signature": "invalid_signature_here", "x-chatwoot-timestamp": str(timestamp)}
 
     import asyncio
     with pytest.raises(WebhookAuthError, match="HMAC signature mismatch"):
@@ -185,7 +185,7 @@ def test_chatwoot_webhook_auth_signature_tampering():
     import asyncio
     with pytest.raises(WebhookAuthError, match="HMAC signature mismatch"):
         asyncio.run(auth.verify(
-            headers={"x-chatwoot-signature": correct_sig},
+            headers={"x-chatwoot-signature": correct_sig, "x-chatwoot-timestamp": str(timestamp)},
             raw_body=tampered_body,
             secret=secret,
         ))
