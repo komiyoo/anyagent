@@ -9,4 +9,11 @@
 - MCP federation 离线 smoke：`tests/acceptance/mcp/`
 - built-in server 主路径与存储/并发 smoke：`tests/acceptance/server/`
 
+其中 Chatwoot connector 目前有两条专门验收入口：
+
+- `tests/acceptance/server/acceptance_chatwoot_connector_smoke.py`
+  说明：离线 in-process smoke，覆盖 `webhook -> /v1/responses -> gateway.handoff -> outbound/handoff`
+- `tests/acceptance/server/acceptance_chatwoot_live_smoke.py`
+  说明：真实 Chatwoot 环境 smoke，要求 `ANYAGENT_TEST_CHATWOOT_URL`、`ANYAGENT_TEST_CHATWOOT_ACCOUNT_ID`、`ANYAGENT_TEST_CHATWOOT_ACCESS_TOKEN`、`ANYAGENT_TEST_CHATWOOT_WEBHOOK_SECRET`、`ANYAGENT_TEST_CHATWOOT_CONVERSATION_ID`
+
 如需运行应用层集成验收、Responses API 在线兼容验收或 demo 定制化回归，请到同级项目 `../anyagent-apps/docs/acceptance/`。

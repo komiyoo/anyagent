@@ -1,0 +1,302 @@
+"""Connector contracts 和 Chatwoot connector 单元测试。"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+import hashlib
+import hmac
+import json
+
+import pytest
+
+from anyagent.gateway.connector_contracts import (
+    ConnectorDescriptor,
+    HandoffMetadata,
+    HandoffOutputItem,
+    HandoffReason,
+    HandoffResult,
+    OutboundMessageResult,
+    PlatformConversationEvent,
+    PlatformConversationEventType,
+    WebhookAuthError,
+    WebhookAuthSuccess,
+    chatwoot_session_key,
+    intercom_session_key,
+    telegram_session_key,
+)
+from anyagent.gateway.plugins import GatewayRegistry, WebhookRoute
+from anyagent.plugins.builtin.chatwoot_connector.chatwoot import (
+    ChatwootWebhookAuth,
+    build_platform_event_from_webhook,
+)
+from anyagent.plugins.builtin.chatwoot_connector.plugin import _extract_reply_and_handoff
+from anyagent.server.routes.gateway_webhooks import _find_connector_by_webhook, _resolve_webhook_secret_ref
+
+
+# ── Session key helpers ───────────────────────────────────────────
+
+
+def test_chatwoot_session_key_format():
+    assert chatwoot_session_key(account_id=1, conversation_id=42) == "chatwoot:1:42"
+    assert chatwoot_session_key(account_id="acct_123", conversation_id="conv_456") == "chatwoot:acct_123:conv_456"
+
+
+def test_telegram_session_key_format():
+    assert telegram_session_key(chat_id=123456) == "telegram:123456"
+    assert telegram_session_key(chat_id="chat1", topic_id=99) == "telegram:chat1:99"
+
+
+def test_intercom_session_key_format():
+    assert intercom_session_key(conversation_id="conv_abc") == "intercom:conv_abc"
+
+
+# ── PlatformConversationEvent ──────────────────────────────────────
+
+
+def test_platform_event_model():
+    event = PlatformConversationEvent(
+        session_key="chatwoot:1:42",
+        event_type=PlatformConversationEventType.ASSIGNED_TO_HUMAN,
+        platform="chatwoot",
+        platform_conversation_id="42",
+    )
+    d = event.model_dump(exclude_none=True)
+    assert d["session_key"] == "chatwoot:1:42"
+    assert d["event_type"] == "assigned_to_human"
+    assert d["platform"] == "chatwoot"
+
+
+def test_platform_event_types():
+    assert PlatformConversationEventType.ASSIGNED_TO_HUMAN.value == "assigned_to_human"
+    assert PlatformConversationEventType.RESOLVED.value == "resolved"
+    assert PlatformConversationEventType.USER_MESSAGE.value == "user_message"
+    assert len(PlatformConversationEventType) == 9  # 9 event types
+
+
+# ── HandoffOutputItem ──────────────────────────────────────────────
+
+
+def test_handoff_output_item():
+    item = HandoffOutputItem(
+        reason=HandoffReason.CUSTOMER_REQUEST,
+        metadata=HandoffMetadata(suggested_team="sales", summary="Customer requested human"),
+    )
+    assert item.type == "handoff"
+    assert item.reason == HandoffReason.CUSTOMER_REQUEST
+    assert item.metadata.suggested_team == "sales"
+
+
+def test_handoff_output_item_defaults():
+    item = HandoffOutputItem()
+    assert item.type == "handoff"
+    assert item.reason == HandoffReason.OTHER
+    assert item.metadata.suggested_team is None
+
+
+def test_handoff_reasons():
+    reasons = list(HandoffReason)
+    assert HandoffReason.CUSTOMER_REQUEST in reasons
+    assert HandoffReason.CONFIDENCE_LOW in reasons
+    assert HandoffReason.SENSITIVE_TOPIC in reasons
+    assert HandoffReason.MAX_TURNS_EXCEEDED in reasons
+    assert HandoffReason.ESCALATION in reasons
+    assert HandoffReason.OTHER in reasons
+
+
+# ── ConnectorDescriptor ───────────────────────────────────────────
+
+
+def test_connector_descriptor():
+    desc = ConnectorDescriptor(channel="chatwoot", display_name="Chatwoot")
+    assert desc.channel == "chatwoot"
+    assert desc.display_name == "Chatwoot"
+    assert desc.webhook_auth is None
+
+
+def test_connector_descriptor_empty_channel_raises():
+    with pytest.raises(ValueError, match="non-empty"):
+        ConnectorDescriptor(channel="")
+
+
+# ── ChatwootWebhookAuth ────────────────────────────────────────────
+
+
+def test_chatwoot_webhook_auth_valid_signature():
+    auth = ChatwootWebhookAuth()
+    secret = "test_hmac_secret"
+    timestamp = 1717000000
+
+    body = {
+        "timestamp": timestamp,
+        "event": "message_created",
+        "account": {"id": 1},
+        "conversation": {"id": 42},
+    }
+    body_bytes = json.dumps(body).encode("utf-8")
+
+    # 计算正确的 HMAC
+    payload = f"{timestamp}.{json.dumps(body)}"
+    signature = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+    headers = {"x-chatwoot-signature": signature}
+
+    import asyncio
+    result = asyncio.run(auth.verify(headers=headers, raw_body=body_bytes, secret=secret))
+    assert result.verified is True
+    assert result.platform == "chatwoot"
+    assert result.account_id == "1"
+
+
+def test_chatwoot_webhook_auth_missing_signature():
+    auth = ChatwootWebhookAuth()
+    body = json.dumps({"timestamp": 1234567890}).encode("utf-8")
+    headers: dict[str, str] = {}
+
+    import asyncio
+    with pytest.raises(WebhookAuthError, match="missing X-Chatwoot-Signature"):
+        asyncio.run(auth.verify(headers=headers, raw_body=body, secret="secret"))
+
+
+def test_chatwoot_webhook_auth_invalid_signature():
+    auth = ChatwootWebhookAuth()
+    secret = "test_secret"
+    timestamp = 1717000000
+    body = json.dumps({"timestamp": timestamp}).encode("utf-8")
+    headers = {"x-chatwoot-signature": "invalid_signature_here"}
+
+    import asyncio
+    with pytest.raises(WebhookAuthError, match="HMAC signature mismatch"):
+        asyncio.run(auth.verify(headers=headers, raw_body=body, secret=secret))
+
+
+def test_chatwoot_webhook_auth_signature_tampering():
+    """验证篡改请求体会导致签名不匹配。"""
+    auth = ChatwootWebhookAuth()
+    secret = "test_secret"
+    timestamp = 1717000000
+
+    original_body = json.dumps({"timestamp": timestamp, "content": "hello"}).encode("utf-8")
+    payload = f"{timestamp}.{json.dumps({'timestamp': timestamp, 'content': 'hello'})}"
+    correct_sig = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+    # 使用篡改后的 body
+    tampered_body = json.dumps({"timestamp": timestamp, "content": "malicious content"}).encode("utf-8")
+
+    import asyncio
+    with pytest.raises(WebhookAuthError, match="HMAC signature mismatch"):
+        asyncio.run(auth.verify(
+            headers={"x-chatwoot-signature": correct_sig},
+            raw_body=tampered_body,
+            secret=secret,
+        ))
+
+
+# ── build_platform_event_from_webhook ─────────────────────────────
+
+
+def test_build_platform_event_message_created():
+    webhook = {
+        "event": "message_created",
+        "timestamp": 1717000000,
+        "account": {"id": "1"},
+        "conversation": {"id": "42"},
+    }
+    event = build_platform_event_from_webhook(account_id="1", webhook_body=webhook)
+    assert event.event_type == PlatformConversationEventType.USER_MESSAGE
+    assert event.session_key == "chatwoot:1:42"
+    assert event.platform == "chatwoot"
+
+
+def test_build_platform_event_resolved():
+    webhook = {
+        "event": "conversation_resolved",
+        "timestamp": 1717000000,
+        "account": {"id": "1"},
+        "conversation": {"id": "42"},
+    }
+    event = build_platform_event_from_webhook(account_id="1", webhook_body=webhook)
+    assert event.event_type == PlatformConversationEventType.RESOLVED
+
+
+def test_build_platform_event_custom():
+    webhook = {
+        "event": "unknown_event_type",
+        "timestamp": 1717000000,
+        "account": {"id": "1"},
+        "conversation": {"id": "42"},
+    }
+    event = build_platform_event_from_webhook(account_id="1", webhook_body=webhook)
+    assert event.event_type == PlatformConversationEventType.CUSTOM
+
+
+# ── OutboundMessageResult ──────────────────────────────────────────
+
+
+def test_outbound_message_result():
+    result = OutboundMessageResult(ok=True, platform_message_id="msg_123")
+    assert result.ok is True
+    assert result.platform_message_id == "msg_123"
+
+
+def test_handoff_result():
+    result = HandoffResult(ok=True, reason="done", metadata={"toggled": True})
+    assert result.ok is True
+    assert result.reason == "done"
+    assert result.metadata["toggled"] is True
+
+
+def test_webhook_route_prefers_explicit_channel_binding():
+    connector = SimpleNamespace(channel="chatwoot")
+    registry = GatewayRegistry(channel_connectors={"chatwoot": connector})
+    state = SimpleNamespace(gateway_registry=registry)
+    route = WebhookRoute(path="/chatwoot/webhook", channel="chatwoot")
+
+    assert _find_connector_by_webhook(state, route) is connector
+
+
+def test_resolve_webhook_secret_ref_from_connector_fields():
+    connector = SimpleNamespace(
+        webhook_secret_credential_id="chatwoot-webhook",
+        webhook_secret_kind="hmac_sha256",
+    )
+
+    ref = _resolve_webhook_secret_ref(connector)
+
+    assert ref is not None
+    assert ref.ref == "chatwoot-webhook"
+    assert ref.kind == "hmac_sha256"
+
+
+def test_resolve_webhook_secret_ref_defaults_kind_to_secret():
+    connector = SimpleNamespace(webhook_secret_credential_id="chatwoot-webhook")
+
+    ref = _resolve_webhook_secret_ref(connector)
+
+    assert ref is not None
+    assert ref.ref == "chatwoot-webhook"
+    assert ref.kind == "secret"
+
+
+def test_extract_reply_and_handoff_reads_both_outputs():
+    payload = {
+        "output": [
+            {
+                "type": "message",
+                "content": [
+                    {"type": "output_text", "text": "hello from agent"},
+                ],
+            },
+            {
+                "type": "handoff",
+                "reason": "customer_request",
+                "metadata": {"suggested_team": "sales"},
+            },
+        ]
+    }
+
+    reply_text, handoff_item = _extract_reply_and_handoff(payload)
+
+    assert reply_text == "hello from agent"
+    assert handoff_item is not None
+    assert handoff_item.reason == HandoffReason.CUSTOMER_REQUEST
+    assert handoff_item.metadata.suggested_team == "sales"

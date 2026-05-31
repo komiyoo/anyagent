@@ -14,7 +14,9 @@ from anyagent.agent_packs import (
     stat_config_mtimes,
 )
 from anyagent.model_config import load_workspace_models_config
+from anyagent.gateway.plugins import GatewayRegistry
 from anyagent.gateway.sequencer import KeyedSequencer
+from anyagent.gateway.tooling import register_gateway_tools
 from anyagent.mcp.manager import MCPManagerRegistry
 from anyagent.observability import get_observability_emitter
 from anyagent.server.app_builders import (
@@ -47,6 +49,7 @@ from anyagent.server.routes.internal_prompt import create_internal_prompt_router
 from anyagent.server.routes.internal_responses import create_internal_responses_router
 from anyagent.server.routes.internal_skills import create_builtin_internal_skills_router
 from anyagent.server.routes.internal_tools import create_internal_tools_router
+from anyagent.server.routes.gateway_webhooks import create_gateway_webhook_router
 from anyagent.server.routes.responses import create_responses_router
 from anyagent.server.routes.system import create_system_router
 from anyagent.server.runtime.in_process import InProcessToolRuntimeService
@@ -161,11 +164,13 @@ def create_app(
         sandbox_manager=sandbox_manager,
         credential_store=credential_store,
     )
+    gateway_registry = GatewayRegistry()
     resolved_plugin_roots = _resolve_plugin_roots(plugin_roots, workspace=workspace)
     loaded_plugins, plugin_errors, loaded_plugin_catalog = _load_gateway_plugins(
         runtime=runtime,
         roots=resolved_plugin_roots,
         fail_open=plugins_fail_open,
+        gateway_registry=gateway_registry,
     )
     state = AnyAgentServerApp(
         workspace_dir=workspace,
@@ -201,11 +206,13 @@ def create_app(
         loaded_plugins=loaded_plugins,
         loaded_plugin_catalog=loaded_plugin_catalog,
         plugin_errors=plugin_errors,
+        gateway_registry=gateway_registry,
         api_key=api_key.strip() if isinstance(api_key, str) and api_key.strip() else None,
         admin_api_key=admin_api_key.strip() if isinstance(admin_api_key, str) and admin_api_key.strip() else None,
         session_config_overrides=session_config_overrides,
         config_mtimes=stat_config_mtimes(workspace, session_config_overrides),
     )
+    register_gateway_tools(registry=state.runtime._registry, gateway_registry=gateway_registry)
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
         _app.state.anyagent = state
@@ -231,7 +238,7 @@ def create_app(
                     if asyncio.iscoroutine(result):
                         await result
 
-    app = FastAPI(title="anyagent", version="0.2.0", lifespan=_lifespan)
+    app = FastAPI(title="anyagent", version="0.3.1", lifespan=_lifespan)
     if enable_studio:
         studio_dir = Path(__file__).resolve().parents[1] / "studio_static"
         if studio_dir.is_dir():
@@ -265,6 +272,14 @@ def create_app(
     app.include_router(create_builtin_internal_skills_router())
     app.include_router(create_internal_tools_router())
     app.include_router(create_responses_router())
+
+    # 挂载 Gateway webhook 路由（由 connector 插件注册）
+    if state.gateway_registry.webhook_routes:
+        app.include_router(
+            create_gateway_webhook_router(state),
+            prefix="/gateway",
+            tags=["gateway-webhooks"],
+        )
 
     @app.middleware("http")
     async def _config_hot_reload_middleware(request: Request, call_next: Any) -> Any:

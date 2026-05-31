@@ -12,7 +12,7 @@ def build_plugin_capability_matrix() -> PluginCapabilityMatrix:
             PluginCapability(
                 capability="channels",
                 host="gateway",
-                status="planned",
+                status="preview",
                 description="Inbound platform connector channel declarations for gateway integrations.",
                 manifest_field="channels",
                 registration_api="registerChannel",
@@ -21,7 +21,7 @@ def build_plugin_capability_matrix() -> PluginCapabilityMatrix:
             PluginCapability(
                 capability="webhook_routes",
                 host="gateway",
-                status="planned",
+                status="preview",
                 description="Plugin-provided webhook routes for platform callbacks.",
                 registration_api="registerWebhookRoute",
                 source="anyagent.plugins.api.AnyAgentPluginAPI",

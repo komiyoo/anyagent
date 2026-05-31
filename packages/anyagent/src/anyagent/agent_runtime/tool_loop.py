@@ -524,7 +524,7 @@ async def _execute_one_tool(
             tool_call_id=call_id,
             tool_name=tool_name,
             arguments_json=arguments,
-            output=tr.output if isinstance(tr.output, str) else json.dumps(tr.output, ensure_ascii=False) if tr.output is not None else None,
+            output=output_value if isinstance(output_value, str) else json.dumps(output_value, ensure_ascii=False) if output_value is not None else None,
             error=error_value,
             status=tr.status,
             duration_ms=tr.meta.duration_ms,

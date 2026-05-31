@@ -39,9 +39,57 @@ documentation. A platform connector can be:
 
 | Platform | Current Core stance | Package / path | Notes |
 |---|---|---|---|
+| **Chatwoot** | Built-in reference implementation ✅ | `anyagent.plugins.builtin.chatwoot_connector` | Inbound channel connector with webhook receiver, HMAC signature verification, outbound message delivery, handoff, and conversation lifecycle events. Serves as the reference pattern for all platform connectors. See [Chatwoot Connector README](../../../packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/README.md). |
 | Lark / Feishu | Use official CLI and skills for outbound actions | `larksuite/cli`, `@larksuite/cli`, `lark-cli` | `anyagent-apps/plugins/lark-cli/README.md` is documentation only. Inbound webhook / gateway connectors are separate plugins or packages loaded through the Core plugin contract. |
 | Discord | No in-repo framework implementation | optional connector package | Keep out of `anyagent-apps` until there is a real package with manifest, docs, schema, tests, and smoke validation. |
 | Telegram | No in-repo framework implementation | optional connector package | Keep out of `anyagent-apps` until there is a real package with manifest, docs, schema, tests, and smoke validation. |
+| Intercom | No in-repo framework implementation | optional connector package | Connector contract supports Intercom via `ConnectorWebhookAuth` / `ConnectorOutboundDelivery` / `ConnectorHandoff` interfaces. |
+
+## Connector Contract Interfaces
+
+The Gateway layer defines platform-agnostic connector contracts in
+`anyagent.gateway.connector_contracts`. Any platform connector implements
+these interfaces to integrate with the anyagent framework:
+
+| Interface | Purpose | Required |
+|---|---|---|
+| `ConnectorWebhookAuth` | Inbound webhook signature/payload verification | Yes (for inbound channels) |
+| `ConnectorOutboundDelivery` | Send agent replies back to the platform | Yes (for messaging channels) |
+| `ConnectorHandoff` | Execute platform-side human handoff | Optional |
+| `PlatformConversationEvent` | Inject platform conversation lifecycle events into anyagent event store | Optional |
+| `HandoffOutputItem` | Agent-level structured signal to trigger handoff | Optional |
+| `gateway.handoff` | Tool-based human handoff signal executed through active connector context | Optional |
+
+Key design principles:
+- **Platform-agnostic**: Contracts work for Chatwoot, Intercom, Zendesk, Telegram, etc.
+- **Credential-safe**: Secrets go through Credential Vault (`credential_id` refs), never hardcoded.
+- **Plugin-native**: Connectors are loaded as `--plugin-root` plugins with `plugin.json` manifests.
+
+### Handoff Signaling
+
+AnyAgent currently supports two handoff signaling styles at the framework layer:
+
+- `HandoffOutputItem`: structured output item for connector-aware post-processing.
+- `gateway.handoff`: tool-based signal that stays compatible with the OpenAI Responses
+  function-call path and executes through the active connector in `ToolContext.channel`.
+
+For inbound webhook connectors, `gateway.handoff` is the most compatible main-path
+option because it reuses the existing Tool Runtime manifest/execute contract instead
+of requiring the upstream provider response schema to accept custom output item types.
+
+### Session Key Convention
+
+```
+{platform}:{account_id}:{conversation_id}
+```
+
+Examples:
+- `chatwoot:1:42` — Chatwoot account 1, conversation 42
+- `telegram:123456` — Telegram chat 123456
+- `intercom:conv_abc` — Intercom conversation conv_abc
+
+Helpers: `chatwoot_session_key()`, `telegram_session_key()`, `intercom_session_key()`
+in `anyagent.gateway.connector_contracts`.
 
 ## Connector Acceptance
 

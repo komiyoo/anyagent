@@ -1,0 +1,17 @@
+{
+  "manifest_version": "1",
+  "plugin_id": "chatwoot-connector",
+  "description": "Chatwoot Inbound Channel Connector — 接收 Chatwoot webhook 事件，路由到 anyagent 处理，并将 agent 回复回写到 Chatwoot 会话。",
+  "channels": ["chatwoot"],
+  "entrypoint": "plugin.py:register",
+  "tools": [
+    "app.chatwoot.send_message",
+    "app.chatwoot.handoff"
+  ],
+  "hooks": {
+    "on_agent_start": "plugin:on_agent_start",
+    "on_agent_end": "plugin:on_agent_end"
+  },
+  "docs": ["README.md"],
+  "schemas": []
+}

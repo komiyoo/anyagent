@@ -13,6 +13,8 @@
 - [sdk/README.md](sdk/README.md)
 - `server/acceptance_builtin_server_smoke.py`（PG/Redis live 用例需 `ANYAGENT_TEST_POSTGRES_DSN` 与 `ANYAGENT_TEST_REDIS_DSN`）
 - `server/acceptance_mysql_builtin_server_smoke.py`（需 `ANYAGENT_TEST_MYSQL_DSN` 与 `ANYAGENT_TEST_REDIS_DSN`）
+- `server/acceptance_chatwoot_connector_smoke.py`（离线 Chatwoot connector 主链路 smoke）
+- `server/acceptance_chatwoot_live_smoke.py`（真实 Chatwoot 环境 smoke，需 `ANYAGENT_TEST_CHATWOOT_*` 变量）
 
 ## 推荐运行
 
@@ -32,6 +34,14 @@ bash scripts/ci/run_live_storage_matrix.sh
 ANYAGENT_TEST_MYSQL_DSN=mysql+asyncmy://... \
 ANYAGENT_TEST_REDIS_DSN=redis://... \
 uv run --project packages/anyagent python tests/acceptance/server/acceptance_mysql_builtin_server_smoke.py
+
+# Chatwoot connector live smoke
+ANYAGENT_TEST_CHATWOOT_URL=https://chatwoot.example \
+ANYAGENT_TEST_CHATWOOT_ACCOUNT_ID=1 \
+ANYAGENT_TEST_CHATWOOT_ACCESS_TOKEN=... \
+ANYAGENT_TEST_CHATWOOT_WEBHOOK_SECRET=... \
+ANYAGENT_TEST_CHATWOOT_CONVERSATION_ID=42 \
+uv run --project packages/anyagent pytest tests/acceptance/server/acceptance_chatwoot_live_smoke.py -q
 ```
 
 应用层集成验收与在线兼容验收已迁到同级项目 `../anyagent-apps/tests/acceptance/`。

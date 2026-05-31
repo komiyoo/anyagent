@@ -6,18 +6,69 @@ import os
 from pathlib import Path
 from typing import Any
 
+from dataclasses import dataclass
+from typing import Callable
+
 from anyagent.agent_packs import AgentCatalog
+from anyagent.gateway.plugins import GatewayPluginAPI, GatewayRegistry, WebhookRoute
 from anyagent.plugins import LoadedPlugin, load_plugins_from_roots
 from anyagent.plugins.hooks import HookContext
 from anyagent.plugins.models import PluginManifest
+from anyagent.plugins.api import PluginAPIBase
 from anyagent.protocol.observability import ObservabilityLevel
 from anyagent.protocol.plugins import PluginToolRef
 from anyagent.server.runtime.in_process import InProcessToolRuntimeService
 from anyagent.server.sandbox import OpenSandboxWorkspaceBackend
+from anyagent.tool_runtime.models import ToolDefinition, ToolHandler
 from anyagent.tool_runtime.plugins import ToolRuntimePluginAPI
 
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _DualHostPluginAPI(PluginAPIBase):
+    """Combined host API: Gateway + Tool Runtime 双宿主。
+
+    插件可以在同一个 register(api) 调用中同时注册：
+    - 工具（通过 ToolRuntimePluginAPI）
+    - 渠道/通道（通过 GatewayPluginAPI 的 registerChannel）
+    - Webhook 路由（通过 GatewayPluginAPI 的 registerWebhookRoute）
+    """
+
+    tool_runtime_api: ToolRuntimePluginAPI
+    gateway_api: GatewayPluginAPI
+
+    def registerChannel(self, connector: Any) -> None:  # noqa: N802
+        self.gateway_api.registerChannel(connector)
+
+    def registerTool(  # noqa: N802
+        self,
+        tool_or_factory: ToolDefinition | Callable[[], tuple[ToolDefinition, ToolHandler]],
+        handler: ToolHandler | None = None,
+    ) -> None:
+        self.tool_runtime_api.registerTool(tool_or_factory, handler)
+
+    def registerWebhookRoute(self, route: Any) -> None:  # noqa: N802
+        if isinstance(route, WebhookRoute):
+            self.gateway_api.registerWebhookRoute(route)
+        else:
+            # 允许插件传入 dict/args，框架自动转为 WebhookRoute
+            if isinstance(route, dict):
+                webhook_route = WebhookRoute(
+                    path=route["path"],
+                    channel=route.get("channel"),
+                    methods=tuple(route.get("methods", ["POST"])),
+                    handler=route["handler"],
+                )
+            else:
+                webhook_route = WebhookRoute(
+                    path=getattr(route, "path", "/"),
+                    channel=getattr(route, "channel", None),
+                    methods=tuple(getattr(route, "methods", ["POST"])),
+                    handler=getattr(route, "handler", lambda **kw: None),
+                )
+            self.gateway_api.registerWebhookRoute(webhook_route)
 
 
 def _build_opensandbox_backend_if_needed(catalog: AgentCatalog) -> OpenSandboxWorkspaceBackend | None:
@@ -88,18 +139,21 @@ def _load_gateway_plugins(
     runtime: InProcessToolRuntimeService,
     roots: list[Path],
     fail_open: bool,
+    gateway_registry: GatewayRegistry | None = None,
 ) -> tuple[list[LoadedPlugin], list[dict[str, str]], list[dict[str, Any]]]:
     if not roots:
         return [], [], []
 
     tools_by_plugin: dict[str, list[Any]] = {}
+    gateway_registry = gateway_registry or GatewayRegistry()
     loaded, errors = load_plugins_from_roots(
         roots,
-        api_factory=lambda manifest, plugin_dir, config: _build_gateway_plugin_api(
+        api_factory=lambda manifest, plugin_dir, config: _build_dual_host_plugin_api(
             runtime=runtime,
             manifest=manifest,
             config=config,
             tools_by_plugin=tools_by_plugin,
+            gateway_registry=gateway_registry,
         ),
     )
     error_payload = [{"plugin_dir": plugin_dir, "reason": reason} for plugin_dir, reason in errors]
@@ -114,24 +168,58 @@ def _load_gateway_plugins(
     ]
     if catalog_payload:
         _LOGGER.info("gateway plugins loaded: %s", ", ".join(sorted(item["plugin_id"] for item in catalog_payload)))
+    if gateway_registry.channel_connectors:
+        _LOGGER.info(
+            "registered channel connectors: %s",
+            ", ".join(sorted(gateway_registry.channel_connectors.keys())),
+        )
+    if gateway_registry.webhook_routes:
+        _LOGGER.info(
+            "registered webhook routes: %s",
+            ", ".join(route.path for route in gateway_registry.webhook_routes),
+        )
     return loaded, error_payload, catalog_payload
 
 
-def _build_gateway_plugin_api(
+def _build_dual_host_plugin_api(
     *,
     runtime: InProcessToolRuntimeService,
     manifest: PluginManifest,
     config: dict[str, Any],
     tools_by_plugin: dict[str, list[Any]],
-) -> ToolRuntimePluginAPI:
+    gateway_registry: GatewayRegistry,
+) -> _DualHostPluginAPI:
+    """创建双宿主插件 API（Gateway + Tool Runtime）。
+
+    插件可以通过同一个 api 对象同时注册：
+    - api.registerTool(...)       → Tool Runtime 注册工具
+    - api.registerChannel(...)    → Gateway 注册 connector
+    - api.registerWebhookRoute(...) → Gateway 注册 webhook 路由
+    """
     registered_tools: list[Any] = []
     tools_by_plugin[manifest.plugin_id] = registered_tools
-    return ToolRuntimePluginAPI(
-        host_kind="gateway",
+
+    tool_runtime_api = ToolRuntimePluginAPI(
+        host_kind="tool_runtime",
         plugin_id=manifest.plugin_id,
         config=config,
         registry=runtime._registry,
         registered_tools=registered_tools,
+    )
+
+    gateway_api = GatewayPluginAPI(
+        host_kind="gateway",
+        plugin_id=manifest.plugin_id,
+        config=config,
+        registry=gateway_registry,
+    )
+
+    return _DualHostPluginAPI(
+        host_kind="gateway",
+        plugin_id=manifest.plugin_id,
+        config=config,
+        tool_runtime_api=tool_runtime_api,
+        gateway_api=gateway_api,
     )
 
 

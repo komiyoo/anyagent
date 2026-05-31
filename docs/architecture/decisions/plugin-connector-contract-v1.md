@@ -37,7 +37,7 @@ Gateway host:
 - Loads plugin roots through `anyagent serve --plugin-root`.
 - Registers plugin tools into the built-in runtime as preview capability.
 - Invokes `on_agent_start` and `on_agent_end` hooks around `/v1/responses` runs.
-- Keeps channels and webhook route registration planned.
+- Exposes channel registration and webhook route registration as preview capability.
 
 Tool Runtime host:
 

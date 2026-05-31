@@ -1,6 +1,6 @@
 {
   "name": "anyagent",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "TypeScript SDK for AnyAgent typed APIs and generated protocol schemas",
   "type": "module",
   "main": "./dist/src/index.js",

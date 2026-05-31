@@ -17,6 +17,7 @@ class WebhookRoute:
     """
 
     path: str
+    channel: str | None = None
     methods: tuple[str, ...] = ("POST",)
     handler: Callable[..., Any] = lambda *_args, **_kwargs: None  # noqa: E731
 
@@ -60,4 +61,3 @@ class GatewayPluginAPI(PluginAPIBase):
         if not isinstance(route, WebhookRoute):
             raise GatewayRegistrationError("route must be a WebhookRoute")
         self.registry.register_webhook_route(route)
-
