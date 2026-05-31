@@ -8,6 +8,7 @@ import pytest
 
 from anyagent.protocol.sandbox import ResourceLimits, SandboxPolicy
 from anyagent.server.sandbox import SandboxManager
+from anyagent.server.sandbox.backends import CommandExecutionResult, CommandStagedFile
 from anyagent.tool_runtime.cli_profile import build_cli_profile_handler, build_cli_profile_tool
 from anyagent.tool_runtime.cli_profile_spec import CliEnvironmentPolicy, CliProfileSpec
 from anyagent.tool_runtime.models import ToolCredentialSpec
@@ -142,5 +143,61 @@ def test_cli_profile_handler_reports_timeout_and_truncation(tmp_path: Path) -> N
         )
         assert non_zero["timed_out"] is False
         assert non_zero["exit_code"] == 1
+
+    asyncio.run(_run())
+
+
+def test_cli_profile_handler_supports_opensandbox_env_and_file_injection() -> None:
+    class _Manager:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        async def execute(self, **kwargs):
+            self.calls.append(dict(kwargs))
+            return CommandExecutionResult(
+                command=str(kwargs["cmd"]),
+                exit_code=0,
+                stdout="ok",
+                stderr="",
+                duration_ms=1,
+                cwd=str(kwargs["workdir"]),
+            )
+
+    async def _run() -> None:
+        manager = _Manager()
+        profile = CliProfileSpec(
+            name="app.demo",
+            cwd="repo",
+            env=CliEnvironmentPolicy(inherit="none"),
+            credentials=[
+                ToolCredentialSpec(ref_kind="api_key", injection_target="env:API_TOKEN"),
+                ToolCredentialSpec(ref_kind="api_key", injection_target="file:secrets/token.txt"),
+            ],
+        )
+        handler = build_cli_profile_handler(
+            profile=profile,
+            sandbox_manager=manager,
+            sandbox_policy_for_agent=lambda _agent_id: SandboxPolicy(mode="opensandbox"),
+        )
+        payload = json.loads(
+            await handler(
+                {"cmd": "printf ok"},
+                {
+                    "agent_id": "main",
+                    "session_key": "sess-open",
+                    "_credentials": {
+                        "env:API_TOKEN": "token-value",
+                        "file:secrets/token.txt": "file-secret",
+                    },
+                },
+            )
+        )
+
+        assert payload["exit_code"] == 0
+        call = manager.calls[0]
+        assert call["env"] == {"API_TOKEN": "token-value"}
+        assert call["staged_files"] == [
+            CommandStagedFile(relative_path="secrets/token.txt", content="file-secret")
+        ]
 
     asyncio.run(_run())

@@ -145,7 +145,7 @@ anyagent config init --workspace ./tool-workspace --agent-id worker --tool core.
 
 `anyagent serve` 默认使用进程内 Tool Runtime，适合本地开发和单进程业务 demo；需要水平扩容、独立工具执行池或更强隔离时，再拆成 `anyagent agent-api serve` + `anyagent tool-runtime serve`。只有使用 `exec` 这类命令执行工具时才需要开启 sandbox；普通 `core.web_fetch` / MCP HTTP 工具不需要本地 sandbox。`local-unsafe` 只适合可信本地开发，生产建议接 `opensandbox` 或 `external`。
 
-如果你希望给某个 agent 暴露“受控 CLI 能力”而不是裸 `exec`，可以在 `agent.yaml` 里使用 `tools.cli` 定义 CLI profile。每个 profile 会自动注册成一个 `kind="command"` 工具，不需要重复写进 `tools.requested_tool_names`；它支持 `cwd`、`timeout_ms`、`allow_command_prefixes`、受限环境继承策略，以及把 Credential Vault 引用注入到子进程 `env:*` / `file:*`。当前 env/file 注入只在 `local-unsafe` 下跑通，OpenSandbox 仍保留明确 TODO。
+如果你希望给某个 agent 暴露“受控 CLI 能力”而不是裸 `exec`，可以在 `agent.yaml` 里使用 `tools.cli` 定义 CLI profile。每个 profile 会自动注册成一个 `kind="command"` 工具，不需要重复写进 `tools.requested_tool_names`；它支持 `cwd`、`timeout_ms`、`allow_command_prefixes`、受限环境继承策略，以及把 Credential Vault 引用注入到子进程 `env:*` / `file:*`。当前 env/file 注入已经在 `local-unsafe` 和 `opensandbox` 下跑通；`external` 仍复用宿主外部隔离，不额外代理文件上传。
 
 **agent.yaml 示例**：
 

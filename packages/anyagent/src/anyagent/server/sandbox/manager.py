@@ -7,6 +7,7 @@ from anyagent.protocol.sandbox import FileSystemSandboxPolicy, SandboxPolicy
 from anyagent.storage import SessionWorkspaceRecord
 
 from .backends import CommandExecutionResult, LocalUnsafeBackend
+from .backends import CommandStagedFile
 from .opensandbox_backend import OpenSandboxWorkspaceBackend
 from .workspace import LocalSessionWorkspaceService
 
@@ -39,6 +40,7 @@ class SandboxManager:
         workdir: str | None = None,
         timeout_seconds: int = 60,
         env: dict[str, str] | None = None,
+        staged_files: list[CommandStagedFile] | None = None,
         response_id: str | None = None,
         tool_call_id: str | None = None,
         trace_id: str | None = None,
@@ -52,9 +54,6 @@ class SandboxManager:
         if mode == "opensandbox":
             if self._opensandbox is None:
                 raise RuntimeError("opensandbox backend is not configured")
-            if env is not None:
-                # TODO(cli-profile): inject env/file into OpenSandboxCommandRequest and upload file credentials.
-                raise RuntimeError("cli profiles do not yet support opensandbox env/file injection")
             return await self._opensandbox.execute_command(
                 policy=policy,
                 agent_id=agent_id,
@@ -62,6 +61,8 @@ class SandboxManager:
                 cmd=cmd,
                 workdir=workdir,
                 timeout_seconds=timeout_seconds,
+                env=env,
+                staged_files=staged_files,
             )
         session_pk = session_partition_key(agent_id=agent_id, session_key=session_key)
         filesystem = _effective_filesystem_policy(policy)
@@ -79,6 +80,7 @@ class SandboxManager:
             workdir=workdir,
             timeout_seconds=timeout_seconds,
             env=env,
+            staged_files=staged_files,
         )
 
     async def get_workspace(

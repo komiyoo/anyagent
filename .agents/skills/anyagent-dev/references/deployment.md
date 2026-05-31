@@ -92,6 +92,13 @@ sandbox:
 
 For production command execution, use `opensandbox` or `external` and document network egress policy, filesystem persistence, and credential isolation.
 
+CLI profile note:
+
+- `tools.cli` works with `local-unsafe`, `opensandbox`, and `external` manifest routing.
+- Credential injection to `env:*` / `file:*` is now implemented for `local-unsafe` and `opensandbox`.
+- For `opensandbox`, file targets are uploaded through the execd `/files/upload` path before command execution; they are still declared as relative paths in `agent.yaml`.
+- If a profile is exposed on a public agent and still uses `local-unsafe`, `anyagent doctor --workspace .` will emit a warning.
+
 ## Observability
 
 Structured logs:

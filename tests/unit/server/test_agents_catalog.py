@@ -1646,6 +1646,7 @@ async def _run_admin_tools_catalog(tmp_path: Path) -> None:
         assert [tool.name for tool in catalog.tools] == [
             "core.tool_search",
             "exec",
+            "gateway.handoff",
         ]
         exec_tool = next(tool for tool in catalog.tools if tool.name == "exec")
         assert exec_tool.kind == "command"

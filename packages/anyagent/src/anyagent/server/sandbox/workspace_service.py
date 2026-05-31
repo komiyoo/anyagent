@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from anyagent.protocol.admin_storage import AdminSandboxRuntimeDiagnostics, AdminSandboxWorkspaceRef
 from anyagent.protocol.sandbox import FileSystemSandboxPolicy, SandboxPolicy
 from anyagent.protocol.stage_events import AnyAgentWorkspaceLifecycleEvent
-from anyagent.server.sandbox.backends import CommandExecutionResult
+from anyagent.server.sandbox.backends import CommandExecutionResult, CommandStagedFile
 from anyagent.storage import SessionWorkspaceRecord
 
 from .manager import SandboxManager
@@ -84,6 +84,8 @@ class WorkspaceBackend(Protocol):
         cmd: str,
         workdir: str | None,
         timeout_seconds: int,
+        env: dict[str, str] | None = None,
+        staged_files: list[CommandStagedFile] | None = None,
     ) -> CommandExecutionResult: ...
 
     async def get_workspace(self, *, agent_id: str, session_key: str) -> SessionWorkspaceRecord | None: ...
@@ -134,6 +136,8 @@ class LocalSandboxWorkspaceBackend:
         cmd: str,
         workdir: str | None,
         timeout_seconds: int,
+        env: dict[str, str] | None = None,
+        staged_files: list[CommandStagedFile] | None = None,
     ) -> CommandExecutionResult:
         return await self.sandbox_manager.execute(
             policy=policy,
@@ -142,6 +146,8 @@ class LocalSandboxWorkspaceBackend:
             cmd=cmd,
             workdir=workdir,
             timeout_seconds=timeout_seconds,
+            env=env,
+            staged_files=staged_files,
         )
 
     async def get_workspace(self, *, agent_id: str, session_key: str) -> SessionWorkspaceRecord | None:
@@ -444,6 +450,8 @@ class WorkspaceService:
         cmd: str,
         workdir: str | None,
         timeout_seconds: int,
+        env: dict[str, str] | None = None,
+        staged_files: list[CommandStagedFile] | None = None,
         event_context: WorkspaceEventContext | None = None,
     ) -> CommandExecutionResult:
         if self.backend is None:
@@ -456,6 +464,8 @@ class WorkspaceService:
             cmd=cmd,
             workdir=workdir,
             timeout_seconds=timeout_seconds,
+            env=env,
+            staged_files=staged_files,
         )
         await self.sync_from_backend(agent_id=agent_id, session_key=session_key)
         return result
@@ -736,6 +746,8 @@ class WorkspaceAwareSandboxManagerAdapter:
         cmd: str,
         workdir: str | None = None,
         timeout_seconds: int = 60,
+        env: dict[str, str] | None = None,
+        staged_files: list[CommandStagedFile] | None = None,
         response_id: str | None = None,
         tool_call_id: str | None = None,
         trace_id: str | None = None,
@@ -748,6 +760,8 @@ class WorkspaceAwareSandboxManagerAdapter:
             cmd=cmd,
             workdir=workdir,
             timeout_seconds=timeout_seconds,
+            env=env,
+            staged_files=staged_files,
             event_context=WorkspaceEventContext(
                 response_id=response_id or f"workspace:{agent_id}::{session_key}",
                 trace_id=trace_id,

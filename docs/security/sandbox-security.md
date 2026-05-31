@@ -230,7 +230,7 @@ CLI Profile 复用同一条命令执行安全边界，但目标是把“允许�
 
 当前安全口径：
 
-- 仅 `local-unsafe` 跑通 env/file 凭证注入契约；OpenSandbox 分支保留明确 TODO，不假装支持未实现的 env/file 注入。
+- `local-unsafe` 与 `opensandbox` 都已跑通 CLI Profile 的 env/file 凭证注入契约；前者使用本地 `env_clear` + 临时文件物化，后者把 env 透传给 execd `/command`，并把 `file:*` target 通过 execd `/files/upload` 预先上传到命令 cwd。
 - `LocalUnsafeBackend.execute(..., env=...)` 对 CLI Profile 使用 `env_clear` 语义：传入非 `None` 时只把该字典传给子进程，不继承宿主环境。
 - 默认环境继承策略是 `inherit=core`，并对 `TOKEN|SECRET|PASSWORD|AUTH|KEY|CREDENTIAL|COOKIE` 之类变量做默认敏感过滤。
 - `allow_command_prefixes` 是可选白名单；即使不开前缀限制，仍会拒绝 `bash/sh/zsh/pwsh/python/python3/node/perl/env/sudo` 以及 `-c/-lc` 这类解释器壳 token，避免 profile 退化成“任意再包一层 shell”。

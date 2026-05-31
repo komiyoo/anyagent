@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from anyagent.gateway.session import session_partition_key
 from anyagent.protocol.admin_storage import AdminSandboxRuntimeDiagnostics
 from anyagent.protocol.sandbox import SandboxPolicy
-from anyagent.server.sandbox.backends import CommandExecutionResult
+from anyagent.server.sandbox.backends import CommandExecutionResult, CommandStagedFile
 from anyagent.storage import SessionWorkspaceRecord
 
 
@@ -137,6 +137,7 @@ class OpenSandboxCommandRequest(BaseModel):
     cwd: str | None = None
     background: bool = False
     timeout: int | None = Field(default=None, ge=1)
+    env: dict[str, str] | None = None
 
 
 class OpenSandboxCommandError(BaseModel):
@@ -216,14 +217,19 @@ class OpenSandboxWorkspaceBackend:
         cmd: str,
         workdir: str | None,
         timeout_seconds: int,
+        env: dict[str, str] | None = None,
+        staged_files: list[CommandStagedFile] | None = None,
     ) -> CommandExecutionResult:
         record = await self._ensure_sandbox(policy=policy, agent_id=agent_id, session_key=session_key)
         cwd = _resolve_workdir(workspace_root=_workspace_root_for_policy(policy, default=self.workspace_root), workdir=workdir)
+        if staged_files:
+            await self._stage_remote_files(sandbox_id=str(record.sandbox_id), cwd=cwd, staged_files=staged_files)
         result = await self._run_command(
             sandbox_id=str(record.sandbox_id),
             cmd=cmd,
             cwd=cwd,
             timeout_seconds=timeout_seconds,
+            env=env,
         )
         self._records[record.session_partition_key] = record.model_copy(
             update={"last_accessed_at_ms": _now_ms(), "state": "active"}
@@ -467,6 +473,7 @@ class OpenSandboxWorkspaceBackend:
         cmd: str,
         cwd: str,
         timeout_seconds: int,
+        env: dict[str, str] | None = None,
     ) -> CommandExecutionResult:
         proxy_base = await self._resolve_proxy_base(sandbox_id=sandbox_id)
         request = OpenSandboxCommandRequest(
@@ -474,6 +481,7 @@ class OpenSandboxWorkspaceBackend:
             cwd=cwd,
             background=False,
             timeout=max(int(timeout_seconds), 1) * 1000,
+            env=dict(env) if env is not None else None,
         )
         response = await self._client.post(
             f"{proxy_base}/command",
@@ -518,6 +526,30 @@ class OpenSandboxWorkspaceBackend:
             timed_out=timed_out,
         )
 
+    async def _stage_remote_files(
+        self,
+        *,
+        sandbox_id: str,
+        cwd: str,
+        staged_files: list[CommandStagedFile],
+    ) -> None:
+        for item in staged_files:
+            remote_path = posixpath.normpath(posixpath.join(cwd, item.relative_path))
+            parent = posixpath.dirname(remote_path)
+            if parent and parent != ".":
+                await self._run_command(
+                    sandbox_id=sandbox_id,
+                    cmd=f"mkdir -p {shlex.quote(parent)}",
+                    cwd="/",
+                    timeout_seconds=30,
+                )
+            await self._upload_text(
+                sandbox_id=sandbox_id,
+                remote_path=remote_path,
+                content=item.content,
+                mode=0o600,
+            )
+
     async def _upload_file(
         self,
         *,
@@ -541,6 +573,29 @@ class OpenSandboxWorkspaceBackend:
         ]
         response = await self._client.post(f"{proxy_base}/files/upload", files=files)
         response.raise_for_status()
+
+    async def _upload_text(
+        self,
+        *,
+        sandbox_id: str,
+        remote_path: str,
+        content: str,
+        mode: int,
+    ) -> None:
+        fd, raw = tempfile.mkstemp(prefix="anyagent-opensandbox-file-", suffix=".txt")
+        os.close(fd)
+        path = Path(raw)
+        try:
+            path.write_text(content, encoding="utf-8")
+            await self._upload_file(
+                sandbox_id=sandbox_id,
+                remote_path=remote_path,
+                local_path=path,
+                mode=mode,
+                content_type="text/plain",
+            )
+        finally:
+            path.unlink(missing_ok=True)
 
     async def _download_file(self, *, sandbox_id: str, remote_path: str) -> bytes:
         proxy_base = await self._resolve_proxy_base(sandbox_id=sandbox_id)

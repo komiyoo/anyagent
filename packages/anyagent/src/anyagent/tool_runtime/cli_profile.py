@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from anyagent.protocol.sandbox import SandboxPolicy
+from anyagent.server.sandbox.backends import CommandStagedFile
 from anyagent.tool_runtime.models import ToolDefinition
 
 from anyagent.server.sandbox.exec_handler import _truncate_text_utf8
@@ -77,19 +78,17 @@ def build_cli_profile_handler(
             raise ValueError("sandbox policy is not configured")
         if profile.sandbox is not None:
             policy = SandboxPolicy.model_validate({**policy.model_dump(exclude_none=True), "mode": profile.sandbox})
-        if policy.mode == "opensandbox":
-            raise RuntimeError("cli profiles do not yet support opensandbox env/file injection")
-
         env = build_cli_env(profile.env)
-        wrapped_cmd = _apply_credentials_to_command_and_env(env=env, context=context, cmd=cmd.strip())
+        staged_files = _resolve_credential_injections(env=env, context=context)
         result = await sandbox_manager.execute(
             policy=policy,
             agent_id=agent_id,
             session_key=session_key,
-            cmd=wrapped_cmd,
+            cmd=cmd.strip(),
             workdir=workdir_value,
             timeout_seconds=timeout_seconds,
             env=env,
+            staged_files=staged_files,
             response_id=context.get("response_id") if isinstance(context.get("response_id"), str) else None,
             tool_call_id=context.get("tool_call_id") if isinstance(context.get("tool_call_id"), str) else None,
             trace_id=context.get("_trace_id") if isinstance(context.get("_trace_id"), str) else None,
@@ -161,10 +160,10 @@ class PureProfilePath:
         return PureProfilePath(f"{self.value}/{extra}" if self.value != "." else extra)
 
 
-def _apply_credentials_to_command_and_env(*, env: dict[str, str], context: dict[str, Any], cmd: str) -> str:
+def _resolve_credential_injections(*, env: dict[str, str], context: dict[str, Any]) -> list[CommandStagedFile]:
     raw = context.get("_credentials")
     credential_values = raw if isinstance(raw, dict) else {}
-    file_targets: list[tuple[str, str]] = []
+    file_targets: list[CommandStagedFile] = []
     for target, value in credential_values.items():
         if not isinstance(target, str) or not isinstance(value, str):
             continue
@@ -176,30 +175,8 @@ def _apply_credentials_to_command_and_env(*, env: dict[str, str], context: dict[
             relative = target.removeprefix("file:").strip()
             if not relative:
                 continue
-            file_targets.append((relative, value))
-    if not file_targets:
-        return cmd
-
-    setup: list[str] = ["set -eu"]
-    cleanup_paths: list[str] = []
-    for index, (relative, value) in enumerate(file_targets):
-        pure = PureProfilePath(relative).value
-        parent = str(Path(pure).parent)
-        if parent and parent != ".":
-            setup.append(f"mkdir -p {shlex.quote(parent)}")
-        setup.append(f"cat > {shlex.quote(pure)} <<'__ANYAGENT_CLI_{index}__'\n{value}\n__ANYAGENT_CLI_{index}__")
-        cleanup_paths.append(shlex.quote(pure))
-    cleanup = f"rm -f {' '.join(cleanup_paths)}" if cleanup_paths else ":"
-    script = "\n".join(
-        [
-            cleanup + ";",
-            "cleanup() { " + cleanup + "; }",
-            "trap cleanup EXIT",
-            *setup,
-            cmd,
-        ]
-    )
-    return script
+            file_targets.append(CommandStagedFile(relative_path=PureProfilePath(relative).value, content=value))
+    return file_targets
 
 
 def _category_for_profile_name(name: str) -> str:

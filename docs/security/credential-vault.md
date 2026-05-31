@@ -226,6 +226,11 @@ CLI Profile 在同一个 `ToolCredentialSpec` contract 上复用 Credential Vaul
 - `env:NAME`：把 resolved secret 写入 CLI 子进程环境变量 `NAME`
 - `file:relative/path.txt`：把 resolved secret 物化为 profile `cwd` 下的临时文件，命令退出后清理
 
+当前运行时形态：
+
+- `local-unsafe`：在命令 cwd 下本地创建临时文件，命令退出后删除
+- `opensandbox`：先创建远端父目录，再通过 execd `/files/upload` 上传临时文件到 sandbox cwd
+
 补充约束：
 
 - `ToolCredentialSpec.credential_id` 可显式绑定具体凭证；当它非空时，优先于 `context.auth_ref.ref` 解析，适合“profile 固定吃某个 vault 引用”的场景。

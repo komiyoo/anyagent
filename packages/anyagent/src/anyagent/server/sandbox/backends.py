@@ -9,6 +9,12 @@ from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
+class CommandStagedFile:
+    relative_path: str
+    content: str
+
+
+@dataclass(frozen=True, slots=True)
 class CommandExecutionResult:
     command: str
     exit_code: int
@@ -52,29 +58,35 @@ class LocalUnsafeBackend:
         workdir: str | None,
         timeout_seconds: int,
         env: dict[str, str] | None = None,
+        staged_files: list[CommandStagedFile] | None = None,
     ) -> CommandExecutionResult:
         cwd = _resolve_workdir(root_dir=sandbox.root_dir, workdir=workdir)
         cwd.mkdir(parents=True, exist_ok=True)
+        staged_paths = _materialize_staged_files(cwd=cwd, staged_files=staged_files)
 
         started = time.monotonic()
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
-            cwd=str(cwd),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=dict(os.environ) if env is None else dict(env),
-        )
-        timed_out = False
         try:
-            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=max(timeout_seconds, 1))
-        except asyncio.TimeoutError:
-            timed_out = True
-            proc.kill()
-            stdout_b, stderr_b = await proc.communicate()
-        except asyncio.CancelledError:
-            proc.kill()
-            await proc.communicate()
-            raise
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                cwd=str(cwd),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=dict(os.environ) if env is None else dict(env),
+            )
+            timed_out = False
+            try:
+                stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=max(timeout_seconds, 1))
+            except asyncio.TimeoutError:
+                timed_out = True
+                proc.kill()
+                stdout_b, stderr_b = await proc.communicate()
+            except asyncio.CancelledError:
+                proc.kill()
+                await proc.communicate()
+                raise
+        finally:
+            for path in staged_paths:
+                path.unlink(missing_ok=True)
         duration_ms = int((time.monotonic() - started) * 1000)
         exit_code = 124 if timed_out else int(proc.returncode or 0)
         return CommandExecutionResult(
@@ -96,3 +108,15 @@ def _resolve_workdir(*, root_dir: Path, workdir: str | None) -> Path:
     if candidate != root_dir and root_dir not in candidate.parents:
         raise ValueError("workdir must stay within sandbox root")
     return candidate
+
+
+def _materialize_staged_files(*, cwd: Path, staged_files: list[CommandStagedFile] | None) -> list[Path]:
+    written: list[Path] = []
+    for item in staged_files or []:
+        path = (cwd / item.relative_path).resolve()
+        if path != cwd and cwd not in path.parents:
+            raise ValueError("staged file path must stay within command cwd")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(item.content, encoding="utf-8")
+        written.append(path)
+    return written

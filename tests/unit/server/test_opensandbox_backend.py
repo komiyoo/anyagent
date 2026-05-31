@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 from anyagent.protocol.sandbox import FileSystemSandboxPolicy, NetworkSandboxPolicy, ResourceLimits, SandboxPolicy
+from anyagent.server.sandbox.backends import CommandStagedFile
 from anyagent.server.sandbox.opensandbox_backend import OpenSandboxWorkspaceBackend
 
 
@@ -18,6 +19,7 @@ def _mock_opensandbox_app() -> FastAPI:
     app.state.fail_diagnostics = fail_diagnostics
     app.state.create_payloads = []
     app.state.command_payloads = []
+    app.state.upload_payloads = []
 
     @app.post("/sandboxes")
     async def create_sandbox(request: Request) -> JSONResponse:
@@ -79,6 +81,16 @@ def _mock_opensandbox_app() -> FastAPI:
         payload = "\n\n".join(json.dumps(event) for event in events) + "\n\n"
         return Response(content=payload, media_type="text/event-stream")
 
+    @app.post("/sandboxes/{sandbox_id}/proxy/44772/files/upload")
+    async def upload_file(sandbox_id: str, request: Request) -> JSONResponse:
+        if sandbox_id not in sandboxes:
+            raise HTTPException(status_code=404, detail="sandbox not found")
+        form = await request.form()
+        metadata = json.loads((await form["metadata"].read()).decode("utf-8"))
+        payload = (await form["file"].read()).decode("utf-8")
+        app.state.upload_payloads.append({"metadata": metadata, "content": payload})
+        return JSONResponse({"ok": True})
+
     return app
 
 
@@ -126,6 +138,8 @@ def test_opensandbox_workspace_backend_executes_command_and_reports_diagnostics(
                 cmd="printf ok",
                 workdir=None,
                 timeout_seconds=10,
+                env={"ONLY": "present"},
+                staged_files=[CommandStagedFile(relative_path="secrets/token.txt", content="secret-token")],
             )
             assert result.exit_code == 0
             assert result.stdout == "ok\n"
@@ -150,8 +164,22 @@ def test_opensandbox_workspace_backend_executes_command_and_reports_diagnostics(
             assert create_payload["metadata"]["filesystem_cold_retention_s"] == "3600"
             assert create_payload["metadata"]["filesystem_max_snapshot_bytes"] == "4096"
             assert create_payload["entrypoint"][-1].startswith("mkdir -p /workspace/project ")
-            assert mock_app.state.command_payloads[0]["cwd"] == "/workspace/project"
-            assert mock_app.state.command_payloads[0]["timeout"] == 10000
+            assert mock_app.state.command_payloads[0]["cwd"] == "/"
+            assert mock_app.state.command_payloads[0]["command"] == "mkdir -p /workspace/project/secrets"
+            assert mock_app.state.command_payloads[1]["cwd"] == "/workspace/project"
+            assert mock_app.state.command_payloads[1]["env"] == {"ONLY": "present"}
+            assert mock_app.state.command_payloads[1]["timeout"] == 10000
+            assert mock_app.state.upload_payloads == [
+                {
+                    "metadata": {
+                        "path": "/workspace/project/secrets/token.txt",
+                        "owner": "root",
+                        "group": "root",
+                        "mode": 384,
+                    },
+                    "content": "secret-token",
+                }
+            ]
 
             failed = await backend.execute_command(
                 policy=policy,

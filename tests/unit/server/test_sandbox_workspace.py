@@ -116,6 +116,8 @@ def test_sandbox_manager_routes_opensandbox_policy_to_backend(tmp_path: Path) ->
                 "cmd": "printf ok",
                 "workdir": "repo",
                 "timeout_seconds": 7,
+                "env": None,
+                "staged_files": None,
             }
         ]
         await manager.destroy_workspace(agent_id="main", session_key="sess-open")
@@ -143,24 +145,22 @@ def test_sandbox_manager_local_unsafe_env_is_env_clear(tmp_path: Path) -> None:
     asyncio.run(_run())
 
 
-def test_sandbox_manager_rejects_opensandbox_env_injection(tmp_path: Path) -> None:
+def test_sandbox_manager_routes_opensandbox_env_and_staged_files(tmp_path: Path) -> None:
     async def _run() -> None:
         backend = _FakeOpenSandboxBackend()
         manager = SandboxManager(root_dir=tmp_path / ".sandbox", opensandbox_backend=backend)  # type: ignore[arg-type]
         policy = SandboxPolicy(mode="opensandbox")
 
-        try:
-            await manager.execute(
-                policy=policy,
-                agent_id="main",
-                session_key="sess-open-env",
-                cmd="printf ok",
-                env={"ONLY": "present"},
-            )
-        except RuntimeError as exc:
-            assert "cli profiles do not yet support opensandbox env/file injection" in str(exc)
-            return
-        raise AssertionError("opensandbox env injection should be rejected")
+        await manager.execute(
+            policy=policy,
+            agent_id="main",
+            session_key="sess-open-env",
+            cmd="printf ok",
+            env={"ONLY": "present"},
+            staged_files=[],
+        )
+        assert backend.executed[-1]["env"] == {"ONLY": "present"}
+        assert backend.executed[-1]["staged_files"] == []
 
     asyncio.run(_run())
 
