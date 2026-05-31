@@ -19,7 +19,16 @@ from typing import Any, Literal
 
 AnyAgentToolKind = Literal["command", "mcp"]
 
-_INTERNAL_TOOL_FIELDS = frozenset({"x-anyagent-kind", "x_anyagent_kind", "x-anyagent-source-name", "x_anyagent_source_name"})
+_INTERNAL_TOOL_FIELDS = frozenset(
+    {
+        "x-anyagent-kind",
+        "x_anyagent_kind",
+        "x-anyagent-source-name",
+        "x_anyagent_source_name",
+        "x-anyagent-cli",
+        "x_anyagent_cli",
+    }
+)
 _OPENAI_TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 

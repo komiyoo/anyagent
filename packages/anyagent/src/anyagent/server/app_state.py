@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from anyagent.agent_packs import AgentCatalog, AgentPack, load_agent_catalog, stat_config_mtimes
+from anyagent.gateway.plugins import GatewayRegistry
 from anyagent.gateway.sequencer import KeyedSequencer
 from anyagent.mcp.auth import CredentialResolver
 from anyagent.mcp.manager import MCPManagerRegistry
@@ -70,6 +71,7 @@ class AnyAgentServerApp:
     loaded_plugins: list[LoadedPlugin] = field(default_factory=list)
     loaded_plugin_catalog: list[dict[str, Any]] = field(default_factory=list)
     plugin_errors: list[dict[str, str]] = field(default_factory=list)
+    gateway_registry: GatewayRegistry = field(default_factory=GatewayRegistry)
     api_key: str | None = None
     admin_api_key: str | None = None
     session_config_overrides: dict[str, Any] | None = None

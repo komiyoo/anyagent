@@ -51,6 +51,7 @@ class LocalUnsafeBackend:
         cmd: str,
         workdir: str | None,
         timeout_seconds: int,
+        env: dict[str, str] | None = None,
     ) -> CommandExecutionResult:
         cwd = _resolve_workdir(root_dir=sandbox.root_dir, workdir=workdir)
         cwd.mkdir(parents=True, exist_ok=True)
@@ -61,7 +62,7 @@ class LocalUnsafeBackend:
             cwd=str(cwd),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=dict(os.environ),
+            env=dict(os.environ) if env is None else dict(env),
         )
         timed_out = False
         try:

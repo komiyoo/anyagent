@@ -38,6 +38,7 @@ class SandboxManager:
         cmd: str,
         workdir: str | None = None,
         timeout_seconds: int = 60,
+        env: dict[str, str] | None = None,
         response_id: str | None = None,
         tool_call_id: str | None = None,
         trace_id: str | None = None,
@@ -51,6 +52,9 @@ class SandboxManager:
         if mode == "opensandbox":
             if self._opensandbox is None:
                 raise RuntimeError("opensandbox backend is not configured")
+            if env is not None:
+                # TODO(cli-profile): inject env/file into OpenSandboxCommandRequest and upload file credentials.
+                raise RuntimeError("cli profiles do not yet support opensandbox env/file injection")
             return await self._opensandbox.execute_command(
                 policy=policy,
                 agent_id=agent_id,
@@ -74,6 +78,7 @@ class SandboxManager:
             cmd=cmd,
             workdir=workdir,
             timeout_seconds=timeout_seconds,
+            env=env,
         )
 
     async def get_workspace(

@@ -41,7 +41,11 @@ from anyagent.mcp.auth import CredentialResolver
 from anyagent.observability import emit_observability_event
 from anyagent.server.sandbox import EXEC_TOOL, SandboxManager, build_exec_handler
 from anyagent.server.security.credential_backends import CredentialStore
-from anyagent.tool_runtime.builtin_tools import register_builtin_core_tools_sync, register_privileged_core_tools_sync
+from anyagent.tool_runtime.builtin_tools import (
+    register_builtin_core_tools_sync,
+    register_cli_profile_tools,
+    register_privileged_core_tools_sync,
+)
 from anyagent.skills import (
     SkillEnablement,
     default_skill_roots,
@@ -157,6 +161,12 @@ class InProcessToolRuntimeService:
             ),
         )
         register_builtin_core_tools_sync(self._registry)
+        register_cli_profile_tools(
+            self._registry,
+            catalog=self._catalog,
+            sandbox_manager=sandbox_manager,
+            sandbox_policy_for_agent=self.sandbox_policy_for_agent,
+        )
         if isinstance(credential_store, CredentialStore) and hasattr(credential_store, "list_refs"):
             register_privileged_core_tools_sync(registry=self._registry, credential_store=credential_store)
 
@@ -447,7 +457,8 @@ class InProcessToolRuntimeService:
                         meta=meta_factory(),
                     )
                 continue
-            ref = AuthRef(kind=cred_spec.ref_kind, ref=credential_ref)
+            resolved_ref = (cred_spec.credential_id or "").strip() or credential_ref
+            ref = AuthRef(kind=cred_spec.ref_kind, ref=resolved_ref)
             value = await self._credential_store.resolve(
                 ref,
                 scope_context={"agent_id": req.agent_id},
@@ -546,6 +557,7 @@ class InProcessToolRuntimeService:
     def _allowed_tools_for_request(self, *, pack: AgentPack, req: ManifestRequest) -> list[Any]:
         requested_patterns: list[str] = []
         requested_patterns.extend(pack.spec.tools.requested_tool_names or [])
+        requested_patterns.extend(profile.name for profile in pack.spec.tools.cli)
         requested_patterns.extend(req.requested_tool_names or [])
 
         visible_skills, _errors = self.visible_skills_for_agent(pack.agent_id)
@@ -647,6 +659,7 @@ def _tool_definition_to_param(tool: Any) -> AnyAgentFunctionToolParam:
         description=tool.description,
         parameters=tool.parameters,
         x_anyagent_kind=tool.kind,
+        x_anyagent_cli=tool.manifest_extensions.get("x-anyagent-cli"),
     )
 
 
