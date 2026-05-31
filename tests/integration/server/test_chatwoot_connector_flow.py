@@ -161,6 +161,7 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
 
     payload = {
         "event": "message_created",
+        "message_type": "incoming",
         "timestamp": 1717000000,
         "account": {"id": 1},
         "conversation": {"id": 42},

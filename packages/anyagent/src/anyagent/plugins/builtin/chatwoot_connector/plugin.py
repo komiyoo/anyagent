@@ -257,10 +257,17 @@ def _extract_message_content(body: dict[str, Any]) -> str | None:
     Chatwoot message_created 事件：content 位于顶层（message.webhook_data 展开）。
     结构参考: app/models/message.rb #webhook_data
     """
-    # message_created/updated: content 在顶层
+    # message_created/updated: content 在顶层（webhook_data 展开）
     content = body.get("content")
     if isinstance(content, str) and content.strip():
         return content.strip()
+
+    # 部分 webhook 配置下 content 嵌套在 message 内
+    message = body.get("message")
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content.strip()
 
     # conversation_created: 回退到 conversation.messages 中第一条
     conversation = body.get("conversation", {})
