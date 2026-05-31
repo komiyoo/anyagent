@@ -9,11 +9,13 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import ValidationError
 
 from .config_merge import ConfigMergeError, deep_merge, validate_workspace_override_denylist
 from .mcp import MCPConfig
 from .protocol.sandbox import SandboxPolicy
+from .tool_runtime.cli_profile_spec import BANNED_COMMAND_SHELLS, CliProfileSpec
 
 
 class AgentPackError(Exception):
@@ -30,6 +32,7 @@ DEFAULT_SYSTEM_CONFIG_DIR = "/etc/anyagent"
 
 _AGENT_ID_RE = re.compile(r"^[a-zA-Z0-9_.-]{1,64}$")
 _ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_SENSITIVE_ENV_KEY_RE = re.compile(r"(SECRET|TOKEN|PASSWORD|AUTH|KEY|CREDENTIAL|COOKIE)", re.IGNORECASE)
 
 
 class AgentToolPolicy(BaseModel):
@@ -44,6 +47,52 @@ class AgentToolsSpec(BaseModel):
 
     requested_tool_names: list[str]
     policy: AgentToolPolicy | None = None
+    cli: list[CliProfileSpec] = Field(default_factory=list)
+
+    @staticmethod
+    def _normalize_cli_path(raw: str) -> Path:
+        value = raw.strip()
+        if not value:
+            raise ValueError("cli profile cwd must be non-empty")
+        candidate = Path(value)
+        if candidate.is_absolute():
+            raise ValueError("cli profile cwd must stay within agent workspace")
+        normalized = Path()
+        for part in candidate.parts:
+            if part in {"", "."}:
+                continue
+            if part == "..":
+                raise ValueError("cli profile cwd must not traverse outside agent workspace")
+            normalized /= part
+        return normalized
+
+    @classmethod
+    def _validate_cli_prefix(cls, profile_name: str, prefix: str) -> None:
+        stripped = prefix.strip()
+        if not stripped:
+            raise ValueError(f"cli profile {profile_name} has empty allow_command_prefixes entry")
+        parts = stripped.split()
+        for part in parts:
+            lowered = part.lower()
+            if lowered in BANNED_COMMAND_SHELLS:
+                raise ValueError(f"cli profile {profile_name} prefix contains banned shell token: {part}")
+
+    @classmethod
+    def _validate_cli_env_set(cls, profile_name: str, values: dict[str, str]) -> None:
+        for key in values:
+            if _SENSITIVE_ENV_KEY_RE.search(key):
+                raise ValueError(f"cli profile {profile_name} env.set contains sensitive key: {key}")
+
+    @model_validator(mode="after")
+    def _validate_cli_profiles(self) -> "AgentToolsSpec":
+        for profile in self.cli:
+            if not _AGENT_ID_RE.fullmatch(profile.name):
+                raise ValueError(f"cli profile name must match [a-zA-Z0-9_.-]{{1,64}}: {profile.name}")
+            self._normalize_cli_path(profile.cwd)
+            self._validate_cli_env_set(profile.name, profile.env.set)
+            for prefix in profile.allow_command_prefixes:
+                self._validate_cli_prefix(profile.name, prefix)
+        return self
 
 
 class AgentSkillsSpec(BaseModel):
@@ -414,7 +463,10 @@ def load_agent_catalog(
         if agents_md is None:
             raise AgentPackError(f"missing required file: {child / 'AGENTS.md'}")
 
-        spec = AgentSpec.model_validate(_merged_agent_yaml(layers, agent_id))
+        try:
+            spec = AgentSpec.model_validate(_merged_agent_yaml(layers, agent_id))
+        except ValidationError as e:
+            raise AgentPackError(str(e)) from e
         agents_md_text, sha256 = _read_text_with_limit(agents_md, max_bytes=max_agents_md_bytes)
         mcp_json_payload = _merged_mcp_config(layers, agent_id, max_mcp_json_bytes=max_mcp_json_bytes)
         mcp_config: MCPConfig | None = None

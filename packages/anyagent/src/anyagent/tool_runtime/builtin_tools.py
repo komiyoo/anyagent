@@ -9,6 +9,8 @@ import httpx
 from anyagent.protocol.credential_vault import CredentialScope
 from anyagent.server.sandbox import EXEC_TOOL, SandboxManager, build_exec_handler
 from anyagent.server.security.credential_backends import CredentialStore
+from anyagent.tool_runtime.cli_profile import build_cli_profile_handler, build_cli_profile_tool
+from anyagent.tool_runtime.cli_profile_spec import CliProfileSpec
 from anyagent.tool_runtime.models import ToolDefinition
 from anyagent.tool_runtime.registry import ToolRegistry
 
@@ -391,3 +393,29 @@ def register_privileged_core_tools_sync(*, registry: ToolRegistry, credential_st
 
 async def register_privileged_core_tools(*, registry: ToolRegistry, credential_store: CredentialStore) -> None:
     register_privileged_core_tools_sync(registry=registry, credential_store=credential_store)
+
+
+def register_cli_profile_tools(
+    registry: ToolRegistry,
+    *,
+    catalog: Any,
+    sandbox_manager: SandboxManager,
+    sandbox_policy_for_agent: Any,
+) -> None:
+    seen: dict[str, CliProfileSpec] = {}
+    for pack in catalog.packs.values():
+        for profile in pack.spec.tools.cli:
+            existing = seen.get(profile.name)
+            if existing is not None and existing.model_dump() != profile.model_dump():
+                raise ValueError(f"cli profile conflict for tool name {profile.name}")
+            if existing is not None:
+                continue
+            seen[profile.name] = profile
+            registry.register_tool(
+                tool=build_cli_profile_tool(profile),
+                handler=build_cli_profile_handler(
+                    profile=profile,
+                    sandbox_manager=sandbox_manager,
+                    sandbox_policy_for_agent=sandbox_policy_for_agent,
+                ),
+            )

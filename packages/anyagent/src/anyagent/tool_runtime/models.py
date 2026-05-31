@@ -13,8 +13,14 @@ ToolKind = Literal["command"]
 class ToolCredentialSpec(BaseModel):
     """Declares a credential requirement for a tool and how it is injected into handler context."""
 
+    credential_id: str | None = Field(
+        default=None,
+        description="Optional explicit credential id to resolve. When set, takes precedence over context auth_ref.ref.",
+    )
     ref_kind: str = Field(description="Credential kind to resolve (matches credential.kind).")
-    injection_target: str = Field(description="Where to inject, e.g. 'header:Authorization'.")
+    injection_target: str = Field(
+        description="Where to inject, e.g. 'header:Authorization', 'env:API_KEY', or 'file:secrets/token.txt'."
+    )
     format: str = Field(default="{value}", description="Template used to format injected value.")
     required: bool = Field(default=True, description="Whether missing credential should fail tool execution.")
     description: str | None = Field(default=None, description="Human-readable description.")
@@ -28,6 +34,7 @@ class ToolDefinition(BaseModel):
     kind: ToolKind | None = None
     exposure: ToolExposure = "direct"
     credentials: list[ToolCredentialSpec] = Field(default_factory=list)
+    manifest_extensions: dict[str, Any] = Field(default_factory=dict)
 
 
 ToolHandler = Callable[[dict[str, Any], dict[str, Any]], Awaitable[str]]

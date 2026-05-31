@@ -1121,6 +1121,7 @@ def _doctor_workspace(workspace: Path) -> list[WorkspaceDoctorFinding]:
             add("warning", "agent_no_tools", f"agent {pack.agent_id} requests no tools")
         if pack.spec.sandbox.mode == "opensandbox":
             add("error", "opensandbox_unavailable", f"agent {pack.agent_id} uses opensandbox, which this build does not implement")
+        _doctor_cli_profiles(add=add, pack=pack, catalog=catalog)
 
         skills, skill_errors = discover_skills(
             [SkillRoot(scope="agent", root=pack.skills_dir), *default_skill_roots(workspace_dir=workspace)]
@@ -1153,6 +1154,55 @@ def _doctor_workspace(workspace: Path) -> list[WorkspaceDoctorFinding]:
     if not findings:
         add("info", "workspace_ok", "workspace is valid")
     return findings
+
+
+def _doctor_cli_profiles(*, add: Any, pack: Any, catalog: Any) -> None:
+    seen_names: set[str] = set()
+    for profile in pack.spec.tools.cli:
+        if profile.name in seen_names:
+            add("error", "cli_profile_duplicate", f"agent {pack.agent_id} defines duplicate cli profile: {profile.name}")
+            continue
+        seen_names.add(profile.name)
+
+        effective_mode = profile.sandbox or pack.spec.sandbox.mode
+        if pack.spec.exposed and effective_mode == "local-unsafe":
+            add(
+                "warning",
+                "cli_profile_local_unsafe_exposed",
+                f"agent {pack.agent_id} exposes cli profile {profile.name} via local-unsafe sandbox",
+            )
+        if profile.env.inherit == "all" and profile.env.ignore_default_excludes:
+            add(
+                "warning",
+                "cli_profile_inherit_all_without_filter",
+                f"agent {pack.agent_id} cli profile {profile.name} inherits all env vars without default sensitive filtering",
+            )
+
+    if not pack.spec.tools.cli:
+        return
+
+    conflicts = _find_cli_profile_conflicts(pack=pack, catalog=catalog)
+    for profile_name, other_agent_id in conflicts:
+        add(
+            "error",
+            "cli_profile_conflict",
+            f"cli profile {profile_name} conflicts between agent {pack.agent_id} and agent {other_agent_id}",
+        )
+
+
+def _find_cli_profile_conflicts(*, pack: Any, catalog: Any) -> list[tuple[str, str]]:
+    conflicts: list[tuple[str, str]] = []
+    for sibling in catalog.packs.values():
+        if sibling.agent_id == pack.agent_id:
+            continue
+        sibling_profiles = {profile.name: profile.model_dump() for profile in sibling.spec.tools.cli}
+        for profile in pack.spec.tools.cli:
+            other = sibling_profiles.get(profile.name)
+            if other is None:
+                continue
+            if other != profile.model_dump():
+                conflicts.append((profile.name, sibling.agent_id))
+    return conflicts
 
 
 def _validate_init_agent_id(agent_id: str) -> str:
