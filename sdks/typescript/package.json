@@ -23,10 +23,13 @@
   ],
   "scripts": {
     "generate:schema": "uv run --project ../../packages/anyagent python ../../scripts/export_protocol_schema.py --out generated/protocol-schema.json",
+    "generate:schema:no-sync": "uv run --no-sync --project ../../packages/anyagent python ../../scripts/export_protocol_schema.py --out generated/protocol-schema.json",
     "generate:types": "npm run generate:schema && tsc -p tsconfig.codegen.json && node dist-codegen/generateTypes.js generated/protocol-types.ts",
+    "generate:types:no-sync": "npm run generate:schema:no-sync && tsc -p tsconfig.codegen.json && node dist-codegen/generateTypes.js generated/protocol-types.ts",
     "build": "tsc -p tsconfig.json",
     "pack:check": "npm pack --dry-run",
-    "smoke": "npm run generate:types && npm run build && node dist/src/smoke/schema-smoke.js && node dist/src/smoke/client-smoke.js"
+    "smoke": "npm run generate:types && npm run build && node dist/src/smoke/schema-smoke.js && node dist/src/smoke/client-smoke.js",
+    "smoke:no-sync": "npm run generate:types:no-sync && npm run build && node dist/src/smoke/schema-smoke.js && node dist/src/smoke/client-smoke.js"
   },
   "devDependencies": {
     "@types/node": "^25.0.0",
