@@ -57,6 +57,7 @@ class ServerSettings(BaseSettings):
     infisical_host: str = Field(default="https://app.infisical.com", alias="INFISICAL_HOST")
     infisical_universal_auth_client_id: str | None = Field(default=None, alias="INFISICAL_UNIVERSAL_AUTH_CLIENT_ID")
     infisical_universal_auth_client_secret: str | None = Field(default=None, alias="INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET")
+    infisical_token: str | None = Field(default=None, alias="INFISICAL_TOKEN")
     infisical_project_id: str | None = Field(default=None, alias="INFISICAL_PROJECT_ID")
     infisical_environment: str | None = Field(default=None, alias="INFISICAL_ENVIRONMENT")
     infisical_cache_ttl_seconds: int = Field(default=60, alias="INFISICAL_CACHE_TTL_SECONDS")

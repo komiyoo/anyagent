@@ -75,7 +75,10 @@ class _FakeSecrets:
 
 
 class _FakeClient:
-    def __init__(self, *, host: str, cache_ttl: int) -> None:
+    def __init__(self, *, host: str, cache_ttl: int, token: str | None = None) -> None:
+        self.host = host
+        self.cache_ttl = cache_ttl
+        self.token = token
         self.auth = SimpleNamespace(universal_auth=_FakeUniversalAuth())
         self.secrets = _FakeSecrets()
 
@@ -393,6 +396,44 @@ def test_infisical_backend_flat_layout_resolves_secret_key_at_root(monkeypatch: 
                 },
             }
         ]
+
+    asyncio.run(_run())
+
+
+def test_infisical_backend_with_service_token_skips_universal_auth_login(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("anyagent.server.security.credential_backends._load_infisical_sdk_client", lambda: _FakeClient)
+    backend = InfisicalBackend(
+        config=InfisicalBackendConfig(
+            host="https://app.infisical.test",
+            client_id="",
+            client_secret="",
+            token="st.abc123.xyz",
+            project_id="project-id",
+            environment="dev",
+            credential_root_path="/anyagent/credentials",
+            cache_ttl_seconds=30,
+        )
+    )
+    fake_client = backend._client
+    # Verify the token was passed to the SDK client constructor.
+    assert fake_client.token == "st.abc123.xyz"
+    # Pre-populate secrets for resolve.
+    fake_client.secrets.values[("/anyagent/credentials/global/api_key", "cred_svc")] = "svc-token-value"
+    fake_client.secrets.list_items = [
+        SimpleNamespace(secretKey="cred_svc", secretPath="/anyagent/credentials/global/api_key"),
+    ]
+
+    async def _run() -> None:
+        # Resolve should work without calling universal_auth.login.
+        resolved = await backend.resolve(AuthRef(kind="api_key", ref="cred_svc"))
+        assert resolved == "svc-token-value"
+
+        # _ensure_login should be a no-op for token auth — universal_auth.login MUST NOT be called.
+        assert fake_client.auth.universal_auth.calls == []
+
+        refs = await backend.list_refs()
+        assert len(refs) == 1
+        assert refs[0]["credential_id"] == "cred_svc"
 
     asyncio.run(_run())
 

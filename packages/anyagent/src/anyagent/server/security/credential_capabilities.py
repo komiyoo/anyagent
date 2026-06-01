@@ -64,6 +64,7 @@ def build_credential_backend_capability_matrix() -> CredentialBackendCapabilityM
                 requires_env=[
                     "INFISICAL_UNIVERSAL_AUTH_CLIENT_ID",
                     "INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET",
+                    "INFISICAL_TOKEN",
                     "INFISICAL_PROJECT_ID",
                     "INFISICAL_ENVIRONMENT",
                 ],
@@ -123,6 +124,7 @@ def build_credential_backend_capability_matrix() -> CredentialBackendCapabilityM
                 requires_env=[
                     "INFISICAL_UNIVERSAL_AUTH_CLIENT_ID",
                     "INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET",
+                    "INFISICAL_TOKEN",
                     "INFISICAL_PROJECT_ID",
                     "INFISICAL_ENVIRONMENT",
                 ],

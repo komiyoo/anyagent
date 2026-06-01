@@ -859,6 +859,7 @@ def _cmd_agent_api_serve(args: argparse.Namespace) -> int:
             infisical_host=os.getenv("INFISICAL_HOST", "https://app.infisical.com"),
             infisical_universal_auth_client_id=os.getenv("INFISICAL_UNIVERSAL_AUTH_CLIENT_ID"),
             infisical_universal_auth_client_secret=os.getenv("INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET"),
+            infisical_token=os.getenv("INFISICAL_TOKEN"),
             infisical_project_id=os.getenv("INFISICAL_PROJECT_ID"),
             infisical_environment=os.getenv("INFISICAL_ENVIRONMENT"),
             infisical_cache_ttl_seconds=int(os.getenv("INFISICAL_CACHE_TTL_SECONDS", "60")),

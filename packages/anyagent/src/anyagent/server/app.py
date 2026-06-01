@@ -107,6 +107,7 @@ def create_app(
         infisical_host=server_settings.infisical_host,
         infisical_universal_auth_client_id=server_settings.infisical_universal_auth_client_id,
         infisical_universal_auth_client_secret=server_settings.infisical_universal_auth_client_secret,
+        infisical_token=server_settings.infisical_token,
         infisical_project_id=server_settings.infisical_project_id,
         infisical_environment=server_settings.infisical_environment,
         infisical_cache_ttl_seconds=server_settings.infisical_cache_ttl_seconds,

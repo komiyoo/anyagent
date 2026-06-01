@@ -18,6 +18,7 @@ class InfisicalResolverConfig:
     credential_root_path: str
     path_layout: str = "scoped"
     cache_ttl_seconds: int = 60
+    token: str | None = None
 
 
 class InfisicalCredentialResolver:
@@ -33,7 +34,7 @@ class InfisicalCredentialResolver:
             raise MCPAuthError("infisical credential backend requires installing anyagent[infisical]") from exc
 
         self._config = config
-        self._client = factory(host=config.host, cache_ttl=config.cache_ttl_seconds)
+        self._client = factory(host=config.host, cache_ttl=config.cache_ttl_seconds, token=config.token)
         self._login_lock = asyncio.Lock()
         self._logged_in = False
 
@@ -81,6 +82,10 @@ class InfisicalCredentialResolver:
     async def _ensure_login(self) -> None:
         if self._logged_in:
             return
+        # Service Token already applied during client construction.
+        if self._config.token:
+            self._logged_in = True
+            return
         async with self._login_lock:
             if self._logged_in:
                 return
@@ -124,6 +129,7 @@ def build_mcp_credential_resolver(
     infisical_cache_ttl_seconds: int = 60,
     infisical_credential_root_path: str = "/anyagent/credentials",
     infisical_path_layout: str = "scoped",
+    infisical_token: str | None = None,
 ) -> CredentialResolver | None:
     mode = (backend or "").strip().lower()
     if mode in {"", "none"}:
@@ -133,20 +139,28 @@ def build_mcp_credential_resolver(
     if mode == "file":
         return FileCredentialResolver(root=file_root, environ=environ)
     if mode == "infisical":
-        if not infisical_universal_auth_client_id or not infisical_universal_auth_client_secret:
-            raise MCPAuthError("infisical backend requires INFISICAL_UNIVERSAL_AUTH_CLIENT_ID and INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET")
+        if infisical_token:
+            # Service Token authentication — client_id/client_secret are optional.
+            client_id = infisical_universal_auth_client_id or ""
+            client_secret = infisical_universal_auth_client_secret or ""
+        else:
+            if not infisical_universal_auth_client_id or not infisical_universal_auth_client_secret:
+                raise MCPAuthError("infisical backend requires INFISICAL_UNIVERSAL_AUTH_CLIENT_ID and INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET")
+            client_id = infisical_universal_auth_client_id
+            client_secret = infisical_universal_auth_client_secret
         if not infisical_project_id or not infisical_environment:
             raise MCPAuthError("infisical backend requires INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT")
         return InfisicalCredentialResolver(
             config=InfisicalResolverConfig(
                 host=(infisical_host or "https://app.infisical.com").strip() or "https://app.infisical.com",
-                client_id=infisical_universal_auth_client_id,
-                client_secret=infisical_universal_auth_client_secret,
+                client_id=client_id,
+                client_secret=client_secret,
                 project_id=infisical_project_id,
                 environment=infisical_environment,
                 credential_root_path=infisical_credential_root_path,
                 path_layout=infisical_path_layout,
                 cache_ttl_seconds=int(infisical_cache_ttl_seconds),
+                token=infisical_token,
             )
         )
     raise MCPAuthError(f"unsupported MCP credential backend: {backend}")

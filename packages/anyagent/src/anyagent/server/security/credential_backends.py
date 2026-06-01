@@ -721,6 +721,7 @@ class InfisicalBackendConfig:
     credential_root_path: str
     path_layout: str = "scoped"
     cache_ttl_seconds: int = 60
+    token: str | None = None
 
 
 class InfisicalBackend(CredentialStore):
@@ -738,7 +739,7 @@ class InfisicalBackend(CredentialStore):
             raise RuntimeError("infisical credential backend requires installing anyagent[infisical]") from exc
 
         self._config = config
-        self._client = factory(host=config.host, cache_ttl=config.cache_ttl_seconds)
+        self._client = factory(host=config.host, cache_ttl=config.cache_ttl_seconds, token=config.token)
         self._login_lock = asyncio.Lock()
         self._logged_in = False
 
@@ -852,6 +853,10 @@ class InfisicalBackend(CredentialStore):
 
     async def _ensure_login(self) -> None:
         if self._logged_in:
+            return
+        # Service Token already applied during client construction.
+        if self._config.token:
+            self._logged_in = True
             return
         async with self._login_lock:
             if self._logged_in:

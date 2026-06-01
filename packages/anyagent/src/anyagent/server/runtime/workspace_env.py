@@ -56,6 +56,7 @@ def load_workspace_secret_source_defaults(workspace_dir: Path) -> None:
                 "infisical_universal_auth_client_secret_env": "INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET",
                 "infisical_project_id_env": "INFISICAL_PROJECT_ID",
                 "infisical_environment_env": "INFISICAL_ENVIRONMENT",
+                "infisical_token_env": "INFISICAL_TOKEN",
                 "infisical_credential_root_path": "INFISICAL_CREDENTIAL_ROOT_PATH",
                 "infisical_path_layout": "INFISICAL_PATH_LAYOUT",
                 "infisical_cache_ttl_seconds": "INFISICAL_CACHE_TTL_SECONDS",
@@ -158,6 +159,7 @@ def _credential_runtime_config_from_payload(workspace_dir: Path, payload: dict[s
         infisical_cache_ttl_seconds=int(obj.get("infisical_cache_ttl_seconds") or 60),
         infisical_credential_root_path=str(obj.get("infisical_credential_root_path") or "/anyagent/credentials"),
         infisical_path_layout=str(obj.get("infisical_path_layout") or "scoped"),
+        infisical_token=_config_value(obj, "infisical_token", "infisical_token_env"),
     )
 
 

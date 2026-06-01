@@ -35,6 +35,7 @@ class CredentialRuntimeConfig:
     infisical_cache_ttl_seconds: int = 60
     infisical_credential_root_path: str = "/anyagent/credentials"
     infisical_path_layout: str = "scoped"
+    infisical_token: str | None = None
     credential_postgres_dsn: str | None = None
     credential_postgres_schema: str = "public"
     credential_encryption_key: str | None = None
@@ -102,6 +103,7 @@ def build_credential_resolver_from_config(
         infisical_cache_ttl_seconds=config.infisical_cache_ttl_seconds,
         infisical_credential_root_path=config.infisical_credential_root_path,
         infisical_path_layout=config.infisical_path_layout,
+        infisical_token=config.infisical_token,
     )
     if resolver is not None:
         return resolver
@@ -118,12 +120,18 @@ def resolve_credential_file_root(config: CredentialRuntimeConfig) -> Path:
 
 
 def _build_infisical_backend_config(config: CredentialRuntimeConfig) -> InfisicalBackendConfig:
+    token = config.infisical_token
     client_id = config.infisical_universal_auth_client_id
     client_secret = config.infisical_universal_auth_client_secret
     project_id = config.infisical_project_id
     environment = config.infisical_environment
-    if not client_id or not client_secret:
-        raise RuntimeError("infisical backend requires INFISICAL_UNIVERSAL_AUTH_CLIENT_ID and INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET")
+    if token:
+        # Service Token authentication — client_id/client_secret are optional.
+        client_id = client_id or ""
+        client_secret = client_secret or ""
+    else:
+        if not client_id or not client_secret:
+            raise RuntimeError("infisical backend requires INFISICAL_UNIVERSAL_AUTH_CLIENT_ID and INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET")
     if not project_id or not environment:
         raise RuntimeError("infisical backend requires INFISICAL_PROJECT_ID and INFISICAL_ENVIRONMENT")
     return InfisicalBackendConfig(
@@ -135,6 +143,7 @@ def _build_infisical_backend_config(config: CredentialRuntimeConfig) -> Infisica
         credential_root_path=config.infisical_credential_root_path,
         path_layout=config.infisical_path_layout,
         cache_ttl_seconds=int(config.infisical_cache_ttl_seconds),
+        token=token,
     )
 
 

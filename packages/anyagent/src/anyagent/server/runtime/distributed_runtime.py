@@ -43,6 +43,7 @@ class DistributedAgentRuntimeConfig:
     infisical_cache_ttl_seconds: int = 60
     infisical_credential_root_path: str = "/anyagent/credentials"
     infisical_path_layout: str = "scoped"
+    infisical_token: str | None = None
 
 
 @dataclass(slots=True)
@@ -112,6 +113,7 @@ async def create_distributed_agent_runtime(
                 infisical_cache_ttl_seconds=config.infisical_cache_ttl_seconds,
                 infisical_credential_root_path=config.infisical_credential_root_path,
                 infisical_path_layout=config.infisical_path_layout,
+                infisical_token=config.infisical_token,
             ),
             multiagent=MultiAgentManager(),
             storage=storage,
