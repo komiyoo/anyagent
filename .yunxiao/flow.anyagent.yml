@@ -89,6 +89,12 @@ stages:
             with:
               run: |
                 set -eu
+                # Skip if no changes in TypeScript SDK since last commit
+                if ! git diff --name-only HEAD~1..HEAD 2>/dev/null | grep -q '^sdks/typescript/'; then
+                  echo "⏭️  No changes in sdks/typescript/; skipping TypeScript SDK publish."
+                  exit 0
+                fi
+                echo "📦 sdks/typescript/ changes detected; proceeding with TypeScript SDK publish."
                 export PIP_DISABLE_PIP_VERSION_CHECK=1
                 export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
                 export PIP_TRUSTED_HOST=mirrors.aliyun.com
