@@ -133,6 +133,7 @@ stages:
                 ensure_node22
                 node --version
                 npm --version
+                uv sync --project packages/anyagent --frozen
                 npm --prefix sdks/typescript ci
                 npm --prefix sdks/typescript run smoke
                 npm --prefix sdks/typescript run pack:check
