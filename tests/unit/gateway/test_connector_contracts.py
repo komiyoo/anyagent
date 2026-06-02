@@ -8,6 +8,8 @@ import hmac
 import json
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from anyagent.gateway.connector_contracts import (
     ConnectorDescriptor,
@@ -30,7 +32,11 @@ from anyagent.plugins.builtin.chatwoot_connector.chatwoot import (
     build_platform_event_from_webhook,
 )
 from anyagent.plugins.builtin.chatwoot_connector.plugin import _extract_reply_and_handoff
-from anyagent.server.routes.gateway_webhooks import _find_connector_by_webhook, _resolve_webhook_secret_ref
+from anyagent.server.routes.gateway_webhooks import (
+    _find_connector_by_webhook,
+    _resolve_webhook_secret_ref,
+    create_gateway_webhook_router,
+)
 
 
 # ── Session key helpers ───────────────────────────────────────────
@@ -237,6 +243,44 @@ def test_build_platform_event_includes_chatwoot_page_context():
         "widget_language": "en",
         "browser_language": "en-US",
     }
+
+
+def test_gateway_webhook_route_logs_chatwoot_page_context(caplog):
+    async def _handler(**_kwargs):
+        return {
+            "ok": True,
+            "platform_event": {
+                "metadata": {
+                    "chatwoot_page_context": {
+                        "entry_url": "https://lyriktrip.com/guides/china?codex_probe=chatwoot_page_context",
+                        "entry_path": "/guides/china",
+                    },
+                },
+            },
+        }
+
+    registry = GatewayRegistry()
+    registry.register_webhook_route(
+        WebhookRoute(
+            path="/gateway/chatwoot/webhook",
+            methods=["POST"],
+            handler=_handler,
+            channel="chatwoot",
+        )
+    )
+    state = SimpleNamespace(gateway_registry=registry)
+    app = FastAPI()
+    app.include_router(create_gateway_webhook_router(state))
+
+    caplog.set_level("INFO", "anyagent.server.routes.gateway_webhooks")
+    response = TestClient(app).post("/gateway/chatwoot/webhook", json={"event": "webwidget_triggered"})
+
+    assert response.status_code == 200
+    assert any(
+        "gateway webhook received" in record.message
+        and "https://lyriktrip.com/guides/china?codex_probe=chatwoot_page_context" in record.message
+        for record in caplog.records
+    )
 
 
 def test_build_platform_event_resolved():

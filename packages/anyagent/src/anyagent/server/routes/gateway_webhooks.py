@@ -97,6 +97,14 @@ def _mount_webhook_route(router: APIRouter, route: WebhookRoute, state: Any) -> 
             raise HTTPException(status_code=500, detail="internal webhook handler error") from exc
 
         if isinstance(result, dict):
+            page_context = _extract_webhook_page_context_for_log(result)
+            if page_context:
+                _LOGGER.info(
+                    "gateway webhook received: path=%s channel=%s page_context=%s",
+                    path,
+                    route.channel,
+                    page_context,
+                )
             return JSONResponse(result)
         if result is None:
             return JSONResponse({"ok": True})
@@ -216,6 +224,29 @@ def _resolve_webhook_secret_ref(connector: Any) -> AuthRef | None:
     if not isinstance(credential_kind, str) or not credential_kind.strip():
         credential_kind = "secret"
     return AuthRef(kind=credential_kind, ref=credential_id.strip())
+
+
+def _extract_webhook_page_context_for_log(result: dict[str, Any]) -> dict[str, Any] | None:
+    """Return Chatwoot page context from connector handler results, when present."""
+    candidates = (
+        result.get("chatwoot_page_context"),
+        _nested_get(result, ("metadata", "chatwoot_page_context")),
+        _nested_get(result, ("platform_event", "metadata", "chatwoot_page_context")),
+        _nested_get(result, ("data", "metadata", "chatwoot_page_context")),
+    )
+    for candidate in candidates:
+        if isinstance(candidate, dict) and candidate:
+            return candidate
+    return None
+
+
+def _nested_get(value: dict[str, Any], path: tuple[str, ...]) -> Any:
+    current: Any = value
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
 
 
 def _route_slug(path: str) -> str:
