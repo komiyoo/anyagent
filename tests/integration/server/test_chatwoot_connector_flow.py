@@ -104,6 +104,44 @@ class _ChatwootFlowProvider:
         return Response.model_validate(payload)
 
 
+class _SlowChatwootProvider:
+    def __init__(self, release: asyncio.Event) -> None:
+        self.release = release
+        self.started = asyncio.Event()
+
+    async def create_response(
+        self,
+        *,
+        body: dict,
+        idempotency_key: str | None = None,
+        timeout_s: float = 60.0,
+    ) -> Response:
+        _ = body, idempotency_key, timeout_s
+        self.started.set()
+        await self.release.wait()
+        return Response.model_validate(
+            {
+                "id": "resp_chatwoot_async",
+                "object": "response",
+                "created_at": int(time.time()),
+                "model": "gpt-4o-mini",
+                "output": [
+                    ResponseOutputMessage(
+                        id="msg_chatwoot_async",
+                        type="message",
+                        role="assistant",
+                        status="completed",
+                        content=[ResponseOutputText(type="output_text", text="Async hello", annotations=[])],
+                    ).model_dump(exclude_none=True, by_alias=True),
+                ],
+                "parallel_tool_calls": False,
+                "tool_choice": "auto",
+                "tools": [],
+                "status": "completed",
+            }
+        )
+
+
 def test_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp_path: Path, monkeypatch) -> None:
     asyncio.run(_run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp_path, monkeypatch))
 
@@ -112,6 +150,7 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
     _write_main_agent(tmp_path)
     monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
     monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
     monkeypatch.setattr(
         "anyagent.server.routes.responses.get_default_model_provider",
         lambda: _ChatwootFlowProvider(),
@@ -222,3 +261,101 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
     persisted = json.loads(platform_events.events[0].data)
     assert persisted["session_key"] == "chatwoot:1:42"
     assert persisted["event_type"] == "user_message"
+
+
+def test_chatwoot_connector_webhook_acknowledges_before_background_processing(tmp_path: Path, monkeypatch) -> None:
+    asyncio.run(_run_chatwoot_connector_webhook_acknowledges_before_background_processing(tmp_path, monkeypatch))
+
+
+async def _run_chatwoot_connector_webhook_acknowledges_before_background_processing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_main_agent(tmp_path)
+    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.delenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", raising=False)
+
+    release = asyncio.Event()
+    provider = _SlowChatwootProvider(release)
+    monkeypatch.setattr(
+        "anyagent.server.routes.responses.get_default_model_provider",
+        lambda: provider,
+    )
+
+    app = create_app(
+        workspace_dir=tmp_path,
+        api_key="user-key",
+        admin_api_key="admin-key",
+        plugin_roots=[REFERENCE_PLUGIN_ROOT],
+    )
+    connector = app.state.anyagent.gateway_registry.channel_connectors["chatwoot"]
+
+    sent_messages: list[dict] = []
+
+    async def _record_send_message(
+        platform_conversation_id: str,
+        content: str,
+        *,
+        content_type: str = "text",
+        metadata: dict | None = None,
+    ):
+        sent_messages.append(
+            {
+                "platform_conversation_id": platform_conversation_id,
+                "content": content,
+                "content_type": content_type,
+                "metadata": metadata,
+            }
+        )
+        return type("SendResult", (), {"ok": True, "platform_message_id": "msg_async"})()
+
+    connector.outbound.send_message = _record_send_message
+
+    payload = {
+        "event": "message_created",
+        "message_type": "incoming",
+        "timestamp": 1717000000,
+        "account": {"id": 1},
+        "conversation": {"id": 42},
+        "message": {"content": "hi"},
+    }
+    raw_body = json.dumps(payload).encode("utf-8")
+    signature = hmac.new(
+        b"test-chatwoot-secret",
+        f"{payload['timestamp']}.{raw_body.decode('utf-8')}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as http:
+        response = await http.post(
+            "/gateway/chatwoot/webhook/main",
+            headers={"x-chatwoot-signature": signature, "x-chatwoot-timestamp": str(payload["timestamp"])},
+            content=raw_body,
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data == {
+            "ok": True,
+            "event": "message_created",
+            "accepted": True,
+            "processed": False,
+            "reason": "processing_async",
+        }
+        assert sent_messages == []
+
+        await asyncio.wait_for(provider.started.wait(), timeout=1.0)
+        release.set()
+        for _ in range(20):
+            if sent_messages:
+                break
+            await asyncio.sleep(0.05)
+
+    assert sent_messages == [
+        {
+            "platform_conversation_id": "42",
+            "content": "Async hello",
+            "content_type": "text",
+            "metadata": None,
+        }
+    ]

@@ -63,13 +63,16 @@ def _mount_webhook_route(router: APIRouter, route: WebhookRoute, state: Any) -> 
         auth_result = None
         # 1. Webhook 签名验证
         if connector is not None and hasattr(connector, "webhook_auth") and connector.webhook_auth is not None:
-            auth_result = await _verify_webhook_auth(
-                auth=connector.webhook_auth,
-                headers=headers,
-                raw_body=raw_body,
-                state=state,
-                connector=connector,
-            )
+            try:
+                auth_result = await _verify_webhook_auth(
+                    auth=connector.webhook_auth,
+                    headers=headers,
+                    raw_body=raw_body,
+                    state=state,
+                    connector=connector,
+                )
+            except WebhookAuthError as exc:
+                raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
         # 2. 调用 connector handler
         try:

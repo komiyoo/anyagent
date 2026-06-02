@@ -12,6 +12,7 @@ Chatwoot Connector — 插件入口。
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -121,6 +122,23 @@ async def _handle_chatwoot_webhook(
             _LOGGER.debug("skipping non-incoming message: message_type=%s", message_type)
             return {"ok": True, "event": event_name, "skipped": True, "reason": f"message_type={message_type}"}
 
+        if _chatwoot_process_incoming_async():
+            _schedule_incoming_message_processing(
+                body=body,
+                account_id=account_id,
+                conversation_id=conversation_id,
+                request=request,
+                state=state,
+                connector=connector,
+            )
+            return {
+                "ok": True,
+                "event": event_name,
+                "accepted": True,
+                "processed": False,
+                "reason": "processing_async",
+            }
+
         result = await _process_incoming_message(
             body=body,
             account_id=account_id,
@@ -137,6 +155,45 @@ async def _handle_chatwoot_webhook(
         "event": event_name,
         "platform_event": platform_event.model_dump(exclude_none=True),
     }
+
+
+def _chatwoot_process_incoming_async() -> bool:
+    raw = os.getenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "true").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _schedule_incoming_message_processing(
+    *,
+    body: dict[str, Any],
+    account_id: str,
+    conversation_id: str,
+    request: Any,
+    state: Any,
+    connector: Any,
+) -> None:
+    task = asyncio.create_task(
+        _process_incoming_message(
+            body=body,
+            account_id=account_id,
+            conversation_id=conversation_id,
+            request=request,
+            state=state,
+            connector=connector,
+        )
+    )
+
+    def _log_background_result(done: asyncio.Task[dict[str, Any]]) -> None:
+        try:
+            result = done.result()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.exception("failed to process incoming chatwoot message in background: %s", exc)
+            return
+        if not result.get("processed"):
+            _LOGGER.warning("chatwoot background processing finished without processing: %s", result)
+        else:
+            _LOGGER.info("chatwoot background processing completed: %s", result)
+
+    task.add_done_callback(_log_background_result)
 
 
 async def _process_incoming_message(

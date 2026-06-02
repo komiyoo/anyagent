@@ -115,6 +115,7 @@ async def _run_chatwoot_connector_acceptance_smoke(*, tmp_path: Path, monkeypatc
     _write_workspace(tmp_path)
     monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
     monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
     monkeypatch.setattr(
         "anyagent.server.routes.responses.get_default_model_provider",
         lambda: _ChatwootAcceptanceProvider(),
@@ -164,6 +165,7 @@ async def _run_chatwoot_connector_acceptance_smoke(*, tmp_path: Path, monkeypatc
 
     payload = {
         "event": "message_created",
+        "message_type": "incoming",
         "timestamp": 1717000000,
         "account": {"id": 1},
         "conversation": {"id": 42},
