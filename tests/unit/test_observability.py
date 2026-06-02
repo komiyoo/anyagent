@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from anyagent.observability import ObservabilityEmitter, ObservabilitySink
 from anyagent.protocol.observability import NormalizedTelemetryEvent, ObservabilityEvent
-from anyagent.server.persistence.telemetry_store import PostgresTelemetryEventStore, _telemetry_event_from_row, _telemetry_row
+from anyagent.protocol.stage_events import AnyAgentPromptContextEvent
+from anyagent.server.persistence.telemetry_store import (
+    PostgresTelemetryEventStore,
+    _agent_id,
+    _session_key,
+    _telemetry_event_from_row,
+    _telemetry_row,
+)
 
 
 class _MemorySink(ObservabilitySink):
@@ -74,3 +81,16 @@ def test_postgres_telemetry_store_maps_rows_without_real_database(monkeypatch) -
     assert row["event_type"] == "tool.policy.denied"
     assert row["payload_json"] == {"policy": "deny"}
     assert round_trip == event
+
+
+def test_timeline_identity_helpers_fall_back_when_prompt_context_has_no_identity_fields() -> None:
+    prompt_context = AnyAgentPromptContextEvent.model_validate(
+        {
+            "response_id": "resp",
+            "type": "anyagent.prompt.context",
+            "prompt_cache_key": "cache",
+        }
+    )
+
+    assert _agent_id(prompt_context, {"agent_id": "main"}, None) == "main"
+    assert _session_key(prompt_context, {"session_key": "sess"}, None) == "sess"

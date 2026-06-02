@@ -318,7 +318,7 @@ class RunEventTelemetryStore:
 
         prompt_context = resp.latest_prompt_context()
         prompt_payload = next((payload for payload in payloads if payload.get("type") == "anyagent.prompt.context"), {})
-        selected_skill_ids = set(prompt_context.selected_skill_ids if prompt_context is not None else [])
+        selected_skill_ids = set(_string_list(getattr(prompt_context, "selected_skill_ids", None)) if prompt_context is not None else [])
         raw_skill_ids = prompt_payload.get("selected_skill_ids")
         if isinstance(raw_skill_ids, list):
             selected_skill_ids.update(item for item in raw_skill_ids if isinstance(item, str) and item.strip())
@@ -891,6 +891,12 @@ def _str_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item.strip()]
+
+
 def _bool_or_none(value: Any) -> bool | None:
     return value if isinstance(value, bool) else None
 
@@ -905,17 +911,17 @@ def _num_int_or_none(value: Any) -> int | None:
 
 def _agent_id(prompt_context: AnyAgentPromptContextEvent | None, payload: dict[str, Any], record: Any | None) -> str | None:
     return (
-        prompt_context.agent_id
-        if prompt_context is not None
-        else _str_or_none(payload.get("agent_id")) or (_str_or_none(getattr(record, "agent_id", None)) if record is not None else None)
+        (_str_or_none(getattr(prompt_context, "agent_id", None)) if prompt_context is not None else None)
+        or _str_or_none(payload.get("agent_id"))
+        or (_str_or_none(getattr(record, "agent_id", None)) if record is not None else None)
     )
 
 
 def _session_key(prompt_context: AnyAgentPromptContextEvent | None, payload: dict[str, Any], record: Any | None) -> str | None:
     return (
-        prompt_context.session_key
-        if prompt_context is not None
-        else _str_or_none(payload.get("session_key")) or (_str_or_none(getattr(record, "session_key", None)) if record is not None else None)
+        (_str_or_none(getattr(prompt_context, "session_key", None)) if prompt_context is not None else None)
+        or _str_or_none(payload.get("session_key"))
+        or (_str_or_none(getattr(record, "session_key", None)) if record is not None else None)
     )
 
 
