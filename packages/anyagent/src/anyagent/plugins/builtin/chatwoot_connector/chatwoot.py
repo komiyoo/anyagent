@@ -344,6 +344,8 @@ class ChatwootHandoff(ConnectorHandoff):
 
 _CHATWOOT_EVENT_TYPE_MAP: dict[str, PlatformConversationEventType] = {
     "message_created": PlatformConversationEventType.USER_MESSAGE,
+    "webwidget_triggered": PlatformConversationEventType.CUSTOM,
+    "widget_triggered": PlatformConversationEventType.CUSTOM,
     "conversation_status_changed": PlatformConversationEventType.CUSTOM,
     "conversation_resolved": PlatformConversationEventType.RESOLVED,
     "conversation_reopened": PlatformConversationEventType.REOPENED,
@@ -352,6 +354,51 @@ _CHATWOOT_EVENT_TYPE_MAP: dict[str, PlatformConversationEventType] = {
     "assigned_to_human": PlatformConversationEventType.ASSIGNED_TO_HUMAN,
     "assigned_to_bot": PlatformConversationEventType.ASSIGNED_TO_BOT,
 }
+
+
+def extract_chatwoot_page_context(webhook_body: dict[str, Any]) -> dict[str, str]:
+    """Extract page context propagated by Chatwoot widget/webhook payloads."""
+    event_info = _dict_at(webhook_body, "event_info")
+    custom_attributes = _chatwoot_custom_attributes(webhook_body)
+
+    context: dict[str, str] = {}
+    _set_str(context, "referer", event_info.get("referer") or custom_attributes.get("lt_entry_referrer"))
+    _set_str(context, "entry_url", custom_attributes.get("lt_entry_url"))
+    _set_str(context, "entry_path", custom_attributes.get("lt_entry_path"))
+    _set_str(context, "entry_title", custom_attributes.get("lt_entry_title"))
+    _set_str(context, "entry_locale", custom_attributes.get("lt_entry_locale"))
+    _set_str(context, "widget_language", event_info.get("widget_language"))
+    _set_str(context, "browser_language", event_info.get("browser_language"))
+    return context
+
+
+def _chatwoot_custom_attributes(webhook_body: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for path in (
+        ("conversation", "custom_attributes"),
+        ("contact", "custom_attributes"),
+        ("sender", "custom_attributes"),
+        ("meta", "sender", "custom_attributes"),
+    ):
+        current: Any = webhook_body
+        for key in path:
+            if not isinstance(current, dict):
+                current = None
+                break
+            current = current.get(key)
+        if isinstance(current, dict):
+            merged.update(current)
+    return merged
+
+
+def _dict_at(payload: dict[str, Any], key: str) -> dict[str, Any]:
+    value = payload.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _set_str(target: dict[str, str], key: str, value: Any) -> None:
+    if isinstance(value, str) and value.strip():
+        target[key] = value.strip()
 
 
 def build_platform_event_from_webhook(
@@ -372,15 +419,19 @@ def build_platform_event_from_webhook(
 
     session_key = chatwoot_session_key(account_id=account_id, conversation_id=conversation_id)
     event_type = _CHATWOOT_EVENT_TYPE_MAP.get(event_name, PlatformConversationEventType.CUSTOM)
+    metadata: dict[str, Any] = {
+        "chatwoot_event": event_name,
+        "account_id": str(account_id),
+        "webhook_timestamp": webhook_body.get("timestamp") or webhook_body.get("created_at"),
+    }
+    page_context = extract_chatwoot_page_context(webhook_body)
+    if page_context:
+        metadata["chatwoot_page_context"] = page_context
 
     return PlatformConversationEvent(
         session_key=session_key,
         event_type=event_type,
         platform="chatwoot",
         platform_conversation_id=conversation_id,
-        metadata={
-            "chatwoot_event": event_name,
-            "account_id": str(account_id),
-            "webhook_timestamp": webhook_body.get("timestamp") or webhook_body.get("created_at"),
-        },
+        metadata=metadata,
     )

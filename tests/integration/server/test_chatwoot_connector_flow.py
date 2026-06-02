@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import time
 from pathlib import Path
 
@@ -142,18 +143,20 @@ class _SlowChatwootProvider:
         )
 
 
-def test_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp_path: Path, monkeypatch) -> None:
-    asyncio.run(_run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp_path, monkeypatch))
+def test_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp_path: Path, monkeypatch, caplog) -> None:
+    asyncio.run(_run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp_path, monkeypatch, caplog))
 
 
-async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp_path: Path, monkeypatch) -> None:
+async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp_path: Path, monkeypatch, caplog) -> None:
     _write_main_agent(tmp_path)
     monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
     monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
     monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
+    caplog.set_level(logging.INFO)
+    provider = _ChatwootFlowProvider()
     monkeypatch.setattr(
         "anyagent.server.routes.responses.get_default_model_provider",
-        lambda: _ChatwootFlowProvider(),
+        lambda: provider,
     )
 
     app = create_app(
@@ -203,7 +206,19 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
         "message_type": "incoming",
         "timestamp": 1717000000,
         "account": {"id": 1},
-        "conversation": {"id": 42},
+        "conversation": {
+            "id": 42,
+            "custom_attributes": {
+                "lt_entry_url": "https://lyriktrip.com/guides/china",
+                "lt_entry_title": "China Travel Guide",
+                "lt_entry_path": "/guides/china",
+            },
+        },
+        "event_info": {
+            "referer": "https://lyriktrip.com/guides/china?utm_source=chat",
+            "widget_language": "en",
+            "browser_language": "en-US",
+        },
         "message": {"content": "I need to talk to a person"},
     }
     raw_body = json.dumps(payload).encode("utf-8")
@@ -261,6 +276,24 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
     persisted = json.loads(platform_events.events[0].data)
     assert persisted["session_key"] == "chatwoot:1:42"
     assert persisted["event_type"] == "user_message"
+    assert persisted["metadata"]["chatwoot_page_context"] == {
+        "referer": "https://lyriktrip.com/guides/china?utm_source=chat",
+        "entry_url": "https://lyriktrip.com/guides/china",
+        "entry_path": "/guides/china",
+        "entry_title": "China Travel Guide",
+        "widget_language": "en",
+        "browser_language": "en-US",
+    }
+    assert provider.bodies
+    rendered_input = json.dumps(provider.bodies[0].get("input"), ensure_ascii=False)
+    assert "Chatwoot page context" in rendered_input
+    assert "https://lyriktrip.com/guides/china" in rendered_input
+    assert "China Travel Guide" in rendered_input
+    assert any(
+        "chatwoot webhook received" in record.message
+        and "https://lyriktrip.com/guides/china" in record.message
+        for record in caplog.records
+    )
 
 
 def test_chatwoot_connector_webhook_acknowledges_before_background_processing(tmp_path: Path, monkeypatch) -> None:

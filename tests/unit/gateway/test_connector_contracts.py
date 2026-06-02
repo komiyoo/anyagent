@@ -207,6 +207,38 @@ def test_build_platform_event_message_created():
     assert event.platform == "chatwoot"
 
 
+def test_build_platform_event_includes_chatwoot_page_context():
+    webhook = {
+        "event": "webwidget_triggered",
+        "timestamp": 1717000000,
+        "account": {"id": "1"},
+        "conversation": {
+            "id": "42",
+            "custom_attributes": {
+                "lt_entry_url": "https://lyriktrip.com/guides/china",
+                "lt_entry_title": "China Travel Guide",
+                "lt_entry_path": "/guides/china",
+            },
+        },
+        "event_info": {
+            "referer": "https://lyriktrip.com/guides/china?utm_source=test",
+            "widget_language": "en",
+            "browser_language": "en-US",
+        },
+    }
+
+    event = build_platform_event_from_webhook(account_id="1", webhook_body=webhook)
+
+    assert event.metadata["chatwoot_page_context"] == {
+        "referer": "https://lyriktrip.com/guides/china?utm_source=test",
+        "entry_url": "https://lyriktrip.com/guides/china",
+        "entry_path": "/guides/china",
+        "entry_title": "China Travel Guide",
+        "widget_language": "en",
+        "browser_language": "en-US",
+    }
+
+
 def test_build_platform_event_resolved():
     webhook = {
         "event": "conversation_resolved",

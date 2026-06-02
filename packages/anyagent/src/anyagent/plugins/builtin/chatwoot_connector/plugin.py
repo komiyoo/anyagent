@@ -28,6 +28,7 @@ from anyagent.plugins.builtin.chatwoot_connector.chatwoot import (
     ChatwootOutboundDelivery,
     ChatwootWebhookAuth,
     build_platform_event_from_webhook,
+    extract_chatwoot_page_context,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,7 +89,12 @@ async def _handle_chatwoot_webhook(
         return {"ok": False, "error": "invalid JSON body"}
 
     event_name = body.get("event", "")
-    _LOGGER.info("chatwoot webhook received: event=%s", event_name)
+    page_context = extract_chatwoot_page_context(body)
+    _LOGGER.info(
+        "chatwoot webhook received: event=%s page_context=%s",
+        event_name,
+        page_context,
+    )
 
     # 构建 platform event 并写入 event store（供 agent 感知会话状态）
     # message_created: account/conversation 在顶层（message.webhook_data 展开）
@@ -254,6 +260,16 @@ async def _process_incoming_message(
         },
         "stream": False,
     }
+    page_context = extract_chatwoot_page_context(body)
+    if page_context:
+        request_body["metadata"]["context"]["channel"]["ext"]["chatwoot_page_context"] = page_context
+        request_body["input"].insert(
+            0,
+            {
+                "role": "developer",
+                "content": _render_chatwoot_page_context(page_context),
+            },
+        )
 
     try:
         async with httpx.AsyncClient(
@@ -337,6 +353,24 @@ def _extract_message_content(body: dict[str, Any]) -> str | None:
                 return msg_content.strip()
 
     return None
+
+
+def _render_chatwoot_page_context(page_context: dict[str, str]) -> str:
+    lines = ["Chatwoot page context for this visitor:"]
+    labels = {
+        "referer": "Referer",
+        "entry_url": "Entry URL",
+        "entry_path": "Entry path",
+        "entry_title": "Entry title",
+        "entry_locale": "Entry locale",
+        "widget_language": "Widget language",
+        "browser_language": "Browser language",
+    }
+    for key, label in labels.items():
+        value = page_context.get(key)
+        if isinstance(value, str) and value.strip():
+            lines.append(f"- {label}: {value.strip()}")
+    return "\n".join(lines)
 
 
 def _extract_reply_and_handoff(payload: dict[str, Any]) -> tuple[str, Any | None]:
