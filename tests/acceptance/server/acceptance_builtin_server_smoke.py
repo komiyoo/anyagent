@@ -934,9 +934,11 @@ async def _run_admin_storage_health_reports_backends(*, tmp_path: Path, monkeypa
         payload = resp.json()
         assert payload["ok"] is True
         assert payload["storage_mode"] == "external"
-        assert payload["backends"]["event_store"] == "external"
-        assert payload["backends"]["run_store"] == "external"
-        assert payload["backends"]["session_store"] == "external"
+        assert payload["storage_profile"] == "postgres-redis"
+        assert payload["backends"]["event_store"] == "postgres-redis"
+        assert payload["backends"]["run_store"] == "postgres-redis"
+        assert payload["backends"]["session_store"] == "postgres-redis"
+        assert payload["single_instance_only"] is False
         assert payload["postgres"]["reachable"] is True
         assert payload["redis"]["reachable"] is True
         assert payload["stores"]["events"]["type"] in {"CachedEventStore", "RedisEventStore"}
@@ -1516,18 +1518,62 @@ def test_build_session_lock_service_redis_without_dsn_raises_clear_error(monkeyp
         raise RuntimeError("expected RuntimeError")
 
 
-def test_server_settings_storage_mode_external_resolves_external_defaults() -> None:
-    settings = ServerSettings(
-        STORAGE_MODE="external",
-        SESSION_LEASE_TTL_S=12.5,
-    )
+def test_server_settings_storage_mode_external_resolves_postgres_only_without_redis(monkeypatch) -> None:
+    monkeypatch.setenv("POSTGRES_DSN", "postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent")
+    monkeypatch.delenv("REDIS_DSN", raising=False)
+    settings = ServerSettings(STORAGE_MODE="external", SESSION_LEASE_TTL_S=12.5)
     resolved = settings.resolve()
     assert resolved.storage_mode == "external"
-    assert resolved.event_store_backend == "external"
-    assert resolved.run_store_backend == "external"
-    assert resolved.session_store_backend == "external"
-    assert resolved.session_lock_backend == "redis"
+    assert resolved.storage_profile == "postgres"
+    assert resolved.event_store_backend == "postgres"
+    assert resolved.run_store_backend == "postgres"
+    assert resolved.session_store_backend == "postgres"
+    assert resolved.session_lock_backend == "inmemory"
+    assert resolved.single_instance_only is True
     assert resolved.session_lease_ttl_s == 12.5
+
+
+def test_server_settings_storage_mode_external_resolves_postgres_redis_when_both_dsns_exist(monkeypatch) -> None:
+    monkeypatch.setenv("POSTGRES_DSN", "postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent")
+    monkeypatch.setenv("REDIS_DSN", "redis://127.0.0.1:6379/0")
+    settings = ServerSettings(STORAGE_MODE="external")
+    resolved = settings.resolve()
+    assert resolved.storage_profile == "postgres-redis"
+    assert resolved.event_store_backend == "postgres-redis"
+    assert resolved.run_store_backend == "postgres-redis"
+    assert resolved.session_store_backend == "postgres-redis"
+    assert resolved.session_lock_backend == "redis"
+    assert resolved.single_instance_only is False
+
+
+def test_server_settings_database_url_only_resolves_postgres(monkeypatch) -> None:
+    monkeypatch.delenv("POSTGRES_DSN", raising=False)
+    monkeypatch.delenv("REDIS_DSN", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent")
+    resolved = ServerSettings(STORAGE_MODE="external").resolve()
+    assert resolved.storage_profile == "postgres"
+    assert resolved.event_store_backend == "postgres"
+
+
+def test_server_settings_explicit_postgres_redis_requires_redis(monkeypatch) -> None:
+    monkeypatch.setenv("POSTGRES_DSN", "postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent")
+    monkeypatch.delenv("REDIS_DSN", raising=False)
+    try:
+        ServerSettings(STORAGE_PROFILE="postgres-redis").resolve()
+    except RuntimeError as exc:
+        assert "REDIS_DSN" in str(exc)
+    else:
+        raise RuntimeError("expected RuntimeError")
+
+
+def test_server_settings_explicit_redis_requires_redis(monkeypatch) -> None:
+    monkeypatch.delenv("REDIS_DSN", raising=False)
+    try:
+        ServerSettings(STORAGE_PROFILE="redis").resolve()
+    except RuntimeError as exc:
+        assert "REDIS_DSN" in str(exc)
+    else:
+        raise RuntimeError("expected RuntimeError")
 
 
 def test_create_app_storage_mode_external_with_store_overrides_uses_redis_lock(tmp_path: Path, monkeypatch) -> None:
@@ -1657,6 +1703,25 @@ def test_create_app_storage_mode_external_without_store_overrides_uses_redis_bac
     assert isinstance(app.state.anyagent.run_store, CachedRunStore)
     assert isinstance(app.state.anyagent.session_store, CachedSessionStore)
     assert isinstance(app.state.anyagent.session_lock_service, ExternalSessionLockService)
+
+
+def test_create_app_storage_mode_external_postgres_only_uses_postgres_stores_and_inmemory_lock(tmp_path: Path, monkeypatch) -> None:
+    _write_workspace(tmp_path)
+    monkeypatch.setenv("STORAGE_MODE", "external")
+    monkeypatch.setenv("POSTGRES_DSN", "postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent")
+    monkeypatch.delenv("REDIS_DSN", raising=False)
+    app = create_app(
+        workspace_dir=tmp_path,
+        api_key="user-key",
+        admin_api_key="admin-key",
+        sandbox_root_dir=tmp_path / ".sandbox",
+    )
+    assert isinstance(app.state.anyagent.events, PostgresEventStore)
+    assert isinstance(app.state.anyagent.run_store, PostgresRunStore)
+    assert isinstance(app.state.anyagent.session_store, PostgresSessionStore)
+    assert isinstance(app.state.anyagent.session_lock_service, InMemorySessionLockService)
+    assert app.state.anyagent.resolved_storage.storage_profile == "postgres"
+    assert app.state.anyagent.resolved_storage.single_instance_only is True
 
 
 def test_redis_session_lock_key_uses_namespace() -> None:

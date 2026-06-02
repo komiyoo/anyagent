@@ -115,7 +115,7 @@ def test_dev_serve_uses_local_defaults_and_prints_urls(monkeypatch, tmp_path, ca
     monkeypatch.setattr("anyagent.cli.create_app", fake_create_app)
     monkeypatch.setattr("anyagent.cli.uvicorn.run", fake_uvicorn_run)
 
-    rc = main(["dev", "--workspace", str(tmp_path)])
+    rc = main(["dev", "--workspace", str(tmp_path), "--storage-profile", "postgres"])
 
     assert rc == 0
     app_kwargs = calls["app_kwargs"]
@@ -123,6 +123,7 @@ def test_dev_serve_uses_local_defaults_and_prints_urls(monkeypatch, tmp_path, ca
     assert app_kwargs["workspace_dir"] == str(tmp_path)
     assert app_kwargs["api_key"] == "anyagent-dev-key"
     assert app_kwargs["admin_api_key"] == "anyagent-dev-key"
+    assert app_kwargs["storage_profile"] == "postgres"
     assert app_kwargs["enable_studio"] is True
     uvicorn_call = calls["uvicorn"]
     assert isinstance(uvicorn_call, dict)

@@ -7,14 +7,15 @@ from typing import Any, Protocol
 from anyagent.gateway.session import session_partition_key as build_session_partition_key
 from anyagent.protocol.agent_api_internal import InternalEventItem, InternalEventsListResponse
 from anyagent.protocol.responses_optional import AnyAgentResponseError
-from anyagent.server.persistence.events import InMemoryEventStore, build_cached_event_store, build_redis_event_store
-from anyagent.server.persistence.run_store import InMemoryRunStore, _local_run_record, build_cached_run_store, build_redis_run_store
+from anyagent.server.persistence.events import InMemoryEventStore, build_cached_event_store, build_postgres_event_store, build_redis_event_store
+from anyagent.server.persistence.run_store import InMemoryRunStore, _local_run_record, build_cached_run_store, build_postgres_run_store, build_redis_run_store
 from anyagent.server.persistence.session_store import (
     InMemorySessionStore,
     RedisSessionStore,
     SessionSnapshotVersionConflict,
     _local_session_record,
     build_cached_session_store,
+    build_postgres_session_store,
     build_redis_session_store,
 )
 from anyagent.storage.settings import StorageSettings
@@ -348,10 +349,16 @@ class _ExternalSqlEventStoreAdapter:
 def build_event_store(*, backend: str) -> EventStore:
     if backend == "inmemory":
         return InMemoryEventStore()
+    if backend in {"postgres", "postgres-only"}:
+        return build_postgres_event_store()
+    if backend == "postgres-redis":
+        return build_cached_event_store()
     if backend in {"external", "redis"}:
         settings = StorageSettings()
-        if backend == "external" and settings.postgres_dsn is not None:
-            return build_cached_event_store()
+        if backend == "external" and settings.effective_postgres_dsn is not None:
+            if settings.redis_dsn is not None:
+                return build_cached_event_store()
+            return build_postgres_event_store()
         return build_redis_event_store()
     raise RuntimeError(f"event store backend not implemented: {backend}")
 
@@ -359,10 +366,16 @@ def build_event_store(*, backend: str) -> EventStore:
 def build_run_store(*, backend: str) -> RunStore:
     if backend == "inmemory":
         return InMemoryRunStore()
+    if backend in {"postgres", "postgres-only"}:
+        return build_postgres_run_store()
+    if backend == "postgres-redis":
+        return build_cached_run_store()
     if backend in {"external", "redis"}:
         settings = StorageSettings()
-        if backend == "external" and settings.postgres_dsn is not None:
-            return build_cached_run_store()
+        if backend == "external" and settings.effective_postgres_dsn is not None:
+            if settings.redis_dsn is not None:
+                return build_cached_run_store()
+            return build_postgres_run_store()
         return build_redis_run_store()
     raise RuntimeError(f"run store backend not implemented: {backend}")
 
@@ -370,10 +383,16 @@ def build_run_store(*, backend: str) -> RunStore:
 def build_session_store(*, backend: str) -> SessionStore:
     if backend == "inmemory":
         return InMemorySessionStore()
+    if backend in {"postgres", "postgres-only"}:
+        return build_postgres_session_store()
+    if backend == "postgres-redis":
+        return build_cached_session_store()
     if backend in {"external", "redis"}:
         settings = StorageSettings()
-        if backend == "external" and settings.postgres_dsn is not None:
-            return build_cached_session_store()
+        if backend == "external" and settings.effective_postgres_dsn is not None:
+            if settings.redis_dsn is not None:
+                return build_cached_session_store()
+            return build_postgres_session_store()
         return build_redis_session_store()
     raise RuntimeError(f"session store backend not implemented: {backend}")
 
@@ -387,13 +406,13 @@ def build_server_storage_bundle(
     settings = StorageSettings()
     sql_backend = _select_sql_backend(settings)
     if sql_backend in {"mysql", "postgresql"} and any(
-        backend == "external" for backend in (event_store_backend, run_store_backend, session_store_backend)
+        backend in {"external", "postgres", "postgres-redis"} for backend in (event_store_backend, run_store_backend, session_store_backend)
     ):
         if sql_backend == "postgresql":
             return ServerStorageBundle(
-                event_store=build_cached_event_store() if event_store_backend == "external" else build_event_store(backend=event_store_backend),
-                run_store=build_cached_run_store() if run_store_backend == "external" else build_run_store(backend=run_store_backend),
-                session_store=build_cached_session_store() if session_store_backend == "external" else build_session_store(backend=session_store_backend),
+                event_store=build_event_store(backend=event_store_backend),
+                run_store=build_run_store(backend=run_store_backend),
+                session_store=build_session_store(backend=session_store_backend),
                 resources=[],
             )
 
@@ -409,7 +428,7 @@ def build_server_storage_bundle(
             raise RuntimeError("mysql server storage requires installing anyagent[mysql]") from e
 
         config = resolve_external_sql_backend_config(
-            postgres_dsn=settings.postgres_dsn,
+            postgres_dsn=settings.effective_postgres_dsn,
             mysql_dsn=settings.mysql_dsn,
             redis_dsn=settings.redis_dsn,
             schema_name=None,
@@ -453,7 +472,7 @@ def _select_sql_backend(settings: StorageSettings) -> str | None:
         return "postgresql"
     if dialect == "mysql":
         return "mysql"
-    if settings.postgres_dsn is not None:
+    if settings.effective_postgres_dsn is not None:
         return "postgresql"
     if settings.mysql_dsn is not None:
         return "mysql"

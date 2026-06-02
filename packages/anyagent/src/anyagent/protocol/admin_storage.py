@@ -62,7 +62,10 @@ class StorageHealthResponse(BaseModel):
 
     ok: bool
     storage_mode: str
+    storage_profile: str | None = None
     backends: StorageBackendConfig
+    single_instance_only: bool = False
+    warnings: list[str] = Field(default_factory=list)
     retention_s: StorageRetentionConfig
     stores: dict[str, StorageComponentHealth]
     capabilities: dict[str, StorageComponentCapabilities] = Field(default_factory=dict)

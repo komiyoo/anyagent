@@ -71,6 +71,7 @@ def create_app(
     api_key: str | None = None,
     admin_api_key: str | None = None,
     storage_mode: str | None = None,
+    storage_profile: str | None = None,
     event_store_backend: str | None = None,
     run_store_backend: str | None = None,
     session_store_backend: str | None = None,
@@ -88,6 +89,7 @@ def create_app(
     server_settings = ServerSettings()
     resolved_storage = server_settings.resolve(
         storage_mode=storage_mode if isinstance(storage_mode, str) else None,
+        storage_profile=storage_profile if isinstance(storage_profile, str) else None,
         event_store_backend=event_store_backend if isinstance(event_store_backend, str) else None,
         run_store_backend=run_store_backend if isinstance(run_store_backend, str) else None,
         session_store_backend=session_store_backend if isinstance(session_store_backend, str) else None,
@@ -139,9 +141,9 @@ def create_app(
     )
     storage_settings = StorageSettings()
     observability_event_sink = InMemoryObservabilityEventSink()
-    if resolved_storage.storage_mode == "external" and storage_settings.postgres_dsn is not None:
+    if resolved_storage.storage_mode == "external" and storage_settings.effective_postgres_dsn is not None:
         telemetry_event_store: Any = PostgresTelemetryEventStore(
-            postgres_dsn=str(storage_settings.postgres_dsn),
+            postgres_dsn=str(storage_settings.effective_postgres_dsn),
             postgres_schema=storage_settings.postgres_schema,
             schema_policy=storage_settings.postgres_schema_policy,
         )
@@ -239,7 +241,7 @@ def create_app(
                     if asyncio.iscoroutine(result):
                         await result
 
-    app = FastAPI(title="anyagent", version="0.4.8", lifespan=_lifespan)
+    app = FastAPI(title="anyagent", version="0.4.9", lifespan=_lifespan)
     if enable_studio:
         studio_dir = Path(__file__).resolve().parents[1] / "studio_static"
         if studio_dir.is_dir():

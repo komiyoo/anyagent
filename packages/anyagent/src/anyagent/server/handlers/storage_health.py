@@ -20,7 +20,11 @@ async def _build_storage_health_payload(state: Any) -> dict[str, Any]:
         or _uses_backend(state.session_lock_service, "External")
     )
 
-    postgres_status = await _check_postgres_connection(str(state.storage_settings.postgres_dsn)) if uses_postgres and state.storage_settings.postgres_dsn is not None else None
+    postgres_status = (
+        await _check_postgres_connection(str(state.storage_settings.effective_postgres_dsn))
+        if uses_postgres and state.storage_settings.effective_postgres_dsn is not None
+        else None
+    )
     redis_status = await _check_redis_connection(str(state.storage_settings.redis_dsn)) if uses_redis and state.storage_settings.redis_dsn is not None else None
 
     stores = {
@@ -40,12 +44,15 @@ async def _build_storage_health_payload(state: Any) -> dict[str, Any]:
     return {
         "ok": ok,
         "storage_mode": state.resolved_storage.storage_mode,
+        "storage_profile": state.resolved_storage.storage_profile,
         "backends": {
             "event_store": state.resolved_storage.event_store_backend,
             "run_store": state.resolved_storage.run_store_backend,
             "session_store": state.resolved_storage.session_store_backend,
             "session_lock": state.resolved_storage.session_lock_backend,
         },
+        "single_instance_only": state.resolved_storage.single_instance_only,
+        "warnings": list(state.resolved_storage.warnings),
         "retention_s": {
             "events": state.storage_settings.event_store_retention_s,
             "runs": state.storage_settings.run_store_retention_s,
@@ -60,7 +67,7 @@ async def _build_storage_health_payload(state: Any) -> dict[str, Any]:
             workspace_store=state.sandbox_manager.workspace_service,
         ),
         "postgres": {
-            "configured": state.storage_settings.postgres_dsn is not None,
+            "configured": state.storage_settings.effective_postgres_dsn is not None,
             "schema": state.storage_settings.postgres_schema,
             "schema_policy": state.storage_settings.postgres_schema_policy,
             "reachable": postgres_status,

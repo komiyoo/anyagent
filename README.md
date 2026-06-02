@@ -242,19 +242,21 @@ anyagent serve --workspace ./my-workspace --no-studio
 # 或使用环境变量
 OPENAI_API_KEY=sk-... anyagent serve
 
-# 使用外置存储（当前已支持 Session / Run / Event: PG 为主 + Redis 为热层）
+# 使用外置存储（生产推荐：PG 为主 + Redis 为热层）
 POSTGRES_DSN=postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent \
 REDIS_DSN=redis://127.0.0.1:6379/0 \
 REDIS_NAMESPACE=anyagent \
 POSTGRES_SCHEMA_POLICY=migrate \
-STORAGE_MODE=external \
-EVENT_STORE_BACKEND=external \
-RUN_STORE_BACKEND=external \
-SESSION_STORE_BACKEND=external \
+STORAGE_PROFILE=postgres-redis \
 EVENT_STORE_RETENTION_S=7200 \
 RUN_STORE_RETENTION_S=7200 \
 SESSION_STORE_RETENTION_S=86400 \
 anyagent serve --session-lock-backend redis
+
+# Postgres-only 兼容路径（单实例锁；health 会标记 single_instance_only=true）
+POSTGRES_DSN=postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent \
+STORAGE_MODE=external \
+anyagent serve
 
 # 运维自检
 ADMIN_API_KEY=admin-key anyagent storage health --admin-key admin-key

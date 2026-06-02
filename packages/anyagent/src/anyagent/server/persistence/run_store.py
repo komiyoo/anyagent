@@ -653,9 +653,9 @@ class PostgresRunStore:
 
 def build_postgres_run_store(*, postgres_dsn: str | None = None, postgres_schema: str | None = None) -> PostgresRunStore:
     settings = StorageSettings()
-    effective_dsn = postgres_dsn or (str(settings.postgres_dsn) if settings.postgres_dsn is not None else None)
+    effective_dsn = postgres_dsn or (str(settings.effective_postgres_dsn) if settings.effective_postgres_dsn is not None else None)
     if effective_dsn is None:
-        raise RuntimeError("postgres run store requires POSTGRES_DSN")
+        raise RuntimeError("postgres run store requires POSTGRES_DSN or DATABASE_URL")
     effective_schema = postgres_schema or settings.postgres_schema
     return PostgresRunStore(
         postgres_dsn=effective_dsn,

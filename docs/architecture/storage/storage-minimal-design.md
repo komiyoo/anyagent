@@ -76,6 +76,17 @@ req: ["requirements.md#req-3-1"]
 - `PostgreSQL`：作为**持久化单一真源**（Session/Run/Event/Dedupe）。
 - `Redis`：作为**低延迟的临时能力层**（Lease Lock、Event Bus PubSub、可选的 Dedupe 热缓存）。
 
+### 3.1.0 Storage profile 解析
+
+`anyagent serve` 的内置 server 会先解析最终 storage profile，再构造具体 store：
+
+- `inmemory`：默认本地 reference path；不需要外部服务。
+- `postgres`：Postgres-only，event/run/session store 使用 PostgreSQL；session lock 默认 `inmemory`，`/admin/storage/health` 会标记 `single_instance_only=true`。
+- `postgres-redis`：Postgres primary + Redis cache/lock；配置了 `POSTGRES_DSN`（或 `DATABASE_URL`）和 `REDIS_DSN` 时的外置生产默认。
+- `redis`：Redis-only reference backend，仅在用户显式选择 Redis profile 或 Redis backend 时使用。
+
+优先级：CLI 的 store/lock backend override > `STORAGE_PROFILE=inmemory|postgres|postgres-redis|redis` > `STORAGE_MODE` 兼容解析。兼容规则为：`STORAGE_MODE=none` 等价 `inmemory`；`STORAGE_MODE=external + POSTGRES_DSN/DATABASE_URL + REDIS_DSN` 等价 `postgres-redis`；`STORAGE_MODE=external + POSTGRES_DSN/DATABASE_URL + no REDIS_DSN` 等价 `postgres`，不再强制进入 Redis cache 路径。显式选择 `postgres-redis` 或 `redis` 但缺少 `REDIS_DSN` 时必须 fail fast。
+
 说明：
 
 - 这里的 “推荐生产默认” 指的是工作区当前的应用层部署选择；`anyagent` Core 提供 reference external adapters、typed contract 与基础 storage ops CLI，`anyagent-apps` 继续负责示例配置、迁移期服务接线、生产运行手册与平台化 wiring。
@@ -110,7 +121,7 @@ req: ["requirements.md#req-3-1"]
 2. `Run Store` 再切到 PG 主 + Redis 热层（幂等与终态查询）
 3. `Event Store` 最后切到 PG 主 + Redis 热层（事件体量最大，适合在前两者稳定后收口）
 
-当前 `Run Store` 的 Redis 热层会维护一个按更新时间排序的 response-run history sorted set，用于支撑 `/internal/observability/runs` 的 agent/session 历史列表；PG/MySQL 路径则直接按 runs 表查询并回填为本地 run record。Core 侧 `TelemetryStore` 会在其上聚合 `/internal/observability/timeline`、`/metrics`、`/tools`、`/errors` 与 `/traces/{trace_id}`；当前实现组合 Run Store、Event Store 与 normalized telemetry ingest store。启用 `STORAGE_MODE=external` 且配置 `POSTGRES_DSN` 时，structured observability/audit events 会写入 PostgreSQL `telemetry_events` 表并继续通过同一 typed API 查询；其他日志/分析后端暂不接入，Studio 也不直接适配具体数据库或日志平台。持久化 adapter 的写入输入以 `NormalizedTelemetryEvent` 为边界，查询输出保持 `/internal/observability/*` typed response。
+当前 `Run Store` 的 Redis 热层会维护一个按更新时间排序的 response-run history sorted set，用于支撑 `/internal/observability/runs` 的 agent/session 历史列表；PG/MySQL 路径则直接按 runs 表查询并回填为本地 run record。Core 侧 `TelemetryStore` 会在其上聚合 `/internal/observability/timeline`、`/metrics`、`/tools`、`/errors` 与 `/traces/{trace_id}`；当前实现组合 Run Store、Event Store 与 normalized telemetry ingest store。启用 `STORAGE_MODE=external` 或 `STORAGE_PROFILE=postgres|postgres-redis` 且配置 `POSTGRES_DSN`/`DATABASE_URL` 时，structured observability/audit events 会写入 PostgreSQL `telemetry_events` 表并继续通过同一 typed API 查询；其他日志/分析后端暂不接入，Studio 也不直接适配具体数据库或日志平台。持久化 adapter 的写入输入以 `NormalizedTelemetryEvent` 为边界，查询输出保持 `/internal/observability/*` typed response。`/admin/storage/health` 会输出最终 `storage_profile`、store backend、lock backend、Postgres/Redis configured 状态、warnings 与 `single_instance_only`。
 
 ### 3.2 允许（开发/单机）：SQLite（受限）+ 进程内实现
 

@@ -25,6 +25,7 @@
 - 已实现能力的长期口径见架构文档:
   - 存储最小设计、durable primary store + hot cache 语义与 backend 限制:`docs/architecture/storage/storage-minimal-design.md`
   - idempotency-key 与 cursor 语义统一规范(ADR):`docs/architecture/decisions/storage-idempotency-and-cursor-semantics.md`
+  - `anyagent serve` storage profile 解析已支持 `inmemory` / `postgres` / `postgres-redis` / `redis`，其中 `STORAGE_MODE=external + POSTGRES_DSN/DATABASE_URL + no REDIS_DSN` 解析为 Postgres-only，并在 health 中标记单实例锁限制。(Req: `requirements.md#req-3-1`; Impl: `packages/anyagent/src/anyagent/server/config/settings.py`, `packages/anyagent/src/anyagent/server/persistence/storage_backends.py`, `packages/anyagent/src/anyagent/server/handlers/storage_health.py`)
 
 ## 待处理
 

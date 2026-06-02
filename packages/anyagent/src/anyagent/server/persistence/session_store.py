@@ -370,9 +370,9 @@ def build_redis_session_store(*, namespace: str | None = None, redis_dsn: str | 
 
 def build_postgres_session_store(*, postgres_dsn: str | None = None, postgres_schema: str | None = None) -> PostgresSessionStore:
     settings = StorageSettings()
-    effective_dsn = postgres_dsn or (str(settings.postgres_dsn) if settings.postgres_dsn is not None else None)
+    effective_dsn = postgres_dsn or (str(settings.effective_postgres_dsn) if settings.effective_postgres_dsn is not None else None)
     if effective_dsn is None:
-        raise RuntimeError("postgres session store requires POSTGRES_DSN")
+        raise RuntimeError("postgres session store requires POSTGRES_DSN or DATABASE_URL")
     effective_schema = postgres_schema or settings.postgres_schema
     return PostgresSessionStore(
         postgres_dsn=effective_dsn,

@@ -195,6 +195,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Continue serving when one or more plugins fail to load (default: fail closed).",
     )
     serve.add_argument(
+        "--storage-profile",
+        choices=["inmemory", "postgres", "postgres-redis", "redis"],
+        default=None,
+        help="Resolved storage profile override (default: $STORAGE_PROFILE or compatibility resolver).",
+    )
+    serve.add_argument(
         "--storage-mode",
         choices=["none", "external"],
         default=None,
@@ -202,19 +208,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     serve.add_argument(
         "--event-store-backend",
-        choices=["inmemory", "external", "redis"],
+        choices=["inmemory", "external", "postgres", "postgres-redis", "redis"],
         default=None,
         help="Event Store backend override (default resolved from storage mode).",
     )
     serve.add_argument(
         "--run-store-backend",
-        choices=["inmemory", "external", "redis"],
+        choices=["inmemory", "external", "postgres", "postgres-redis", "redis"],
         default=None,
         help="Run Store backend override (default resolved from storage mode).",
     )
     serve.add_argument(
         "--session-store-backend",
-        choices=["inmemory", "external", "redis"],
+        choices=["inmemory", "external", "postgres", "postgres-redis", "redis"],
         default=None,
         help="Session Store backend override (default resolved from storage mode).",
     )
@@ -258,6 +264,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     dev.add_argument("--quiet", action="store_true", help="Suppress the JSON configuration banner printed on startup.")
     dev.add_argument(
+        "--storage-profile",
+        choices=["inmemory", "postgres", "postgres-redis", "redis"],
+        default=None,
+        help="Resolved storage profile override (default: $STORAGE_PROFILE or compatibility resolver).",
+    )
+    dev.add_argument(
         "--storage-mode",
         choices=["none", "external"],
         default=None,
@@ -265,19 +277,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     dev.add_argument(
         "--event-store-backend",
-        choices=["inmemory", "external", "redis"],
+        choices=["inmemory", "external", "postgres", "postgres-redis", "redis"],
         default=None,
         help="Event Store backend override (default resolved from storage mode).",
     )
     dev.add_argument(
         "--run-store-backend",
-        choices=["inmemory", "external", "redis"],
+        choices=["inmemory", "external", "postgres", "postgres-redis", "redis"],
         default=None,
         help="Run Store backend override (default resolved from storage mode).",
     )
     dev.add_argument(
         "--session-store-backend",
-        choices=["inmemory", "external", "redis"],
+        choices=["inmemory", "external", "postgres", "postgres-redis", "redis"],
         default=None,
         help="Session Store backend override (default resolved from storage mode).",
     )
@@ -701,6 +713,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         admin_api_key=admin_key,
         sandbox_root_dir=args.sandbox_root,
         storage_mode=args.storage_mode,
+        storage_profile=args.storage_profile,
         event_store_backend=args.event_store_backend,
         run_store_backend=args.run_store_backend,
         session_store_backend=args.session_store_backend,
@@ -720,6 +733,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         admin_key=admin_key,
         enable_studio=enable_studio,
         quiet=getattr(args, "quiet", False),
+        app=app,
     )
     uvicorn.run(app, host=args.host, port=int(args.port), log_level="info")
     return 0
@@ -763,6 +777,7 @@ def _print_serve_banner(
     admin_key: str | None,
     enable_studio: bool,
     quiet: bool = False,
+    app: Any | None = None,
 ) -> None:
     if quiet:
         return
@@ -788,6 +803,23 @@ def _print_serve_banner(
         "agents_exposed": agents_exposed,
         "agents_hidden": agents_hidden,
     }
+    state = getattr(getattr(app, "state", None), "anyagent", None)
+    if state is not None:
+        resolved = state.resolved_storage
+        config["storage"] = {
+            "profile": resolved.storage_profile,
+            "mode": resolved.storage_mode,
+            "backends": {
+                "event_store": resolved.event_store_backend,
+                "run_store": resolved.run_store_backend,
+                "session_store": resolved.session_store_backend,
+                "session_lock": resolved.session_lock_backend,
+            },
+            "postgres_configured": resolved.postgres_configured,
+            "redis_configured": resolved.redis_configured,
+            "single_instance_only": resolved.single_instance_only,
+            "warnings": list(resolved.warnings),
+        }
     print(json.dumps(config, ensure_ascii=False, indent=2))
 
 
