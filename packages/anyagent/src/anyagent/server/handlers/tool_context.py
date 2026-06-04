@@ -12,6 +12,17 @@ from anyagent.protocol.tool_runtime import ManifestRequest, PolicyHint, ToolCont
 from anyagent.skills import SkillEnablement, apply_skills_permissions_to_tool_context, resolve_disabled_skill_stable_ids
 
 
+def _visible_enabled_skills(state: Any, *, pack: AgentPack) -> list[Any]:
+    visible_skills, _errors = state.runtime.visible_skills_for_agent(pack.agent_id)
+    disabled = resolve_disabled_skill_stable_ids(
+        pack.spec.skills.disabled_paths,
+        skills=visible_skills,
+        base_dir=pack.root_dir,
+    )
+    enablement = SkillEnablement(user_disabled_paths=disabled)
+    return [skill for skill in visible_skills if enablement.is_enabled(skill)]
+
+
 def _split_csv(value: str | None) -> list[str]:
     if not isinstance(value, str):
         return []
@@ -40,19 +51,13 @@ def _build_agent_manifest_request(
 
 
 async def _select_skills(state: Any, *, pack: AgentPack, body: dict[str, Any]) -> list[Any]:
-    visible_skills, _errors = state.runtime.visible_skills_for_agent(pack.agent_id)
+    visible_skills = _visible_enabled_skills(state, pack=pack)
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else None
-    disabled = resolve_disabled_skill_stable_ids(
-        pack.spec.skills.disabled_paths,
-        skills=visible_skills,
-        base_dir=pack.root_dir,
-    )
-    enablement = SkillEnablement(user_disabled_paths=disabled)
     result = SkillInjector(
         token_budget=resolve_skill_injection_token_budget(metadata=metadata),
     ).select_for_request(
         skills=visible_skills,
-        enablement=enablement,
+        enablement=SkillEnablement(user_disabled_paths=frozenset()),
         body=body,
         metadata=metadata,
         default_selected=pack.spec.skills.default_selected,

@@ -46,6 +46,7 @@ from anyagent.server.handlers.tool_context import (
     _build_prompt_environment_values,
     _build_server_tool_context,
     _select_skills,
+    _visible_enabled_skills,
 )
 from anyagent.server.persistence.manifest_cache import build_manifest_cache_key, extract_requested_tool_names
 from anyagent.server.responses.finalization import build_nonstream_response_finalizer
@@ -152,6 +153,7 @@ def create_responses_router() -> APIRouter:
             metadata={"stream": stream_requested, "request_metadata": metadata},
         )
         selected_skills = await _select_skills(state, pack=pack, body=body)
+        available_skills = _visible_enabled_skills(state, pack=pack)
         tool_context = _build_server_tool_context(pack=pack, body=body, selected_skills=selected_skills)
         context_fragments = await _build_context_provider_fragments(
             pack=pack,
@@ -166,6 +168,7 @@ def create_responses_router() -> APIRouter:
         prompt_envelope = build_prompt_envelope(
             pack=pack,
             selected_skills=selected_skills,
+            available_skills=available_skills,
             tool_context=tool_context,
             model=body.get("model") if isinstance(body.get("model"), str) else None,
             context_fragments=context_fragments,

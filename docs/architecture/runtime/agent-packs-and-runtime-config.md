@@ -87,7 +87,7 @@ runtime:
     - my_workspace.route_context:RouteContextProvider
 ```
 
-每个 provider 应实现 `anyagent.agent_runtime.ContextProvider` 的 `build_context(request)`，返回 `ContextFragment` 列表。框架会将这些 fragment 纳入 prompt envelope，与 AGENTS.md、skill、environment fragment 一起写入 `anyagent.prompt.context` 审计事件和 rendered prompt preview。
+每个 provider 应实现 `anyagent.agent_runtime.ContextProvider` 的 `build_context(request)`，返回 `ContextFragment` 列表。框架会将这些 fragment 作为独立业务/渠道上下文纳入 prompt envelope，与 agent-local `.anyagent/agents/<agent_id>/AGENTS.md`、skill catalog metadata、MCP/sandbox、environment fragment 一起写入 `anyagent.prompt.context` 审计事件和 rendered prompt preview。workspace 根目录 `AGENTS.md` 只作为研发 harness 元数据保留，不进入运行时模型 prompt。
 
 ## 配置层级与 merge
 

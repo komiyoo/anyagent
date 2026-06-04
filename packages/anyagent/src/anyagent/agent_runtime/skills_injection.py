@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from anyagent.agent_runtime.prompt_envelope import build_skill_fragment
+from anyagent.agent_runtime.prompt_envelope import build_skill_catalog_fragment
 from anyagent.protocol.context_fragments import render_context_fragment
 from anyagent.protocol.openai_responses import inject_text_into_responses_body
 from anyagent.skills.models import SkillPackage
@@ -20,16 +20,15 @@ class SkillInjectionWarning:
 
 def build_skills_injection_text(skills: list[SkillPackage]) -> str:
     """
-    req-12-6-2：将选中的 skills 注入本次 run 的上下文（developer/system role）。
+    将 skill metadata 注入本次 run 的上下文（developer/system role）。
 
-    约束：
-    - 注入内容必须包含 skill name/path（用于审计）+ SKILL.md body
-    - 注入必须是 per-run 的（由调用方把结果拼到 request body.input）
+    初始披露只包含 skill name/path/description 等 catalog 信息，不包含
+    SKILL.md 正文；完整 skill 内容应通过后续显式加载路径按需披露。
     """
-    blocks: list[str] = []
-    for s in skills:
-        blocks.append(render_context_fragment(build_skill_fragment(s)))
-    return "\n\n".join(blocks).strip()
+    fragment = build_skill_catalog_fragment(skills, selected_skills=skills)
+    if fragment is None:
+        return ""
+    return render_context_fragment(fragment).strip()
 
 
 def inject_skills_into_responses_body(

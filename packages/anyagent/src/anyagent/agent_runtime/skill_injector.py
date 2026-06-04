@@ -13,7 +13,7 @@ from anyagent.skills.selection import (
     select_skills,
 )
 
-from .prompt_envelope import build_skill_fragment
+from .prompt_envelope import build_skill_catalog_fragment
 
 
 DEFAULT_SKILL_INJECTION_TOKEN_BUDGET = 8000
@@ -102,7 +102,8 @@ class SkillInjector:
         )
 
     def estimate_skill_tokens(self, skill: SkillPackage) -> int:
-        text = render_context_fragment(build_skill_fragment(skill))
+        fragment = build_skill_catalog_fragment([skill], selected_skills=[skill])
+        text = render_context_fragment(fragment) if fragment is not None else ""
         return max(1, (len(text) + self.chars_per_token - 1) // self.chars_per_token)
 
 

@@ -25,16 +25,28 @@ def test_skill_injector_selects_mentions_and_applies_budget(tmp_path: Path) -> N
     small = _skill(tmp_path, "small-skill", "Use this small skill.")
     large = _skill(tmp_path, "large-skill", "x" * 400)
 
-    result = SkillInjector(token_budget=140).select_for_request(
+    result = SkillInjector(token_budget=1000).select_for_request(
         skills=[small, large],
         enablement=SkillEnablement(user_disabled_paths=set()),
         body={"input": "please use $small-skill and $large-skill"},
     )
 
-    assert [skill.frontmatter.name for skill in result.selected_skills] == ["small-skill"]
+    assert [skill.frontmatter.name for skill in result.selected_skills] == ["small-skill", "large-skill"]
     assert any(decision.reason == "selected_by_unique_mention" for decision in result.selection_decisions)
-    assert [warning.skill_stable_id for warning in result.budget_warnings] == [large.stable_id]
     assert result.estimated_tokens <= result.token_budget
+
+
+def test_skill_injector_budget_counts_metadata_not_skill_body(tmp_path: Path) -> None:
+    skill = _skill(tmp_path, "small-skill", "x" * 400)
+
+    result = SkillInjector(token_budget=220).select_for_request(
+        skills=[skill],
+        enablement=SkillEnablement(user_disabled_paths=set()),
+        body={"input": "please use $small-skill"},
+    )
+
+    assert [item.frontmatter.name for item in result.selected_skills] == ["small-skill"]
+    assert result.budget_warnings == []
 
 
 def test_skill_injection_token_budget_resolves_metadata_before_env() -> None:

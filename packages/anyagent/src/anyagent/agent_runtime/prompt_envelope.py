@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 from datetime import datetime
 import os
@@ -80,6 +81,62 @@ def build_skill_fragment(skill: SkillPackage, *, role: ContextFragmentRole = "de
         scope=skill.scope,
         body=(skill.body_markdown or "").rstrip(),
         metadata=metadata,
+    )
+
+
+def build_skill_catalog_fragment(
+    skills: list[SkillPackage],
+    *,
+    selected_skills: list[SkillPackage] | None = None,
+    role: ContextFragmentRole = "developer",
+) -> ContextFragment | None:
+    if not skills:
+        return None
+    selected_ids = {skill.stable_id for skill in selected_skills or []}
+    lines = [
+        "<skill_catalog>",
+        "<instructions>Available skills are listed as metadata only. Full SKILL.md bodies are not included in the initial prompt; load or select a skill only when the task clearly needs it.</instructions>",
+    ]
+    catalog_payload: list[dict[str, object]] = []
+    for skill in sorted(skills, key=lambda item: (item.frontmatter.name, item.stable_id)):
+        requested_tools = requested_tool_names_for_skill(skill)
+        source_hash = _sha256_text(skill.body_markdown)
+        catalog_payload.append(
+            {
+                "stable_id": skill.stable_id,
+                "name": skill.frontmatter.name,
+                "description": skill.frontmatter.description,
+                "scope": skill.scope,
+                "path": str(skill.skill_md_path),
+                "sha256": source_hash,
+                "requested_tools": requested_tools,
+            }
+        )
+        lines.append("<skill>")
+        lines.append(_xml_line("name", skill.frontmatter.name))
+        if skill.frontmatter.description:
+            lines.append(_xml_line("description", skill.frontmatter.description))
+        lines.append(_xml_line("stable_id", skill.stable_id))
+        lines.append(_xml_line("scope", skill.scope))
+        lines.append(_xml_line("path", str(skill.skill_md_path)))
+        lines.append(_xml_line("sha256", source_hash))
+        if requested_tools:
+            lines.append(_xml_line("requested_tools", ", ".join(requested_tools)))
+        if skill.stable_id in selected_ids:
+            lines.append("<selected>true</selected>")
+        lines.append("</skill>")
+    lines.append("</skill_catalog>")
+    catalog_hash = _sha256_text(json.dumps(catalog_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+    return ContextFragment(
+        kind="skill_catalog",
+        role=role,
+        cache_class="stable_prefix",
+        label="skills",
+        stable_id="skills://catalog",
+        source_hash=catalog_hash,
+        scope="agent-pack",
+        body="\n".join(lines),
+        metadata={"count": str(len(skills))},
     )
 
 
@@ -193,6 +250,7 @@ def build_prompt_envelope(
     *,
     pack: AgentPack,
     selected_skills: list[SkillPackage] | None,
+    available_skills: list[SkillPackage] | None = None,
     tool_context: ToolContext | None = None,
     model: str | None = None,
     environment_values: dict[str, object] | None = None,
@@ -200,16 +258,18 @@ def build_prompt_envelope(
     instruction_role: ContextFragmentRole = "developer",
 ) -> PromptEnvelope:
     fragments: list[ContextFragment] = []
-    workspace_fragment = build_workspace_agents_md_fragment(pack, role=instruction_role)
-    if workspace_fragment is not None:
-        fragments.append(workspace_fragment)
     fragments.append(build_agents_md_fragment(pack, role=instruction_role))
     fragments.extend(build_mcp_server_ref_fragments(pack, role=instruction_role))
     sandbox_fragment = build_sandbox_guidance_fragment(pack, role=instruction_role)
     if sandbox_fragment is not None:
         fragments.append(sandbox_fragment)
-    for skill in selected_skills or []:
-        fragments.append(build_skill_fragment(skill, role=instruction_role))
+    skill_catalog_fragment = build_skill_catalog_fragment(
+        available_skills if available_skills is not None else (selected_skills or []),
+        selected_skills=selected_skills or [],
+        role=instruction_role,
+    )
+    if skill_catalog_fragment is not None:
+        fragments.append(skill_catalog_fragment)
     fragments.extend(context_fragments or [])
     if environment_values:
         fragments.append(build_environment_context_fragment(values=environment_values, role=instruction_role))
@@ -280,6 +340,10 @@ def build_prompt_cache_key(
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def _xml_line(tag: str, value: object) -> str:
+    return f"<{tag}>{html.escape(str(value), quote=False)}</{tag}>"
 
 
 def build_prompt_audit_metadata(*, envelope: PromptEnvelope) -> PromptContextAudit:

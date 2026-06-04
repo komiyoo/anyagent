@@ -115,11 +115,12 @@ async def prepare_response_tooling_context(
     )
 
     enablement = SkillEnablement(user_disabled_paths=disabled)
+    available_skills = [skill for skill in all_skills if enablement.is_enabled(skill)]
     injection = SkillInjector(
         token_budget=resolve_skill_injection_token_budget(metadata=metadata if isinstance(metadata, dict) else None),
     ).select_for_request(
-        skills=all_skills,
-        enablement=enablement,
+        skills=available_skills,
+        enablement=SkillEnablement(user_disabled_paths=frozenset()),
         body=body,
         metadata=metadata if isinstance(metadata, dict) else None,
         default_selected=pack.spec.skills.default_selected,
@@ -258,6 +259,7 @@ async def prepare_response_tooling_context(
     prompt_envelope = build_prompt_envelope(
         pack=pack,
         selected_skills=selected_skills,
+        available_skills=available_skills,
         tool_context=tool_context,
         model=body.get("model") if isinstance(body.get("model"), str) else None,
         context_fragments=context_fragments,

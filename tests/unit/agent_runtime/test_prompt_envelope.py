@@ -7,7 +7,7 @@ from anyagent.agent_runtime import build_default_environment_context_values, bui
 from anyagent.agent_runtime.prompt_injection import build_agents_md_injection_text
 from anyagent.agent_runtime.tool_loop_payloads import build_tool_loop_followup_body
 from anyagent.agent_runtime.skills_injection import build_skills_injection_text
-from anyagent.protocol.context_fragments import is_context_fragment_text
+from anyagent.protocol.context_fragments import ContextFragment, is_context_fragment_text
 from anyagent.protocol.sandbox import SandboxPolicy
 from anyagent.mcp.models import MCPConfig, MCPServerConfig
 from anyagent.skills.models import SkillFrontMatter, SkillPackage
@@ -66,13 +66,14 @@ def test_build_agents_md_injection_text_uses_structured_fragment(tmp_path: Path)
     assert "<INSTRUCTIONS>" in text
 
 
-def test_build_skills_injection_text_uses_skill_fragment_with_path(tmp_path: Path) -> None:
+def test_build_skills_injection_text_uses_skill_catalog_metadata_with_path(tmp_path: Path) -> None:
     text = build_skills_injection_text([_build_skill(tmp_path)])
-    assert text.startswith("<skill>")
+    assert text.startswith("<skill_catalog>")
     assert "<name>repo-helper</name>" in text
+    assert "<description>help with repo tasks</description>" in text
     assert "<path>" in text
     assert "<sha256>" in text
-    assert "Read the repo carefully." in text
+    assert "Read the repo carefully." not in text
 
 
 def test_prompt_envelope_applies_fragments_and_prompt_cache_key(tmp_path: Path) -> None:
@@ -85,8 +86,65 @@ def test_prompt_envelope_applies_fragments_and_prompt_cache_key(tmp_path: Path) 
     assert out["input"][0]["role"] == "developer"
     assert out["input"][0]["content"].startswith("# AGENTS.md instructions for agent:main")
     assert out["input"][1]["role"] == "developer"
-    assert out["input"][1]["content"].startswith("<skill>")
+    assert out["input"][1]["content"].startswith("<skill_catalog>")
+    assert "Read the repo carefully." not in out["input"][1]["content"]
     assert out["input"][2] == {"role": "user", "content": "hello"}
+
+
+def test_prompt_envelope_catalog_lists_available_skills_and_marks_selected(tmp_path: Path) -> None:
+    pack = _build_pack(tmp_path)
+    selected = _build_skill(tmp_path)
+    other_dir = tmp_path / "skill-b"
+    other_dir.mkdir()
+    other_md = other_dir / "SKILL.md"
+    other_md.write_text("---\nname: itinerary\ndescription: trip planning\n---\nPlan trips.\n", encoding="utf-8")
+    other = SkillPackage(
+        skill_dir=other_dir,
+        skill_md_path=other_md,
+        scope="repo",
+        frontmatter=SkillFrontMatter(name="itinerary", description="trip planning"),
+        body_markdown="Plan trips.\n",
+    )
+
+    envelope = build_prompt_envelope(
+        pack=pack,
+        selected_skills=[selected],
+        available_skills=[selected, other],
+        model="gpt-5",
+    )
+    rendered = "\n".join(fragment.rendered_text for fragment in envelope.rendered_fragments())
+
+    assert "<name>repo-helper</name>" in rendered
+    assert "<name>itinerary</name>" in rendered
+    assert rendered.count("<selected>true</selected>") == 1
+    assert "Read the repo carefully." not in rendered
+    assert "Plan trips." not in rendered
+
+
+def test_prompt_envelope_appends_business_context_as_independent_fragment(tmp_path: Path) -> None:
+    pack = _build_pack(tmp_path)
+    skill = _build_skill(tmp_path)
+
+    envelope = build_prompt_envelope(
+        pack=pack,
+        selected_skills=[],
+        available_skills=[skill],
+        model="gpt-5",
+        context_fragments=[
+            ContextFragment(
+                kind="business_context",
+                cache_class="contextual",
+                stable_id="route://golden-triangle",
+                body="# ROUTE_CONTEXT\n\n<route_context>\nGolden Triangle facts\n</route_context>",
+            )
+        ],
+    )
+    out = envelope.apply_to_body(body={"input": [{"role": "user", "content": "hello"}]})
+
+    assert out["input"][0]["content"].startswith("# AGENTS.md instructions for agent:main")
+    assert out["input"][1]["content"].startswith("<skill_catalog>")
+    assert out["input"][2]["content"].startswith("# ROUTE_CONTEXT")
+    assert "<INSTRUCTIONS>" not in out["input"][2]["content"]
 
 
 def test_prompt_envelope_audit_metadata_includes_compacted_summary_fields(tmp_path: Path) -> None:
@@ -99,14 +157,14 @@ def test_prompt_envelope_audit_metadata_includes_compacted_summary_fields(tmp_pa
     assert audit.prompt_cache_key == envelope.prompt_cache_key
     assert audit.fragment_count == 2
     assert audit.retained_fragment_count == 2
-    assert audit.stable_prefix_count == 1
-    assert audit.contextual_count == 1
+    assert audit.stable_prefix_count == 2
+    assert audit.contextual_count == 0
     assert audit.dynamic_count == 0
-    assert audit.fragment_kinds == ["agents_instructions", "skill"]
+    assert audit.fragment_kinds == ["agents_instructions", "skill_catalog"]
     assert audit.compacted is False
 
 
-def test_prompt_envelope_supports_workspace_agents_stack_and_system_fallback_role(tmp_path: Path) -> None:
+def test_prompt_envelope_ignores_workspace_agents_and_supports_system_fallback_role(tmp_path: Path) -> None:
     pack = _build_pack(tmp_path)
     workspace_agents = tmp_path / "AGENTS.md"
     workspace_agents.write_text("这是 workspace 级指令。\n", encoding="utf-8")
@@ -127,9 +185,9 @@ def test_prompt_envelope_supports_workspace_agents_stack_and_system_fallback_rol
     out = envelope.apply_to_body(body={"input": [{"role": "user", "content": "hello"}]})
 
     assert out["input"][0]["role"] == "system"
-    assert out["input"][0]["content"].startswith("# AGENTS.md instructions for workspace")
-    assert out["input"][1]["role"] == "system"
-    assert out["input"][1]["content"].startswith("# AGENTS.md instructions for agent:main")
+    assert out["input"][0]["content"].startswith("# AGENTS.md instructions for agent:main")
+    assert "workspace" not in out["input"][0]["content"]
+    assert out["input"][1] == {"role": "user", "content": "hello"}
     assert envelope.audit_metadata().fragment_kinds == ["agents_instructions"]
 
 

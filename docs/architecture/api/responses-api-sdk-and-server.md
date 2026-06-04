@@ -115,8 +115,8 @@ sequenceDiagram
 - Model Providers（OpenAI Responses / Anthropic / Gemini）
 - Tool loop（tool call 提取 → execute → 回灌 → 继续推理）
 - PromptEnvelope / ContextFragments（稳定前缀 + 结构化上下文片段）
-- Prompt 注入（AGENTS.md / selected skills -> structured fragments -> provider role mapping）
-- Skills 注入（selected skills → instructions + tool names）
+- Prompt 注入（agent-local AGENTS.md / skill catalog metadata / context provider fragments -> structured fragments -> provider role mapping）
+- Skills 披露（enabled skills → catalog metadata；selected skills → tool manifest permissions；完整 SKILL.md 正文按需显式加载）
 - Session runtime（config merge / snapshot / resume）
 
 补充约束：

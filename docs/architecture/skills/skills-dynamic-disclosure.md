@@ -10,7 +10,7 @@ req: ["requirements.md#req-12", "requirements.md#req-12-1", "requirements.md#req
 
 # Skills Dynamic Disclosure
 
-Skills 不默认全量注入，也不默认披露其依赖工具。只有技能被选中或触发时，AgentRuntime 才注入技能指令，并通过 Tool Runtime manifest 请求最终可见工具集合。
+Skills 不默认全量注入，也不默认披露其依赖工具。初始 prompt 只披露 enabled skill 的 catalog metadata（name、description、stable id、path/source hash、依赖工具摘要）；完整 `SKILL.md` 正文必须通过显式加载/选择路径按需披露。技能被选中或触发时，AgentRuntime 仍会通过 Tool Runtime manifest 请求最终可见工具集合。
 
 ## Skill 包结构
 
@@ -103,13 +103,14 @@ skill 可以声明权限档案，例如网络与文件系统读写。技能被�
 - 各来源累加，按 stable id/path 去重。
 - 未找到、被禁用或歧义命中的技能必须跳过，并产生可审计 decision。
 
-### 注入技能指令
+### 注入技能 catalog
 
-技能被选中时，AgentRuntime 将 `SKILL.md` 正文注入本次 run 上下文：
+AgentRuntime 在本次 run 上下文中注入 enabled skill catalog：
 
 - 注入位置：用户消息之前。
 - 推荐角色：`developer`，必要时退化为独立 system block。
-- 注入内容包含 skill name/path、stable id、sha256 与正文。
+- 注入内容包含 skill name、description、path、stable id、sha256 与依赖工具摘要。
+- 初始注入不得包含 `SKILL.md` 正文；正文只允许在明确加载某个 skill 后进入上下文。
 - 注入是 per-run 的，不污染其他 session 默认 prompt。
 - 读文件失败应产生 warning，默认 fail-open。
 
