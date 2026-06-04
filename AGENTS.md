@@ -238,12 +238,26 @@ python3 scripts/anyagent_progress.py --root .
 ### 6.1 沉淀规则
 
 - 重复 3 次以上 → 脚本化到 `scripts/`
+- 对版本提升、文档检查、发布巡检、Yunxiao pipeline/packages 查询、协议导出/对比等重复性、持久性工作，Agent 应主动沉淀到仓库绑定的 TypeScript `anyagent-dev-cli`，而不是只在当前轮手动执行。
+- 使用 `anyagent-dev-cli` 前，先运行 `scripts/anyagent-dev-cli doctor` 或已安装的 `anyagent-dev-cli doctor` 确认 CLI 可用；默认输出使用 Markdown，只有需要机器消费时才显式传 `--json`。
+- `anyagent-dev-cli` 的源码放在 `tools/anyagent-dev-cli/`，通过 `scripts/anyagent-dev-cli` 提供本仓稳定入口；新增命令要保留清晰参数、默认 Markdown 输出、显式 `--json` 机器可读输出、可复现验证和低噪声输出，并登记到 `scripts/README.md`。
+- 每次开发或修改 `anyagent-dev-cli` 后，必须运行 `npm --prefix tools/anyagent-dev-cli run install:local` 完成构建与本地安装，再从仓库外目录 smoke test，例如 `cd /tmp && anyagent-dev-cli doctor`。
+- 当前版本提升案例应使用 `scripts/anyagent-dev-cli version bump <version> --dry-run` 校验，再去掉 `--dry-run` 写入；不要再新增分散的单用途版本脚本。
 - 跨模块有效模式 → 提炼到 `docs/architecture/`
 - 多次暴露的规则 → 回写到 `requirements.md` 或本文件
 
 ### 6.2 自迭代
 
-Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → 补 smoke；重复劳动 → 工具化。
+Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → 补 smoke；重复劳动 → 工具化；工具稳定复用 → 收敛到 `anyagent-dev-cli`。
+
+当任务出现以下信号时，Agent 应自动判断是否沉淀到 `anyagent-dev-cli`，无需等待用户再次提醒：
+
+1. 同一流程需要跨多个文件、命令或外部系统重复执行。
+2. 操作容易漏步骤、漏版本源、漏文档、漏验证或输出过长。
+3. 结果需要给后续 agent 或 CI 复用。
+4. 任务涉及发布、构建、Yunxiao pipeline/packages 查询、协议导出/对比、文档 guardrail、TODO 证据整理等长期维护面。
+
+若判断应沉淀，默认工作流是：在 `tools/anyagent-dev-cli/src/` 新增/扩展命令 → 更新 `tools/anyagent-dev-cli/README.md` 与 `scripts/README.md` → 运行 `npm --prefix tools/anyagent-dev-cli run install:local` → 从仓库外目录 smoke test → 最终回复说明命令、验证和是否已安装。
 
 ---
 
@@ -254,6 +268,12 @@ Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → �
 - 不重写历史，不做不可恢复的清理
 - 不用 `git add -A`，只 add 本次改动的文件
 - `git push` 必须先征求用户同意
+
+### 发版与 CD
+
+- 本项目代码有修改且需要发布新版本时，必须同步提升版本号；优先使用 `scripts/anyagent-dev-cli version bump <version> --dry-run` 校验，再去掉 `--dry-run` 写入。当前版本真源至少包含 `packages/anyagent/pyproject.toml`、`packages/anyagent/src/anyagent/__init__.py`、`packages/anyagent/src/anyagent/tool_runtime/__init__.py` 以及内置 FastAPI app 的 `version` 参数。
+- 发布路径为：本地完成实现、TODO/文档同步、验证与版本提升后，经用户确认执行 `git push`；Yunxiao pipeline 会自动构建并发布版本到 Yunxiao Packages。
+- 发版后可通过 Yunxiao MCP 检测流水线运行状态，并查询 Yunxiao Packages 中的构建产物；若无法访问 Yunxiao MCP，在最终回复中说明未完成的远端验证与需要复现的查询条件。
 
 ### 依赖与供应链
 
@@ -286,6 +306,7 @@ Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → �
 - `todo/` 中任务已勾选，包含 `Req:` + `Impl:` + `Module:` 证据
 - 有最小验证闭环
 - 若涉及安全边界变更：明确说明影响
+- 若本次交付需要发版：版本号已同步提升，用户已确认并完成 `git push`，且已通过 Yunxiao MCP 检查 pipeline 与 Yunxiao Packages 产物
 - 引用完整性：`python3 scripts/docs/check.py --root .` 无断链报错
 - 双向 cite 检查：新增/修改的 todo、docs、ADR 满足 §1.2 引用约定中的双向 cite 最低要求
 - 复利检查：是否有可沉淀的工具/模式/约束

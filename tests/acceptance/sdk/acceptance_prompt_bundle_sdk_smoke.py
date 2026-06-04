@@ -90,14 +90,17 @@ async def _run(tmp_path: Path) -> None:
     provider = _RecordingProvider()
 
     import anyagent.server.routes.responses as app_mod
+    import anyagent.server.routes.internal_prompt as internal_prompt_mod
 
     original = app_mod.get_default_model_provider
     original_manifest = app_mod.resolve_manifest_with_mcp
+    original_internal_prompt_manifest = internal_prompt_mod.resolve_manifest_with_mcp
     app_mod.get_default_model_provider = lambda: provider
     async def _fake_manifest(**kwargs):
         _ = kwargs
         return ([{"type": "function", "name": "exec", "description": "Execute a shell command.", "parameters": {"type": "object"}}], 1)
     app_mod.resolve_manifest_with_mcp = _fake_manifest
+    internal_prompt_mod.resolve_manifest_with_mcp = _fake_manifest
     try:
         app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
         transport = httpx.ASGITransport(app=app)
@@ -114,11 +117,11 @@ async def _run(tmp_path: Path) -> None:
             _assert(preview.agent_id == "main", f"unexpected agent_id: {preview}")
             _assert("exec" in preview.manifest_tool_names, f"missing exec manifest tool: {preview}")
             _assert("github" in preview.mcp_servers, f"missing mcp server: {preview}")
-            _assert(any(item.kind == "sandbox_guidance" for item in preview.rendered_fragments), f"missing sandbox guidance: {preview}")
+            _assert(not any(item.kind == "sandbox_guidance" for item in preview.rendered_fragments), f"unexpected sandbox guidance: {preview}")
             _assert(any(item.kind == "mcp_server_ref" for item in preview.rendered_fragments), f"missing mcp ref: {preview}")
             _assert(
-                any("<sandbox_guidance>" in item.rendered_text for item in preview.rendered_fragments),
-                f"missing sandbox guidance text: {preview}",
+                not any("<sandbox_guidance>" in item.rendered_text for item in preview.rendered_fragments),
+                f"unexpected sandbox guidance text: {preview}",
             )
             _assert(
                 any("<mcp_server_ref>" in item.rendered_text for item in preview.rendered_fragments),
@@ -134,6 +137,7 @@ async def _run(tmp_path: Path) -> None:
     finally:
         app_mod.get_default_model_provider = original
         app_mod.resolve_manifest_with_mcp = original_manifest
+        internal_prompt_mod.resolve_manifest_with_mcp = original_internal_prompt_manifest
 
 
 def main() -> int:

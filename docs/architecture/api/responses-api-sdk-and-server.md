@@ -126,8 +126,8 @@ sequenceDiagram
 - AGENTS stack 在 v0 先收敛为 `workspace + agent-pack` 两层，更多 roots 延后再扩展
 - `AGENTS.md` 与 skills 正文不再视为自由文本块，而应视为带 `path` / `sha256` / `stable_id` 的结构化 contextual fragments
 - 若 provider 支持 prompt/prefix cache，稳定前缀应通过 `prompt_cache_key` 暴露
-- `environment_context` 应作为独立 fragment 接入请求体，而不是混入自由文本说明；如需进入缓存，应明确区分其稳定字段与高波动字段
-- 当 agent 启用 sandbox 且 `exec` 真正可见时，运行时应自动注入 `sandbox_guidance` fragment，而不是只把 `sandbox_mode` 混入环境字段
+- `environment_context` 可作为独立 fragment 接入请求体，而不是混入自由文本说明；默认运行时 prompt 为降低 gateway/webhook token 成本不注入该片段，如需启用则应明确区分其稳定字段与高波动字段
+- 当 agent 启用 sandbox 且 `exec` 真正可见时，运行时保留 `sandbox_guidance` fragment 构造能力；默认 prompt 为降低低价值重复说明不注入该片段，preview/示例可按场景展示
 - built-in server 应提供一个 internal prompt bundle preview 入口，用于把 rendered fragments、manifest tools、tool context、`effective_body` 与 `applied_body` 一次性展示出来
 - built-in server 应提供 typed Agent Catalog 入口，用于列出当前允许外部指定的 agents，并按 agent 查询 `agent.yaml` 摘要、prompt path/hash/preview、sandbox、skills、MCP 与 multiagent 配置
 

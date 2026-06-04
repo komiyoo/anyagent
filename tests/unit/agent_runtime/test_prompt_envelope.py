@@ -60,10 +60,10 @@ def _build_skill(tmp_path: Path) -> SkillPackage:
 def test_build_agents_md_injection_text_uses_structured_fragment(tmp_path: Path) -> None:
     text = build_agents_md_injection_text(_build_pack(tmp_path))
     assert text.startswith("# AGENTS.md instructions for agent:main")
-    assert "<INSTRUCTIONS_META>" in text
-    assert "<path>" in text
-    assert "<sha256>abc123</sha256>" in text
     assert "<INSTRUCTIONS>" in text
+    assert "<INSTRUCTIONS_META>" not in text
+    assert "<path>" not in text
+    assert "<sha256>" not in text
 
 
 def test_build_skills_injection_text_uses_skill_catalog_metadata_with_path(tmp_path: Path) -> None:
@@ -208,7 +208,7 @@ def test_prompt_envelope_includes_environment_context_without_changing_stable_ke
     right = build_prompt_envelope(pack=pack, selected_skills=[], model="gpt-5", environment_values=env_b)
     body = left.apply_to_body(body={"input": [{"role": "user", "content": "hello"}]})
     assert left.prompt_cache_key == right.prompt_cache_key
-    assert any(
+    assert not any(
         isinstance(item.get("content"), str) and item["content"].startswith("<environment_context>")
         for item in body["input"]
         if isinstance(item, dict)
@@ -244,12 +244,10 @@ def test_prompt_envelope_includes_sandbox_guidance_and_mcp_refs_when_available(t
     rendered = envelope.rendered_fragments()
 
     assert any(fragment.kind == "mcp_server_ref" for fragment in envelope.fragments)
-    assert any(fragment.kind == "sandbox_guidance" for fragment in envelope.fragments)
     assert any("<mcp_server_ref>" in fragment.rendered_text for fragment in rendered)
-    assert any("<sandbox_guidance>" in fragment.rendered_text for fragment in rendered)
-    assert any("exec" in fragment.rendered_text for fragment in rendered if fragment.kind == "sandbox_guidance")
     assert any(fragment.kind == "mcp_server_ref" for fragment in rendered)
-    assert any(fragment.kind == "sandbox_guidance" for fragment in rendered)
+    assert not any(fragment.kind == "sandbox_guidance" for fragment in envelope.fragments)
+    assert not any("<sandbox_guidance>" in fragment.rendered_text for fragment in rendered)
 
 
 def test_prompt_envelope_skips_disabled_mcp_refs(tmp_path: Path) -> None:

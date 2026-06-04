@@ -11,7 +11,6 @@ import httpx
 from anyagent.agent_packs import AgentPack
 from anyagent.agent_runtime import (
     SkillInjector,
-    build_default_environment_context_values,
     build_prompt_envelope,
     dedupe_strs,
     extract_allowed_function_tool_names,
@@ -33,6 +32,7 @@ from anyagent.tool_runtime import ToolRuntimeClient, fetch_manifest_tools as def
 
 from anyagent.server.config.request_validation import ResponsesRequestValidationError, parse_function_tools
 from anyagent.server.handlers.context_providers import _build_context_provider_fragments
+from anyagent.server.responses.session_context import apply_session_once_context_to_body, split_session_once_context_fragments
 from anyagent.server.persistence.manifest_cache import (
     ManifestCache,
     ManifestCacheKey,
@@ -104,6 +104,7 @@ async def prepare_response_tooling_context(
     mcp_credential_store: Any,
     multiagent: Any,
     fetch_manifest_tools_fn: FetchManifestToolsFn = default_fetch_manifest_tools,
+    previous_snapshot: dict[str, Any] | None = None,
 ) -> ResponseToolingContext:
     all_skills, _duplicate_skills = dedupe_skills_by_name(
         [*agent_skills.get(agent_id, []), *global_skills]
@@ -256,17 +257,19 @@ async def prepare_response_tooling_context(
         tool_context=tool_context,
         selected_skills=selected_skills,
     )
+    session_once_fragments, prompt_context_fragments = split_session_once_context_fragments(context_fragments)
+    body = apply_session_once_context_to_body(
+        body=body,
+        previous_snapshot=previous_snapshot,
+        fragments=session_once_fragments,
+    )
     prompt_envelope = build_prompt_envelope(
         pack=pack,
         selected_skills=selected_skills,
         available_skills=available_skills,
         tool_context=tool_context,
         model=body.get("model") if isinstance(body.get("model"), str) else None,
-        context_fragments=context_fragments,
-        environment_values=build_default_environment_context_values(
-            cwd=workspace_dir,
-            sandbox_mode=pack.spec.sandbox.mode,
-        ),
+        context_fragments=prompt_context_fragments,
     )
     prompt_audit = prompt_envelope.audit_metadata()
     body = prompt_envelope.apply_to_body(body=body)

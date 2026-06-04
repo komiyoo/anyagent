@@ -32,10 +32,10 @@
    - 稳定层至少包括：
      - `AGENTS.md` 结构化片段
      - `mcp_server_ref` catalog 片段
-     - 启用 sandbox 时的 `sandbox_guidance` 片段
      - 已选 skills 的结构化片段
      - 稳定 `prompt_cache_key`
-   - contextual 层至少可包括：`<environment_context>` 等运行时上下文片段
+   - `sandbox_guidance` 与 `<environment_context>` 保留为可构造 fragment；默认运行时 prompt 为降低 gateway/webhook token 成本不注入这两类片段，调试 preview/示例或后续显式策略可按需展示
+   - contextual 层可包括业务上下文、渠道上下文、页面上下文等按需片段
    - 高波动层（当前 user 输入、tool output、resume 恢复内容）不进入稳定前缀
    - built-in server 同时提供 preview 视图，可返回 rendered fragments、manifest tools、tool context 与 `applied_body`
 

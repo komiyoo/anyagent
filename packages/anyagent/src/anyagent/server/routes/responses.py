@@ -43,7 +43,6 @@ from anyagent.server.handlers.sse_blocks import (
     _build_created_sse_block,
 )
 from anyagent.server.handlers.tool_context import (
-    _build_prompt_environment_values,
     _build_server_tool_context,
     _select_skills,
     _visible_enabled_skills,
@@ -51,7 +50,11 @@ from anyagent.server.handlers.tool_context import (
 from anyagent.server.persistence.manifest_cache import build_manifest_cache_key, extract_requested_tool_names
 from anyagent.server.responses.finalization import build_nonstream_response_finalizer
 from anyagent.server.responses.idempotency import begin_or_replay_response_run
-from anyagent.server.responses.session_context import prepare_response_session_context
+from anyagent.server.responses.session_context import (
+    apply_session_once_context_to_session,
+    prepare_response_session_context,
+    split_session_once_context_fragments,
+)
 from anyagent.server.responses.streaming import build_response_event_appender
 from anyagent.server.handlers.http_errors import optional_response_payload_from_run
 from anyagent.server.runtime.lock_service import hold_session_lease
@@ -165,14 +168,14 @@ def create_responses_router() -> APIRouter:
             tool_context=tool_context,
             selected_skills=selected_skills,
         )
+        session_once_fragments, prompt_context_fragments = split_session_once_context_fragments(context_fragments)
         prompt_envelope = build_prompt_envelope(
             pack=pack,
             selected_skills=selected_skills,
             available_skills=available_skills,
             tool_context=tool_context,
             model=body.get("model") if isinstance(body.get("model"), str) else None,
-            context_fragments=context_fragments,
-            environment_values=_build_prompt_environment_values(state=state, pack=pack),
+            context_fragments=prompt_context_fragments,
         )
         prompt_audit = prompt_envelope.audit_metadata()
         mcp_manager = None
@@ -315,6 +318,7 @@ def create_responses_router() -> APIRouter:
                     agent_id=agent_id,
                     session_key=session_key,
                     body=body,
+                    session_once_fragments=session_once_fragments,
                     prompt_envelope=prompt_envelope,
                     prompt_audit=prompt_audit,
                     model_provider=model_provider,
@@ -357,6 +361,7 @@ def create_responses_router() -> APIRouter:
                 agent_id=agent_id,
                 session_key=session_key,
                 body=body,
+                session_once_fragments=session_once_fragments,
                 prompt_envelope=prompt_envelope,
                 prompt_audit=prompt_audit,
                 model_provider=model_provider,
@@ -419,6 +424,7 @@ async def run_stream_worker(
     agent_id: str,
     session_key: str,
     body: dict[str, Any],
+    session_once_fragments: list[Any],
     prompt_envelope: Any,
     prompt_audit: PromptContextAudit,
     model_provider: Any,
@@ -448,6 +454,10 @@ async def run_stream_worker(
                     agent_id=agent_id,
                     session_key=session_key,
                     body=body,
+                )
+                session_ctx = apply_session_once_context_to_session(
+                    session_ctx=session_ctx,
+                    fragments=session_once_fragments,
                 )
                 body2 = prompt_envelope.apply_to_body(body=session_ctx.effective_body)
                 await stage_sink(
@@ -631,6 +641,7 @@ async def run_nonstream_worker(
     agent_id: str,
     session_key: str,
     body: dict[str, Any],
+    session_once_fragments: list[Any],
     prompt_envelope: Any,
     prompt_audit: PromptContextAudit,
     model_provider: Any,
@@ -658,6 +669,10 @@ async def run_nonstream_worker(
                     agent_id=agent_id,
                     session_key=session_key,
                     body=body,
+                )
+                session_ctx = apply_session_once_context_to_session(
+                    session_ctx=session_ctx,
+                    fragments=session_once_fragments,
                 )
                 body2 = prompt_envelope.apply_to_body(body=session_ctx.effective_body)
                 await stage_sink(

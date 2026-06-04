@@ -218,8 +218,8 @@ async def _run_prepare_response_tooling_context_injects_context_provider_fragmen
         if isinstance(item, dict) and isinstance(item.get("content"), str)
     ]
     assert any("Golden Triangle route facts." in text for text in prompt_texts)
-    assert "page_context" in result.prompt_audit.fragment_kinds
-    assert any(fragment.kind == "page_context" for fragment in result.prompt_envelope.fragments)
+    assert "page_context" not in result.prompt_audit.fragment_kinds
+    assert not any(fragment.kind == "page_context" for fragment in result.prompt_envelope.fragments)
 
 
 def test_prepare_response_tooling_context_rejects_invalid_tool_choice() -> None:

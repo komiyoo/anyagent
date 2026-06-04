@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_PATH" ]]; do
+  SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+  LINK_TARGET="$(readlink "$SCRIPT_PATH")"
+  if [[ "$LINK_TARGET" == /* ]]; then
+    SCRIPT_PATH="$LINK_TARGET"
+  else
+    SCRIPT_PATH="$SCRIPT_DIR/$LINK_TARGET"
+  fi
+done
+
+ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+CLI_ENTRY="$ROOT_DIR/tools/anyagent-dev-cli/dist/index.js"
+
+if [[ ! -f "$CLI_ENTRY" ]]; then
+  echo "anyagent-dev-cli is not built. Run: npm --prefix tools/anyagent-dev-cli install && npm --prefix tools/anyagent-dev-cli run build" >&2
+  exit 1
+fi
+
+exec node "$CLI_ENTRY" --root "$ROOT_DIR" "$@"

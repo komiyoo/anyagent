@@ -86,11 +86,11 @@ async def _run_builtin_server_applies_prompt_envelope_to_provider_request(*, tmp
             assert preview.status_code == 200
             preview_payload = preview.json()
             assert "exec" in preview_payload["manifest_tool_names"]
-            assert any(item["kind"] == "sandbox_guidance" for item in preview_payload["rendered_fragments"])
-            assert any(
+            assert not any(item["kind"] == "sandbox_guidance" for item in preview_payload["rendered_fragments"])
+            assert not any(
                 "<sandbox_guidance>" in item["rendered_text"] for item in preview_payload["rendered_fragments"]
             )
-            assert any(
+            assert not any(
                 isinstance(item.get("content"), str) and "<sandbox_guidance>" in item["content"]
                 for item in preview_payload["applied_body"]["input"]
                 if isinstance(item, dict)
@@ -110,12 +110,12 @@ async def _run_builtin_server_applies_prompt_envelope_to_provider_request(*, tmp
             input_items = body["input"]
             assert input_items[0]["role"] == "developer"
             assert input_items[0]["content"].startswith("# AGENTS.md instructions for agent:main")
-            assert any(
+            assert not any(
                 item.get("role") == "developer" and isinstance(item.get("content"), str) and item["content"].startswith("<environment_context>")
                 for item in input_items
                 if isinstance(item, dict)
             )
-            assert any(
+            assert not any(
                 item.get("role") == "developer" and isinstance(item.get("content"), str) and item["content"].startswith("<sandbox_guidance>")
                 for item in input_items
                 if isinstance(item, dict)
@@ -148,11 +148,11 @@ async def _run_builtin_server_applies_prompt_envelope_to_provider_request(*, tmp
             assert replay_payload["fallback"] == "rendered"
             assert replay_payload["prompt_cache_key"] == body["prompt_cache_key"]
             assert replay_payload["total_chars"] > 0
-            assert any(item["kind"] == "environment_context" for item in replay_payload["fragments"])
+            assert not any(item["kind"] == "environment_context" for item in replay_payload["fragments"])
             session_record = await app.state.anyagent.session_store.get(session_partition_key="main::sess_prompt")
             assert session_record is not None
             prompt_context = session_record.snapshot_json["last_run"]["prompt_context"]
             assert prompt_context["prompt_cache_key"] == body["prompt_cache_key"]
-            assert any(fragment["kind"] == "environment_context" for fragment in prompt_context["fragments"])
+            assert not any(fragment["kind"] == "environment_context" for fragment in prompt_context["fragments"])
     finally:
         app_mod.get_default_model_provider = original

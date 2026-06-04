@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_PATH" ]]; do
+  SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+  LINK_TARGET="$(readlink "$SCRIPT_PATH")"
+  if [[ "$LINK_TARGET" == /* ]]; then
+    SCRIPT_PATH="$LINK_TARGET"
+  else
+    SCRIPT_PATH="$SCRIPT_DIR/$LINK_TARGET"
+  fi
+done
+
+ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+CLI_DIR="$ROOT_DIR/tools/anyagent-dev-cli"
+INSTALL_DIR="${ANYAGENT_DEV_CLI_INSTALL_DIR:-$HOME/.local/bin}"
+TARGET="$INSTALL_DIR/anyagent-dev-cli"
+
+npm --prefix "$CLI_DIR" install
+npm --prefix "$CLI_DIR" run build
+
+mkdir -p "$INSTALL_DIR"
+ln -sf "$ROOT_DIR/scripts/anyagent-dev-cli" "$TARGET"
+
+echo "installed: $TARGET"
+echo "verify: anyagent-dev-cli doctor"

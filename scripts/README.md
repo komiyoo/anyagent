@@ -10,6 +10,8 @@
   - `pack.py` 按 tags 输出最小文档上下文包。
   - `code_ref_allowlist.txt` 标注 generated / illustrative / cross-repo inline refs，供 `check.py --check-code-refs` 使用。
 - `scripts/ci/`：CI/本地质量门入口，详见 [ci/README.md](ci/README.md)。
+- repo-bound CLI：
+  - `anyagent-dev-cli` 运行 `tools/anyagent-dev-cli/` 中的 TypeScript CLI，承载本仓长期复用的开发/发布自动化；开发后用 `npm --prefix tools/anyagent-dev-cli run install:local` 安装到 PATH。
 - release / 镜像同步：
   - `ci/build_release_artifacts.sh`
   - `publish-yunxiao-pypi.sh`
@@ -33,6 +35,8 @@ python3 scripts/docs/index.py --root .
 python3 scripts/docs/check.py --root . --check-index
 python3 scripts/docs/check.py --root . --check-index --check-code-refs
 python3 scripts/docs/pack.py --root . --tags sdk
+npm --prefix tools/anyagent-dev-cli run install:local
+scripts/anyagent-dev-cli version bump 0.4.10 --dry-run
 uv run --project packages/anyagent python scripts/export_protocol_schema.py --out build/protocol-schema.json
 uv run --project packages/anyagent python scripts/export_protocol_schema.py --format openapi --out build/openapi.json
 uv run --project packages/anyagent python scripts/protocol_schema_diff.py --old build/base-protocol-schema.json --new build/protocol-schema.json
