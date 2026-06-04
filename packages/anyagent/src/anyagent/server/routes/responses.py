@@ -35,6 +35,7 @@ from anyagent.server.config.request_validation import (
     parse_function_tools,
 )
 from anyagent.server.handlers.auth import _require_user_auth
+from anyagent.server.handlers.context_providers import _build_context_provider_fragments
 from anyagent.server.handlers.middleware import _build_agent_middleware_chain
 from anyagent.server.handlers.persistence import _append_sse_chunk, _build_external_response_stream, _update_session_snapshot
 from anyagent.server.handlers.sse_blocks import (
@@ -152,11 +153,22 @@ def create_responses_router() -> APIRouter:
         )
         selected_skills = await _select_skills(state, pack=pack, body=body)
         tool_context = _build_server_tool_context(pack=pack, body=body, selected_skills=selected_skills)
+        context_fragments = await _build_context_provider_fragments(
+            pack=pack,
+            agent_id=agent_id,
+            session_key=session_key,
+            body=body,
+            metadata=metadata,
+            workspace_dir=state.workspace_dir,
+            tool_context=tool_context,
+            selected_skills=selected_skills,
+        )
         prompt_envelope = build_prompt_envelope(
             pack=pack,
             selected_skills=selected_skills,
             tool_context=tool_context,
             model=body.get("model") if isinstance(body.get("model"), str) else None,
+            context_fragments=context_fragments,
             environment_values=_build_prompt_environment_values(state=state, pack=pack),
         )
         prompt_audit = prompt_envelope.audit_metadata()

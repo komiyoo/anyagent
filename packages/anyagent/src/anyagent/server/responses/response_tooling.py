@@ -32,6 +32,7 @@ from anyagent.skills.models import SkillPackage
 from anyagent.tool_runtime import ToolRuntimeClient, fetch_manifest_tools as default_fetch_manifest_tools
 
 from anyagent.server.config.request_validation import ResponsesRequestValidationError, parse_function_tools
+from anyagent.server.handlers.context_providers import _build_context_provider_fragments
 from anyagent.server.persistence.manifest_cache import (
     ManifestCache,
     ManifestCacheKey,
@@ -244,11 +245,22 @@ async def prepare_response_tooling_context(
 
     body["tools"] = strip_internal_tool_fields(manifest_tools)
 
+    context_fragments = await _build_context_provider_fragments(
+        pack=pack,
+        agent_id=agent_id,
+        session_key=session_key,
+        body=body,
+        metadata=metadata,
+        workspace_dir=workspace_dir,
+        tool_context=tool_context,
+        selected_skills=selected_skills,
+    )
     prompt_envelope = build_prompt_envelope(
         pack=pack,
         selected_skills=selected_skills,
         tool_context=tool_context,
         model=body.get("model") if isinstance(body.get("model"), str) else None,
+        context_fragments=context_fragments,
         environment_values=build_default_environment_context_values(
             cwd=workspace_dir,
             sandbox_mode=pack.spec.sandbox.mode,

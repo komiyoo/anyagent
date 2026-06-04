@@ -71,9 +71,22 @@ middleware chain 由 `_build_agent_middleware_chain`(`packages/anyagent/src/anya
 
 plugin 通过 manifest 的 `middlewares` 字段声明 middleware classpath(见 [../integrations/platform-connectors.md](../integrations/platform-connectors.md)),框架按 `agent.yaml` 的 `runtime.middlewares` 顺序加载。这让第三方扩展能力(审计、限流、自定义改写)与内置能力共享同一条 chain,无需改动 loop 主体。plugin middleware 的能力维度记录在 `PluginCapabilityMatrix`(`packages/anyagent/src/anyagent/protocol/plugin_capabilities.py`)。
 
+## 7. Context Providers 与 middleware 的边界
+
+`runtime.context_providers` 是独立于 middleware 的 prompt 组装扩展点。provider 在模型调用前、prompt envelope 构建阶段执行，输入是受信任 server-side `ContextProviderRequest`，输出是 `ContextFragment` 列表。框架负责把这些 fragment 注入 prompt、写入 `anyagent.prompt.context` 审计摘要，并在 `/internal/prompt/bundle` 中渲染。
+
+因此推荐边界是：
+
+- 页面来源、CRM 记录、租户信息、业务规则摘要等“进入模型前就应该稳定可见”的事实 → 用 `runtime.context_providers`。
+- loop 内每轮模型请求/工具调用的拦截、压缩、循环检测、审计改写 → 用 `runtime.middlewares`。
+
+provider classpath 同样来自部署者控制的 `agent.yaml`，不是 agent/model 可控输入。provider 代码运行在 server 进程内，应在自身边界做外部输入校验、来源标记、超时与限长。
+
 ## 关联实现
 
 - 接口与链:`packages/anyagent/src/anyagent/agent_runtime/middleware.py`
+- Context provider 接口:`packages/anyagent/src/anyagent/agent_runtime/context_providers.py`
+- Context provider 装载:`packages/anyagent/src/anyagent/server/handlers/context_providers.py`
 - 接入点:`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:87`、`:634`、`:644`、`:673`
 - 装载与配置:`packages/anyagent/src/anyagent/server/app.py:148`、`packages/anyagent/src/anyagent/agent_packs.py:106`
 - 内置压缩:`packages/anyagent/src/anyagent/agent_runtime/middlewares/context_compaction.py`

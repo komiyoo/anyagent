@@ -77,6 +77,17 @@ multiagent:
 - `skills.default_selected` 支持 skill name 或 `skill://.../SKILL.md` path 引用。
 - `skills.disabled_paths` 配置时填写 skill name，运行时解析为当前可见 skill 的 stable id。
 - `multiagent.spawn_allow_agent_ids` 缺省为空，表示禁止 spawn。
+- `runtime.context_providers` 支持业务侧 classpath 列表，用于在模型调用前注入可审计的 `ContextFragment`。provider 代码由部署者配置，运行在 server 进程内，适合页面上下文、租户上下文、CRM 摘要等应用层事实注入；不适合放 agent/model 可控输入。
+
+`runtime.context_providers` 示例：
+
+```yaml
+runtime:
+  context_providers:
+    - my_workspace.route_context:RouteContextProvider
+```
+
+每个 provider 应实现 `anyagent.agent_runtime.ContextProvider` 的 `build_context(request)`，返回 `ContextFragment` 列表。框架会将这些 fragment 纳入 prompt envelope，与 AGENTS.md、skill、environment fragment 一起写入 `anyagent.prompt.context` 审计事件和 rendered prompt preview。
 
 ## 配置层级与 merge
 
@@ -174,7 +185,7 @@ run 完成后写回新的恢复游标，保证下一次请求可继续承接。
 
 冷/热字段边界（`_catalog_has_cold_restart_change`，`packages/anyagent/src/anyagent/server/app_builders.py:38`）：
 
-- **热字段**：`model`/`tools`/`skills`/`middlewares` 等行为字段变化 → 即时换上新 catalog、刷新 models 配置、重置 manifest 缓存、更新 mtime 指纹，对后续请求立即生效（`packages/anyagent/src/anyagent/server/app_state.py:113`）。
+- **热字段**：`model`/`tools`/`skills`/`middlewares`/`context_providers` 等行为字段变化 → 即时换上新 catalog、刷新 models 配置、重置 manifest 缓存、更新 mtime 指纹，对后续请求立即生效（`packages/anyagent/src/anyagent/server/app_state.py:113`）。
 - **冷字段**：`sandbox`（含 `sandbox.mode`）与 `storage` 这类影响进程级资源装配的字段变化 → **只更新 mtime 指纹并 log warning `restart required`，不替换运行 catalog**（`packages/anyagent/src/anyagent/server/app_state.py:109`）。
 
 冷字段与上文 denylist 受管路径一致：这些字段在进程启动时已绑定 SandboxManager/Storage 等资源，热替换会造成运行态与配置态不一致，故强制走重启。更新 mtime 指纹是为了避免每请求重复刷同一条 warning。`AnyAgentServerApp.reload_catalog`（`packages/anyagent/src/anyagent/server/app_state.py:87`）则是 admin 显式触发的全量重载，不区分冷热。

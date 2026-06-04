@@ -31,6 +31,7 @@ from anyagent.server.config.request_validation import (
     parse_function_tools,
 )
 from anyagent.server.handlers.auth import _require_admin_auth, _require_user_auth
+from anyagent.server.handlers.context_providers import _build_context_provider_fragments
 from anyagent.server.handlers.tool_context import (
     _build_prompt_environment_values,
     _build_server_tool_context,
@@ -102,6 +103,16 @@ def create_internal_prompt_router() -> APIRouter:
             selected_skills=selected_skills,
             tool_context=tool_context,
             model=body.get("model") if isinstance(body.get("model"), str) else None,
+            context_fragments=await _build_context_provider_fragments(
+                pack=pack,
+                agent_id=agent_id,
+                session_key=session_key,
+                body=body,
+                metadata=metadata,
+                workspace_dir=state.workspace_dir,
+                tool_context=tool_context,
+                selected_skills=selected_skills,
+            ),
             environment_values=_build_prompt_environment_values(state=state, pack=pack),
         )
         session_ctx = await prepare_response_session_context(

@@ -196,6 +196,7 @@ def build_prompt_envelope(
     tool_context: ToolContext | None = None,
     model: str | None = None,
     environment_values: dict[str, object] | None = None,
+    context_fragments: list[ContextFragment] | None = None,
     instruction_role: ContextFragmentRole = "developer",
 ) -> PromptEnvelope:
     fragments: list[ContextFragment] = []
@@ -209,6 +210,7 @@ def build_prompt_envelope(
         fragments.append(sandbox_fragment)
     for skill in selected_skills or []:
         fragments.append(build_skill_fragment(skill, role=instruction_role))
+    fragments.extend(context_fragments or [])
     if environment_values:
         fragments.append(build_environment_context_fragment(values=environment_values, role=instruction_role))
     return PromptEnvelope(

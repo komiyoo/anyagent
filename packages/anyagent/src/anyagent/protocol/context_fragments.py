@@ -9,8 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field
 ContextFragmentKind = Literal[
     "agents_instructions",
     "skill",
+    "business_context",
+    "channel_context",
     "environment_context",
     "mcp_server_ref",
+    "page_context",
     "tool_catalog_delta",
     "sandbox_guidance",
 ]
