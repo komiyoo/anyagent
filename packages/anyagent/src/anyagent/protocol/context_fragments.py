@@ -81,11 +81,8 @@ def is_context_fragment_text(text: str) -> bool:
 
 def _render_agents_fragment(fragment: ContextFragment) -> str:
     label = fragment.label or "project"
-    meta_lines = _render_meta_lines(fragment=fragment, include_stable_id=False)
     body = (fragment.body or "").rstrip()
     lines = [f"# AGENTS.md instructions for {label}"]
-    if meta_lines:
-        lines.extend(["", "<INSTRUCTIONS_META>", *meta_lines, "</INSTRUCTIONS_META>"])
     lines.extend(["", "<INSTRUCTIONS>", body, "</INSTRUCTIONS>"])
     return "\n".join(lines).rstrip()
 

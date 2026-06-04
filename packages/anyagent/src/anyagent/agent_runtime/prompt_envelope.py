@@ -257,12 +257,20 @@ def build_prompt_envelope(
     context_fragments: list[ContextFragment] | None = None,
     instruction_role: ContextFragmentRole = "developer",
 ) -> PromptEnvelope:
+    """
+    Build prompt envelope from agent pack and context.
+
+    Note: sandbox_guidance and environment_context are intentionally excluded
+    to reduce token usage in production scenarios (especially gateway/webhook contexts).
+    These fragments provide minimal value to model reasoning but consume tokens.
+    """
     fragments: list[ContextFragment] = []
     fragments.append(build_agents_md_fragment(pack, role=instruction_role))
     fragments.extend(build_mcp_server_ref_fragments(pack, role=instruction_role))
-    sandbox_fragment = build_sandbox_guidance_fragment(pack, role=instruction_role)
-    if sandbox_fragment is not None:
-        fragments.append(sandbox_fragment)
+    # Sandbox guidance excluded - minimal reasoning value, high token cost
+    # sandbox_fragment = build_sandbox_guidance_fragment(pack, role=instruction_role)
+    # if sandbox_fragment is not None:
+    #     fragments.append(sandbox_fragment)
     skill_catalog_fragment = build_skill_catalog_fragment(
         available_skills if available_skills is not None else (selected_skills or []),
         selected_skills=selected_skills or [],
@@ -271,8 +279,9 @@ def build_prompt_envelope(
     if skill_catalog_fragment is not None:
         fragments.append(skill_catalog_fragment)
     fragments.extend(context_fragments or [])
-    if environment_values:
-        fragments.append(build_environment_context_fragment(values=environment_values, role=instruction_role))
+    # Environment context excluded - minimal reasoning value, high token cost
+    # if environment_values:
+    #     fragments.append(build_environment_context_fragment(values=environment_values, role=instruction_role))
     return PromptEnvelope(
         prompt_cache_key=build_prompt_cache_key(
             pack=pack,
