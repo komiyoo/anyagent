@@ -141,7 +141,7 @@ def create_app(
     )
     storage_settings = StorageSettings()
     observability_event_sink = InMemoryObservabilityEventSink()
-    if resolved_storage.storage_mode == "external" and storage_settings.effective_postgres_dsn is not None:
+    if resolved_storage.storage_profile in {"postgres", "postgres-redis"} and storage_settings.effective_postgres_dsn is not None:
         telemetry_event_store: Any = PostgresTelemetryEventStore(
             postgres_dsn=str(storage_settings.effective_postgres_dsn),
             postgres_schema=storage_settings.postgres_schema,
