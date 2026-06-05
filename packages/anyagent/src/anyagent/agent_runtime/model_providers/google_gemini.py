@@ -64,6 +64,13 @@ class GeminiTranslator:
             if tool_config:
                 payload["toolConfig"] = tool_config
 
+        # Pass through workspace extra_params verbatim
+        extra_params = body.get("_extra_params")
+        if isinstance(extra_params, dict):
+            for key, val in extra_params.items():
+                if key not in payload:
+                    payload[key] = val
+
         model = str(body["model"]).strip()
         return VendorRequest(
             url_path=f"/models/{model}:generateContent",

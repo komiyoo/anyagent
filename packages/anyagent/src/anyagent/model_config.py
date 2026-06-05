@@ -32,12 +32,19 @@ class WorkspaceModelProviderConfig(BaseModel):
     anthropic_version_env: str | None = None
 
 
+_EXTRA_PARAMS_BLOCKLIST = frozenset({
+    "model", "messages", "tools", "tool_choice", "input", "instructions",
+    "contents", "system", "systemInstruction",
+})
+
+
 class WorkspaceModelConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     provider: str
     model: str
     params: dict[str, Any] = Field(default_factory=dict)
+    extra_params: dict[str, Any] = Field(default_factory=dict)
 
 
 class WorkspaceModelsConfig(BaseModel):
@@ -139,11 +146,22 @@ def apply_effective_model_to_body(
     if workspace_config is not None:
         model_alias = _resolve_model_alias(selection, workspace_config)
         if model_alias and model_alias in workspace_config.models:
-            params = workspace_config.models[model_alias].params
+            entry = workspace_config.models[model_alias]
+            params = entry.params
             if params:
                 for key, value in params.items():
                     if key not in body:
                         body[key] = value
+            extra = entry.extra_params
+            if extra:
+                filtered = {k: v for k, v in extra.items() if k not in _EXTRA_PARAMS_BLOCKLIST}
+                if filtered:
+                    existing = body.get("_extra_params")
+                    if isinstance(existing, dict):
+                        merged = {**filtered, **existing}
+                    else:
+                        merged = filtered
+                    body["_extra_params"] = merged
 
 
 def _resolve_model_alias(selection: EffectiveModelSelection, workspace_config: WorkspaceModelsConfig) -> str | None:

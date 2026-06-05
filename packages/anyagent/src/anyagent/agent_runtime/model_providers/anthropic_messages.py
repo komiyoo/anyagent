@@ -64,6 +64,13 @@ class AnthropicTranslator:
             if tool_choice is not None:
                 payload["tool_choice"] = tool_choice
 
+        # Pass through workspace extra_params verbatim
+        extra_params = body.get("_extra_params")
+        if isinstance(extra_params, dict):
+            for key, val in extra_params.items():
+                if key not in payload:
+                    payload[key] = val
+
         return VendorRequest(
             url_path="/messages",
             headers={
