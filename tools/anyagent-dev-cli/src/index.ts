@@ -149,12 +149,14 @@ function loadVersionSource(root: string, source: VersionSource): LoadedVersionSo
   return { ...source, absolutePath, text, currentVersion };
 }
 
-function loadVersionSources(root: string): LoadedVersionSource[] {
+function loadVersionSources(root: string, requireConsistent: boolean = true): LoadedVersionSource[] {
   const loaded = VERSION_SOURCES.map((source) => loadVersionSource(root, source));
-  const versions = new Set(loaded.map((source) => source.currentVersion));
-  if (versions.size !== 1) {
-    const details = loaded.map((source) => `${source.path}=${source.currentVersion}`).join(", ");
-    throw new CliError("version_sources_disagree", `version sources disagree: ${details}`);
+  if (requireConsistent) {
+    const versions = new Set(loaded.map((source) => source.currentVersion));
+    if (versions.size !== 1) {
+      const details = loaded.map((source) => `${source.path}=${source.currentVersion}`).join(", ");
+      throw new CliError("version_sources_disagree", `version sources disagree: ${details}`);
+    }
   }
   return loaded;
 }
@@ -237,8 +239,7 @@ function commandVersionBump(args: string[], options: CliOptions): void {
     throw new CliError("invalid_version", `invalid semantic version: ${newVersion}`);
   }
 
-  const sources = loadVersionSources(options.root);
-  const currentVersion = sources[0]?.currentVersion ?? "";
+  const sources = loadVersionSources(options.root, false);
   const changes = sources.map((source) => ({
     path: source.path,
     label: source.label,
@@ -246,8 +247,9 @@ function commandVersionBump(args: string[], options: CliOptions): void {
     to: newVersion,
   }));
 
-  if (currentVersion === newVersion) {
-    const data = { currentVersion, newVersion, dryRun, changed: false, changes: [] };
+  const allAlready = changes.every((c) => c.from === newVersion);
+  if (allAlready) {
+    const data = { currentVersion: newVersion, newVersion, dryRun, changed: false, changes: [] };
     if (options.json) {
       printJson(data);
     } else {
@@ -265,6 +267,8 @@ function commandVersionBump(args: string[], options: CliOptions): void {
     }
   }
 
+  const previousVersions = [...new Set(changes.map((c) => c.from))];
+  const currentVersion = previousVersions.length === 1 ? previousVersions[0] : previousVersions.join(", ");
   const data = { currentVersion, newVersion, dryRun, changed: !dryRun, changes };
   if (options.json) {
     printJson(data);
