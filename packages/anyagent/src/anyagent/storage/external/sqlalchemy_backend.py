@@ -352,7 +352,29 @@ class SqlAlchemyEventStore(SqlAlchemyBackendBase):
                 )
             ).first()
             if not row:
-                raise RuntimeError("run_not_found")
+                # Auto-create run record for platform/connector events that
+                # don't go through the normal response lifecycle.
+                try:
+                    await conn.execute(
+                        insert(self._tables.runs).values(
+                            response_id=response_id,
+                            session_partition_key=session_partition_key,
+                            stream=False,
+                            status="completed",
+                            last_event_seq=0,
+                        )
+                    )
+                except IntegrityError:
+                    pass
+                row = (
+                    await conn.execute(
+                        select(self._tables.runs.c.last_event_seq)
+                        .where(self._tables.runs.c.response_id == response_id)
+                        .with_for_update()
+                    )
+                ).first()
+                if not row:
+                    raise RuntimeError("run_not_found")
             seq = int(row[0] or 0) + 1
             await conn.execute(
                 update(self._tables.runs)
