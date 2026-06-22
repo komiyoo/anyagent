@@ -44,6 +44,8 @@ Studio 左上角 `AnyAgent` logo 区域应成为工作模式切换入口，提�
 
 工具调用来源通过 `tool_source`（`command` / `mcp` / `builtin`）结构化记录在 tool planned/result/execution-detail stage event 与 `NormalizedTelemetryEvent`、PostgreSQL `telemetry_events` 行上，替代按 payload 启发式判定 mcp：`/internal/observability/metrics` 返回 `tool_call_counts_by_source`，`/internal/observability/tools` 的每条 tool stats 携带 `tool_source`，可按来源精确分组统计调用次数与延迟。`builtin` 覆盖经 Tool Runtime 执行的非 command/非 mcp 工具（core/业务工具、`task` 子 agent 工具）。
 
+`/internal/observability/metrics` 还返回 `session_count`（去重会话数）、`avg_tool_calls_per_session`、`avg_mcp_calls_per_session`，使"某业务 agent 平均每个多轮会话调用多少 tool / mcp"在服务端直接给出，无需调用方二次聚合。summary 与 metrics 响应携带 `truncated` 标志，标明该次聚合是否命中了单 run 10000 事件的回放上限或 run 列表的 limit 上限，避免静默截断导致统计偏低而不可解释。
+
 已落地的查询入口：
 
 - `/internal/observability/runs`：按 agent/session/response/time window/limit 查询 response-run 历史。

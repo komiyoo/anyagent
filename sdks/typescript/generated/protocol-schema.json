@@ -2,6 +2,16 @@
   "changelog": [
     {
       "changes": [
+        "Add `session_count`, `avg_tool_calls_per_session`, `avg_mcp_calls_per_session` to observability metrics.",
+        "Add `truncated` flag to observability summary/metrics so the per-run 10k event cap is visible."
+      ],
+      "date": "2026-06-23",
+      "protocol_version": "0.1.10",
+      "schema_version": "2026-06-23",
+      "summary": "Add per-session tool call averages and truncation flags to observability metrics/summary."
+    },
+    {
+      "changes": [
         "Add optional `tool_source` field to tool planned/result/execution-detail stage events.",
         "Add optional `tool_source` field to NormalizedTelemetryEvent and the Postgres telemetry_events row.",
         "Add `tool_call_counts_by_source` to observability summary/metrics and `tool_source` to tool stats.",
@@ -5939,6 +5949,18 @@
           "default": null,
           "title": "Agent Id"
         },
+        "avg_mcp_calls_per_session": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Mcp Calls Per Session"
+        },
         "avg_response_latency_ms": {
           "anyOf": [
             {
@@ -5950,6 +5972,18 @@
           ],
           "default": null,
           "title": "Avg Response Latency Ms"
+        },
+        "avg_tool_calls_per_session": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Tool Calls Per Session"
         },
         "cached_input_tokens": {
           "default": 0,
@@ -6029,6 +6063,12 @@
           "title": "Run Count",
           "type": "integer"
         },
+        "session_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Session Count",
+          "type": "integer"
+        },
         "session_key": {
           "anyOf": [
             {
@@ -6053,6 +6093,11 @@
           },
           "title": "Tool Call Counts By Source",
           "type": "object"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
         }
       },
       "title": "InternalObservabilityMetricsResponse",
@@ -6429,6 +6474,11 @@
           ],
           "default": null,
           "title": "Total Response Latency Ms"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
         },
         "turn_count": {
           "default": 0,
@@ -23788,7 +23838,7 @@
   },
   "protocol_package": "anyagent.protocol",
   "protocol_version": "0.1.10",
-  "schema_version": "2026-06-22",
+  "schema_version": "2026-06-23",
   "semantic_rules": {
     "anyagent.protocol.credential_vault.CredentialScope": [
       {

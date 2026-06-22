@@ -26,6 +26,11 @@ from anyagent.protocol.observability import NormalizedTelemetryEvent, Observabil
 from anyagent.protocol.stage_events import AnyAgentPromptContextEvent, StageEvent
 from anyagent.server.persistence.storage_backends import EventStore, RunStore
 
+# Ceiling on events fetched per response when summarizing a run or building a
+# timeline. Runs exceeding this are silently truncated; callers can detect the
+# truncation via the `truncated` flag on metrics/summary responses.
+_PER_RUN_EVENT_LIMIT = 10_000
+
 
 @dataclass(frozen=True, slots=True)
 class ObservabilityQuery:
@@ -321,7 +326,7 @@ class RunEventTelemetryStore:
         await self.ingest(normalized_from_observability_event(event))
 
     async def summary(self, *, response_id: str) -> InternalObservabilitySummaryResponse:
-        resp = await self._event_store.list_events(response_id=response_id, last_seq=0, limit=10000)
+        resp = await self._event_store.list_events(response_id=response_id, last_seq=0, limit=_PER_RUN_EVENT_LIMIT)
         run_record = await self._run_store.get(response_id)
         typed = resp.typed_events(include_model_events=True)
         payloads = [_json_obj(item.data) for item in resp.events]
@@ -374,6 +379,7 @@ class RunEventTelemetryStore:
             total_response_latency_ms=total_latency,
             run_status=resp.run_status or _str_or_none(response_json.get("status") if isinstance(response_json, dict) else None),
             effective_run_status=resp.effective_run_status,
+            truncated=len(resp.events) >= _PER_RUN_EVENT_LIMIT,
         )
 
     async def runs(self, query: ObservabilityQuery) -> InternalObservabilityRunsResponse:
@@ -410,15 +416,31 @@ class RunEventTelemetryStore:
         for item in summaries:
             for source, count in item.tool_call_counts_by_source.items():
                 tool_call_counts_by_source[source] = tool_call_counts_by_source.get(source, 0) + count
+        # Distinct session_key count across the matched runs; only meaningful at
+        # agent / cross-session scope (single-session scope yields 1 / 0).
+        session_keys = {str(getattr(record, "session_key", "")) for record in records}
+        session_keys.discard("")
+        session_count = len(session_keys) if not query.session_key else (1 if records else 0)
+        total_tool_calls = sum(item.tool_call_count for item in summaries)
+        total_mcp_calls = sum(item.mcp_call_count for item in summaries)
+        avg_tool_calls_per_session = (total_tool_calls / session_count) if session_count else None
+        avg_mcp_calls_per_session = (total_mcp_calls / session_count) if session_count else None
+        # The run list and per-run event pages are both capped (run list by
+        # query.limit, event pages by the 10k replay ceiling); surface the cap
+        # so callers know the aggregate is over a bounded sample.
+        truncated = len(records) >= query.limit or any(item.event_count >= _PER_RUN_EVENT_LIMIT for item in summaries)
         return InternalObservabilityMetricsResponse(
             agent_id=query.agent_id,
             session_key=query.session_key,
             response_id=query.response_id,
             run_count=len(records),
             event_count=len(events),
-            tool_call_count=sum(item.tool_call_count for item in summaries),
-            mcp_call_count=sum(item.mcp_call_count for item in summaries),
+            tool_call_count=total_tool_calls,
+            mcp_call_count=total_mcp_calls,
             tool_call_counts_by_source=tool_call_counts_by_source,
+            session_count=session_count,
+            avg_tool_calls_per_session=avg_tool_calls_per_session,
+            avg_mcp_calls_per_session=avg_mcp_calls_per_session,
             error_count=len([item for item in events if item.level == "error" or item.status == "error"]),
             input_tokens=sum(item.input_tokens for item in summaries),
             output_tokens=sum(item.output_tokens for item in summaries),
@@ -426,6 +448,7 @@ class RunEventTelemetryStore:
             avg_response_latency_ms=(sum(latencies) / len(latencies)) if latencies else None,
             max_response_latency_ms=max(latencies) if latencies else None,
             first_token_latency_ms=min(first_latencies) if first_latencies else None,
+            truncated=truncated,
         )
 
     async def tools(self, query: ObservabilityQuery) -> InternalObservabilityToolsResponse:
@@ -575,7 +598,7 @@ class RunEventTelemetryStore:
                 continue
             if record is not None:
                 events.append(_run_timeline_event(record))
-            page = await self._event_store.list_events(response_id=response_id, last_seq=0, limit=10000)
+            page = await self._event_store.list_events(response_id=response_id, last_seq=0, limit=_PER_RUN_EVENT_LIMIT)
             prompt_context = page.latest_prompt_context()
             typed_by_seq = {event.seq: event for event in page.typed_events(include_model_events=True) if event.seq is not None}
             for item in page.events:

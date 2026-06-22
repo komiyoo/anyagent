@@ -21,7 +21,7 @@ from pydantic import BaseModel, TypeAdapter
 import anyagent.protocol as protocol_pkg
 
 
-SCHEMA_BUNDLE_VERSION = "2026-06-22"
+SCHEMA_BUNDLE_VERSION = "2026-06-23"
 PROTOCOL_VERSION = "0.1.10"
 OPENAPI_VERSION = "3.1.0"
 
@@ -30,6 +30,16 @@ PROTOCOL_CHANGELOG: list[dict[str, Any]] = [
     {
         "protocol_version": PROTOCOL_VERSION,
         "schema_version": SCHEMA_BUNDLE_VERSION,
+        "date": "2026-06-23",
+        "summary": "Add per-session tool call averages and truncation flags to observability metrics/summary.",
+        "changes": [
+            "Add `session_count`, `avg_tool_calls_per_session`, `avg_mcp_calls_per_session` to observability metrics.",
+            "Add `truncated` flag to observability summary/metrics so the per-run 10k event cap is visible.",
+        ],
+    },
+    {
+        "protocol_version": "0.1.10",
+        "schema_version": "2026-06-22",
         "date": "2026-06-22",
         "summary": "Add structured tool source labels to stage events and observability telemetry.",
         "changes": [

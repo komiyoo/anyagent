@@ -1,6 +1,6 @@
 /* eslint-disable */
 // Generated from anyagent.protocol schema bundle. Do not edit by hand.
-// schema_version: 2026-06-22
+// schema_version: 2026-06-23
 
 export type MCPServerTransport = "streamable_http" | "sse" | "stdio";
 
@@ -447,7 +447,9 @@ export type InternalObservabilityErrorsResponse = {
 
 export type InternalObservabilityMetricsResponse = {
   "agent_id"?: string | null;
+  "avg_mcp_calls_per_session"?: number | null;
   "avg_response_latency_ms"?: number | null;
+  "avg_tool_calls_per_session"?: number | null;
   "cached_input_tokens"?: number;
   "error_count"?: number;
   "event_count"?: number;
@@ -458,9 +460,11 @@ export type InternalObservabilityMetricsResponse = {
   "output_tokens"?: number;
   "response_id"?: string | null;
   "run_count"?: number;
+  "session_count"?: number;
   "session_key"?: string | null;
   "tool_call_count"?: number;
   "tool_call_counts_by_source"?: Record<string, number>;
+  "truncated"?: boolean;
 };
 
 export type InternalObservabilityRunItem = {
@@ -503,6 +507,7 @@ export type InternalObservabilitySummaryResponse = {
   "tool_call_count"?: number;
   "tool_call_counts_by_source"?: Record<string, number>;
   "total_response_latency_ms"?: number | null;
+  "truncated"?: boolean;
   "turn_count"?: number;
   "turns"?: Array<InternalObservabilityTurnMetric>;
   "typed_event_count"?: number;

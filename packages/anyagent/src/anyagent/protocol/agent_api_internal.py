@@ -221,6 +221,7 @@ class InternalObservabilitySummaryResponse(BaseModel):
     total_response_latency_ms: float | None = None
     run_status: str | None = None
     effective_run_status: str | None = None
+    truncated: bool = Field(default=False)
 
 
 class InternalObservabilityRunItem(BaseModel):
@@ -324,6 +325,9 @@ class InternalObservabilityMetricsResponse(BaseModel):
     tool_call_count: int = Field(default=0, ge=0)
     mcp_call_count: int = Field(default=0, ge=0)
     tool_call_counts_by_source: dict[str, int] = Field(default_factory=dict)
+    session_count: int = Field(default=0, ge=0)
+    avg_tool_calls_per_session: float | None = None
+    avg_mcp_calls_per_session: float | None = None
     error_count: int = Field(default=0, ge=0)
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
@@ -331,6 +335,7 @@ class InternalObservabilityMetricsResponse(BaseModel):
     avg_response_latency_ms: float | None = None
     max_response_latency_ms: float | None = None
     first_token_latency_ms: float | None = None
+    truncated: bool = Field(default=False)
 
 
 class InternalObservabilityToolStats(BaseModel):
