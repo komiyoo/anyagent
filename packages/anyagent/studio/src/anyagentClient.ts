@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import type { AnyAgentClient } from "anyagent";
 
 export type StudioSettings = {
   baseUrl: string;
@@ -398,6 +399,25 @@ const internalBaseUrl = (baseUrl: string) => {
   return trimmed.endsWith("/v1") ? trimmed.slice(0, -3) : trimmed;
 };
 
+/**
+ * SDK client 适配器：将 Studio settings 转为 AnyAgentClient。
+ * Phase 4 示范迁移——`loadObservabilityRuns` 已改走 SDK client，
+ * 其余函数仍用 fetchJson；后续可逐函数迁移。
+ *
+ * baseUrl 用 internalBaseUrl 处理（去 /v1 后缀），与 SDK endpoint
+ * registry 的 path（/internal/observability/runs 等）拼接一致。
+ *
+ * 使用动态 import() 懒加载 SDK，避免其 protocol schema bundle
+ * 进入主 chunk（+338KB）。首次调用有一次性加载延迟。
+ */
+async function createSdkClient(settings: StudioSettings): Promise<AnyAgentClient> {
+  const { AnyAgentClient } = await import("anyagent");
+  return new AnyAgentClient({
+    apiKey: settings.apiKey,
+    baseUrl: internalBaseUrl(settings.baseUrl),
+  });
+}
+
 const openAiBaseUrl = (baseUrl: string) => {
   const trimmed = trimTrailingSlash(baseUrl);
   return trimmed.endsWith("/v1") ? trimmed : `${trimmed}/v1`;
@@ -743,7 +763,18 @@ export async function loadObservabilityRuns(
   settings: StudioSettings,
   filters: ObservabilityFilters = {},
 ): Promise<ObservabilityRuns> {
-  return fetchJson<ObservabilityRuns>(settings, `/internal/observability/runs${observabilityQuery(filters)}`);
+  // Phase 4: 改走 AnyAgent TS SDK client.observability.runs()。
+  // 对外签名与返回类型 (ObservabilityRuns) 不变；类型对齐见 src/sdk/typeAlignment.ts。
+  const client = await createSdkClient(settings);
+  const { traceId: _traceId, ...queryOptions } = filters;
+  void _traceId;
+  const payload = await client.observability.runs(queryOptions);
+  return {
+    agent_id: payload.agent_id,
+    session_key: payload.session_key,
+    response_id: payload.response_id,
+    runs: payload.runs ?? [],
+  };
 }
 
 export async function loadObservabilityTimeline(

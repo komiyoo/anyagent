@@ -1,10 +1,12 @@
 import { Button, Card, Chip, Input, TextArea } from "@heroui/react";
-import { BarChart3, Bug, Database, GitCompareArrows, Play, Plus, Timer, Trash2 } from "lucide-react";
+import { BarChart3, Bug, Database, Download, GitCompareArrows, Play, Plus, Timer, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AgentSummary, ChatMessage, ObservabilityRunItem, StudioSettings, runChat } from "../anyagentClient";
 import { StudioTab } from "../navigation";
 import { EvaluationCaseResult, EvaluationDataset, EvaluationReport, PlaygroundResult, useEvalStore } from "../stores/evalStore";
-import { formatCount, formatMs } from "../studioUtils";
+import { compactJson, downloadFile, exportFilename, formatCount, formatMs, toCsv } from "../studioUtils";
+import { CompactTable, EmptyState, StatStrip, StatusBadge, normalizeStatus } from "../components/design-system";
+import type { StatItem } from "../components/design-system";
 
 type EvaluationsPageProps = {
   agents: AgentSummary[];
@@ -111,7 +113,33 @@ export function EvaluationsPage({ agents, runs, settings, totalLatency, errorCou
     [runs, selectedRunIds],
   );
   const latestReport = activeReport ?? reports[0] ?? null;
+  const evalStats: StatItem[] = [
+    { label: "Datasets", value: formatCount(datasets.length) },
+    { label: "Cases", value: formatCount(datasets.reduce((total, dataset) => total + dataset.cases.length, 0)) },
+    { label: "Runs", value: formatCount(runs.length) },
+    { label: "Reports", value: formatCount(reports.length) },
+    { label: "Latency", value: formatMs(totalLatency) },
+    { label: "Errors", value: formatCount(errorCount), tone: errorCount > 0 ? "error" : "default" },
+  ];
   const agentOptions = agents.length ? agents : [{ agent_id: settings.agentId || "default-agent" }];
+
+  const exportReportCsv = () => {
+    if (!latestReport) return;
+    const rows = latestReport.results.map((result) => ({
+      case_id: result.caseId,
+      passed: result.passed,
+      run_id: result.runId,
+      input: result.input,
+      expected: result.expected,
+      actual: result.actual,
+    }));
+    downloadFile(exportFilename(`eval-${latestReport.datasetName}`, "csv"), toCsv(rows), "text/csv;charset=utf-8");
+  };
+
+  const exportReportJson = () => {
+    if (!latestReport) return;
+    downloadFile(exportFilename(`eval-${latestReport.datasetName}`, "json"), compactJson(latestReport), "application/json");
+  };
   const activePlaygroundAgents = playgroundAgents.length ? playgroundAgents : [settings.agentId || agentOptions[0]?.agent_id || "default-agent"];
 
   function executeEvaluation() {
@@ -200,41 +228,13 @@ export function EvaluationsPage({ agents, runs, settings, totalLatency, errorCou
 
   return (
     <>
-      <section className="section-block">
+      <section className="section-block ds-obs-header">
         <div className="section-title">
           <Database size={17} />
           <h2>Evaluation workspace</h2>
           <span>{runs.length} candidate runs</span>
         </div>
-        <div className="overview-grid">
-          <Card className="overview-card">
-            <Card.Content className="overview-content">
-              <div className="empty-icon">
-                <Database size={27} />
-              </div>
-              <h3>{formatCount(datasets.length)} datasets</h3>
-              <p>{formatCount(datasets.reduce((total, dataset) => total + dataset.cases.length, 0))} local evaluation cases.</p>
-            </Card.Content>
-          </Card>
-          <Card className="overview-card">
-            <Card.Content className="overview-content">
-              <div className="empty-icon">
-                <Timer size={27} />
-              </div>
-              <h3>Latency focus</h3>
-              <p>{formatMs(totalLatency)} latest max response latency.</p>
-            </Card.Content>
-          </Card>
-          <Card className="overview-card">
-            <Card.Content className="overview-content">
-              <div className="empty-icon">
-                <Bug size={27} />
-              </div>
-              <h3>Error focus</h3>
-              <p>{formatCount(errorCount)} normalized errors available.</p>
-            </Card.Content>
-          </Card>
-        </div>
+        <StatStrip stats={evalStats} />
       </section>
 
       <div className="main-grid evaluation-workspace">
@@ -272,23 +272,22 @@ export function EvaluationsPage({ agents, runs, settings, totalLatency, errorCou
 
             <div className="dataset-list">
               {datasets.length === 0 ? (
-                <div className="empty-state">
-                  <Database size={24} />
-                  <strong>No evaluation dataset</strong>
-                  <p>Create a browser-local dataset or import cases with input and expected output.</p>
-                </div>
+                <EmptyState
+                  icon={<Database size={22} />}
+                  title="No evaluation dataset"
+                  description="Create a browser-local dataset or import cases with input and expected output."
+                />
               ) : (
-                datasets.map((dataset) => (
-                  <button
-                    className={`dataset-row ${selectedDataset?.id === dataset.id ? "active" : ""}`}
-                    key={dataset.id}
-                    type="button"
-                    onClick={() => setSelectedDatasetId(dataset.id)}
-                  >
-                    <strong>{dataset.name}</strong>
-                    <span>{formatCount(dataset.cases.length)} cases</span>
-                  </button>
-                ))
+                <CompactTable
+                  columns={[
+                    { key: "name", header: "Dataset", render: (d: EvaluationDataset) => <strong className="ds-cell-strong">{d.name}</strong> },
+                    { key: "cases", header: "Cases", align: "right", width: "80px", render: (d: EvaluationDataset) => formatCount(d.cases.length) },
+                  ]}
+                  rows={datasets}
+                  rowKey={(d) => d.id}
+                  activeRowKey={selectedDataset?.id ?? null}
+                  onRowClick={(d) => setSelectedDatasetId(d.id)}
+                />
               )}
             </div>
           </Card.Content>
@@ -383,33 +382,66 @@ export function EvaluationsPage({ agents, runs, settings, totalLatency, errorCou
           <Card.Content className="panel-content">
             <div className="history-list">
               {runs.length === 0 ? (
-                <div className="empty-state">
-                  <Database size={24} />
-                  <strong>No runs to evaluate</strong>
-                  <p>Run a session first, then select useful responses here.</p>
-                  <Button size="sm" variant="primary" onPress={() => onNavigate("sessions")}>
-                    View sessions
-                  </Button>
-                </div>
-              ) : (
-                runs.map((run) => (
-                  <article className="evaluation-row selectable-row" key={run.response_id}>
-                    <label>
-                      <input
-                        checked={selectedRunIds.includes(run.response_id)}
-                        type="checkbox"
-                        onChange={() => toggleRunSelection(run.response_id)}
-                      />
-                      <span>
-                        <strong>{run.response_id}</strong>
-                        <small>{run.status} · {run.agent_id} · {run.session_key}</small>
-                      </span>
-                    </label>
-                    <Button size="sm" variant="secondary" onPress={() => onInspectRun(run.response_id)}>
-                      Inspect
+                <EmptyState
+                  icon={<Database size={22} />}
+                  title="No runs to evaluate"
+                  description="Run a session first, then select useful responses here."
+                  action={
+                    <Button size="sm" variant="primary" onPress={() => onNavigate("sessions")}>
+                      View sessions
                     </Button>
-                  </article>
-                ))
+                  }
+                />
+              ) : (
+                <CompactTable
+                  columns={[
+                    {
+                      key: "select",
+                      header: "",
+                      width: "40px",
+                      render: (run: ObservabilityRunItem) => (
+                        <input
+                          aria-label={`Select run ${run.response_id}`}
+                          checked={selectedRunIds.includes(run.response_id)}
+                          type="checkbox"
+                          onChange={() => toggleRunSelection(run.response_id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ),
+                    },
+                    {
+                      key: "id",
+                      header: "Response ID",
+                      render: (run: ObservabilityRunItem) => (
+                        <div className="ds-cell-stack">
+                          <strong className="ds-cell-strong">{run.response_id}</strong>
+                          <span className="ds-cell-sub">{run.agent_id} · {run.session_key}</span>
+                        </div>
+                      ),
+                    },
+                    {
+                      key: "status",
+                      header: "Status",
+                      width: "100px",
+                      render: (run: ObservabilityRunItem) => (
+                        <StatusBadge status={normalizeStatus(run.effective_status || run.status)}>{run.status}</StatusBadge>
+                      ),
+                    },
+                    {
+                      key: "inspect",
+                      header: "",
+                      align: "right",
+                      width: "90px",
+                      render: (run: ObservabilityRunItem) => (
+                        <Button size="sm" variant="secondary" onPress={() => onInspectRun(run.response_id)}>
+                          Inspect
+                        </Button>
+                      ),
+                    },
+                  ]}
+                  rows={runs}
+                  rowKey={(run) => run.response_id}
+                />
               )}
             </div>
           </Card.Content>
@@ -421,11 +453,21 @@ export function EvaluationsPage({ agents, runs, settings, totalLatency, errorCou
               <BarChart3 size={18} />
               <span>Report</span>
             </div>
-            {latestReport ? (
-              <Chip size="sm" variant="soft" color={latestReport.passRate >= 80 ? "success" : "warning"}>
-                {latestReport.passRate}% pass
-              </Chip>
-            ) : null}
+            <div className="editor-actions">
+              {latestReport ? (
+                <Chip size="sm" variant="soft" color={latestReport.passRate >= 80 ? "success" : "warning"}>
+                  {latestReport.passRate}% pass
+                </Chip>
+              ) : null}
+              <Button size="sm" variant="secondary" isDisabled={!latestReport} onPress={exportReportCsv} aria-label="Export report as CSV">
+                <Download size={14} />
+                CSV
+              </Button>
+              <Button size="sm" variant="secondary" isDisabled={!latestReport} onPress={exportReportJson} aria-label="Export report as JSON">
+                <Download size={14} />
+                JSON
+              </Button>
+            </div>
           </Card.Header>
           <Card.Content className="panel-content">
             {latestReport ? (

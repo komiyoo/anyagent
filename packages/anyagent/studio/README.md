@@ -78,7 +78,25 @@ npm install
 npm run build
 ```
 
-`npm run build` writes the static bundle to `../src/anyagent/studio_static`, which is included in the Python wheel.
+## Deployment
+
+Studio is a pure SPA and is deployed independently from the `anyagent` Python package (the built bundle is **not** committed to git or included in the wheel).
+
+- `npm run build` writes the static bundle to `packages/anyagent/studio/dist/`.
+- `base` defaults to `/` (standalone site root). To mount under a subpath, e.g. the server's `/studio/`, build with `VITE_BASE=/studio/ npm run build`.
+- Deploy `dist/` to any static host (Cloudflare Pages, Nginx, S3, etc.). The SPA connects to the anyagent server at runtime via the server URL configured in Studio's Settings page; enable CORS on the server accordingly.
+
+### Local development with `anyagent serve`
+
+The server no longer bundles Studio. To serve a locally built bundle from `anyagent serve`, point it at the build output:
+
+```bash
+cd packages/anyagent/studio
+VITE_BASE=/studio/ npm run build
+ANYAGENT_STUDIO_DIR=packages/anyagent/studio/dist anyagent serve
+```
+
+Without `ANYAGENT_STUDIO_DIR`, or with `--no-studio`, the server mounts no Studio UI.
 
 ## Architecture Notes
 

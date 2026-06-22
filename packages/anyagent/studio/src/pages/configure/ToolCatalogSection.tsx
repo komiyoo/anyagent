@@ -1,7 +1,8 @@
-import { Button, Chip, Input } from "@heroui/react";
+import { Button, Input } from "@heroui/react";
 import { useMemo, useState } from "react";
 import { ToolCatalog } from "../../anyagentClient";
 import { csvToList } from "../../studioUtils";
+import { CompactTable, EmptyState, StatusBadge } from "../../components/design-system";
 
 type ToolCatalogSectionProps = {
   toolCatalog: ToolCatalog | null;
@@ -15,6 +16,8 @@ type ToolCatalogSectionProps = {
   showEffectiveTools?: boolean;
   showAvailableTools?: boolean;
 };
+
+type ToolEntry = ToolCatalog["tools"][number];
 
 function groupTools(tools: ToolCatalog["tools"]) {
   return tools.reduce<Array<[string, ToolCatalog["tools"]]>>((groups, tool) => {
@@ -61,6 +64,63 @@ export function ToolCatalogSection({
     return groupTools(tools);
   }, [availableTools?.tools, toolFilter]);
 
+  const effectiveColumns = [
+    { key: "name", header: "Name", render: (t: ToolEntry) => <strong className="ds-cell-strong">{t.name}</strong> },
+    {
+      key: "kind",
+      header: "Kind",
+      align: "left" as const,
+      width: "110px",
+      render: (t: ToolEntry) => (
+        <StatusBadge status={t.kind === "command" ? "info" : "neutral"} dot={false}>
+          {t.kind || t.reason || "tool"}
+        </StatusBadge>
+      ),
+    },
+    {
+      key: "desc",
+      header: "Description",
+      render: (t: ToolEntry) => <span className="ds-cell-sub">{t.description || "No description"}</span>,
+    },
+  ];
+
+  const availableColumns = [
+    { key: "name", header: "Name", render: (t: ToolEntry) => <strong className="ds-cell-strong">{t.name}</strong> },
+    {
+      key: "kind",
+      header: "Kind",
+      width: "110px",
+      render: (t: ToolEntry) => (
+        <StatusBadge status={t.kind === "command" ? "info" : "neutral"} dot={false}>
+          {t.kind || t.reason || "tool"}
+        </StatusBadge>
+      ),
+    },
+    {
+      key: "desc",
+      header: "Description",
+      render: (t: ToolEntry) => <span className="ds-cell-sub">{t.description || "No description"}</span>,
+    },
+    {
+      key: "state",
+      header: "State",
+      align: "right" as const,
+      width: "100px",
+      render: (t: ToolEntry) => {
+        const enabled = requestedTools.includes(t.name);
+        return (
+          <button
+            className={`capsule-toggle ${enabled ? "enabled" : ""}`}
+            type="button"
+            onClick={() => onToggleRequestedTool(t.name)}
+          >
+            {enabled ? "Enabled" : "Disabled"}
+          </button>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="tool-catalog">
       <div className="filter-row">
@@ -77,28 +137,25 @@ export function ToolCatalogSection({
           </div>
           <div className="tool-list">
             {!toolCatalog || toolCatalog.tools.length === 0 ? (
-              <div className="empty-state compact-empty">
-                <strong>No tools loaded</strong>
-                <p>No tools are currently visible to this agent.</p>
-                <Button size="sm" variant="primary" onPress={onLoadToolCatalog}>
-                  Load tools
-                </Button>
-              </div>
+              <EmptyState
+                compact
+                title="No tools loaded"
+                description="No tools are currently visible to this agent."
+                action={
+                  <Button size="sm" variant="primary" onPress={onLoadToolCatalog}>
+                    Load tools
+                  </Button>
+                }
+              />
             ) : (
               effectiveGroups.map(([kind, tools]) => (
                 <section className="tool-kind-group" key={`effective-${kind}`}>
                   <strong>{kind}</strong>
-                  {(tools ?? []).map((tool) => (
-                    <article className="tool-row" key={`effective-${tool.name}`}>
-                      <div>
-                        <strong>{tool.name}</strong>
-                        <span>{tool.description || "No description"}</span>
-                      </div>
-                      <Chip size="sm" variant="soft" color={tool.kind === "command" ? "accent" : "default"}>
-                        {tool.kind || tool.reason || "tool"}
-                      </Chip>
-                    </article>
-                  ))}
+                  <CompactTable
+                    columns={effectiveColumns}
+                    rows={tools ?? []}
+                    rowKey={(t) => `effective-${t.name}`}
+                  />
                 </section>
               ))
             )}
@@ -116,32 +173,25 @@ export function ToolCatalogSection({
           </div>
           <div className="tool-list">
             {!availableTools || availableTools.tools.length === 0 ? (
-              <div className="empty-state compact-empty">
-                <strong>No registered tools found</strong>
-                <p>Load the registered tool pool before editing requested tools.</p>
-                <Button size="sm" variant="primary" onPress={onLoadAvailableTools}>
-                  Load available tools
-                </Button>
-              </div>
+              <EmptyState
+                compact
+                title="No registered tools found"
+                description="Load the registered tool pool before editing requested tools."
+                action={
+                  <Button size="sm" variant="primary" onPress={onLoadAvailableTools}>
+                    Load available tools
+                  </Button>
+                }
+              />
             ) : (
               availableGroups.map(([kind, tools]) => (
                 <section className="tool-kind-group" key={`available-${kind}`}>
                   <strong>{kind}</strong>
-                  {(tools ?? []).map((tool) => (
-                    <article className="tool-row" key={`available-${tool.name}`}>
-                      <div>
-                        <strong>{tool.name}</strong>
-                        <span>{tool.description || "No description"}</span>
-                      </div>
-                      <button
-                        className={`capsule-toggle ${requestedTools.includes(tool.name) ? "enabled" : ""}`}
-                        type="button"
-                        onClick={() => onToggleRequestedTool(tool.name)}
-                      >
-                        {requestedTools.includes(tool.name) ? "Enabled" : "Disabled"}
-                      </button>
-                    </article>
-                  ))}
+                  <CompactTable
+                    columns={availableColumns}
+                    rows={tools ?? []}
+                    rowKey={(t) => `available-${t.name}`}
+                  />
                 </section>
               ))
             )}

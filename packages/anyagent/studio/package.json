@@ -12,6 +12,7 @@
     "@heroui/react": "^3.0.5",
     "@heroui/styles": "^3.1.0",
     "@vitejs/plugin-react": "^6.0.2",
+    "anyagent": "file:../../../sdks/typescript",
     "lucide-react": "^1.16.0",
     "openai": "^6.38.0",
     "react": "^19.2.6",

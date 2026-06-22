@@ -26,16 +26,6 @@
 - M2:conformance 覆盖 Responses API / Stage Events / Tool Runtime / storage replay 主路径 ✅
 - M3:新语言 SDK 接入只需读 conformance fixture 即可对齐 ✅
 
-## 待处理
-
-### Phase 1.5 — Agentic Ecosystem Hardening
-
-- [ ] P2 SDK 配置层级感知:SDK client 初始化时支持读取 user/workspace 级配置合并结果,而非仅依赖显式参数(Req: `requirements.md#req-4`)
-
-### Phase 4 — Ecosystem & Multi-Runtime
-
-- [ ] P2 按真实集成需求添加 Go / Rust / Java 等 SDK scaffold;没有真实发布渠道前不创建空壳包(Req: `requirements.md#req-4`)
-
 ## 验证入口
 
 ```bash
@@ -43,10 +33,6 @@ rtk uv run --with pytest --project packages/anyagent python -m pytest tests/cont
 rtk uv run --project packages/anyagent python tests/acceptance/sdk/acceptance_anyagent_client_surface_smoke.py
 rtk npm --prefix sdks/typescript run smoke
 ```
-
-## 决策 & 争议点
-
-- [ ] 多语言 SDK 的代码生成策略:全部从 schema 生成 vs 部分手写 helper
 
 ## 参考
 

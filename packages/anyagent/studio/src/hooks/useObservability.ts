@@ -317,6 +317,40 @@ export function useObservability(settings: StudioSettings, options: UseObservabi
     observabilityRefreshNonce,
   ]);
 
+  // 自动轮询：有运行中 run 时 5s，否则 10s（方案 §4.4）。
+  // 通过 bump refreshNonce 触发上面的加载 effect；用 inFlightRef 避免并发请求堆积。
+  const hasRunningRun = observabilityRuns.some(
+    (run) => {
+      const status = (run.effective_status || run.status || "").toLowerCase();
+      return status === "running" || status === "streaming" || status === "in_progress";
+    },
+  );
+  useEffect(() => {
+    const interval = hasRunningRun ? 5_000 : 10_000;
+    let timer: number | undefined;
+    const schedule = () => {
+      timer = window.setInterval(() => {
+        setObservabilityRefreshNonce((nonce) => nonce + 1);
+      }, interval);
+    };
+    // 页面不可见时暂停轮询，可见时立即刷新一次并恢复。
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        setObservabilityRefreshNonce((nonce) => nonce + 1);
+        if (timer === undefined) schedule();
+      } else if (timer !== undefined) {
+        window.clearInterval(timer);
+        timer = undefined;
+      }
+    };
+    if (document.visibilityState === "visible") schedule();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [hasRunningRun]);
+
   useEffect(() => {
     if (!selectedResponseId) {
       setObservabilitySummary(null);

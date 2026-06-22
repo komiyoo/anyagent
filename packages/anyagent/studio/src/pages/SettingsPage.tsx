@@ -4,6 +4,8 @@ import { AdminStatus, StudioSettings } from "../anyagentClient";
 import { StudioMode } from "../navigation";
 import { ConnectionDraft } from "../studioSettings";
 import { compactJson } from "../studioUtils";
+import { StatStrip } from "../components/design-system";
+import type { StatItem } from "../components/design-system";
 
 type SettingsPageProps = {
   mode: StudioMode;
@@ -50,6 +52,33 @@ export function SettingsPage({
   const isLoadingHealth = adminStatus === "Loading";
   const serverError = connectionDraft.baseUrl.trim() ? "" : "Server URL is required.";
 
+  const healthTone = (status: string): StatItem["tone"] => {
+    const value = status.toLowerCase();
+    if (["ok", "ready", "healthy", "available", "configured"].includes(value)) return "success";
+    if (["degraded", "loading", "pending", "testing", "saving"].includes(value)) return "warning";
+    if (["error", "unavailable", "failed", "down", "missing"].includes(value)) return "error";
+    return "default";
+  };
+
+  const healthStats: StatItem[] = [
+    { label: "Active server", value: activeConnection.baseUrl || "-" },
+    {
+      label: "Server health",
+      value: String(serverHealth?.status ?? adminStatus),
+      tone: healthTone(String(serverHealth?.status ?? adminStatus)),
+    },
+    {
+      label: "Storage",
+      value: String(storageHealth?.status ?? "-"),
+      tone: storageHealth ? healthTone(String(storageHealth.status)) : "default",
+    },
+    {
+      label: "Credentials",
+      value: credentialCapabilities ? "capabilities loaded" : "-",
+      tone: credentialCapabilities ? "success" : "default",
+    },
+  ];
+
   return (
     <>
       <Card className="panel wide-panel compact-panel">
@@ -77,24 +106,7 @@ export function SettingsPage({
           </div>
         </Card.Header>
         <Card.Content className="panel-content">
-          <div className="connection-summary">
-            <div>
-              <span>Active server</span>
-              <strong>{activeConnection.baseUrl}</strong>
-            </div>
-            <div>
-              <span>Server health</span>
-              <strong>{String(serverHealth?.status ?? adminStatus)}</strong>
-            </div>
-            <div>
-              <span>Storage</span>
-              <strong>{String(storageHealth?.status ?? "-")}</strong>
-            </div>
-            <div>
-              <span>Credentials</span>
-              <strong>{credentialCapabilities ? "capabilities loaded" : "-"}</strong>
-            </div>
-          </div>
+          <StatStrip stats={healthStats} className="ds-settings-health" />
           <section className="config-bar">
             <label className="control-label">
               <span>Server</span>

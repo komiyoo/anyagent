@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -129,8 +130,8 @@ def test_internal_agents_catalog_lists_allowed_agents_and_details(tmp_path: Path
     asyncio.run(_run_internal_agents_catalog_lists_allowed_agents_and_details(tmp_path))
 
 
-def test_studio_static_is_mounted_by_default_and_can_be_disabled(tmp_path: Path) -> None:
-    asyncio.run(_run_studio_static_is_mounted_by_default_and_can_be_disabled(tmp_path))
+def test_studio_is_mounted_via_env_and_disabled_by_flag(tmp_path: Path) -> None:
+    asyncio.run(_run_studio_is_mounted_via_env_and_disabled_by_flag(tmp_path))
 
 
 def test_create_app_allows_exposed_workspace_without_main_agent(tmp_path: Path) -> None:
@@ -356,32 +357,78 @@ async def _run_internal_prompt_versions_and_diff(tmp_path: Path) -> None:
         assert agent_md.read_text(encoding="utf-8") == "Main v1\n"
 
 
-async def _run_studio_static_is_mounted_by_default_and_can_be_disabled(tmp_path: Path) -> None:
+async def _run_studio_is_mounted_via_env_and_disabled_by_flag(tmp_path: Path) -> None:
     _write_agent(tmp_path, "main", exposed=True, prompt="Main agent\n")
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
-        root_resp = await client.get("/", follow_redirects=False)
-        assert root_resp.status_code == 307
-        assert root_resp.headers["location"] == "/studio/"
-        resp = await client.get("/studio/")
-        assert resp.status_code == 200
-        assert "AnyAgent Studio" in resp.text
-        assert "/studio/assets/" in resp.text
-        resp_no_slash = await client.get("/studio")
-        assert resp_no_slash.status_code == 200
-        assert "AnyAgent Studio" in resp_no_slash.text
 
-    disabled = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        enable_studio=False,
-    )
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=disabled), base_url="http://testserver") as client:
-        root_resp = await client.get("/", follow_redirects=False)
-        assert root_resp.status_code == 404
-        resp = await client.get("/studio/")
-        assert resp.status_code == 404
+    # Studio 独立部署（方案 B）：默认不挂载（无 ANYAGENT_STUDIO_DIR）。
+    monkeypatch_del = "ANYAGENT_STUDIO_DIR"
+    saved = os.environ.pop(monkeypatch_del, None)
+    try:
+        default_app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=default_app), base_url="http://testserver") as client:
+            root_resp = await client.get("/", follow_redirects=False)
+            assert root_resp.status_code == 404
+            resp = await client.get("/studio/")
+            assert resp.status_code == 404
+
+        # 设 ANYAGENT_STUDIO_DIR 指向临时 build 产物 → 挂载到 /studio。
+        studio_dir = tmp_path / "studio_build"
+        studio_dir.mkdir()
+        (studio_dir / "index.html").write_text(
+            "<!doctype html><html><head><title>AnyAgent Studio</title></head>"
+            '<body><script src="/studio/assets/index.js"></script></body></html>',
+            encoding="utf-8",
+        )
+        os.environ[monkeypatch_del] = str(studio_dir)
+        mounted = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=mounted), base_url="http://testserver") as client:
+            root_resp = await client.get("/", follow_redirects=False)
+            assert root_resp.status_code == 307
+            assert root_resp.headers["location"] == "/studio/"
+            resp = await client.get("/studio/")
+            assert resp.status_code == 200
+            assert "AnyAgent Studio" in resp.text
+            assert "/studio/assets/" in resp.text
+            resp_no_slash = await client.get("/studio")
+            assert resp_no_slash.status_code == 200
+            assert "AnyAgent Studio" in resp_no_slash.text
+        os.environ.pop(monkeypatch_del, None)
+
+        # studio_dir 参数优先于环境变量（CLI --studio-dir 走此路径）。
+        alt_studio_dir = tmp_path / "studio_build_alt"
+        alt_studio_dir.mkdir()
+        (alt_studio_dir / "index.html").write_text(
+            "<!doctype html><html><head><title>AnyAgent Studio Alt</title></head><body></body></html>",
+            encoding="utf-8",
+        )
+        param_mounted = create_app(
+            workspace_dir=tmp_path,
+            api_key="user-key",
+            admin_api_key="admin-key",
+            studio_dir=alt_studio_dir,
+        )
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=param_mounted), base_url="http://testserver") as client:
+            resp = await client.get("/studio/")
+            assert resp.status_code == 200
+            assert "AnyAgent Studio Alt" in resp.text
+
+        # enable_studio=False 强制不挂载，即使设了环境变量。
+        disabled = create_app(
+            workspace_dir=tmp_path,
+            api_key="user-key",
+            admin_api_key="admin-key",
+            enable_studio=False,
+        )
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=disabled), base_url="http://testserver") as client:
+            root_resp = await client.get("/", follow_redirects=False)
+            assert root_resp.status_code == 404
+            resp = await client.get("/studio/")
+            assert resp.status_code == 404
+    finally:
+        if saved is not None:
+            os.environ[monkeypatch_del] = saved
+        else:
+            os.environ.pop(monkeypatch_del, None)
 
 
 async def _run_internal_agents_catalog_lists_allowed_agents_and_details(tmp_path: Path) -> None:

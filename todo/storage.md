@@ -27,10 +27,6 @@
   - idempotency-key 与 cursor 语义统一规范(ADR):`docs/architecture/decisions/storage-idempotency-and-cursor-semantics.md`
   - `anyagent serve` storage profile 解析已支持 `inmemory` / `postgres` / `postgres-redis` / `redis`，其中 `STORAGE_MODE=external + POSTGRES_DSN/DATABASE_URL + no REDIS_DSN` 解析为 Postgres-only，并在 health 中标记单实例锁限制。(Req: `requirements.md#req-3-1`; Impl: `packages/anyagent/src/anyagent/server/config/settings.py`, `packages/anyagent/src/anyagent/server/persistence/storage_backends.py`, `packages/anyagent/src/anyagent/server/handlers/storage_health.py`)
 
-## 待处理
-
-- [ ] P2 加一个基线 bench 脚本,跑通典型 workspace 负载,产出回归参考数据(Req: `requirements.md#req-3-1`)
-
 ## 参考
 
 - `docs/architecture/overview/roadmap.md` Phase 2

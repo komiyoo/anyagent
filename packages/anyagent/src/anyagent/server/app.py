@@ -1,4 +1,5 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -80,6 +81,7 @@ def create_app(
     session_lease_ttl_s: float | None = None,
     cors_origins: str | list[str] | tuple[str, ...] | None = None,
     enable_studio: bool = True,
+    studio_dir: str | Path | None = None,
     session_config_overrides: dict[str, Any] | None = None,
     plugin_roots: list[str | Path] | None = None,
     plugins_fail_open: bool = False,
@@ -243,17 +245,29 @@ def create_app(
 
     app = FastAPI(title="anyagent", version="0.4.14", lifespan=_lifespan)
     if enable_studio:
-        studio_dir = Path(__file__).resolve().parents[1] / "studio_static"
-        if studio_dir.is_dir():
+        # Studio 前端独立部署（方案 B）：server 不再内嵌前端产物。
+        # 通过 studio_dir 参数或 ANYAGENT_STUDIO_DIR 环境变量指向外部 build
+        # 产物可挂载到 /studio，便于本地开发或自托管场景；均未设置时不挂载。
+        # CLI 参数优先于环境变量。
+        resolved_studio_dir: Path | None = None
+        if studio_dir is not None:
+            resolved_studio_dir = Path(studio_dir)
+        else:
+            env_studio_dir = os.environ.get("ANYAGENT_STUDIO_DIR", "").strip()
+            if env_studio_dir:
+                resolved_studio_dir = Path(env_studio_dir)
+        if resolved_studio_dir is not None:
+            if not resolved_studio_dir.is_dir():
+                raise RuntimeError(f"Studio directory does not exist: {resolved_studio_dir}")
             @app.get("/", include_in_schema=False)
             async def root_studio_redirect() -> RedirectResponse:
                 return RedirectResponse(url="/studio/")
 
             @app.get("/studio", include_in_schema=False)
             async def studio_index() -> FileResponse:
-                return FileResponse(studio_dir / "index.html")
+                return FileResponse(resolved_studio_dir / "index.html")
 
-            app.mount("/studio", StaticFiles(directory=str(studio_dir), html=True), name="studio")
+            app.mount("/studio", StaticFiles(directory=str(resolved_studio_dir), html=True), name="studio")
     parsed_cors_origins = _parse_cors_origins(cors_origins)
     if parsed_cors_origins:
         app.add_middleware(

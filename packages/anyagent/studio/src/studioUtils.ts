@@ -199,3 +199,44 @@ export function extractToolCalls(events: StudioDebugEvent[]): ToolCallItem[] {
   }
   return items;
 }
+
+// ── 数据导出工具（Phase 5）──
+
+/** 触发浏览器下载，文件名带时间戳避免覆盖 */
+export function downloadFile(filename: string, content: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
+/** 把对象数组导出为 CSV。字段顺序取自第一个对象的 keys；值转义逗号/引号/换行。 */
+export function toCsv<T extends Record<string, unknown>>(rows: T[], columns?: (keyof T)[]): string {
+  if (rows.length === 0) return "";
+  const cols = (columns ?? (Object.keys(rows[0]) as (keyof T)[]));
+  const escape = (value: unknown): string => {
+    const str = value == null ? "" : String(value);
+    if (/[",\n\r]/.test(str)) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+  const header = cols.map((c) => escape(String(c))).join(",");
+  const body = rows
+    .map((row) => cols.map((c) => escape(row[c])).join(","))
+    .join("\n");
+  return `${header}\n${body}`;
+}
+
+/** 生成带时间戳的文件名，如 `observability-runs-20260622-120000.csv` */
+export function exportFilename(prefix: string, ext: string): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `${prefix}-${ts}.${ext}`;
+}

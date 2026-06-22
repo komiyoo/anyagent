@@ -1,7 +1,10 @@
-import { Button, Card, Chip } from "@heroui/react";
+import { Button, Card, Chip, Input } from "@heroui/react";
 import { Braces, Bug, Play, Radio } from "lucide-react";
+import { useState } from "react";
 import { StudioDebugEvent } from "../anyagentClient";
-import { compactJson, eventSummary } from "../studioUtils";
+import { compactJson, eventSummary, eventType } from "../studioUtils";
+import { CollapsibleSection, EmptyState, StatStrip } from "../components/design-system";
+import type { StatItem } from "../components/design-system";
 
 type DebugPageProps = {
   stageEvents: StudioDebugEvent[];
@@ -25,6 +28,28 @@ export function DebugPage({
   onPreviewPrompt,
 }: DebugPageProps) {
   const displayedEvents = tailing && liveEvents.length ? liveEvents : stageEvents;
+  const [eventFilter, setEventFilter] = useState("");
+  const filterNeedle = eventFilter.trim().toLowerCase();
+  const filteredEvents = filterNeedle
+    ? displayedEvents.filter((event) => {
+        const summary = eventSummary(event);
+        const type = eventType(event);
+        return [summary.title, summary.detail, summary.meta, type].some((value) =>
+          String(value ?? "").toLowerCase().includes(filterNeedle),
+        );
+      })
+    : displayedEvents;
+  const toolEvents = filteredEvents.filter((event) => {
+    const type = eventType(event);
+    return type === "anyagent.tool.planned" || type === "anyagent.tool.result";
+  }).length;
+  const stats: StatItem[] = [
+    { label: "Events", value: filteredEvents.length, hint: filterNeedle ? `of ${displayedEvents.length}` : undefined },
+    { label: "Tool calls", value: toolEvents },
+    { label: "Stream", value: tailing ? "live" : "stage", tone: tailing ? "accent" : "default" },
+    { label: "Response", value: activeResponseId ? activeResponseId.slice(0, 8) : "-" },
+  ];
+
   return (
     <div className="main-grid">
       <Card className="panel">
@@ -46,24 +71,46 @@ export function DebugPage({
           </div>
         </Card.Header>
         <Card.Content className="panel-content">
+          {displayedEvents.length > 0 ? <StatStrip stats={stats} className="ds-debug-stats" /> : null}
+          {displayedEvents.length > 0 ? (
+            <div className="filter-row">
+              <Input
+                aria-label="Search debug events"
+                placeholder="Search events by type, title, or payload"
+                value={eventFilter}
+                onChange={(event) => setEventFilter(event.target.value)}
+              />
+            </div>
+          ) : null}
           <div className="event-list">
             {displayedEvents.length === 0 ? (
-              <p className="empty">
-                {tailing
+              <EmptyState
+                compact
+                icon={<Bug size={18} />}
+                title={tailing ? "Waiting for streamed events" : "No stage events"}
+                description={tailing
                   ? "Waiting for streamed events from the selected response."
                   : "Run a request, then replay tool and prompt events."}
-              </p>
+              />
+            ) : filteredEvents.length === 0 ? (
+              <EmptyState
+                compact
+                icon={<Bug size={18} />}
+                title="No matching events"
+                description={`No events match "${eventFilter}". Try a different search term.`}
+              />
             ) : (
-              displayedEvents.map((event, index) => {
+              filteredEvents.map((event, index) => {
                 const summary = eventSummary(event);
                 return (
-                  <article className="timeline-event" key={`${event.seq}-${index}`}>
-                    <div>
-                      <strong>{summary.title}</strong>
-                      <span>{summary.meta}</span>
-                    </div>
-                    <pre>{summary.detail}</pre>
-                  </article>
+                  <CollapsibleSection
+                    key={`${event.seq}-${index}`}
+                    title={summary.title}
+                    count={summary.meta}
+                    defaultOpen={index < 3}
+                  >
+                    <pre className="ds-event-json">{summary.detail}</pre>
+                  </CollapsibleSection>
                 );
               })
             )}

@@ -36,6 +36,9 @@ node_modules/
 vite.config.js
 vite.config.d.ts
 
+# Studio 前端构建产物（方案 B：独立部署，不入 git）
+packages/anyagent/src/anyagent/studio_static/
+
 # Generated docs indexes
 docs/_manifest.txt
 docs/.generated/

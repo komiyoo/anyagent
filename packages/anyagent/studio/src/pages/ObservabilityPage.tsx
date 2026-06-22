@@ -1,6 +1,6 @@
-import { Button, Card, Chip, Input, Tabs } from "@heroui/react";
-import { BarChart3, CheckCircle2, ChevronDown, ChevronRight, Clock, Copy, Eye, FileCode, MessageSquareText, Play, RefreshCw, Timer, Wrench, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Button, Card, Chip, Input } from "@heroui/react";
+import { BarChart3, CheckCircle2, ChevronDown, ChevronRight, Clock, Copy, Download, Eye, FileCode, MessageSquareText, Play, RefreshCw, Timer, Wrench, X } from "lucide-react";
+import { useState } from "react";
 import {
   McpServerDraft,
   ModelRequestResponse,
@@ -17,7 +17,16 @@ import {
   ToolExecutionDetail,
 } from "../anyagentClient";
 import { StudioTab } from "../navigation";
-import { compactJson, formatCount, formatMs, relativeTime, shortHash, statusColor, timelineMeta } from "../studioUtils";
+import { compactJson, downloadFile, exportFilename, formatCount, formatMs, relativeTime, shortHash, timelineMeta, toCsv } from "../studioUtils";
+import {
+  CollapsibleSection,
+  CompactTable,
+  EmptyState,
+  normalizeStatus,
+  StatStrip,
+  StatusBadge,
+} from "../components/design-system";
+import type { StatItem } from "../components/design-system";
 
 type DisplayObservability = {
   runCount: number;
@@ -120,19 +129,123 @@ export function ObservabilityPage({
   replayModelRequest,
   replayPromptContext,
 }: ObservabilityPageProps) {
+  void selectedResponseId;
+  void mcpDrafts;
+  void selectedSkillCount;
+  void summary;
   const sourceOptions: ObservabilitySource[] = ["run", "event", "stage", "observability", "workspace", "audit"];
   const statusOptions: Array<"error" | "warning" | "success" | "denied"> = ["error", "warning", "success", "denied"];
   const [replayTab, setReplayTab] = useState<"context" | "model" | "tools">("context");
   const [replayExpanded, setReplayExpanded] = useState(false);
+  const [openSection, setOpenSection] = useState<string>("history");
 
-  const promptContextEvent = useMemo(() => {
-    // Find prompt context rendered event from stage events (via summary or timeline)
-    return null; // Server-side replay; client reads from dedicated endpoints
-  }, []);
+  const errorCount = metrics?.error_count ?? errors.length;
+  const errorTone = errorCount > 0 ? "error" : "default";
+
+  const primaryStats: StatItem[] = [
+    { label: "Runs", value: formatCount(display.runCount) },
+    { label: "Errors", value: formatCount(errorCount), tone: errorTone },
+    { label: "Latency", value: formatMs(display.totalLatency) },
+    { label: "First token", value: formatMs(display.firstTokenLatency) },
+  ];
+
+  const secondaryStats: StatItem[] = [
+    {
+      label: "Tokens",
+      value: formatCount(display.inputTokens + display.outputTokens),
+      hint: `in ${formatCount(display.inputTokens)} / out ${formatCount(display.outputTokens)}`,
+    },
+    { label: "Cached", value: formatCount(display.cachedTokens) },
+    { label: "Tools", value: formatCount(display.toolCalls), hint: `${formatCount(tools.length)} unique` },
+    { label: "MCP", value: formatCount(display.mcpCalls) },
+    { label: "Turns", value: formatCount(display.turnCount) },
+  ];
+
+  const runColumns = [
+    {
+      key: "time",
+      header: "Time",
+      width: "90px",
+      render: (run: ObservabilityRunItem) => (
+        <span className="ds-cell-mono">{relativeTime(run.created_at_ms)}</span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: "96px",
+      render: (run: ObservabilityRunItem) => (
+        <StatusBadge status={normalizeStatus(run.effective_status || run.status)}>
+          {run.effective_status || run.status}
+        </StatusBadge>
+      ),
+    },
+    {
+      key: "agent",
+      header: "Agent",
+      render: (run: ObservabilityRunItem) => (
+        <div className="ds-cell-stack">
+          <strong className="ds-cell-strong">{run.agent_id}</strong>
+          <span className="ds-cell-sub">{run.stream ? "stream" : "sync"}</span>
+        </div>
+      ),
+    },
+    {
+      key: "duration",
+      header: "Duration",
+      align: "right" as const,
+      width: "84px",
+      render: (run: ObservabilityRunItem) => {
+        const duration = Math.max(
+          (run.ended_at_ms ?? run.updated_at_ms) - run.created_at_ms,
+          run.updated_at_ms - run.created_at_ms,
+          0,
+        );
+        return <span className="ds-cell-mono">{formatMs(duration)}</span>;
+      },
+    },
+    {
+      key: "id",
+      header: "ID",
+      align: "right" as const,
+      width: "120px",
+      render: (run: ObservabilityRunItem) => (
+        <span className="ds-cell-id">
+          <code className="ds-cell-mono" title={run.response_id}>{shortHash(run.response_id)}</code>
+          <CopyButton text={run.response_id} />
+        </span>
+      ),
+    },
+  ];
+
+  const toggleSection = (key: string) => setOpenSection((current) => (current === key ? "" : key));
+
+  const exportRunsCsv = () => {
+    const rows = runs.map((run) => {
+      const duration = Math.max((run.ended_at_ms ?? run.updated_at_ms) - run.created_at_ms, 0);
+      return {
+        response_id: run.response_id,
+        agent_id: run.agent_id,
+        session_key: run.session_key,
+        status: run.status,
+        effective_status: run.effective_status,
+        stream: run.stream,
+        created_at_ms: run.created_at_ms,
+        updated_at_ms: run.updated_at_ms,
+        ended_at_ms: run.ended_at_ms ?? "",
+        duration_ms: duration,
+      };
+    });
+    downloadFile(exportFilename("observability-runs", "csv"), toCsv(rows), "text/csv;charset=utf-8");
+  };
+
+  const exportRunsJson = () => {
+    downloadFile(exportFilename("observability-runs", "json"), compactJson(runs), "application/json");
+  };
 
   return (
     <>
-      <section className="section-block">
+      <section className="section-block ds-obs-header">
         <div className="section-title">
           <BarChart3 size={17} />
           <h2>Observability</h2>
@@ -142,19 +255,8 @@ export function ObservabilityPage({
               : "current session"}
           </span>
         </div>
-        <div className="stats-tier stats-tier--primary">
-          <Stat label="Runs" value={formatCount(display.runCount)} />
-          <Stat label="Errors" value={formatCount(metrics?.error_count ?? errors.length)} className={errors.length > 0 ? "stat--alert" : ""} />
-          <Stat label="Latency" value={formatMs(display.totalLatency)} />
-          <Stat label="First token" value={formatMs(display.firstTokenLatency)} />
-        </div>
-        <div className="stats-tier stats-tier--secondary">
-          <Stat label="Tokens" value={formatCount(display.inputTokens + display.outputTokens)} hint={`in ${formatCount(display.inputTokens)} / out ${formatCount(display.outputTokens)}`} />
-          <Stat label="Cached" value={formatCount(display.cachedTokens)} />
-          <Stat label="Tools" value={formatCount(display.toolCalls)} hint={`${formatCount(tools.length)} unique`} />
-          <Stat label="MCP" value={formatCount(display.mcpCalls)} />
-          <Stat label="Turns" value={formatCount(display.turnCount)} />
-        </div>
+        <StatStrip stats={primaryStats} />
+        <StatStrip stats={secondaryStats} className="ds-stat-strip--secondary" />
       </section>
 
       <div className="main-grid observability-grid">
@@ -164,13 +266,28 @@ export function ObservabilityPage({
               <MessageSquareText size={18} />
               <span>History</span>
             </div>
-            <Chip size="sm" variant="soft" color={runs.length ? "success" : "default"}>
-              {runs.length ? `${runs.length} runs` : "empty"}
-            </Chip>
+            <div className="editor-actions">
+              <Chip size="sm" variant="soft" color={runs.length ? "success" : "default"}>
+                {runs.length ? `${runs.length} runs` : "empty"}
+              </Chip>
+              <Button size="sm" variant="secondary" isDisabled={runs.length === 0} onPress={exportRunsCsv} aria-label="Export runs as CSV">
+                <Download size={14} />
+                CSV
+              </Button>
+              <Button size="sm" variant="secondary" isDisabled={runs.length === 0} onPress={exportRunsJson} aria-label="Export runs as JSON">
+                <Download size={14} />
+                JSON
+              </Button>
+            </div>
           </Card.Header>
           <Card.Content className="panel-content">
             <div className="filter-row">
-              <select className="native-select" aria-label="Observability time window" value={window} onChange={(event) => onWindowChange(event.target.value as "all" | "hour" | "day")}>
+              <select
+                className="native-select"
+                aria-label="Observability time window"
+                value={window}
+                onChange={(event) => onWindowChange(event.target.value as "all" | "hour" | "day")}
+              >
                 <option value="all">All time</option>
                 <option value="hour">Last hour</option>
                 <option value="day">Last 24 hours</option>
@@ -205,44 +322,28 @@ export function ObservabilityPage({
                 </div>
               </div>
             ) : null}
-            <div className="history-list">
-              {runs.length === 0 ? (
-                <div className="empty-state">
-                  <BarChart3 size={24} />
-                  <strong>No telemetry yet</strong>
-                  <p>No run history available for the current agent/session.</p>
+            {runs.length === 0 ? (
+              <EmptyState
+                icon={<BarChart3 size={20} />}
+                title="No telemetry yet"
+                description="No run history available for the current agent/session."
+                action={
                   <Button size="sm" variant="primary" onPress={() => onNavigate("home")}>
                     <Play size={13} />
                     Start a request
                   </Button>
-                </div>
-              ) : (
-              runs.map((run) => {
-                const duration = Math.max((run.ended_at_ms ?? run.updated_at_ms) - run.created_at_ms, run.updated_at_ms - run.created_at_ms, 0);
-                return (
-                  <button
-                    className={`history-row ${run.response_id === selectedRun?.response_id ? "active" : ""}`}
-                    key={run.response_id}
-                    type="button"
-                    onClick={() => onSelectRun(run.response_id)}
-                  >
-                    <div className="run-row-left">
-                      <span className={`status-dot status-dot--${statusColor(run.status)}`} />
-                      <span className="run-row-time">{relativeTime(run.created_at_ms)}</span>
-                    </div>
-                    <div className="run-row-center">
-                      <strong>{run.agent_id}</strong>
-                      <span className="run-row-meta">{run.stream ? "stream" : "sync"} · {formatMs(duration)}</span>
-                    </div>
-                    <div className="run-row-right">
-                      <code className="run-row-hash" title={run.response_id}>{shortHash(run.response_id)}</code>
-                      <CopyButton text={run.response_id} />
-                    </div>
-                  </button>
-                );
-              })
-              )}
-            </div>
+                }
+              />
+            ) : (
+              <CompactTable
+                columns={runColumns}
+                rows={runs.slice(0, Math.max(limit, 8))}
+                rowKey={(run) => run.response_id}
+                activeRowKey={selectedRun?.response_id ?? null}
+                onRowClick={(run) => onSelectRun(run.response_id)}
+                className="ds-obs-runs"
+              />
+            )}
           </Card.Content>
         </Card>
 
@@ -255,7 +356,12 @@ export function ObservabilityPage({
           </Card.Header>
           <Card.Content className="panel-content">
             <div className="filter-row">
-              <Input aria-label="Telemetry filter" placeholder="Filter tools, traces, audit..." value={toolFilter} onChange={(event) => onToolFilterChange(event.target.value)} />
+              <Input
+                aria-label="Telemetry filter"
+                placeholder="Filter tools, traces, audit..."
+                value={toolFilter}
+                onChange={(event) => onToolFilterChange(event.target.value)}
+              />
             </div>
             <div className="filter-header">
               <strong>Filters</strong>
@@ -304,14 +410,14 @@ export function ObservabilityPage({
                 </div>
               </div>
             </div>
-            <Tabs defaultSelectedKey="tools" className="obs-tabs">
-              <Tabs.List>
-                <Tabs.Tab id="tools">Tools ({filteredTools.length})</Tabs.Tab>
-                <Tabs.Tab id="errors">Errors ({filteredErrors.length})</Tabs.Tab>
-                <Tabs.Tab id="timeline">Timeline ({filteredTimeline.length})</Tabs.Tab>
-                <Tabs.Tab id="insights">Insights ({iterationSuggestions.length})</Tabs.Tab>
-              </Tabs.List>
-              <Tabs.Panel id="tools">
+
+            <div className="ds-collapsible-stack">
+              <CollapsibleSection
+                title="Tools"
+                count={filteredTools.length}
+                open={openSection === "tools"}
+                onToggle={() => toggleSection("tools")}
+              >
                 {summary?.turns?.length ? (
                   <div className="breakdown-list turn-breakdown">
                     {summary.turns.slice(0, 6).map((turn) => (
@@ -322,33 +428,60 @@ export function ObservabilityPage({
                     ))}
                   </div>
                 ) : null}
-                <div className="breakdown-list turn-breakdown">
-                  {filteredTools.length === 0 ? (
-                    <div className="empty-state compact-empty">
-                      <Wrench size={20} />
-                      <strong>No tool calls recorded</strong>
-                      <p>Tool usage statistics appear after the agent executes tool calls.</p>
+                {filteredTools.length === 0 ? (
+                  <EmptyState
+                    compact
+                    icon={<Wrench size={18} />}
+                    title="No tool calls recorded"
+                    description="Tool usage statistics appear after the agent executes tool calls."
+                  />
+                ) : (
+                  <>
+                    <div className="ds-bar-chart" aria-label="Tool usage by result count">
+                      {filteredTools.slice(0, 6).map((tool) => {
+                        const max = Math.max(...filteredTools.map((t) => t.result_count), 1);
+                        const ratio = Math.max(0, Math.min(100, (tool.result_count / max) * 100));
+                        return (
+                          <div className="ds-bar-row" key={`bar-${tool.tool_name}`} title={`${tool.tool_name}: ${formatCount(tool.result_count)} runs`}>
+                            <span className="ds-bar-label">{tool.tool_name}</span>
+                            <span className="ds-bar-track" aria-hidden="true">
+                              <span className={`ds-bar-fill${tool.error_count > 0 ? " ds-bar-fill--error" : ""}`} style={{ width: `${ratio}%` }} />
+                            </span>
+                            <span className="ds-bar-value">{formatCount(tool.result_count)}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ) : (
-                    filteredTools.slice(0, 12).map((tool) => (
-                      <div className="breakdown-row" key={tool.tool_name}>
-                        <span>{tool.tool_name}</span>
-                        <strong>{formatCount(tool.result_count)} runs · {formatCount(tool.error_count)} errors · {formatMs(tool.avg_duration_ms ?? null)}</strong>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </Tabs.Panel>
-              <Tabs.Panel id="errors">
-                <div className="event-list compact-events">
-                  {filteredErrors.length === 0 ? (
-                    <div className="empty-state compact-empty">
-                      <CheckCircle2 size={20} />
-                      <strong>No errors</strong>
-                      <p>All runs completed without normalized errors.</p>
-                    </div>
-                  ) : (
-                    filteredErrors.slice(0, 12).map((error, index) => (
+                    <CompactTable
+                    columns={[
+                      { key: "name", header: "Tool", render: (t: ObservabilityToolStats) => <strong className="ds-cell-strong">{t.tool_name}</strong> },
+                      { key: "runs", header: "Runs", align: "right", width: "70px", render: (t: ObservabilityToolStats) => formatCount(t.result_count) },
+                      { key: "errors", header: "Errors", align: "right", width: "70px", render: (t: ObservabilityToolStats) => formatCount(t.error_count) },
+                      { key: "avg", header: "Avg", align: "right", width: "80px", render: (t: ObservabilityToolStats) => formatMs(t.avg_duration_ms ?? null) },
+                    ]}
+                    rows={filteredTools.slice(0, 12)}
+                    rowKey={(t) => t.tool_name}
+                  />
+                  </>
+                )}
+              </CollapsibleSection>
+
+              <CollapsibleSection
+                title="Errors"
+                count={filteredErrors.length}
+                open={openSection === "errors"}
+                onToggle={() => toggleSection("errors")}
+              >
+                {filteredErrors.length === 0 ? (
+                  <EmptyState
+                    compact
+                    icon={<CheckCircle2 size={18} />}
+                    title="No errors"
+                    description="All runs completed without normalized errors."
+                  />
+                ) : (
+                  <div className="event-list compact-events">
+                    {filteredErrors.slice(0, 12).map((error, index) => (
                       <article className="timeline-event" key={`err-${error.response_id}-${error.type}-${index}`}>
                         <div>
                           <strong>{error.type}</strong>
@@ -361,20 +494,27 @@ export function ObservabilityPage({
                         </div>
                         <pre>{error.message || compactJson(error.payload ?? {})}</pre>
                       </article>
-                    ))
-                  )}
-                </div>
-              </Tabs.Panel>
-              <Tabs.Panel id="timeline">
-                <div className="event-list compact-events">
-                  {filteredTimeline.length === 0 ? (
-                    <div className="empty-state compact-empty">
-                      <Clock size={20} />
-                      <strong>No timeline events</strong>
-                      <p>Timeline populates after the agent records run, tool, audit, or stage events.</p>
-                    </div>
-                  ) : (
-                    filteredTimeline.slice(0, 20).map((event, index) => (
+                    ))}
+                  </div>
+                )}
+              </CollapsibleSection>
+
+              <CollapsibleSection
+                title="Timeline"
+                count={filteredTimeline.length}
+                open={openSection === "timeline"}
+                onToggle={() => toggleSection("timeline")}
+              >
+                {filteredTimeline.length === 0 ? (
+                  <EmptyState
+                    compact
+                    icon={<Clock size={18} />}
+                    title="No timeline events"
+                    description="Timeline populates after the agent records run, tool, audit, or stage events."
+                  />
+                ) : (
+                  <div className="event-list compact-events">
+                    {filteredTimeline.slice(0, 20).map((event, index) => (
                       <article className="timeline-event" key={`tel-${event.response_id}-${event.seq}-${event.type}-${index}`}>
                         <div>
                           <strong>{event.type}</strong>
@@ -387,11 +527,17 @@ export function ObservabilityPage({
                         </div>
                         {event.message ? <pre>{event.message}</pre> : null}
                       </article>
-                    ))
-                  )}
-                </div>
-              </Tabs.Panel>
-              <Tabs.Panel id="insights">
+                    ))}
+                  </div>
+                )}
+              </CollapsibleSection>
+
+              <CollapsibleSection
+                title="Insights"
+                count={iterationSuggestions.length}
+                open={openSection === "insights"}
+                onToggle={() => toggleSection("insights")}
+              >
                 <div className="suggestion-list">
                   {iterationSuggestions.map((suggestion) => (
                     <button className="suggestion-row" key={suggestion.title} type="button" onClick={() => onNavigate(suggestion.target)}>
@@ -400,8 +546,8 @@ export function ObservabilityPage({
                     </button>
                   ))}
                 </div>
-              </Tabs.Panel>
-            </Tabs>
+              </CollapsibleSection>
+            </div>
           </Card.Content>
         </Card>
       </div>
@@ -469,11 +615,12 @@ export function ObservabilityPage({
                       ))}
                     </div>
                   ) : (
-                    <div className="empty-state compact-empty">
-                      <FileCode size={20} />
-                      <strong>No rendered context</strong>
-                      <p>Prompt context fragments are not available for this run.</p>
-                    </div>
+                    <EmptyState
+                      compact
+                      icon={<FileCode size={18} />}
+                      title="No rendered context"
+                      description="Prompt context fragments are not available for this run."
+                    />
                   )}
                 </div>
               )}
@@ -484,11 +631,12 @@ export function ObservabilityPage({
                       {JSON.stringify(replayModelRequest.applied_body, null, 2)}
                     </pre>
                   ) : (
-                    <div className="empty-state compact-empty">
-                      <MessageSquareText size={20} />
-                      <strong>No model request</strong>
-                      <p>The first model request body was not persisted for this run.</p>
-                    </div>
+                    <EmptyState
+                      compact
+                      icon={<MessageSquareText size={18} />}
+                      title="No model request"
+                      description="The first model request body was not persisted for this run."
+                    />
                   )}
                 </div>
               )}
@@ -523,11 +671,12 @@ export function ObservabilityPage({
                       </article>
                     ))
                   ) : (
-                    <div className="empty-state compact-empty">
-                      <Wrench size={20} />
-                      <strong>No tool executions</strong>
-                      <p>Tool execution details are not available for this run.</p>
-                    </div>
+                    <EmptyState
+                      compact
+                      icon={<Wrench size={18} />}
+                      title="No tool executions"
+                      description="Tool execution details are not available for this run."
+                    />
                   )}
                 </div>
               )}
@@ -536,16 +685,6 @@ export function ObservabilityPage({
         </Card>
       )}
     </>
-  );
-}
-
-function Stat({ label, value, hint, className }: { label: string; value: string; hint?: string; className?: string }) {
-  return (
-    <span className={`stat ${className || ""}`} title={hint ? `${label}: ${value} (${hint})` : `${label}: ${value}`}>
-      <span className="stat-label">{label}</span>
-      <span className="stat-value">{value}</span>
-      {hint ? <span className="stat-label">{hint}</span> : null}
-    </span>
   );
 }
 

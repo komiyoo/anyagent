@@ -2,6 +2,8 @@ import { Button, Card, TextArea } from "@heroui/react";
 import { Braces, FlaskConical, Play } from "lucide-react";
 import { AgentDetail, McpServerDraft, ToolCatalog } from "../anyagentClient";
 import { compactJson, formatCount, shortHash } from "../studioUtils";
+import { StatStrip } from "../components/design-system";
+import type { StatItem } from "../components/design-system";
 
 type PromptsPageProps = {
   input: string;
@@ -24,6 +26,13 @@ export function PromptsPage({
   onInputChange,
   onPreview,
 }: PromptsPageProps) {
+  const stats: StatItem[] = [
+    { label: "AGENTS.md", value: shortHash(agentDetail?.agents_md?.sha256) },
+    { label: "Skills", value: formatCount(selectedSkillCount) },
+    { label: "MCP", value: formatCount(mcpDrafts.length) },
+    { label: "Tools", value: formatCount(toolCatalog?.tools.length ?? 0) },
+  ];
+
   return (
     <div className="main-grid">
       <Card className="panel">
@@ -53,24 +62,7 @@ export function PromptsPage({
           </div>
         </Card.Header>
         <Card.Content className="panel-content">
-          <div className="breakdown-list">
-            <div className="breakdown-row">
-              <span>AGENTS.md</span>
-              <strong>{shortHash(agentDetail?.agents_md?.sha256)}</strong>
-            </div>
-            <div className="breakdown-row">
-              <span>Selected skills</span>
-              <strong>{formatCount(selectedSkillCount)}</strong>
-            </div>
-            <div className="breakdown-row">
-              <span>MCP drafts</span>
-              <strong>{formatCount(mcpDrafts.length)}</strong>
-            </div>
-            <div className="breakdown-row">
-              <span>Visible tools</span>
-              <strong>{formatCount(toolCatalog?.tools.length ?? 0)}</strong>
-            </div>
-          </div>
+          <StatStrip stats={stats} />
         </Card.Content>
       </Card>
     </div>

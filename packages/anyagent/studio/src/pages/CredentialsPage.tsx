@@ -1,7 +1,8 @@
 import { Button, Card, Input } from "@heroui/react";
-import { KeyRound, RefreshCw } from "lucide-react";
+import { KeyRound, RefreshCw, Trash2 } from "lucide-react";
 import { FormEvent } from "react";
 import { CredentialRef } from "../anyagentClient";
+import { CompactTable, EmptyState } from "../components/design-system";
 
 type CredentialsPageProps = {
   credentials: CredentialRef[];
@@ -87,22 +88,43 @@ export function CredentialsPage({
         </form>
         <div className="credential-list">
           {credentials.length === 0 ? (
-            <p className="empty">No credential references saved. Secret values are write-only and never shown again.</p>
+            <EmptyState
+              compact
+              icon={<KeyRound size={18} />}
+              title="No credential references saved"
+              description="Secret values are write-only and never shown again."
+            />
           ) : (
-            credentials.map((credential) => (
-              <article className="credential-row" key={credential.credential_id}>
-                <div>
-                  <strong>{credential.credential_id}</strong>
-                  <span>
-                    {credential.kind} · {credential.scope.level}
-                    {credential.scope.agent_id ? `/${credential.scope.agent_id}` : ""}
-                  </span>
-                </div>
-                <Button size="sm" variant="secondary" onPress={() => onRemoveCredential(credential.credential_id)}>
-                  Delete
-                </Button>
-              </article>
-            ))
+            <CompactTable
+              columns={[
+                { key: "id", header: "Credential ID", render: (c: CredentialRef) => <strong className="ds-cell-strong">{c.credential_id}</strong> },
+                { key: "kind", header: "Kind", width: "120px", render: (c: CredentialRef) => <span className="ds-cell-mono">{c.kind}</span> },
+                {
+                  key: "scope",
+                  header: "Scope",
+                  width: "140px",
+                  render: (c: CredentialRef) => (
+                    <span className="ds-cell-mono">
+                      {c.scope.level}
+                      {c.scope.agent_id ? `/${c.scope.agent_id}` : ""}
+                    </span>
+                  ),
+                },
+                {
+                  key: "actions",
+                  header: "",
+                  align: "right",
+                  width: "80px",
+                  render: (c: CredentialRef) => (
+                    <Button size="sm" variant="ghost" isIconOnly aria-label={`Delete ${c.credential_id}`} onPress={() => onRemoveCredential(c.credential_id)}>
+                      <Trash2 size={14} />
+                    </Button>
+                  ),
+                },
+              ]}
+              rows={credentials}
+              rowKey={(c) => c.credential_id}
+            />
           )}
         </div>
       </Card.Content>

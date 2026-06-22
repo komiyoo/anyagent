@@ -180,7 +180,17 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     serve.add_argument("--sandbox-root", default=None, help="Optional root dir for local sandbox sessions.")
-    serve.add_argument("--no-studio", action="store_true", help="Do not mount the bundled Studio at /studio.")
+    serve.add_argument(
+        "--studio-dir",
+        default=None,
+        help="Directory of a built Studio bundle to mount at /studio. Defaults to $ANYAGENT_STUDIO_DIR. "
+        "Studio is deployed independently; the server ships no bundled UI.",
+    )
+    serve.add_argument(
+        "--no-studio",
+        action="store_true",
+        help="Do not mount Studio at /studio even if --studio-dir or $ANYAGENT_STUDIO_DIR is set.",
+    )
     serve.add_argument("--quiet", action="store_true", help="Suppress the JSON configuration banner printed on startup.")
     serve.add_argument(
         "--plugin-root",
@@ -707,6 +717,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     api_key = args.api_key or os.getenv("ANYAGENT_API_KEY")
     admin_key = args.admin_key or os.getenv("ADMIN_API_KEY")
     enable_studio = not bool(args.no_studio)
+    studio_dir = args.studio_dir or os.getenv("ANYAGENT_STUDIO_DIR") or None
     app = create_app(
         workspace_dir=str(workspace),
         api_key=api_key,
@@ -721,6 +732,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         session_lease_ttl_s=args.session_lease_ttl_s,
         cors_origins=args.cors_origin,
         enable_studio=enable_studio,
+        studio_dir=studio_dir,
         session_config_overrides={},
         plugin_roots=args.plugin_root,
         plugins_fail_open=args.plugins_fail_open,
@@ -731,7 +743,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         port=int(args.port),
         api_key=api_key,
         admin_key=admin_key,
-        enable_studio=enable_studio,
+        enable_studio=enable_studio and studio_dir is not None,
         quiet=getattr(args, "quiet", False),
         app=app,
     )

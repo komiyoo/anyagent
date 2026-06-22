@@ -1,6 +1,7 @@
 import { Button, Card } from "@heroui/react";
 import { GitCompareArrows, History, RotateCcw } from "lucide-react";
 import { FormEventHandler, useMemo, useState } from "react";
+import { CompactTable } from "../components/design-system";
 import {
   AgentDetail,
   AgentFileKind,
@@ -21,6 +22,18 @@ import { ConnectionPanel } from "./configure/ConnectionPanel";
 import { CreateAgentPanel } from "./configure/CreateAgentPanel";
 import { EffectiveConfigPanel } from "./configure/EffectiveConfigPanel";
 import { AgentConfigDraftSnapshot, useConfigVersionStore } from "../stores/configVersionStore";
+
+export type CompareRow = {
+  label: string;
+  left: string;
+  right: string;
+  changed: boolean;
+};
+
+type DiffRow = {
+  field: string;
+  value: string;
+};
 
 export type ConfigurePageData = {
   activeBaseUrl: string;
@@ -307,14 +320,14 @@ export function ConfigurePage({ actions, data, refs }: ConfigurePageProps) {
   });
   const leftAgent = agents.find((agent) => agent.agent_id === leftAgentId);
   const rightAgent = agents.find((agent) => agent.agent_id === rightAgentId);
-  const compareRows = [
-    ["Exposed", String(leftAgent?.exposed ?? "-"), String(rightAgent?.exposed ?? "-")],
-    ["Model", leftAgent?.model_default ?? "-", rightAgent?.model_default ?? "-"],
-    ["Provider", leftAgent?.model_provider ?? "-", rightAgent?.model_provider ?? "-"],
-    ["Sandbox", leftAgent?.sandbox_mode ?? "-", rightAgent?.sandbox_mode ?? "-"],
-    ["Requested tools", String(leftAgent?.requested_tool_names?.length ?? 0), String(rightAgent?.requested_tool_names?.length ?? 0)],
-    ["Default skills", String(leftAgent?.default_selected_skills?.length ?? 0), String(rightAgent?.default_selected_skills?.length ?? 0)],
-  ];
+  const compareRows: CompareRow[] = [
+    { label: "Exposed", left: String(leftAgent?.exposed ?? "-"), right: String(rightAgent?.exposed ?? "-") },
+    { label: "Model", left: leftAgent?.model_default ?? "-", right: rightAgent?.model_default ?? "-" },
+    { label: "Provider", left: leftAgent?.model_provider ?? "-", right: rightAgent?.model_provider ?? "-" },
+    { label: "Sandbox", left: leftAgent?.sandbox_mode ?? "-", right: rightAgent?.sandbox_mode ?? "-" },
+    { label: "Requested tools", left: String(leftAgent?.requested_tool_names?.length ?? 0), right: String(rightAgent?.requested_tool_names?.length ?? 0) },
+    { label: "Default skills", left: String(leftAgent?.default_selected_skills?.length ?? 0), right: String(rightAgent?.default_selected_skills?.length ?? 0) },
+  ].map((row) => ({ ...row, changed: row.left !== row.right }));
 
   function rollbackConfig(snapshot: AgentConfigDraftSnapshot) {
     onAgentExposedChange(snapshot.exposed);
@@ -430,12 +443,14 @@ export function ConfigurePage({ actions, data, refs }: ConfigurePageProps) {
               <div className="breakdown-list">
                 {baseline ? (
                   configDiff.length ? (
-                    configDiff.map(([key, value]) => (
-                      <div className="breakdown-row" key={key}>
-                        <span>{key}</span>
-                        <strong>{Array.isArray(value) ? value.join(", ") : String(value || "-")}</strong>
-                      </div>
-                    ))
+                    <CompactTable
+                      columns={[
+                        { key: "field", header: "Field", width: "140px", render: (r: DiffRow) => <span className="ds-cell-sub">{r.field}</span> },
+                        { key: "value", header: "Current", render: (r: DiffRow) => <strong className="ds-cell-mono">{r.value}</strong> },
+                      ]}
+                      rows={configDiff.map(([field, value]) => ({ field, value: Array.isArray(value) ? value.join(", ") : String(value || "-") }))}
+                      rowKey={(r) => r.field}
+                    />
                   ) : (
                     <div className="breakdown-row">
                       <span>No changes</span>
@@ -503,15 +518,28 @@ export function ConfigurePage({ actions, data, refs }: ConfigurePageProps) {
               ))}
             </select>
           </div>
-          <div className="compare-table">
-            {compareRows.map(([label, left, right]) => (
-              <div className={left === right ? "" : "changed"} key={label}>
-                <span>{label}</span>
-                <strong>{left}</strong>
-                <strong>{right}</strong>
-              </div>
-            ))}
-          </div>
+          <CompactTable
+            className="ds-compare-table"
+            columns={[
+              { key: "label", header: "Field", width: "140px", render: (r: CompareRow) => <span className="ds-cell-sub">{r.label}</span> },
+              {
+                key: "left",
+                header: leftAgent?.agent_id ?? "Left",
+                render: (r: CompareRow) => (
+                  <strong className={`ds-cell-mono ${r.changed ? "ds-text-warning" : ""}`}>{r.left}</strong>
+                ),
+              },
+              {
+                key: "right",
+                header: rightAgent?.agent_id ?? "Right",
+                render: (r: CompareRow) => (
+                  <strong className={`ds-cell-mono ${r.changed ? "ds-text-warning" : ""}`}>{r.right}</strong>
+                ),
+              },
+            ]}
+            rows={compareRows}
+            rowKey={(r) => r.label}
+          />
         </Card.Content>
       </Card>
 

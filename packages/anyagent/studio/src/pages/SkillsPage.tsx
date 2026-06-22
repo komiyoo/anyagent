@@ -3,6 +3,7 @@ import { Sparkles } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 import { SkillChannel, SkillSummary } from "../anyagentClient";
 import { displayText } from "../studioUtils";
+import { CompactTable, EmptyState } from "../components/design-system";
 
 type SkillsPageProps = {
   skills: SkillSummary[];
@@ -149,42 +150,89 @@ export function SkillsPage({
 
           <div className="skill-list">
             {filteredSkills.length === 0 ? (
-              <p className="empty">Installed skills from the selected workspace appear here.</p>
+              <EmptyState compact title="No skills" description="Installed skills from the selected workspace appear here." />
             ) : (
-              filteredSkills.map((skill) => {
-                const directoryName = skillDirectoryRef(skill);
-                const disableRef = skillDisableRef(skill);
-                const skillLabel = displayText(skill.name, skill.stable_id ?? "skill");
-                return (
-                  <div className="skill-row" key={`skills-tab-${skill.stable_id ?? displayText(skill.path, displayText(skill.name))}`}>
-                    <input
-                      aria-label={`Select ${skillLabel}`}
-                      checked={skillSelection.includes(displayText(skill.name, skill.stable_id ?? ""))}
-                      disabled={disabledSkillPaths.includes(disableRef)}
-                      type="checkbox"
-                      onChange={(event) => onToggleSkillSelection(skill, event.target.checked)}
-                    />
-                    <div>
-                      <strong>{skillLabel}</strong>
-                      <span>{displayText(skill.path, skill.stable_id ?? "")}</span>
-                      {skillUpdateStatus[directoryName] ? <small>{skillUpdateStatus[directoryName]}</small> : null}
-                    </div>
-                    <button
-                      className={`capsule-toggle ${disabledSkillPaths.includes(disableRef) ? "" : "enabled"}`}
-                      type="button"
-                      onClick={() => onToggleSkillEnabled(skill, disabledSkillPaths.includes(disableRef))}
-                    >
-                      {disabledSkillPaths.includes(disableRef) ? "Disabled" : "Enabled"}
-                    </button>
-                    <button className="capsule-toggle" type="button" onClick={() => onCheckSkillUpdate(skill)}>
-                      Check
-                    </button>
-                    <button className="capsule-toggle enabled" type="button" onClick={() => onApplySkillUpdate(skill)}>
-                      Update
-                    </button>
-                  </div>
-                );
-              })
+              <CompactTable
+                columns={[
+                  {
+                    key: "select",
+                    header: "",
+                    width: "40px",
+                    render: (skill: SkillSummary) => {
+                      const disableRef = skillDisableRef(skill);
+                      const skillLabel = displayText(skill.name, skill.stable_id ?? "skill");
+                      return (
+                        <input
+                          aria-label={`Select ${skillLabel}`}
+                          checked={skillSelection.includes(displayText(skill.name, skill.stable_id ?? ""))}
+                          disabled={disabledSkillPaths.includes(disableRef)}
+                          type="checkbox"
+                          onChange={(event) => onToggleSkillSelection(skill, event.target.checked)}
+                        />
+                      );
+                    },
+                  },
+                  {
+                    key: "name",
+                    header: "Skill",
+                    render: (skill: SkillSummary) => {
+                      const directoryName = skillDirectoryRef(skill);
+                      const skillLabel = displayText(skill.name, skill.stable_id ?? "skill");
+                      return (
+                        <div className="ds-cell-stack">
+                          <strong className="ds-cell-strong">{skillLabel}</strong>
+                          <span className="ds-cell-sub">{displayText(skill.path, skill.stable_id ?? "")}</span>
+                          {skillUpdateStatus[directoryName] ? (
+                            <small className="ds-cell-sub">{skillUpdateStatus[directoryName]}</small>
+                          ) : null}
+                        </div>
+                      );
+                    },
+                  },
+                  {
+                    key: "enabled",
+                    header: "State",
+                    width: "90px",
+                    render: (skill: SkillSummary) => {
+                      const disableRef = skillDisableRef(skill);
+                      const disabled = disabledSkillPaths.includes(disableRef);
+                      return (
+                        <button
+                          className={`capsule-toggle ${disabled ? "" : "enabled"}`}
+                          type="button"
+                          onClick={() => onToggleSkillEnabled(skill, disabled)}
+                        >
+                          {disabled ? "Disabled" : "Enabled"}
+                        </button>
+                      );
+                    },
+                  },
+                  {
+                    key: "check",
+                    header: "",
+                    align: "right",
+                    width: "80px",
+                    render: (skill: SkillSummary) => (
+                      <button className="capsule-toggle" type="button" onClick={() => onCheckSkillUpdate(skill)}>
+                        Check
+                      </button>
+                    ),
+                  },
+                  {
+                    key: "update",
+                    header: "",
+                    align: "right",
+                    width: "80px",
+                    render: (skill: SkillSummary) => (
+                      <button className="capsule-toggle enabled" type="button" onClick={() => onApplySkillUpdate(skill)}>
+                        Update
+                      </button>
+                    ),
+                  },
+                ]}
+                rows={filteredSkills}
+                rowKey={(skill) => `skills-tab-${skill.stable_id ?? displayText(skill.path, displayText(skill.name))}`}
+              />
             )}
           </div>
         </Card.Content>

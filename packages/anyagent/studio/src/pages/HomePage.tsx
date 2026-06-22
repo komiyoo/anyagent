@@ -30,6 +30,7 @@ import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } fr
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { ConversationSidebar } from "../components/ConversationSidebar";
 import { AgentSelector } from "../components/AgentSelector";
+import { CompactTable, StatStrip } from "../components/design-system";
 import { AgentDetail, AgentSummary, AgentWorkspaceFile, ChatMessage, CredentialRef, McpServerDraft, StudioSettings, ToolCallItem, ToolCatalog } from "../anyagentClient";
 import { StudioMode, StudioTab } from "../navigation";
 import { StudioConversation } from "../stores/chatStore";
@@ -44,6 +45,15 @@ type TraceRow = {
   p99: string;
   description: string;
 };
+
+/** 解析 trace 错误率字符串（如 "0%"、"4.2%"）返回 design-system tone class */
+function traceErrorTone(errors: string): string {
+  const value = Number.parseFloat(errors);
+  if (!Number.isFinite(value)) return "";
+  if (value <= 0) return "ds-text-success";
+  if (value >= 5) return "ds-text-error";
+  return "ds-text-warning";
+}
 
 type HomePageProps = {
   mode: StudioMode;
@@ -206,16 +216,18 @@ export function HomePage({
             <h2>Build workspace</h2>
             <span>{settings.agentId || "main"} configuration health</span>
           </div>
-          <div className="stat-strip">
-            <HomeStat label="Agent" value={settings.agentId || "-"} hint={agentDetail?.exposed === false ? "hidden" : "exposed"} />
-            <HomeStat label="Skills" value={formatCount(skillCount)} hint={`${formatCount(selectedSkillCount)} default`} />
-            <HomeStat label="MCP" value={formatCount(mcpDrafts.length)} hint={`${mcpDrafts.filter((draft) => draft.enabled).length} enabled`} />
-            <HomeStat label="Tools" value={formatCount(toolCatalog?.tools.length ?? 0)} hint={toolCatalogStatus} />
-            <HomeStat label="Files" value={`${agentFiles.filter((file) => file.exists !== false).length}/${agentFiles.length || 3}`} />
-            <HomeStat label="Credentials" value={formatCount(credentials.length)} />
-            <HomeStat label="Available tools" value={formatCount(availableTools?.tools.length ?? 0)} />
-            <HomeStat label="Admin" value={adminStatus} />
-          </div>
+          <StatStrip
+            stats={[
+              { label: "Agent", value: settings.agentId || "-", hint: agentDetail?.exposed === false ? "hidden" : "exposed" },
+              { label: "Skills", value: formatCount(skillCount), hint: `${formatCount(selectedSkillCount)} default` },
+              { label: "MCP", value: formatCount(mcpDrafts.length), hint: `${enabledMcpCount} enabled` },
+              { label: "Tools", value: formatCount(toolCount), hint: toolCatalogStatus },
+              { label: "Files", value: `${agentFiles.filter((file) => file.exists !== false).length}/${agentFiles.length || 3}` },
+              { label: "Credentials", value: formatCount(credentials.length) },
+              { label: "Available tools", value: formatCount(availableTools?.tools.length ?? 0) },
+              { label: "Admin", value: adminStatus },
+            ]}
+          />
         </section>
 
         <Card className="panel">
@@ -281,28 +293,20 @@ export function HomePage({
           <h2>Tracing</h2>
           <span>Last 7 Days</span>
         </div>
-        <div className="trace-table">
-          <div className="trace-row header">
-            <span>Name</span>
-            <span>Most Recent Run</span>
-            <span>Trace Count</span>
-            <span>Error Rate</span>
-            <span>P50 Latency</span>
-            <span>P99 Latency</span>
-            <span>Description</span>
-          </div>
-          {traceRows.map((row) => (
-            <div className="trace-row" key={row.name}>
-              <strong>{row.name}</strong>
-              <span>{row.latest}</span>
-              <span>{row.traces}</span>
-              <span className="success-badge">{row.errors}</span>
-              <span>{row.p50}</span>
-              <span>{row.p99}</span>
-              <span>{row.description}</span>
-            </div>
-          ))}
-        </div>
+        <CompactTable
+          className="ds-trace-table"
+          columns={[
+            { key: "name", header: "Name", render: (r: TraceRow) => <strong className="ds-cell-strong">{r.name}</strong> },
+            { key: "latest", header: "Most Recent Run", render: (r: TraceRow) => <span className="ds-cell-mono">{r.latest}</span> },
+            { key: "traces", header: "Traces", align: "right", width: "80px", render: (r: TraceRow) => formatCount(r.traces) },
+            { key: "errors", header: "Error Rate", align: "right", width: "90px", render: (r: TraceRow) => <span className={`ds-cell-mono ${traceErrorTone(r.errors)}`}>{r.errors}</span> },
+            { key: "p50", header: "P50", align: "right", width: "90px", render: (r: TraceRow) => <span className="ds-cell-mono">{r.p50}</span> },
+            { key: "p99", header: "P99", align: "right", width: "90px", render: (r: TraceRow) => <span className="ds-cell-mono">{r.p99}</span> },
+            { key: "desc", header: "Description", render: (r: TraceRow) => <span className="ds-cell-sub">{r.description}</span> },
+          ]}
+          rows={traceRows}
+          rowKey={(r) => r.name}
+        />
       </section>
 
       <div className={`main-grid chat-grid ${conversationSidebarOpen ? "" : "sidebar-hidden"}`}>
@@ -652,16 +656,6 @@ function ThinkingBlock({ content, isStreaming }: { content: string; isStreaming:
         </div>
       ) : null}
     </div>
-  );
-}
-
-function HomeStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <span className="stat" title={hint ? `${label}: ${value} (${hint})` : `${label}: ${value}`}>
-      <span className="stat-label">{label}</span>
-      <span className="stat-value">{value}</span>
-      {hint ? <span className="stat-label">{hint}</span> : null}
-    </span>
   );
 }
 

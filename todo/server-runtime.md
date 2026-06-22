@@ -30,24 +30,11 @@
 - M3:Unified Observability Sink — 统一 envelope 出口 + 外部审计对接（Phase 2）✅
 - M4:第二 server runtime（异语言）通过 reference conformance suite（Phase 4）
 
-## 任务
+## 已完成任务
 
 ### Phase 1 — Responses API Provider Hardening
 
 - [x] P1 统一 Anthropic/Gemini provider 翻译宿主,补齐 Gemini function calling、Anthropic `tool_choice=required` 与 developer/system prompt 映射,并收敛 provider registry（Req: `requirements.md#req-4-5`; Impl: `packages/anyagent/src/anyagent/agent_runtime/model_providers/_translating_provider.py`; Module: `anyagent.agent_runtime.model_providers`）
-
-### Phase 1.5 — Agentic Ecosystem Hardening
-
-- [ ] P2 AGENTS.md 层级遍历:支持从 cwd 到 project root 每层收集 AGENTS.md,拼接后注入 agent instructions,带 byte budget 限制(monorepo 场景)(Req: `requirements.md#req-5`)
-
-### Phase 1.8 — Internal Productivity（内部生产力提升）
-
-- [ ] P2 嵌入 DeerFlow Skills:适配 `deep-research` skill（MIT License）到 `.anyagent/skills/` 格式,验证 Skill → Agent Loop 注入兼容性（Req: `requirements.md#req-5`）
-- [ ] P2 开发者体验优化:`anyagent dev` 热重载、日志可读性、Studio 调试能力提升（Req: `requirements.md#req-5`）
-
-## 决策 & 争议点
-
-- [ ] 跨节点 lock 的底座选择:Redis-only vs storage-agnostic vs 二者皆支持
 
 ## 参考
 
