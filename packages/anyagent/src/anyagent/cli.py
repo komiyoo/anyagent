@@ -315,6 +315,17 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Session lease TTL seconds (default: $SESSION_LEASE_TTL_S or 30).",
     )
+    dev.add_argument(
+        "--studio-dir",
+        default=None,
+        help="Directory of a built Studio bundle to mount at /studio. Defaults to $ANYAGENT_STUDIO_DIR. "
+        "Studio is deployed independently; the server ships no bundled UI.",
+    )
+    dev.add_argument(
+        "--no-studio",
+        action="store_true",
+        help="Do not mount Studio at /studio even if --studio-dir or $ANYAGENT_STUDIO_DIR is set.",
+    )
 
     agent_api = sub.add_parser("agent-api", help="Distributed Agent API operations.")
     agent_api_sub = agent_api.add_subparsers(dest="agent_api_cmd", required=True)
@@ -476,6 +487,11 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_serve(args)
     if args.cmd == "dev":
         args.no_studio = False
+        # dev defaults to the in-repo built Studio bundle so the local
+        # development server mounts /studio without an explicit --studio-dir.
+        # Override with --studio-dir, $ANYAGENT_STUDIO_DIR, or --no-studio.
+        if not args.studio_dir and not os.getenv("ANYAGENT_STUDIO_DIR"):
+            args.studio_dir = str(Path(__file__).resolve().parents[2] / "studio" / "dist")
         if not args.api_key and not os.getenv("ANYAGENT_API_KEY"):
             args.api_key = "anyagent-dev-key"
         if not args.admin_key and not os.getenv("ADMIN_API_KEY"):
