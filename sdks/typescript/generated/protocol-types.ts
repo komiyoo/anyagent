@@ -1,6 +1,6 @@
 /* eslint-disable */
 // Generated from anyagent.protocol schema bundle. Do not edit by hand.
-// schema_version: 2026-05-29
+// schema_version: 2026-06-22
 
 export type MCPServerTransport = "streamable_http" | "sse" | "stdio";
 
@@ -131,8 +131,11 @@ export type StorageHealthResponse = {
   "postgres": StorageHealthConnectivity;
   "redis": StorageHealthConnectivity;
   "retention_s": StorageRetentionConfig;
+  "single_instance_only"?: boolean;
   "storage_mode": string;
+  "storage_profile"?: string | null;
   "stores": Record<string, StorageComponentHealth>;
+  "warnings"?: Array<string>;
 };
 
 export type StorageRetentionConfig = {
@@ -375,6 +378,7 @@ export type InternalAuditEventItem = {
   "status"?: string | null;
   "tool_call_id"?: string | null;
   "tool_name"?: string | null;
+  "tool_source"?: string | null;
   "trace_id"?: string | null;
   "ts_ms"?: number | null;
   "type": string;
@@ -456,6 +460,7 @@ export type InternalObservabilityMetricsResponse = {
   "run_count"?: number;
   "session_key"?: string | null;
   "tool_call_count"?: number;
+  "tool_call_counts_by_source"?: Record<string, number>;
 };
 
 export type InternalObservabilityRunItem = {
@@ -496,6 +501,7 @@ export type InternalObservabilitySummaryResponse = {
   "skill_view_count"?: number;
   "subagent_spawns"?: number;
   "tool_call_count"?: number;
+  "tool_call_counts_by_source"?: Record<string, number>;
   "total_response_latency_ms"?: number | null;
   "turn_count"?: number;
   "turns"?: Array<InternalObservabilityTurnMetric>;
@@ -517,6 +523,7 @@ export type InternalObservabilityTimelineEvent = {
   "status"?: string | null;
   "tool_call_id"?: string | null;
   "tool_name"?: string | null;
+  "tool_source"?: string | null;
   "trace_id"?: string | null;
   "ts_ms"?: number | null;
   "type": string;
@@ -546,6 +553,7 @@ export type InternalObservabilityToolStats = {
   "planned_count"?: number;
   "result_count"?: number;
   "tool_name": string;
+  "tool_source"?: string | null;
 };
 
 export type InternalObservabilityTraceResponse = {
@@ -812,7 +820,7 @@ export type CommandResultFields = {
 export type ContextFragment = {
   "body"?: string;
   "cache_class"?: "stable_prefix" | "contextual" | "dynamic";
-  "kind": "agents_instructions" | "skill" | "environment_context" | "mcp_server_ref" | "tool_catalog_delta" | "sandbox_guidance";
+  "kind": "agents_instructions" | "skill" | "skill_catalog" | "business_context" | "channel_context" | "environment_context" | "mcp_server_ref" | "page_context" | "tool_catalog_delta" | "sandbox_guidance";
   "label"?: string | null;
   "metadata"?: Record<string, string>;
   "role"?: "developer" | "system";
@@ -1082,6 +1090,7 @@ export type NormalizedTelemetryEvent = {
   "status"?: string | null;
   "tool_call_id"?: string | null;
   "tool_name"?: string | null;
+  "tool_source"?: string | null;
   "trace_id"?: string | null;
   "ts_ms"?: number | null;
   "type": string;
@@ -1478,6 +1487,7 @@ export type AnyAgentToolExecutionDetailEvent = {
   "status": string;
   "tool_call_id": string;
   "tool_name": string;
+  "tool_source"?: string | null;
   "trace_id"?: string | null;
   "ts_ms"?: number | null;
   "type"?: "anyagent.tool.execution.detail";
@@ -1489,6 +1499,7 @@ export type AnyAgentToolPlannedEvent = {
   "seq"?: number | null;
   "tool_call_id": string;
   "tool_name": string;
+  "tool_source"?: string | null;
   "trace_id"?: string | null;
   "ts_ms"?: number | null;
   "type"?: "anyagent.tool.planned";
@@ -1503,6 +1514,7 @@ export type AnyAgentToolResultEvent = {
   "status": string;
   "tool_call_id": string;
   "tool_name": string;
+  "tool_source"?: string | null;
   "trace_id"?: string | null;
   "ts_ms"?: number | null;
   "type"?: "anyagent.tool.result";

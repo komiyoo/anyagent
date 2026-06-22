@@ -1,5 +1,5 @@
 {
-  "schema_version": "2026-05-29",
+  "schema_version": "2026-06-22",
   "openai_response_cases": [
     {
       "name": "responses.create.completed",

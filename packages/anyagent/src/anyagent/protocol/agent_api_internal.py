@@ -205,6 +205,7 @@ class InternalObservabilitySummaryResponse(BaseModel):
     typed_event_count: int = Field(default=0, ge=0)
     tool_call_count: int = Field(default=0, ge=0)
     mcp_call_count: int = Field(default=0, ge=0)
+    tool_call_counts_by_source: dict[str, int] = Field(default_factory=dict)
     skill_view_count: int = Field(default=0, ge=0)
     compaction_count: int = Field(default=0, ge=0)
     loop_warnings_count: int = Field(default=0, ge=0)
@@ -322,6 +323,7 @@ class InternalObservabilityMetricsResponse(BaseModel):
     event_count: int = Field(default=0, ge=0)
     tool_call_count: int = Field(default=0, ge=0)
     mcp_call_count: int = Field(default=0, ge=0)
+    tool_call_counts_by_source: dict[str, int] = Field(default_factory=dict)
     error_count: int = Field(default=0, ge=0)
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
@@ -344,6 +346,7 @@ class InternalObservabilityToolStats(BaseModel):
     max_duration_ms: float | None = None
     last_status: str | None = None
     audit_refs: list[str] = Field(default_factory=list)
+    tool_source: str | None = None
 
 
 class InternalObservabilityToolsResponse(BaseModel):

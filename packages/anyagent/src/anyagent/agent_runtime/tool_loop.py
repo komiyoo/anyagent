@@ -28,6 +28,7 @@ from anyagent.protocol.tool_manifest_extensions import (
     source_tool_name_for_model_name,
     strip_internal_tool_fields,
     tool_kind_for_tool_name,
+    tool_source_for_kind,
 )
 from anyagent.protocol.tool_runtime import ExecuteRequest, ManifestRequest, ToolContext
 from anyagent.skills.models import SkillPackage
@@ -267,6 +268,7 @@ async def _emit_tool_planned(
         tool_call_id=tool_call_id,
         tool_name=tool_name,
         arguments=summarize_payload(arguments_json),
+        tool_source=tool_source_for_kind(tool_kind),  # type: ignore[arg-type]
         ts_ms=ts_ms,
     )
     await sink(event)
@@ -318,6 +320,7 @@ async def _emit_tool_result(
             "output_truncated": output_truncated,
             "audit_ref": audit_ref,
         },
+        tool_source=tool_source_for_kind(tool_kind),  # type: ignore[arg-type]
         ts_ms=ts_ms,
     )
     await sink(event)
@@ -346,6 +349,7 @@ async def _emit_tool_execution_detail(
     trace_id: str | None,
     tool_call_id: str,
     tool_name: str,
+    tool_kind: str | None,
     arguments_json: str,
     output: str | None = None,
     error: dict[str, Any] | None = None,
@@ -378,6 +382,7 @@ async def _emit_tool_execution_detail(
         duration_ms=duration_ms,
         output_truncated=output_truncated,
         audit_ref=audit_ref,
+        tool_source=tool_source_for_kind(tool_kind),  # type: ignore[arg-type]
         ts_ms=ts_ms,
     )
     await sink(event)
@@ -523,6 +528,7 @@ async def _execute_one_tool(
             trace_id=trace_id,
             tool_call_id=call_id,
             tool_name=tool_name,
+            tool_kind=tool_kind,
             arguments_json=arguments,
             output=output_value if isinstance(output_value, str) else json.dumps(output_value, ensure_ascii=False) if output_value is not None else None,
             error=error_value,
@@ -571,6 +577,7 @@ async def _execute_one_tool(
         trace_id=trace_id,
         tool_call_id=call_id,
         tool_name=tool_name,
+        tool_kind=tool_kind,
         arguments_json=arguments,
         output=mcp_output if isinstance(mcp_output, str) else json.dumps(mcp_output, ensure_ascii=False) if mcp_output is not None else None,
         error=mcp_error,

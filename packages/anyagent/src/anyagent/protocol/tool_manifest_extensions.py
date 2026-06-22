@@ -19,6 +19,13 @@ from typing import Any, Literal
 
 AnyAgentToolKind = Literal["command", "mcp"]
 
+# Observability-facing tool source label. `builtin` covers every tool executed
+# through the Tool Runtime that is neither a `command` nor an `mcp` tool (core
+# tools, business-defined tools, the `task` sub-agent tool). Recorded on stage
+# events / telemetry rows so call-chain stats can group tool invocations by
+# source without inferring from payload heuristics.
+AnyAgentToolSource = Literal["command", "mcp", "builtin"]
+
 _INTERNAL_TOOL_FIELDS = frozenset(
     {
         "x-anyagent-kind",
@@ -58,6 +65,21 @@ def tool_kind_for_tool_name(tools: list[dict[str, Any]], tool_name: str) -> AnyA
         if isinstance(n, str) and n == name:
             return tool_kind_from_tool_param(t)
     return None
+
+
+def tool_source_for_kind(tool_kind: AnyAgentToolKind | None) -> AnyAgentToolSource:
+    """Map a manifest tool kind to the observability tool source label.
+
+    `command` and `mcp` map to themselves; a missing kind (core / business /
+    `task` tools executed through the Tool Runtime) normalizes to `builtin` so
+    every recorded tool invocation carries a non-null source for grouping.
+    """
+
+    if tool_kind == "command":
+        return "command"
+    if tool_kind == "mcp":
+        return "mcp"
+    return "builtin"
 
 
 def model_tool_name_for_name(name: str, *, max_len: int | None = None) -> str:

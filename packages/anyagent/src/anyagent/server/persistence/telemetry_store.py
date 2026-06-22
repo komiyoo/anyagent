@@ -147,6 +147,7 @@ class PostgresTelemetryEventStore:
             Column("status", TEXT, nullable=True),
             Column("tool_name", TEXT, nullable=True),
             Column("tool_call_id", TEXT, nullable=True),
+            Column("tool_source", TEXT, nullable=True),
             Column("duration_ms", FLOAT, nullable=True),
             Column("audit_ref", TEXT, nullable=True),
             Column("message", TEXT, nullable=True),
@@ -183,6 +184,7 @@ class PostgresTelemetryEventStore:
             "status",
             "tool_name",
             "tool_call_id",
+            "tool_source",
             "duration_ms",
             "audit_ref",
             "message",
@@ -237,6 +239,13 @@ class PostgresTelemetryEventStore:
                 create_statements=[_postgres_telemetry_events_create_sql(self._postgres_schema)],
                 policy=self._schema_policy,
             )
+            # The migrate policy short-circuits when telemetry_events already
+            # exists, so backfill the tool_source column idempotently for both
+            # freshly created and pre-existing tables.
+            from sqlalchemy import text
+
+            async with self._engine.begin() as conn:
+                await conn.execute(text(_postgres_telemetry_events_alter_sql(self._postgres_schema)))
             self._initialized = True
 
     def _ensure_table_sync(self) -> None:
@@ -252,6 +261,7 @@ class PostgresTelemetryEventStore:
                     if self._schema_policy == "runtime_create":
                         cur.execute(f"CREATE SCHEMA IF NOT EXISTS {self._postgres_schema}")
                         cur.execute(_postgres_telemetry_events_create_sql(self._postgres_schema))
+                        cur.execute(_postgres_telemetry_events_alter_sql(self._postgres_schema))
                     else:
                         cur.execute("SELECT to_regclass(%s)", (f"{self._postgres_schema}.telemetry_events",))
                         row = cur.fetchone()
@@ -261,6 +271,7 @@ class PostgresTelemetryEventStore:
                                 f"(schema={self._postgres_schema}, missing=telemetry_events) "
                                 "or set POSTGRES_SCHEMA_POLICY=runtime_create for development fallback"
                             )
+                        cur.execute(_postgres_telemetry_events_alter_sql(self._postgres_schema))
             self._initialized = True
 
 
@@ -342,7 +353,12 @@ class RunEventTelemetryStore:
             event_count=len(resp.events),
             typed_event_count=len(typed),
             tool_call_count=sum(1 for payload in payloads if str(payload.get("type") or "").startswith("anyagent.tool.")),
-            mcp_call_count=sum(1 for payload in payloads if _is_mcp_payload(payload)),
+            mcp_call_count=sum(
+                1
+                for payload in payloads
+                if str(payload.get("type") or "").startswith("anyagent.tool.") and _tool_source_of(payload) == "mcp"
+            ),
+            tool_call_counts_by_source=_tool_source_counts(payloads),
             skill_view_count=len(selected_skill_ids),
             compaction_count=sum(1 for payload in payloads if payload.get("type") == "anyagent.context.compacted"),
             loop_warnings_count=sum(1 for payload in payloads if payload.get("type") == "anyagent.agent.loop_warning"),
@@ -390,6 +406,10 @@ class RunEventTelemetryStore:
                 continue
         latencies = [item.total_response_latency_ms for item in summaries if item.total_response_latency_ms is not None]
         first_latencies = [item.first_token_latency_ms for item in summaries if item.first_token_latency_ms is not None]
+        tool_call_counts_by_source: dict[str, int] = {}
+        for item in summaries:
+            for source, count in item.tool_call_counts_by_source.items():
+                tool_call_counts_by_source[source] = tool_call_counts_by_source.get(source, 0) + count
         return InternalObservabilityMetricsResponse(
             agent_id=query.agent_id,
             session_key=query.session_key,
@@ -398,6 +418,7 @@ class RunEventTelemetryStore:
             event_count=len(events),
             tool_call_count=sum(item.tool_call_count for item in summaries),
             mcp_call_count=sum(item.mcp_call_count for item in summaries),
+            tool_call_counts_by_source=tool_call_counts_by_source,
             error_count=len([item for item in events if item.level == "error" or item.status == "error"]),
             input_tokens=sum(item.input_tokens for item in summaries),
             output_tokens=sum(item.output_tokens for item in summaries),
@@ -415,7 +436,7 @@ class RunEventTelemetryStore:
                 continue
             item = stats.setdefault(
                 event.tool_name,
-                {"planned": 0, "result": 0, "error": 0, "durations": [], "last_status": None, "audit_refs": []},
+                {"planned": 0, "result": 0, "error": 0, "durations": [], "last_status": None, "audit_refs": [], "tool_source": None},
             )
             if event.type.endswith(".planned"):
                 item["planned"] += 1
@@ -428,6 +449,8 @@ class RunEventTelemetryStore:
                 item["durations"].append(event.duration_ms)
             if event.audit_ref and event.audit_ref not in item["audit_refs"]:
                 item["audit_refs"].append(event.audit_ref)
+            if event.tool_source:
+                item["tool_source"] = event.tool_source
         tools = [
             InternalObservabilityToolStats(
                 tool_name=name,
@@ -438,6 +461,7 @@ class RunEventTelemetryStore:
                 max_duration_ms=max(item["durations"]) if item["durations"] else None,
                 last_status=item["last_status"],
                 audit_refs=sorted(item["audit_refs"]),
+                tool_source=item["tool_source"],
             )
             for name, item in sorted(stats.items())
         ]
@@ -592,6 +616,8 @@ class RunEventTelemetryStore:
                     status=_str_or_none(payload.get("status")),
                     tool_name=_str_or_none(payload.get("tool_name")),
                     tool_call_id=_str_or_none(payload.get("tool_call_id")),
+                    tool_source=_str_or_none(payload.get("tool_source"))
+                    or ("mcp" if (event.category == "mcp" or isinstance(payload.get("server_label"), str)) else None),
                     duration_ms=_num_or_none(payload.get("duration_ms")),
                     audit_ref=_str_or_none(payload.get("audit_ref")),
                     message=_str_or_none(payload.get("message") or payload.get("error_message")),
@@ -635,6 +661,7 @@ def _stage_timeline_event(
         status=_str_or_none(payload.get("status")) or ("error" if error else None),
         tool_name=_str_or_none(payload.get("tool_name") or payload.get("source_tool_name")),
         tool_call_id=_str_or_none(payload.get("tool_call_id") or payload.get("source_tool_call_id")),
+        tool_source=_tool_source_of(payload),
         duration_ms=_num_or_none(meta.get("duration_ms") or payload.get("duration_ms")),
         audit_ref=_str_or_none(meta.get("audit_ref") or payload.get("audit_ref")),
         message=_str_or_none(error.get("message") or payload.get("failure_message")),
@@ -671,6 +698,8 @@ def normalized_from_observability_event(event: ObservabilityEvent) -> Normalized
         status=_str_or_none(payload.get("status")),
         tool_name=_str_or_none(payload.get("tool_name")),
         tool_call_id=_str_or_none(payload.get("tool_call_id")),
+        tool_source=_str_or_none(payload.get("tool_source"))
+        or ("mcp" if (event.category == "mcp" or isinstance(payload.get("server_label"), str)) else None),
         duration_ms=_num_or_none(payload.get("duration_ms")),
         audit_ref=_str_or_none(payload.get("audit_ref")),
         message=_str_or_none(payload.get("message") or payload.get("error_message")),
@@ -697,6 +726,7 @@ def _telemetry_row(event: NormalizedTelemetryEvent) -> dict[str, Any]:
         "status": event.status,
         "tool_name": event.tool_name,
         "tool_call_id": event.tool_call_id,
+        "tool_source": event.tool_source,
         "duration_ms": event.duration_ms,
         "audit_ref": event.audit_ref,
         "message": event.message,
@@ -719,6 +749,7 @@ def _telemetry_event_from_row(row: dict[str, Any]) -> NormalizedTelemetryEvent:
         status=_str_or_none(row.get("status")),
         tool_name=_str_or_none(row.get("tool_name")),
         tool_call_id=_str_or_none(row.get("tool_call_id")),
+        tool_source=_str_or_none(row.get("tool_source")),
         duration_ms=_num_or_none(row.get("duration_ms")),
         audit_ref=_str_or_none(row.get("audit_ref")),
         message=_str_or_none(row.get("message")),
@@ -743,6 +774,7 @@ def _postgres_telemetry_events_create_sql(schema: str) -> str:
       status TEXT NULL,
       tool_name TEXT NULL,
       tool_call_id TEXT NULL,
+      tool_source TEXT NULL,
       duration_ms DOUBLE PRECISION NULL,
       audit_ref TEXT NULL,
       message TEXT NULL,
@@ -750,6 +782,12 @@ def _postgres_telemetry_events_create_sql(schema: str) -> str:
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
     """
+
+
+def _postgres_telemetry_events_alter_sql(schema: str) -> str:
+    """Idempotent column backfill for pre-existing telemetry_events tables."""
+
+    return f"ALTER TABLE {schema}.telemetry_events ADD COLUMN IF NOT EXISTS tool_source TEXT NULL"
 
 
 def _run_timeline_event(record: Any) -> InternalObservabilityTimelineEvent:
@@ -841,6 +879,34 @@ def _is_mcp_payload(payload: dict[str, Any]) -> bool:
         or isinstance(payload.get("server_label"), str)
         or isinstance(payload.get("mcp_server_label"), str)
     )
+
+
+def _tool_source_of(payload: dict[str, Any]) -> str | None:
+    """Resolve the observability tool source for a stage event payload.
+
+    Prefers the structured `tool_source` field; falls back to the legacy mcp
+    payload heuristic for events persisted before the field existed.
+    """
+
+    source = _str_or_none(payload.get("tool_source"))
+    if source:
+        return source
+    if _is_mcp_payload(payload):
+        return "mcp"
+    return None
+
+
+def _tool_source_counts(payloads: list[dict[str, Any]]) -> dict[str, int]:
+    """Count tool stage events grouped by tool source."""
+
+    counts: dict[str, int] = {}
+    for payload in payloads:
+        if not str(payload.get("type") or "").startswith("anyagent.tool."):
+            continue
+        source = _tool_source_of(payload)
+        if source:
+            counts[source] = counts.get(source, 0) + 1
+    return counts
 
 
 def _token_totals(payloads: list[dict[str, Any]]) -> tuple[int, int, int]:

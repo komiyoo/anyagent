@@ -196,6 +196,7 @@ class AnyAgentToolPlannedEvent(StageEventBase):
     tool_call_id: str
     tool_name: str
     arguments: StagePayloadSummary
+    tool_source: str | None = None
 
 
 class AnyAgentToolResultMeta(BaseModel):
@@ -218,6 +219,7 @@ class AnyAgentToolResultEvent(StageEventBase):
     meta: AnyAgentToolResultMeta = Field(default_factory=AnyAgentToolResultMeta)
     output: StagePayloadSummary | None = None
     error: StageError | None = None
+    tool_source: str | None = None
 
 
 class AnyAgentCommandPlannedEvent(StageEventBase):
@@ -256,6 +258,7 @@ class AnyAgentToolExecutionDetailEvent(StageEventBase):
     duration_ms: int | None = Field(default=None, ge=0)
     output_truncated: bool | None = None
     audit_ref: str | None = None
+    tool_source: str | None = None
 
 
 class AnyAgentModelRequestEvent(StageEventBase):

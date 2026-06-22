@@ -42,6 +42,8 @@ Studio 左上角 `AnyAgent` logo 区域应成为工作模式切换入口，提�
 
 写入侧统一 contract 是 `anyagent.protocol.observability.NormalizedTelemetryEvent`，`source` 使用 `TelemetrySource = run | event | stage | observability | workspace | audit`。`TelemetryStore` 必须提供 `ingest(event)` / `ingest_many(events)` 与 typed 查询方法；adapter 可以从 Run/Event/StageEvent/ObservabilityEvent/WorkspaceEvent/AuditEvent 转成同一个 normalized row，再进入查询层。当前 reference implementation 已将 Run Store、Event Store、structured log/audit sink 与显式 ingest 的 workspace/audit 事件一起合并进 timeline/tools/errors/traces 查询；PostgreSQL adapter 持久化同一个 normalized row，不要求 Studio 或 SDK 感知数据库差异。
 
+工具调用来源通过 `tool_source`（`command` / `mcp` / `builtin`）结构化记录在 tool planned/result/execution-detail stage event 与 `NormalizedTelemetryEvent`、PostgreSQL `telemetry_events` 行上，替代按 payload 启发式判定 mcp：`/internal/observability/metrics` 返回 `tool_call_counts_by_source`，`/internal/observability/tools` 的每条 tool stats 携带 `tool_source`，可按来源精确分组统计调用次数与延迟。`builtin` 覆盖经 Tool Runtime 执行的非 command/非 mcp 工具（core/业务工具、`task` 子 agent 工具）。
+
 已落地的查询入口：
 
 - `/internal/observability/runs`：按 agent/session/response/time window/limit 查询 response-run 历史。

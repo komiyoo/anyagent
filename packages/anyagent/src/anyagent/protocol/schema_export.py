@@ -21,7 +21,7 @@ from pydantic import BaseModel, TypeAdapter
 import anyagent.protocol as protocol_pkg
 
 
-SCHEMA_BUNDLE_VERSION = "2026-05-29"
+SCHEMA_BUNDLE_VERSION = "2026-06-22"
 PROTOCOL_VERSION = "0.1.10"
 OPENAPI_VERSION = "3.1.0"
 
@@ -30,6 +30,18 @@ PROTOCOL_CHANGELOG: list[dict[str, Any]] = [
     {
         "protocol_version": PROTOCOL_VERSION,
         "schema_version": SCHEMA_BUNDLE_VERSION,
+        "date": "2026-06-22",
+        "summary": "Add structured tool source labels to stage events and observability telemetry.",
+        "changes": [
+            "Add optional `tool_source` field to tool planned/result/execution-detail stage events.",
+            "Add optional `tool_source` field to NormalizedTelemetryEvent and the Postgres telemetry_events row.",
+            "Add `tool_call_counts_by_source` to observability summary/metrics and `tool_source` to tool stats.",
+            "Tool invocations now carry a non-null source (command/mcp/builtin) for call-chain grouping.",
+        ],
+    },
+    {
+        "protocol_version": "0.1.10",
+        "schema_version": "2026-05-29",
         "date": "2026-05-29",
         "summary": "Initial versioned protocol schema bundle with endpoint manifest, semantic rules and OpenAPI export.",
         "changes": [

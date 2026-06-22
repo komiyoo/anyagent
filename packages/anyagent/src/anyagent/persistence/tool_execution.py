@@ -60,6 +60,7 @@ class ToolExecutionPersistence:
         output_truncated: bool | None = None,
         audit_ref: str | None = None,
         trace_id: str | None = None,
+        tool_source: str | None = None,
         stage_sink: StageSink,
     ) -> None:
         if not self._config.persist_tool_execution_detail:
@@ -83,6 +84,7 @@ class ToolExecutionPersistence:
             output_truncated=output_truncated,
             audit_ref=audit_ref,
             trace_id=trace_id,
+            tool_source=tool_source,
         )
 
         try:

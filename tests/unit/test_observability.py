@@ -69,6 +69,7 @@ def test_postgres_telemetry_store_maps_rows_without_real_database(monkeypatch) -
         status="denied",
         tool_name="exec",
         tool_call_id="call",
+        tool_source="command",
         duration_ms=3,
         audit_ref="aud",
         message="denied",
@@ -80,6 +81,8 @@ def test_postgres_telemetry_store_maps_rows_without_real_database(monkeypatch) -
     assert callable(store._table.insert().values)
     assert row["event_type"] == "tool.policy.denied"
     assert row["payload_json"] == {"policy": "deny"}
+    assert row["tool_source"] == "command"
+    assert round_trip.tool_source == "command"
     assert round_trip == event
 
 
@@ -94,3 +97,28 @@ def test_timeline_identity_helpers_fall_back_when_prompt_context_has_no_identity
 
     assert _agent_id(prompt_context, {"agent_id": "main"}, None) == "main"
     assert _session_key(prompt_context, {"session_key": "sess"}, None) == "sess"
+
+
+def test_tool_source_helpers_classify_tool_payloads() -> None:
+    from anyagent.protocol.tool_manifest_extensions import tool_source_for_kind
+    from anyagent.server.persistence.telemetry_store import _tool_source_counts, _tool_source_of
+
+    assert tool_source_for_kind("command") == "command"
+    assert tool_source_for_kind("mcp") == "mcp"
+    assert tool_source_for_kind(None) == "builtin"
+
+    assert _tool_source_of({"tool_source": "mcp"}) == "mcp"
+    # legacy payloads persisted before tool_source fall back to the mcp heuristic
+    assert _tool_source_of({"type": "anyagent.tool.planned", "server_label": "s"}) == "mcp"
+    assert _tool_source_of({"type": "anyagent.tool.planned"}) is None
+
+    counts = _tool_source_counts(
+        [
+            {"type": "anyagent.tool.planned", "tool_source": "mcp"},
+            {"type": "anyagent.tool.result", "tool_source": "mcp"},
+            {"type": "anyagent.tool.planned", "tool_source": "command"},
+            {"type": "anyagent.tool.execution.detail", "tool_source": "builtin"},
+            {"type": "anyagent.context.compacted"},
+        ]
+    )
+    assert counts == {"mcp": 2, "command": 1, "builtin": 1}

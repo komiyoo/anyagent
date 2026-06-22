@@ -41,6 +41,7 @@ class NormalizedTelemetryEvent(BaseModel):
     status: str | None = None
     tool_name: str | None = None
     tool_call_id: str | None = None
+    tool_source: str | None = None
     duration_ms: float | None = Field(default=None, ge=0)
     audit_ref: str | None = None
     message: str | None = None
