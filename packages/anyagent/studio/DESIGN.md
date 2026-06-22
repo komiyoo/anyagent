@@ -372,6 +372,8 @@ Bottom: error list panel full-width.
 - Timeline events use virtualized list for 500+ items
 - Metric values in monospace `Geist Mono` for alignment
 - Tool stats table sortable by call count, error count, avg duration
+- Tool stats carry a `Source` column + bar tint (mcp=accent, command=orange, builtin=muted) so calls can be grouped by origin
+- Tools/MCP metric cards show per-session averages; a truncation chip surfaces when aggregation hit the per-run event cap or run-list limit
 - Iteration suggestions panel shows actionable next steps based on telemetry
 
 ### 9.6 Evaluations Page

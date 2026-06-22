@@ -5032,6 +5032,47 @@ select:hover {
   background: var(--ds-red);
 }
 
+/* Tool source tinting: mcp = accent (primary), command = orange, builtin = muted ink */
+.ds-bar-fill--mcp {
+  background: var(--ds-accent);
+}
+.ds-bar-fill--command {
+  background: var(--ds-orange);
+}
+.ds-bar-fill--builtin {
+  background: var(--ds-ink-3);
+}
+
+/* Compact source tag for tool stats table */
+.ds-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--ds-radius-full);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  text-transform: lowercase;
+  background: var(--ds-border-light);
+  color: var(--ds-ink-2);
+}
+.ds-tag--mcp {
+  background: var(--ds-accent-soft);
+  color: var(--ds-accent-hover);
+}
+.ds-tag--command {
+  background: var(--ds-orange-soft);
+  color: var(--ds-orange);
+}
+.ds-tag--builtin {
+  background: var(--ds-border-light);
+  color: var(--ds-ink-3);
+}
+.ds-tag--unknown {
+  background: var(--ds-border-light);
+  color: var(--ds-ink-3);
+}
+
 .ds-bar-value {
   color: var(--ds-ink-2);
   font-family: var(--font-mono);

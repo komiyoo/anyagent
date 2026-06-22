@@ -160,8 +160,10 @@ export type ObservabilitySummary = {
   typed_event_count?: number;
   tool_call_count?: number;
   mcp_call_count?: number;
+  tool_call_counts_by_source?: Record<string, number>;
   skill_view_count?: number;
   turn_count?: number;
+  truncated?: boolean;
   input_chars?: number;
   output_chars?: number;
   input_tokens?: number;
@@ -223,6 +225,7 @@ export type ObservabilityTimelineEvent = {
   status?: string | null;
   tool_name?: string | null;
   tool_call_id?: string | null;
+  tool_source?: string | null;
   duration_ms?: number | null;
   audit_ref?: string | null;
   message?: string | null;
@@ -245,6 +248,10 @@ export type ObservabilityMetrics = {
   event_count: number;
   tool_call_count: number;
   mcp_call_count: number;
+  tool_call_counts_by_source?: Record<string, number>;
+  session_count?: number;
+  avg_tool_calls_per_session?: number | null;
+  avg_mcp_calls_per_session?: number | null;
   error_count: number;
   input_tokens: number;
   output_tokens: number;
@@ -252,6 +259,7 @@ export type ObservabilityMetrics = {
   avg_response_latency_ms?: number | null;
   max_response_latency_ms?: number | null;
   first_token_latency_ms?: number | null;
+  truncated?: boolean;
 };
 
 export type ObservabilityToolStats = {
@@ -263,6 +271,7 @@ export type ObservabilityToolStats = {
   max_duration_ms?: number | null;
   last_status?: string | null;
   audit_refs?: string[];
+  tool_source?: string | null;
 };
 
 export type ObservabilityTools = {

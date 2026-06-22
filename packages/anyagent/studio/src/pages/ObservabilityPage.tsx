@@ -132,8 +132,18 @@ export function ObservabilityPage({
   void selectedResponseId;
   void mcpDrafts;
   void selectedSkillCount;
-  void summary;
   const sourceOptions: ObservabilitySource[] = ["run", "event", "stage", "observability", "workspace", "audit"];
+  const toolSourceLabel = (source: string | null | undefined): string => {
+    if (source === "mcp") return "mcp";
+    if (source === "command") return "cli";
+    if (source === "builtin") return "builtin";
+    return "—";
+  };
+  const toolSourceClass = (source: string | null | undefined): string => {
+    if (source === "mcp") return "ds-bar-fill--mcp";
+    if (source === "command") return "ds-bar-fill--command";
+    return "ds-bar-fill--builtin";
+  };
   const statusOptions: Array<"error" | "warning" | "success" | "denied"> = ["error", "warning", "success", "denied"];
   const [replayTab, setReplayTab] = useState<"context" | "model" | "tools">("context");
   const [replayExpanded, setReplayExpanded] = useState(false);
@@ -141,6 +151,23 @@ export function ObservabilityPage({
 
   const errorCount = metrics?.error_count ?? errors.length;
   const errorTone = errorCount > 0 ? "error" : "default";
+
+  const sessionsCount = metrics?.session_count ?? 0;
+  const formatPerSession = (total: number | null | undefined): string => {
+    const avg = metrics?.avg_tool_calls_per_session;
+    if (avg !== null && avg !== undefined && sessionsCount > 0) {
+      return `${formatCount(Math.round(avg))}/session`;
+    }
+    return sessionsCount > 0 ? `${formatCount(Math.round((total ?? 0) / sessionsCount))}/session` : `${formatCount(tools.length)} unique`;
+  };
+  const mcpPerSessionHint = (() => {
+    const avg = metrics?.avg_mcp_calls_per_session;
+    if (avg !== null && avg !== undefined && sessionsCount > 0) {
+      return `${formatCount(Math.round(avg))}/session`;
+    }
+    return undefined;
+  })();
+  const isTruncated = (metrics?.truncated ?? false) || (summary?.truncated ?? false);
 
   const primaryStats: StatItem[] = [
     { label: "Runs", value: formatCount(display.runCount) },
@@ -156,8 +183,8 @@ export function ObservabilityPage({
       hint: `in ${formatCount(display.inputTokens)} / out ${formatCount(display.outputTokens)}`,
     },
     { label: "Cached", value: formatCount(display.cachedTokens) },
-    { label: "Tools", value: formatCount(display.toolCalls), hint: `${formatCount(tools.length)} unique` },
-    { label: "MCP", value: formatCount(display.mcpCalls) },
+    { label: "Tools", value: formatCount(display.toolCalls), hint: formatPerSession(metrics?.tool_call_count) },
+    { label: "MCP", value: formatCount(display.mcpCalls), hint: mcpPerSessionHint },
     { label: "Turns", value: formatCount(display.turnCount) },
   ];
 
@@ -257,6 +284,11 @@ export function ObservabilityPage({
         </div>
         <StatStrip stats={primaryStats} />
         <StatStrip stats={secondaryStats} className="ds-stat-strip--secondary" />
+        {isTruncated ? (
+          <Chip size="sm" variant="soft" color="warning" title="Aggregation hit the per-run event cap or run-list limit; counts may be understated.">
+            Aggregation truncated — counts may be understated
+          </Chip>
+        ) : null}
       </section>
 
       <div className="main-grid observability-grid">
@@ -442,10 +474,10 @@ export function ObservabilityPage({
                         const max = Math.max(...filteredTools.map((t) => t.result_count), 1);
                         const ratio = Math.max(0, Math.min(100, (tool.result_count / max) * 100));
                         return (
-                          <div className="ds-bar-row" key={`bar-${tool.tool_name}`} title={`${tool.tool_name}: ${formatCount(tool.result_count)} runs`}>
+                          <div className="ds-bar-row" key={`bar-${tool.tool_name}`} title={`${tool.tool_name}: ${formatCount(tool.result_count)} runs · ${toolSourceLabel(tool.tool_source)}`}>
                             <span className="ds-bar-label">{tool.tool_name}</span>
                             <span className="ds-bar-track" aria-hidden="true">
-                              <span className={`ds-bar-fill${tool.error_count > 0 ? " ds-bar-fill--error" : ""}`} style={{ width: `${ratio}%` }} />
+                              <span className={`ds-bar-fill ${tool.error_count > 0 ? "ds-bar-fill--error" : toolSourceClass(tool.tool_source)}`} style={{ width: `${ratio}%` }} />
                             </span>
                             <span className="ds-bar-value">{formatCount(tool.result_count)}</span>
                           </div>
@@ -455,6 +487,9 @@ export function ObservabilityPage({
                     <CompactTable
                     columns={[
                       { key: "name", header: "Tool", render: (t: ObservabilityToolStats) => <strong className="ds-cell-strong">{t.tool_name}</strong> },
+                      { key: "source", header: "Source", width: "76px", render: (t: ObservabilityToolStats) => (
+                        <span className={`ds-tag ds-tag--${t.tool_source ?? "unknown"}`}>{toolSourceLabel(t.tool_source)}</span>
+                      ) },
                       { key: "runs", header: "Runs", align: "right", width: "70px", render: (t: ObservabilityToolStats) => formatCount(t.result_count) },
                       { key: "errors", header: "Errors", align: "right", width: "70px", render: (t: ObservabilityToolStats) => formatCount(t.error_count) },
                       { key: "avg", header: "Avg", align: "right", width: "80px", render: (t: ObservabilityToolStats) => formatMs(t.avg_duration_ms ?? null) },
