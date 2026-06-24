@@ -55,7 +55,7 @@ assert(
 const generatedTypes = generateProtocolTypes();
 assert(generatedTypes.includes("export type HealthResponse"), "generated types should include HealthResponse");
 assert(generatedTypes.includes("export type StageEvent"), "generated types should include StageEvent");
-assert(generatedTypes.includes("schema_version: 2026-05-29"), "generated types should include schema version");
+assert(generatedTypes.includes("schema_version: 2026-06-23"), "generated types should include schema version");
 
 console.log(
   `ok: protocol schema ${protocolSchemaBundle.schema_version} models=${Object.keys(protocolSchemaBundle.models).length}`,

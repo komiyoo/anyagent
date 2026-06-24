@@ -12991,6 +12991,15 @@
     "anyagent.protocol.alerts.AlertChannel": {
       "additionalProperties": false,
       "properties": {
+        "format": {
+          "default": "json",
+          "enum": [
+            "json",
+            "feishu"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
         "headers": {
           "additionalProperties": {
             "type": "string"
@@ -13079,6 +13088,7 @@
           "enum": [
             "info",
             "warning",
+            "error",
             "critical"
           ],
           "title": "Severity",
@@ -13217,6 +13227,7 @@
               "enum": [
                 "info",
                 "warning",
+                "error",
                 "critical"
               ],
               "title": "Severity",
@@ -13356,6 +13367,15 @@
         "AlertChannel": {
           "additionalProperties": false,
           "properties": {
+            "format": {
+              "default": "json",
+              "enum": [
+                "json",
+                "feishu"
+              ],
+              "title": "Format",
+              "type": "string"
+            },
             "headers": {
               "additionalProperties": {
                 "type": "string"
@@ -13421,6 +13441,7 @@
           "enum": [
             "info",
             "warning",
+            "error",
             "critical"
           ],
           "title": "Severity",
@@ -13439,6 +13460,15 @@
         "AlertChannel": {
           "additionalProperties": false,
           "properties": {
+            "format": {
+              "default": "json",
+              "enum": [
+                "json",
+                "feishu"
+              ],
+              "title": "Format",
+              "type": "string"
+            },
             "headers": {
               "additionalProperties": {
                 "type": "string"
@@ -13504,6 +13534,7 @@
               "enum": [
                 "info",
                 "warning",
+                "error",
                 "critical"
               ],
               "title": "Severity",

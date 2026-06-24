@@ -765,6 +765,7 @@ export type ToolVisibilityExplanation = {
 };
 
 export type AlertChannel = {
+  "format"?: "json" | "feishu";
   "headers"?: Record<string, string>;
   "kind"?: "webhook";
   "url": string;
@@ -779,7 +780,7 @@ export type AlertEvent = {
   "rule_id": string;
   "rule_name": string;
   "session_key"?: string | null;
-  "severity": "info" | "warning" | "critical";
+  "severity": "info" | "warning" | "error" | "critical";
   "source_event_type"?: string | null;
   "source_seq"?: number | null;
   "status"?: "active" | "resolved";
@@ -803,7 +804,7 @@ export type AlertRule = {
   "kind"?: "stage_event";
   "name": string;
   "rule_id": string;
-  "severity"?: "info" | "warning" | "critical";
+  "severity"?: "info" | "warning" | "error" | "critical";
 };
 
 export type AlertRulesResponse = {
