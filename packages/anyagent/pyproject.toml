@@ -1,6 +1,6 @@
 [project]
 name = "anyagent"
-version = "0.4.14"
+version = "0.4.15"
 description = "anyagent SDK (agent runtime + protocol + gateway + skills + tool runtime)"
 requires-python = ">=3.12"
 dependencies = [

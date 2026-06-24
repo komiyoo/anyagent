@@ -20,6 +20,7 @@ from typing import Any
 
 import httpx
 from anyagent.gateway.plugins import WebhookRoute
+from anyagent.observability import emit_observability_event
 from anyagent.plugins.hooks import HookContext
 from anyagent.tool_runtime.models import ToolDefinition
 
@@ -118,7 +119,19 @@ async def _handle_chatwoot_webhook(
             data=platform_event.model_dump_json(exclude_none=True),
         )
     except Exception as exc:  # noqa: BLE001
+        # Don't silently drop: keep the log and emit a warning observability
+        # event so operators can see platform events are no longer persisting.
         _LOGGER.warning("failed to persist platform event: %s", exc)
+        emit_observability_event(
+            "chatwoot.platform_event.persist_failed",
+            category="server",
+            level="warning",
+            payload={
+                "session_key": platform_event.session_key,
+                "event_name": event_name,
+                "reason": str(exc)[:300],
+            },
+        )
 
     # 如果是 message_created（用户发送消息），触发 Agent 处理
     if event_name == "message_created":
@@ -192,7 +205,21 @@ def _schedule_incoming_message_processing(
         try:
             result = done.result()
         except Exception as exc:  # noqa: BLE001
+            # Task-level failure (e.g. crash outside _process_incoming_message's
+            # internal guard). The internal failure branches already emitted
+            # their own event; only emit here for failures that escaped.
             _LOGGER.exception("failed to process incoming chatwoot message in background: %s", exc)
+            from anyagent.gateway.connector_contracts import chatwoot_session_key
+
+            emit_observability_event(
+                "chatwoot.background.failed",
+                category="server",
+                level="error",
+                payload={
+                    "session_key": chatwoot_session_key(account_id=account_id, conversation_id=conversation_id),
+                    "reason": f"background task crashed: {exc}"[:300],
+                },
+            )
             return
         if not result.get("processed"):
             _LOGGER.warning("chatwoot background processing finished without processing: %s", result)
@@ -282,6 +309,18 @@ async def _process_incoming_message(
             response = await client.post("/v1/responses", headers=headers, json=request_body)
 
         if response.status_code >= 400:
+            emit_observability_event(
+                "chatwoot.background.failed",
+                category="server",
+                level="error",
+                payload={
+                    "agent_id": target_agent_id,
+                    "session_key": session_key,
+                    "status_code": response.status_code,
+                    "reason": f"agent response failed: {response.status_code}",
+                    "response_text": (response.text or "")[:300],
+                },
+            )
             return {
                 "processed": False,
                 "reason": f"agent response failed: {response.status_code}",
@@ -321,6 +360,16 @@ async def _process_incoming_message(
 
     except Exception as exc:  # noqa: BLE001
         _LOGGER.exception("failed to process incoming chatwoot message: %s", exc)
+        emit_observability_event(
+            "chatwoot.background.failed",
+            category="server",
+            level="error",
+            payload={
+                "agent_id": target_agent_id,
+                "session_key": session_key,
+                "reason": str(exc)[:300],
+            },
+        )
         return {"processed": False, "reason": str(exc)}
 
 

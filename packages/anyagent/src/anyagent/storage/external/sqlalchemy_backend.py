@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Set as AbstractSet
 from datetime import datetime, timezone
 from time import monotonic, time
@@ -12,6 +13,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from .schema import StorageTables, build_storage_tables
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _ts_s(dt: object) -> float | None:
@@ -353,7 +357,9 @@ class SqlAlchemyEventStore(SqlAlchemyBackendBase):
             ).first()
             if not row:
                 # Auto-create run record for platform/connector events that
-                # don't go through the normal response lifecycle.
+                # don't go through the normal response lifecycle. Without this,
+                # appending a platform event (synthetic response_id, no prior
+                # run) would raise run_not_found.
                 try:
                     await conn.execute(
                         insert(self._tables.runs).values(
@@ -364,8 +370,15 @@ class SqlAlchemyEventStore(SqlAlchemyBackendBase):
                             last_event_seq=0,
                         )
                     )
-                except IntegrityError:
-                    pass
+                except IntegrityError as integrity_exc:
+                    # A concurrent append for the same response_id may have
+                    # inserted the row first; log at debug for diagnosability
+                    # in case the re-select below still comes back empty.
+                    _LOGGER.debug(
+                        "event append auto-create run hit integrity error (response_id=%s): %s",
+                        response_id,
+                        integrity_exc,
+                    )
                 row = (
                     await conn.execute(
                         select(self._tables.runs.c.last_event_seq)

@@ -34,6 +34,11 @@ Studio 的日志观测、性能分析与聚合不直接读取日志文件或第�
 - `server.response.run_started`
 - `server.response.stream.completed/cancelled/failed`
 - `server.response.nonstream.completed/failed`
+- `server.unhandled_exception`（全局未捕获异常兜底，level=error）
+- `chatwoot.background.failed`（connector 后台处理失败 / 上游 4xx，level=error）
+- `chatwoot.platform_event.persist_failed`（platform event 落库失败，level=warning）
+
+> 4xx 响应（含 429 rate limit）按 `server.response.*.failed` + level=error 归级，不再按 completed 归级；对应 run 同步 finalize 为 failed + error_json，不再停留 in_progress。
 
 ## 1. 关键字段（必须）
 

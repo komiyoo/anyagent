@@ -6,10 +6,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-AlertSeverity = Literal["info", "warning", "critical"]
+AlertSeverity = Literal["info", "warning", "error", "critical"]
 AlertRuleKind = Literal["stage_event"]
 AlertEventStatus = Literal["active", "resolved"]
 AlertChannelKind = Literal["webhook"]
+AlertChannelFormat = Literal["json", "feishu"]
 
 
 class AlertChannel(BaseModel):
@@ -18,6 +19,10 @@ class AlertChannel(BaseModel):
     kind: AlertChannelKind = "webhook"
     url: str
     headers: dict[str, str] = Field(default_factory=dict)
+    # Payload encoding for the webhook. ``json`` posts the AlertEvent as-is;
+    # ``feishu`` wraps a human-readable text summary in the Feishu text
+    # message shape ``{"msg_type":"text","content":{"text": ...}}``.
+    format: AlertChannelFormat = "json"
 
 
 class AlertRule(BaseModel):

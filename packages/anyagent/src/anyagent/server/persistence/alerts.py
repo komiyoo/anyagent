@@ -9,13 +9,23 @@ from typing import Any
 
 import httpx
 
-from anyagent.protocol.alerts import AlertEvent, AlertRule
+from anyagent.protocol.alerts import AlertChannel, AlertEvent, AlertRule
 from anyagent.protocol.agent_api_internal import InternalObservabilityTimelineEvent
 from anyagent.server.persistence.telemetry_store import ObservabilityQuery, TelemetryStore
 
 
 _LOGGER = logging.getLogger(__name__)
-_LOOP_EVENT_TYPES = {"anyagent.agent.loop_warning", "anyagent.agent.loop_terminated"}
+
+# Default event types covered by the built-in error alert rule. These are the
+# server / connector failure events emitted via ``emit_observability_event``
+# that surface in the telemetry timeline. The list is intentionally generic so
+# the rule picks up new error sources without code changes here.
+DEFAULT_ERROR_EVENT_TYPES: tuple[str, ...] = (
+    "server.response.nonstream.failed",
+    "server.response.stream.failed",
+    "chatwoot.background.failed",
+    "server.unhandled_exception",
+)
 
 
 def default_alert_rules() -> list[AlertRule]:
@@ -31,6 +41,12 @@ def default_alert_rules() -> list[AlertRule]:
             name="Agent loop terminated",
             event_types=["anyagent.agent.loop_terminated"],
             severity="critical",
+        ),
+        AlertRule(
+            rule_id="builtin.server_error",
+            name="Server / connector error",
+            event_types=list(DEFAULT_ERROR_EVENT_TYPES),
+            severity="error",
         ),
     ]
 
@@ -96,11 +112,16 @@ class AlertEvaluator:
         rules = [rule for rule in await self.alert_store.list_rules() if rule.enabled]
         if not rules:
             return []
+        # Build the union of all rule event types so we can short-circuit events
+        # no rule cares about, without hardcoding a specific event-type set.
+        all_event_types: set[str] = set()
+        for rule in rules:
+            all_event_types.update(rule.event_types)
         effective_query = query or ObservabilityQuery(limit=self.lookback_limit)
         timeline = await self.telemetry_store.timeline(effective_query)
         created: list[AlertEvent] = []
         for event in timeline.events:
-            if event.type not in _LOOP_EVENT_TYPES:
+            if event.type not in all_event_types:
                 continue
             for rule in rules:
                 if rule.kind != "stage_event" or event.type not in rule.event_types:
@@ -147,14 +168,44 @@ class AlertEvaluator:
             if channel.kind != "webhook":
                 continue
             try:
+                payload = _channel_payload(channel=channel, alert=alert)
                 async with httpx.AsyncClient(timeout=5.0) as client:
-                    await client.post(
-                        channel.url,
-                        headers=channel.headers,
-                        json=alert.model_dump(mode="json", exclude_none=True),
-                    )
+                    await client.post(channel.url, headers=channel.headers, json=payload)
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("alert webhook fan-out failed: rule_id=%s", rule.rule_id)
+
+
+def _channel_payload(*, channel: AlertChannel, alert: AlertEvent) -> dict[str, Any]:
+    if channel.format == "feishu":
+        return {"msg_type": "text", "content": {"text": _feishu_text(alert)}}
+    return alert.model_dump(mode="json", exclude_none=True)
+
+
+def _feishu_text(alert: AlertEvent) -> str:
+    pieces = [
+        f"[anyagent alert] {alert.rule_name}",
+        f"event_type={alert.source_event_type or alert.type}",
+        f"severity={alert.severity}",
+    ]
+    if alert.agent_id:
+        pieces.append(f"agent_id={alert.agent_id}")
+    if alert.session_key:
+        pieces.append(f"session_key={alert.session_key}")
+    if alert.response_id:
+        pieces.append(f"response_id={alert.response_id}")
+    payload = alert.payload or {}
+    status_code = payload.get("status_code")
+    if status_code is not None:
+        pieces.append(f"status_code={status_code}")
+    error_type = payload.get("error_type")
+    if error_type:
+        pieces.append(f"error_type={error_type}")
+    reason = payload.get("reason") or payload.get("message") or payload.get("error_message")
+    if isinstance(reason, str) and reason.strip():
+        pieces.append(f"error={reason.strip()[:300]}")
+    if alert.ts_ms:
+        pieces.append(f"ts_ms={alert.ts_ms}")
+    return "\n".join(pieces)
 
 
 def _alert_from_timeline_event(*, rule: AlertRule, event: InternalObservabilityTimelineEvent) -> AlertEvent:
@@ -165,12 +216,21 @@ def _alert_from_timeline_event(*, rule: AlertRule, event: InternalObservabilityT
         pieces.append(f"tool_signature={tool_signature}")
     if repeat_count is not None:
         pieces.append(f"repeat_count={repeat_count}")
+    status_code = event.payload.get("status_code")
+    if status_code is not None:
+        pieces.append(f"status_code={status_code}")
+    error_type = event.payload.get("error_type")
+    if error_type:
+        pieces.append(f"error_type={error_type}")
+    reason = event.payload.get("reason") or event.payload.get("message") or event.payload.get("error_message")
+    if isinstance(reason, str) and reason.strip():
+        pieces.append(f"error={reason.strip()[:300]}")
     return AlertEvent(
         alert_id=_alert_id(rule=rule, event=event),
         rule_id=rule.rule_id,
         rule_name=rule.name,
         severity=rule.severity,
-        type="agent_loop",
+        type=_alert_type_for_event(event.type),
         message="; ".join(pieces),
         ts_ms=event.ts_ms or 0,
         response_id=event.response_id,
@@ -181,6 +241,20 @@ def _alert_from_timeline_event(*, rule: AlertRule, event: InternalObservabilityT
         source_seq=event.seq,
         payload=event.payload,
     )
+
+
+def _alert_type_for_event(event_type: str) -> str:
+    # Collapse the granular server/connector error event types into a stable
+    # alert category so downstream consumers can group them.
+    if event_type.startswith("server.response."):
+        return "server_response"
+    if event_type.startswith("chatwoot."):
+        return "connector"
+    if event_type.startswith("server."):
+        return "server"
+    if event_type.startswith("anyagent.agent."):
+        return "agent_loop"
+    return event_type
 
 
 def _alert_id(*, rule: AlertRule, event: InternalObservabilityTimelineEvent) -> str:

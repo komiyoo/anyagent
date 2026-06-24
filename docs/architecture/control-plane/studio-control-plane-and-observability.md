@@ -62,7 +62,9 @@ Studio Observability 页面现已消费 runs/summary/metrics/tools/errors/timeli
 
 AnyAgent SDK 也提供 `client.sessions`、`client.evaluations`、`client.observability` 与 `client.audit` namespace，分别覆盖 session 列表/详情、dataset CRUD/eval run、runs/summary/timeline/metrics/tools/errors/trace/alerts 查询，以及独立 audit event 查询，用于业务 demo、验收脚本和外部控制台复用同一 typed API。
 
-Alert v0 的 wire model 定义在 `anyagent.protocol.alerts`：`AlertRule` / `AlertEvent` / `AlertChannel` / `AlertEventsResponse`。内置 server 启动时创建 in-memory rule store 与周期 evaluator，从 existing telemetry timeline 读取 loop warning/terminated stage event，去重后写入 alert event store；`AlertChannel(kind="webhook")` 是当前唯一 fan-out adapter。error rate / latency threshold 仍沿用同一 rule/evaluator 扩展点添加，不要求 Studio 直连指标库。
+Alert v0 的 wire model 定义在 `anyagent.protocol.alerts`：`AlertRule` / `AlertEvent` / `AlertChannel` / `AlertEventsResponse`。内置 server 启动时创建 in-memory rule store 与周期 evaluator，按各 rule 的 `event_types` 通用匹配 telemetry timeline 中的事件（不再硬编码 loop 事件），去重后写入 alert event store；`AlertChannel(kind="webhook")` 是当前唯一 fan-out adapter。`AlertChannel.format` 取 `json`（默认，POST `AlertEvent` 原文）或 `feishu`（包装为 `{"msg_type":"text","content":{"text": ...}}` 纯文本摘要）。`AlertSeverity` 取值 `info | warning | error | critical`。
+
+内置默认规则覆盖：loop warning（warning）、loop terminated（critical），以及 `builtin.server_error`（severity=error，event_types 覆盖 `server.response.nonstream.failed` / `server.response.stream.failed` / `chatwoot.background.failed` / `server.unhandled_exception`）。启动期读取 `ANYAGENT_ALERT_WEBHOOK_URL`（不存在则空转，向后兼容）、`ANYAGENT_ALERT_WEBHOOK_FORMAT`（`json` | `feishu`，默认 `json`）、`ANYAGENT_ALERT_WEBHOOK_HEADERS`（JSON 字符串），构造一个 webhook channel 注入 `builtin.server_error` 规则的 channels。error rate / latency threshold 仍沿用同一 rule/evaluator 扩展点添加，不要求 Studio 直连指标库。
 
 ### 2.1 三类 Replay 持久化与查询面
 

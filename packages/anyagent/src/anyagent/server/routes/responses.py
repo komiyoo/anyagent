@@ -794,6 +794,18 @@ async def run_nonstream_worker(
                     )
 
                 if status_code >= 400 or not isinstance(payload, dict) or not isinstance(payload.get("id"), str):
+                    # Provider/upstream failures (e.g. 429 rate limits) return an
+                    # error body without a response ``id``. Finalize the run as
+                    # failed so it does not linger in ``in_progress`` and the
+                    # error_json is persisted, mirroring the exception path.
+                    if status_code >= 400 and isinstance(payload, dict) and not isinstance(payload.get("id"), str):
+                        error_json = payload.get("error")
+                        return await _finalize_nonstream_terminal(
+                            payload=payload,
+                            response_status_code=status_code,
+                            effective_status="failed",
+                            error_json=error_json if isinstance(error_json, dict) else None,
+                        )
                     return status_code, payload
                 return await _finalize_nonstream_terminal(
                     payload=payload,
@@ -808,8 +820,8 @@ async def run_nonstream_worker(
         result_box["payload"] = payload
         payload_status = payload.get("status") if isinstance(payload, dict) and isinstance(payload.get("status"), str) else None
         _emit_server_response_event(
-            "server.response.nonstream.completed" if status_code < 500 else "server.response.nonstream.failed",
-            level="info" if status_code < 500 else "error",
+            "server.response.nonstream.completed" if status_code < 400 else "server.response.nonstream.failed",
+            level="info" if status_code < 400 else "error",
             response_id=response_id,
             agent_id=agent_id,
             session_key=session_key,

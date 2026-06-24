@@ -594,6 +594,13 @@ class PostgresEventStore:
 
     async def append(self, *, response_id: str, event: str | None, data: str) -> int:
         await self._ensure_tables()
+        # Platform/connector events are appended with a synthetic response_id
+        # and no run lifecycle (no mark_started/mark_final). Ensure a terminal
+        # ``event_runs`` meta row so they remain queryable as completed runs.
+        # Normal response runs (``resp_*``) are managed by the lifecycle and
+        # skip this to avoid per-event overhead on the hot path.
+        if not response_id.startswith("resp_"):
+            await self._ensure_terminal_meta_row(response_id=response_id)
         return await self._events.append(response_id=response_id, session_partition_key="", event=event, data=data)
 
     async def mark_started(self, *, response_id: str) -> None:
@@ -738,6 +745,26 @@ class PostgresEventStore:
         async with self._engine.connect() as conn:
             row = (await conn.execute(select(self._meta_table).where(self._meta_table.c.response_id == response_id).limit(1))).mappings().first()
         return None if row is None else dict(row)
+
+    async def _ensure_terminal_meta_row(self, *, response_id: str) -> None:
+        # Insert a terminal meta row for orphan/connector response_ids that
+        # never go through mark_started/mark_final. ON CONFLICT DO NOTHING keeps
+        # it a no-op when a row already exists (e.g. a normal run that happens
+        # to reuse a non-resp_ id), so in-flight state is never clobbered.
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        stmt = (
+            pg_insert(self._meta_table)
+            .values(
+                response_id=response_id,
+                done=True,
+                run_status="completed",
+                effective_run_status="completed",
+            )
+            .on_conflict_do_nothing(index_elements=[self._meta_table.c.response_id])
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
 
     async def _ensure_tables(self) -> None:
         if self._initialized:

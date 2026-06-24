@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from anyagent.agent_packs import (
@@ -19,16 +19,18 @@ from anyagent.gateway.plugins import GatewayRegistry
 from anyagent.gateway.sequencer import KeyedSequencer
 from anyagent.gateway.tooling import register_gateway_tools
 from anyagent.mcp.manager import MCPManagerRegistry
-from anyagent.observability import get_observability_emitter
+from anyagent.observability import _parse_header_env, emit_observability_event, get_observability_emitter
+from anyagent.protocol.alerts import AlertChannel
 from anyagent.server.app_builders import (
     _build_opensandbox_backend_if_needed,
     _load_gateway_plugins,
     _parse_cors_origins,
     _resolve_plugin_roots,
+    _safe_error_message,
 )
 from anyagent.server.app_state import AnyAgentServerApp
 from anyagent.server.config.settings import ServerSettings
-from anyagent.server.persistence.alerts import AlertEvaluator, InMemoryAlertStore
+from anyagent.server.persistence.alerts import AlertEvaluator, InMemoryAlertStore, default_alert_rules
 from anyagent.server.persistence.evaluations import JsonEvaluationStore
 from anyagent.server.persistence.manifest_cache import ManifestCache
 from anyagent.server.persistence.prompt_versions import JsonPromptVersionStore
@@ -159,7 +161,18 @@ def create_app(
         telemetry_events=telemetry_event_store,
         include_observability_sink_events=False,
     )
-    alert_store = InMemoryAlertStore()
+    alert_rules = default_alert_rules()
+    alert_webhook_channel = _build_alert_webhook_channel()
+    if alert_webhook_channel is not None:
+        # Attach the configured webhook to the built-in error rule so server /
+        # connector failures fan out to the operator's notification endpoint.
+        alert_rules = [
+            rule.model_copy(update={"channels": [*rule.channels, alert_webhook_channel]})
+            if rule.rule_id == "builtin.server_error"
+            else rule
+            for rule in alert_rules
+        ]
+    alert_store = InMemoryAlertStore(rules=alert_rules)
     alert_evaluator = AlertEvaluator(telemetry_store=telemetry_store, alert_store=alert_store)
     evaluation_store = JsonEvaluationStore(path=workspace / ANYAGENT_CONFIG_DIR / "evaluations.json")
     prompt_version_store = JsonPromptVersionStore(path=workspace / ANYAGENT_CONFIG_DIR / "prompt_versions.json")
@@ -243,7 +256,7 @@ def create_app(
                     if asyncio.iscoroutine(result):
                         await result
 
-    app = FastAPI(title="anyagent", version="0.4.14", lifespan=_lifespan)
+    app = FastAPI(title="anyagent", version="0.4.15", lifespan=_lifespan)
     if enable_studio:
         # Studio 前端独立部署（方案 B）：server 不再内嵌前端产物。
         # 通过 studio_dir 参数或 ANYAGENT_STUDIO_DIR 环境变量指向外部 build
@@ -303,4 +316,43 @@ def create_app(
         await state.refresh_config_if_needed()
         return await call_next(request)
 
+    @app.exception_handler(Exception)
+    async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        # FastAPI/Starlette route HTTPException and RequestValidationError to
+        # their own dedicated handlers (matched earlier in the MRO), so this
+        # only catches genuinely unhandled exceptions. Emit an error
+        # observability event so the alert pipeline can notify operators.
+        emit_observability_event(
+            "server.unhandled_exception",
+            category="server",
+            level="error",
+            payload={
+                "error_type": type(exc).__name__,
+                "message": _safe_error_message(exc),
+                "path": request.url.path,
+                "method": request.method,
+            },
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"error": {"type": "server_error", "message": "internal server error"}},
+        )
+
     return app
+
+
+def _build_alert_webhook_channel() -> AlertChannel | None:
+    """Build the alert webhook channel from ``ANYAGENT_ALERT_WEBHOOK_*`` env.
+
+    Returns ``None`` when no URL is configured so the alert evaluator keeps
+    running with no-op fan-out (backward compatible with prior behavior).
+    """
+
+    url = os.getenv("ANYAGENT_ALERT_WEBHOOK_URL", "").strip()
+    if not url:
+        return None
+    fmt = os.getenv("ANYAGENT_ALERT_WEBHOOK_FORMAT", "json").strip().lower() or "json"
+    if fmt not in {"json", "feishu"}:
+        fmt = "json"
+    headers = _parse_header_env(os.getenv("ANYAGENT_ALERT_WEBHOOK_HEADERS", ""))
+    return AlertChannel(kind="webhook", url=url, headers=headers, format=fmt)
