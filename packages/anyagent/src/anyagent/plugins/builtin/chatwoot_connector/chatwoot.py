@@ -6,7 +6,7 @@ Chatwoot Connector — Inbound Channel Connector 参考实现。
 - HMAC-SHA256 签名验证
 - 平台会话映射为 anyagent session_key
 - agent 回复通过 Chatwoot API 回写到会话
-- 转人工信号处理（toggle_status → open）
+- 转人工信号处理（toggle_status → open，默认关闭，经 status_changes_enabled 显式开启）
 - 会话生命周期事件注入
 
 参考：
@@ -219,6 +219,10 @@ class ChatwootHandoff(ConnectorHandoff):
     将 Chatwoot 会话状态切换为 open（移除 bot assignment），
     并可选择 assign 到特定团队 / 坐席。
 
+    默认 `status_changes_enabled=False`：跳过 toggle_status 调用（connector 不以
+    任何方式修改 Chatwoot 会话状态），仅保留 assignment 与 AI 摘要 private note；
+    显式传 True 才恢复 handoff → open 行为。
+
     API:
         POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/toggle_status
         POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/assignments
@@ -231,11 +235,13 @@ class ChatwootHandoff(ConnectorHandoff):
         account_id: str | int,
         access_token: str,
         http_client: httpx.AsyncClient | None = None,
+        status_changes_enabled: bool = False,
     ) -> None:
         self._base_url = str(chatwoot_url).rstrip("/")
         self._account_id = str(account_id)
         self._access_token = access_token
         self._client = http_client
+        self._status_changes_enabled = status_changes_enabled
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is not None:
@@ -261,14 +267,23 @@ class ChatwootHandoff(ConnectorHandoff):
         results: dict[str, Any] = {}
 
         try:
-            # Step 1: 切换会话状态为 open
-            toggle_url = (
-                f"/api/v1/accounts/{self._account_id}/conversations/"
-                f"{platform_conversation_id}/toggle_status"
-            )
-            resp = await client.post(toggle_url, json={"status": "open"})
-            resp.raise_for_status()
-            results["toggled"] = True
+            # Step 1: 切换会话状态为 open（status_changes_enabled=False 时跳过，
+            # connector 不发起任何 toggle_status 类请求）
+            if self._status_changes_enabled:
+                toggle_url = (
+                    f"/api/v1/accounts/{self._account_id}/conversations/"
+                    f"{platform_conversation_id}/toggle_status"
+                )
+                resp = await client.post(toggle_url, json={"status": "open"})
+                resp.raise_for_status()
+                results["toggled"] = True
+            else:
+                results["toggled"] = False
+                results["status_change_skipped"] = True
+                _LOGGER.info(
+                    "Chatwoot status change skipped (disabled): conversation_id=%s",
+                    platform_conversation_id,
+                )
 
             # Step 2: 可选 assign 到指定 team/agent
             if metadata:

@@ -77,6 +77,12 @@ For inbound webhook connectors, `gateway.handoff` is the most compatible main-pa
 option because it reuses the existing Tool Runtime manifest/execute contract instead
 of requiring the upstream provider response schema to accept custom output item types.
 
+For Chatwoot, the connector never mutates platform conversation status by default:
+handoff skips the `toggle_status` call entirely while keeping assignment and the AI
+summary private note; message delivery is unaffected. Deployments that want the
+legacy handoff → `open` toggle must opt in with
+`ANYAGENT_CHATWOOT_STATUS_CHANGES=true` (default `false`).
+
 ### Session Key Convention
 
 ```

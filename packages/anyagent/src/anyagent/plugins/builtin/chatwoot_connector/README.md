@@ -10,7 +10,7 @@ Chatwoot 入站渠道 connector 参考实现，属于 anyagent Gateway 层 plugi
 | Webhook 签名验证 | ✅ | HMAC-SHA256 验签（`X-Chatwoot-Signature` header） |
 | Platform session binding | ✅ | `session_key = "chatwoot:{account_id}:{conversation_id}"` |
 | Outbound message delivery | ✅ | 通过 Chatwoot Agent Bot API 回写消息到会话 |
-| Human handoff | ✅ | 切换会话状态 → open，可选 assign team/agent |
+| Human handoff | ✅ | 默认不修改会话状态（仅 assign team/agent + AI 摘要 note）；`ANYAGENT_CHATWOOT_STATUS_CHANGES=true` 时 handoff 才切换会话状态 → open |
 | Conversation lifecycle events | ✅ | 监听 `message_created` / `conversation_resolved` 等事件并注入 event store |
 | Agent 主动调用工具 | ✅ | `app.chatwoot.send_message` / `app.chatwoot.handoff` 两个系统工具 |
 | Tool-based handoff bridge | ✅ | webhook 请求会自动向 `/v1/responses` 注入 `gateway.handoff`，走通用 Tool Runtime 主路径 |
@@ -41,6 +41,10 @@ export ANYAGENT_CHATWOOT_URL="https://app.chatwoot.com"
 export ANYAGENT_CHATWOOT_ACCOUNT_ID="1"
 export ANYAGENT_CHATWOOT_ACCESS_TOKEN="your_agent_bot_access_token"
 export ANYAGENT_CHATWOOT_WEBHOOK_SECRET="your_webhook_hmac_secret"
+# 可选：默认 false，connector 不修改 Chatwoot 会话状态
+# （handoff 不调用 toggle_status，仅保留 assignment 与 AI 摘要 private note；
+#  消息收发不受影响。设为 true 才恢复 handoff → open 行为。）
+# export ANYAGENT_CHATWOOT_STATUS_CHANGES="true"
 ```
 
 ### Credential Vault（生产环境推荐）

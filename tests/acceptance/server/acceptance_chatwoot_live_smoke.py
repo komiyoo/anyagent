@@ -136,6 +136,8 @@ async def _run_chatwoot_live_smoke(*, tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ANYAGENT_CHATWOOT_ACCESS_TOKEN", access_token)
     monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", webhook_secret)
     monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    # 本冒烟验证完整 handoff 行为（含 toggle_status → open），显式开启状态变更开关。
+    monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", "true")
     monkeypatch.setattr(
         "anyagent.server.routes.responses.get_default_model_provider",
         lambda: _ChatwootLiveProvider(),

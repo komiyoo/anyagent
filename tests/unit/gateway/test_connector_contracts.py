@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -28,10 +29,15 @@ from anyagent.gateway.connector_contracts import (
 )
 from anyagent.gateway.plugins import GatewayRegistry, WebhookRoute
 from anyagent.plugins.builtin.chatwoot_connector.chatwoot import (
+    ChatwootHandoff,
     ChatwootWebhookAuth,
     build_platform_event_from_webhook,
 )
-from anyagent.plugins.builtin.chatwoot_connector.plugin import _extract_reply_and_handoff
+from anyagent.plugins.builtin.chatwoot_connector.plugin import (
+    _chatwoot_status_changes_enabled,
+    _extract_reply_and_handoff,
+    register as chatwoot_register,
+)
 from anyagent.server.routes.gateway_webhooks import (
     _find_connector_by_webhook,
     _resolve_webhook_secret_ref,
@@ -376,3 +382,115 @@ def test_extract_reply_and_handoff_reads_both_outputs():
     assert handoff_item is not None
     assert handoff_item.reason == HandoffReason.CUSTOMER_REQUEST
     assert handoff_item.metadata.suggested_team == "sales"
+
+
+# ── ChatwootHandoff 会话状态开关 ───────────────────────────────────
+
+
+async def _run_chatwoot_handoff(**handoff_kwargs) -> tuple[HandoffResult, list[httpx.Request]]:
+    requests: list[httpx.Request] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"id": 1})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(_handler),
+        base_url="https://chatwoot.test",
+    ) as client:
+        handoff = ChatwootHandoff(
+            chatwoot_url="https://chatwoot.test",
+            account_id=1,
+            access_token="token",
+            http_client=client,
+            **handoff_kwargs,
+        )
+        result = await handoff.execute_handoff(
+            "42",
+            HandoffReason.CUSTOMER_REQUEST,
+            metadata=HandoffMetadata(suggested_team="7", summary="needs human"),
+        )
+    return result, requests
+
+
+def test_chatwoot_handoff_skips_toggle_status_by_default():
+    import asyncio
+
+    result, requests = asyncio.run(_run_chatwoot_handoff())
+
+    assert result.ok is True
+    assert result.metadata["toggled"] is False
+    assert result.metadata["status_change_skipped"] is True
+    paths = [request.url.path for request in requests]
+    # 默认不发起任何 toggle_status 类请求
+    assert all("toggle_status" not in path for path in paths)
+    # assignment 与摘要 note 不受影响
+    assert "/api/v1/accounts/1/conversations/42/assignments" in paths
+    assert "/api/v1/accounts/1/conversations/42/messages" in paths
+
+
+def test_chatwoot_handoff_toggles_status_when_enabled():
+    import asyncio
+
+    result, requests = asyncio.run(_run_chatwoot_handoff(status_changes_enabled=True))
+
+    assert result.ok is True
+    assert result.metadata["toggled"] is True
+    paths = [request.url.path for request in requests]
+    assert "/api/v1/accounts/1/conversations/42/toggle_status" in paths
+    assert "/api/v1/accounts/1/conversations/42/assignments" in paths
+    assert "/api/v1/accounts/1/conversations/42/messages" in paths
+
+
+def test_chatwoot_status_changes_env_flag_parsing(monkeypatch):
+    monkeypatch.delenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raising=False)
+    assert _chatwoot_status_changes_enabled() is False
+
+    for raw in ("false", "0", "no", "off", "False", ""):
+        monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raw)
+        assert _chatwoot_status_changes_enabled() is False
+
+    for raw in ("true", "1", "yes", "on", "True"):
+        monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raw)
+        assert _chatwoot_status_changes_enabled() is True
+
+
+class _RecorderAPI:
+    def __init__(self) -> None:
+        self.connectors: list = []
+        self.tools: list = []
+
+    def registerChannel(self, connector) -> None:  # noqa: N802
+        self.connectors.append(connector)
+
+    def registerTool(self, tool, handler=None) -> None:  # noqa: N802
+        self.tools.append((tool, handler))
+
+    def registerWebhookRoute(self, route) -> None:  # noqa: N802
+        pass
+
+
+def test_register_disables_status_changes_by_default(monkeypatch):
+    monkeypatch.delenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raising=False)
+
+    api = _RecorderAPI()
+    chatwoot_register(api)
+
+    assert api.connectors
+    assert api.connectors[0].handoff._status_changes_enabled is False
+    handoff_tools = [tool for tool, _ in api.tools if tool.name == "app.chatwoot.handoff"]
+    assert handoff_tools
+    assert "不改变会话状态" in handoff_tools[0].description
+
+
+def test_register_enables_status_changes_when_opted_in(monkeypatch):
+    monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", "true")
+
+    api = _RecorderAPI()
+    chatwoot_register(api)
+
+    assert api.connectors
+    assert api.connectors[0].handoff._status_changes_enabled is True
+    handoff_tools = [tool for tool, _ in api.tools if tool.name == "app.chatwoot.handoff"]
+    assert handoff_tools
+    assert "不改变会话状态" not in handoff_tools[0].description

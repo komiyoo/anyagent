@@ -181,6 +181,12 @@ def _chatwoot_process_incoming_async() -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
+def _chatwoot_status_changes_enabled() -> bool:
+    """默认关闭；仅 ANYAGENT_CHATWOOT_STATUS_CHANGES=true 时 connector 才修改 Chatwoot 会话状态。"""
+    raw = os.getenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", "false").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _schedule_incoming_message_processing(
     *,
     body: dict[str, Any],
@@ -515,6 +521,9 @@ def register(api: Any) -> None:
     - ANYAGENT_CHATWOOT_ACCOUNT_ID: Chatwoot account ID
     - ANYAGENT_CHATWOOT_ACCESS_TOKEN: Agent Bot access_token
     - ANYAGENT_CHATWOOT_WEBHOOK_SECRET: webhook HMAC secret（或 credential_id 引用）
+    - ANYAGENT_CHATWOOT_STATUS_CHANGES: 默认 false，connector 不修改 Chatwoot 会话
+      状态（handoff 不调用 toggle_status，仅保留 assignment/摘要 note）；设为 true
+      才恢复 handoff → open 行为
     """
 
     chatwoot_url = os.getenv("ANYAGENT_CHATWOOT_URL", "https://app.chatwoot.com")
@@ -522,6 +531,7 @@ def register(api: Any) -> None:
     access_token = os.getenv("ANYAGENT_CHATWOOT_ACCESS_TOKEN", "")
     webhook_secret = os.getenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "")
     webhook_secret_kind_value = os.getenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "secret")
+    status_changes_enabled = _chatwoot_status_changes_enabled()
 
     # 构建 connector 实例
     _auth = ChatwootWebhookAuth()
@@ -534,6 +544,7 @@ def register(api: Any) -> None:
         chatwoot_url=chatwoot_url,
         account_id=account_id,
         access_token=access_token,
+        status_changes_enabled=status_changes_enabled,
     )
 
     _chatwoot_webhook_secret = webhook_secret
@@ -636,10 +647,15 @@ def register(api: Any) -> None:
             )
             return json.dumps({"ok": result.ok, "reason": result.reason})
 
+        handoff_description = (
+            "将 Chatwoot 会话转接给人工坐席。触发后会话状态变为 open，可选指派到特定团队/坐席。"
+            if status_changes_enabled
+            else "将 Chatwoot 会话转接给人工坐席（不改变会话状态），可选指派到特定团队/坐席。"
+        )
         api.registerTool(
             ToolDefinition(
                 name="app.chatwoot.handoff",
-                description="将 Chatwoot 会话转接给人工坐席。触发后会话状态变为 open，可选指派到特定团队/坐席。",
+                description=handoff_description,
                 category="app",
                 kind="command",
                 parameters={
