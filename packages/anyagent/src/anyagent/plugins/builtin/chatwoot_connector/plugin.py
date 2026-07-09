@@ -356,6 +356,30 @@ async def _process_incoming_message(
             response_id=str(payload.get("id") or ""),
         )
 
+        if not reply_text and handoff_item is None and not tool_handoff_executed:
+            # Agent returned 200 but produced no text and no handoff — the
+            # tool loop likely broke (e.g. follow-up model call timed out
+            # after a tool error).  Surface this so operators see the gap.
+            emit_observability_event(
+                "chatwoot.background.failed",
+                category="server",
+                level="error",
+                payload={
+                    "agent_id": target_agent_id,
+                    "session_key": session_key,
+                    "status_code": response.status_code,
+                    "reason": "agent response contained no reply text and no handoff",
+                    "response_output_types": [
+                        item.get("type") for item in payload.get("output", []) if isinstance(item, dict)
+                    ],
+                },
+            )
+            return {
+                "processed": False,
+                "reason": "agent response contained no reply text and no handoff",
+                "status_code": response.status_code,
+            }
+
         return {
             "processed": True,
             "reply_sent": bool(reply_text and connector and getattr(connector, "outbound", None)),

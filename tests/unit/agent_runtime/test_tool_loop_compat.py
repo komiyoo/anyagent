@@ -10,7 +10,7 @@ from openai.types.responses.response_function_tool_call import ResponseFunctionT
 from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_output_text import ResponseOutputText
 
-from anyagent.agent_runtime.model_providers import ModelProviderUpstreamError
+from anyagent.agent_runtime.model_providers import ModelProviderTransportError, ModelProviderUpstreamError
 from anyagent.agent_runtime.tool_loop import run_tool_loop_nonstream
 from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
 from anyagent.protocol.tool_runtime import ExecuteMeta, ExecuteResponseCompleted, ManifestResponse, ToolContext
@@ -121,3 +121,51 @@ async def _run_nonstream_tool_loop_retries_previous_response_not_found_stateless
     assert "metadata" not in provider.bodies[1]
     assert "previous_response_id" not in provider.bodies[2]
     assert [item["type"] for item in provider.bodies[2]["input"]] == ["function_call", "function_call_output"]
+
+
+class _FollowupTimeoutProvider:
+    """First call returns a tool call; follow-up raises TransportError (timeout)."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def create_response(self, *, body: dict[str, Any], idempotency_key: str | None = None, timeout_s: float = 60.0) -> Response:
+        _ = idempotency_key, timeout_s
+        self.call_count += 1
+        if self.call_count == 1:
+            return Response.model_validate({
+                "id": "resp_tool_call",
+                "object": "response",
+                "created_at": int(time.time()),
+                "model": str(body.get("model") or "gpt-test"),
+                "output": [
+                    ResponseFunctionToolCall(
+                        type="function_call", call_id="call_1", name="demo_lookup",
+                        arguments=json.dumps({"query": "x"}),
+                    ).model_dump(exclude_none=True, by_alias=True),
+                ],
+                "parallel_tool_calls": False, "tool_choice": "auto",
+                "tools": list(body.get("tools") or []),
+            })
+        raise ModelProviderTransportError("read timeout")
+
+
+def test_nonstream_tool_loop_returns_502_on_followup_failure() -> None:
+    asyncio.run(_run_nonstream_tool_loop_returns_502_on_followup_failure())
+
+
+async def _run_nonstream_tool_loop_returns_502_on_followup_failure() -> None:
+    provider = _FollowupTimeoutProvider()
+    status, payload = await run_tool_loop_nonstream(
+        model_provider=provider,  # type: ignore[arg-type]
+        tool_runtime=_ToolRuntime(),  # type: ignore[arg-type]
+        agent_id="main",
+        session_key="s1",
+        body={"input": "hello", "model": "gpt-test", "metadata": {"agent_id": "main"}},
+        idempotency_key=None,
+        tool_context=ToolContext(),
+    )
+    assert status == 502
+    assert "tool_loop_incomplete" in payload["error"]["type"]
+    assert "transport" in payload["error"]["message"].lower()
+    assert provider.call_count == 2

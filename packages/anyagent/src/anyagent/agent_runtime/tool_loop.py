@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable, Iterable
+
+_LOGGER = logging.getLogger(__name__)
 
 from openai.types.responses.response import Response
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
@@ -666,6 +669,7 @@ async def run_tool_loop_nonstream(
     canonical_response_id = canonical_response_id or (
         resp.id if isinstance(resp.id, str) and resp.id.strip() else "resp_anyagent"
     )
+    followup_error: str | None = None
     iters = 0
     while iters < max_iters:
         iters += 1
@@ -752,10 +756,14 @@ async def run_tool_loop_nonstream(
             break
         try:
             resp = await model_provider.create_response(body=next_body, idempotency_key=None)
-        except ModelProviderInvalidRequestError:
+        except ModelProviderInvalidRequestError as e:
+            followup_error = f"invalid_request: {e.message}"
+            _LOGGER.warning("tool loop follow-up failed (invalid request, iter %d): %s", iters, e.message)
             break
         except ModelProviderUpstreamError as e:
             if not _is_previous_response_not_found(e):
+                followup_error = f"upstream_{e.status_code}: {e.message}"
+                _LOGGER.warning("tool loop follow-up failed (upstream %d, iter %d): %s", e.status_code, iters, e.message)
                 break
             fallback_body = _build_stateless_tool_followup_body(
                 response=resp,
@@ -774,10 +782,22 @@ async def run_tool_loop_nonstream(
                 break
             try:
                 resp = await model_provider.create_response(body=fallback_body, idempotency_key=None)
-            except (ModelProviderInvalidRequestError, ModelProviderUpstreamError, ModelProviderTransportError):
+            except (ModelProviderInvalidRequestError, ModelProviderUpstreamError, ModelProviderTransportError) as e2:
+                followup_error = f"stateless_fallback_failed: {e2}"
+                _LOGGER.warning("tool loop stateless fallback also failed (iter %d): %s", iters, e2)
                 break
-        except ModelProviderTransportError:
+        except ModelProviderTransportError as e:
+            followup_error = f"transport: {e.message}"
+            _LOGGER.warning("tool loop follow-up failed (transport, iter %d): %s", iters, e.message)
             break
+
+    if followup_error is not None:
+        return 502, {
+            "error": {
+                "message": f"tool loop follow-up model call failed: {followup_error}",
+                "type": "tool_loop_incomplete",
+            },
+        }
 
     payload = resp.model_dump(exclude_none=True, by_alias=True)
     normalize_response_id(payload, canonical_response_id)
@@ -861,6 +881,7 @@ async def run_tool_loop_stream_buffered(
     )
     batches: list[list[ResponseStreamEvent]] = [events0]
 
+    followup_error: str | None = None
     iters = 0
     resp = completed0
     while iters < max_iters:
@@ -947,15 +968,20 @@ async def run_tool_loop_stream_buffered(
 
         try:
             events_i, completed_i = await model_provider.create_response_stream_buffered(body=next_body, idempotency_key=None)
-        except ModelProviderUpstreamError:
-            break
-        except ModelProviderInvalidRequestError:
-            break
-        except ModelProviderTransportError:
+        except (ModelProviderUpstreamError, ModelProviderInvalidRequestError, ModelProviderTransportError) as e:
+            followup_error = f"{type(e).__name__}: {getattr(e, 'message', str(e))}"
+            _LOGGER.warning("tool loop stream follow-up failed (iter %d): %s", iters, followup_error)
             break
 
         batches.append(events_i)
         resp = completed_i
+
+    if followup_error is not None:
+        error_body = json.dumps(
+            {"error": {"message": f"tool loop follow-up model call failed: {followup_error}", "type": "tool_loop_incomplete"}},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return 502, [error_body]
 
     def iter_bytes() -> Iterable[bytes]:
         for i, batch in enumerate(batches):
@@ -1050,11 +1076,21 @@ async def run_tool_loop_stream_live(
         )
         if stop:
             break
-        live_stream = await _open_live_response_stream(
-            model_provider=model_provider,
-            body=current_body,
-            idempotency_key=current_idempotency,
-        )
+        try:
+            live_stream = await _open_live_response_stream(
+                model_provider=model_provider,
+                body=current_body,
+                idempotency_key=current_idempotency,
+            )
+        except (ModelProviderUpstreamError, ModelProviderInvalidRequestError, ModelProviderTransportError) as e:
+            if _iter_index == 0:
+                raise
+            _LOGGER.warning("tool loop live-stream follow-up failed (iter %d): %s", _iter_index, e)
+            yield encode_sse_event(
+                "error",
+                json.dumps({"error": {"message": f"tool loop follow-up failed: {e}", "type": "tool_loop_incomplete"}}, ensure_ascii=False),
+            )
+            break
 
         pending_completed_block: bytes | None = None
         async with live_stream as stream:
