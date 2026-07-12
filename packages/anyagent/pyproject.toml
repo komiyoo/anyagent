@@ -1,6 +1,6 @@
 [project]
 name = "anyagent"
-version = "0.4.18"
+version = "0.4.19"
 description = "anyagent SDK (agent runtime + protocol + gateway + skills + tool runtime)"
 requires-python = ">=3.12"
 dependencies = [
@@ -59,6 +59,13 @@ anyagent = "anyagent.cli:main"
 dev = [
   "pytest>=8.4",
 ]
+
+# 默认走阿里云 PyPI 镜像：uv.lock 会把下载 URL 锁到镜像域名，
+# 否则 Yunxiao CI（北京 runner）按锁文件直连 files.pythonhosted.org 只有 KB/s。
+[[tool.uv.index]]
+name = "aliyun-mirror"
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
 
 [build-system]
 requires = ["hatchling>=1.24"]
