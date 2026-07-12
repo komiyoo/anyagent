@@ -296,6 +296,78 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
     )
 
 
+def test_chatwoot_connector_opens_pending_conversation_after_reply(tmp_path: Path, monkeypatch) -> None:
+    asyncio.run(_run_chatwoot_connector_opens_pending_conversation_after_reply(tmp_path, monkeypatch))
+
+
+async def _run_chatwoot_connector_opens_pending_conversation_after_reply(tmp_path: Path, monkeypatch) -> None:
+    _write_main_agent(tmp_path)
+    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
+
+    release = asyncio.Event()
+    release.set()  # 纯文本回复 provider：立即返回，无 handoff
+    provider = _SlowChatwootProvider(release)
+    monkeypatch.setattr(
+        "anyagent.server.routes.responses.get_default_model_provider",
+        lambda: provider,
+    )
+
+    app = create_app(
+        workspace_dir=tmp_path,
+        api_key="user-key",
+        admin_api_key="admin-key",
+        plugin_roots=[REFERENCE_PLUGIN_ROOT],
+    )
+    connector = app.state.anyagent.gateway_registry.channel_connectors["chatwoot"]
+
+    sent_messages: list[str] = []
+    opened: list[str] = []
+
+    async def _record_send_message(platform_conversation_id: str, content: str, **_kwargs):
+        sent_messages.append(platform_conversation_id)
+        return type("SendResult", (), {"ok": True, "platform_message_id": "msg_1"})()
+
+    async def _record_open_conversation(platform_conversation_id: str) -> bool:
+        opened.append(platform_conversation_id)
+        return True
+
+    connector.outbound.send_message = _record_send_message
+    connector.handoff.open_conversation = _record_open_conversation
+
+    payload = {
+        "event": "message_created",
+        "message_type": "incoming",
+        "timestamp": 1717000000,
+        "account": {"id": 1},
+        "conversation": {"id": 42, "status": "pending"},
+        "message": {"content": "hi"},
+    }
+    raw_body = json.dumps(payload).encode("utf-8")
+    signature = hmac.new(
+        b"test-chatwoot-secret",
+        f"{payload['timestamp']}.{raw_body.decode('utf-8')}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as http:
+        response = await http.post(
+            "/gateway/chatwoot/webhook/main",
+            headers={"x-chatwoot-signature": signature, "x-chatwoot-timestamp": str(payload["timestamp"])},
+            content=raw_body,
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["processed"] is True
+        assert data["reply_sent"] is True
+        assert data["handoff_triggered"] is False
+        assert data["conversation_opened"] is True
+
+    assert sent_messages == ["42"]
+    assert opened == ["42"]
+
+
 def test_chatwoot_connector_webhook_acknowledges_before_background_processing(tmp_path: Path, monkeypatch) -> None:
     asyncio.run(_run_chatwoot_connector_webhook_acknowledges_before_background_processing(tmp_path, monkeypatch))
 

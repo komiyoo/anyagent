@@ -413,26 +413,10 @@ async def _run_chatwoot_handoff(**handoff_kwargs) -> tuple[HandoffResult, list[h
     return result, requests
 
 
-def test_chatwoot_handoff_skips_toggle_status_by_default():
+def test_chatwoot_handoff_toggles_status_by_default():
     import asyncio
 
     result, requests = asyncio.run(_run_chatwoot_handoff())
-
-    assert result.ok is True
-    assert result.metadata["toggled"] is False
-    assert result.metadata["status_change_skipped"] is True
-    paths = [request.url.path for request in requests]
-    # 默认不发起任何 toggle_status 类请求
-    assert all("toggle_status" not in path for path in paths)
-    # assignment 与摘要 note 不受影响
-    assert "/api/v1/accounts/1/conversations/42/assignments" in paths
-    assert "/api/v1/accounts/1/conversations/42/messages" in paths
-
-
-def test_chatwoot_handoff_toggles_status_when_enabled():
-    import asyncio
-
-    result, requests = asyncio.run(_run_chatwoot_handoff(status_changes_enabled=True))
 
     assert result.ok is True
     assert result.metadata["toggled"] is True
@@ -442,15 +426,83 @@ def test_chatwoot_handoff_toggles_status_when_enabled():
     assert "/api/v1/accounts/1/conversations/42/messages" in paths
 
 
+def test_chatwoot_handoff_skips_toggle_status_when_disabled():
+    import asyncio
+
+    result, requests = asyncio.run(_run_chatwoot_handoff(status_changes_enabled=False))
+
+    assert result.ok is True
+    assert result.metadata["toggled"] is False
+    assert result.metadata["status_change_skipped"] is True
+    paths = [request.url.path for request in requests]
+    # 显式关闭时不发起任何 toggle_status 类请求
+    assert all("toggle_status" not in path for path in paths)
+    # assignment 与摘要 note 不受影响
+    assert "/api/v1/accounts/1/conversations/42/assignments" in paths
+    assert "/api/v1/accounts/1/conversations/42/messages" in paths
+
+
+async def _run_chatwoot_open_conversation(*, response_status: int = 200, **handoff_kwargs) -> tuple[bool, list[httpx.Request]]:
+    requests: list[httpx.Request] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(response_status, json={"id": 1})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(_handler),
+        base_url="https://chatwoot.test",
+    ) as client:
+        handoff = ChatwootHandoff(
+            chatwoot_url="https://chatwoot.test",
+            account_id=1,
+            access_token="token",
+            http_client=client,
+            **handoff_kwargs,
+        )
+        opened = await handoff.open_conversation("42")
+    return opened, requests
+
+
+def test_chatwoot_open_conversation_toggles_status_by_default():
+    import asyncio
+
+    opened, requests = asyncio.run(_run_chatwoot_open_conversation())
+
+    assert opened is True
+    assert [request.url.path for request in requests] == [
+        "/api/v1/accounts/1/conversations/42/toggle_status"
+    ]
+    assert json.loads(requests[0].content) == {"status": "open"}
+
+
+def test_chatwoot_open_conversation_noop_when_disabled():
+    import asyncio
+
+    opened, requests = asyncio.run(_run_chatwoot_open_conversation(status_changes_enabled=False))
+
+    assert opened is False
+    assert requests == []
+
+
+def test_chatwoot_open_conversation_swallows_api_errors():
+    import asyncio
+
+    opened, requests = asyncio.run(_run_chatwoot_open_conversation(response_status=500))
+
+    assert opened is False
+    assert len(requests) == 1
+
+
 def test_chatwoot_status_changes_env_flag_parsing(monkeypatch):
     monkeypatch.delenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raising=False)
-    assert _chatwoot_status_changes_enabled() is False
+    assert _chatwoot_status_changes_enabled() is True
 
-    for raw in ("false", "0", "no", "off", "False", ""):
+    for raw in ("false", "0", "no", "off", "False"):
         monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raw)
         assert _chatwoot_status_changes_enabled() is False
 
-    for raw in ("true", "1", "yes", "on", "True"):
+    for raw in ("true", "1", "yes", "on", "True", ""):
         monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raw)
         assert _chatwoot_status_changes_enabled() is True
 
@@ -470,8 +522,21 @@ class _RecorderAPI:
         pass
 
 
-def test_register_disables_status_changes_by_default(monkeypatch):
+def test_register_enables_status_changes_by_default(monkeypatch):
     monkeypatch.delenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raising=False)
+
+    api = _RecorderAPI()
+    chatwoot_register(api)
+
+    assert api.connectors
+    assert api.connectors[0].handoff._status_changes_enabled is True
+    handoff_tools = [tool for tool, _ in api.tools if tool.name == "app.chatwoot.handoff"]
+    assert handoff_tools
+    assert "不改变会话状态" not in handoff_tools[0].description
+
+
+def test_register_disables_status_changes_when_opted_out(monkeypatch):
+    monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", "false")
 
     api = _RecorderAPI()
     chatwoot_register(api)

@@ -182,9 +182,9 @@ def _chatwoot_process_incoming_async() -> bool:
 
 
 def _chatwoot_status_changes_enabled() -> bool:
-    """默认关闭；仅 ANYAGENT_CHATWOOT_STATUS_CHANGES=true 时 connector 才修改 Chatwoot 会话状态。"""
-    raw = os.getenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", "false").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    """默认开启；显式设 ANYAGENT_CHATWOOT_STATUS_CHANGES=false 时 connector 不修改 Chatwoot 会话状态。"""
+    raw = os.getenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", "true").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
 
 
 def _schedule_incoming_message_processing(
@@ -337,12 +337,14 @@ async def _process_incoming_message(
         payload = response.json()
         reply_text, handoff_item = _extract_reply_and_handoff(payload)
 
+        reply_sent = False
         if reply_text and connector and getattr(connector, "outbound", None) is not None:
             await connector.outbound.send_message(
                 platform_conversation_id=conversation_id,
                 content=reply_text,
                 content_type="text",
             )
+            reply_sent = True
 
         handoff_result = None
         if handoff_item is not None and connector and getattr(connector, "handoff", None) is not None:
@@ -355,6 +357,20 @@ async def _process_incoming_message(
             state=state,
             response_id=str(payload.get("id") or ""),
         )
+
+        # bot 已回复且未转人工时，把 pending 会话置为 open，使其出现在 Chatwoot
+        # 默认 Open 列表而非「等待中」。受 ANYAGENT_CHATWOOT_STATUS_CHANGES 控制
+        # （开关在 ChatwootHandoff.open_conversation 内部判断，关闭时为 no-op）。
+        conversation_opened = False
+        if (
+            reply_sent
+            and handoff_item is None
+            and not tool_handoff_executed
+            and str(body.get("conversation", {}).get("status", "")) == "pending"
+        ):
+            open_conversation = getattr(getattr(connector, "handoff", None), "open_conversation", None)
+            if open_conversation is not None:
+                conversation_opened = bool(await open_conversation(conversation_id))
 
         if not reply_text and handoff_item is None and not tool_handoff_executed:
             # Agent returned 200 but produced no text and no handoff — the
@@ -382,9 +398,10 @@ async def _process_incoming_message(
 
         return {
             "processed": True,
-            "reply_sent": bool(reply_text and connector and getattr(connector, "outbound", None)),
+            "reply_sent": reply_sent,
             "handoff_triggered": handoff_item is not None or tool_handoff_executed,
             "handoff_executed": bool((handoff_result and handoff_result.ok) or tool_handoff_executed),
+            "conversation_opened": conversation_opened,
             "status_code": response.status_code,
         }
 
@@ -545,9 +562,9 @@ def register(api: Any) -> None:
     - ANYAGENT_CHATWOOT_ACCOUNT_ID: Chatwoot account ID
     - ANYAGENT_CHATWOOT_ACCESS_TOKEN: Agent Bot access_token
     - ANYAGENT_CHATWOOT_WEBHOOK_SECRET: webhook HMAC secret（或 credential_id 引用）
-    - ANYAGENT_CHATWOOT_STATUS_CHANGES: 默认 false，connector 不修改 Chatwoot 会话
-      状态（handoff 不调用 toggle_status，仅保留 assignment/摘要 note）；设为 true
-      才恢复 handoff → open 行为
+    - ANYAGENT_CHATWOOT_STATUS_CHANGES: 默认 true——handoff → open，且 bot 回复后
+      将 pending 会话置为 open；显式设为 false 时 connector 不修改 Chatwoot 会话
+      状态（handoff 不调用 toggle_status，仅保留 assignment/摘要 note）
     """
 
     chatwoot_url = os.getenv("ANYAGENT_CHATWOOT_URL", "https://app.chatwoot.com")

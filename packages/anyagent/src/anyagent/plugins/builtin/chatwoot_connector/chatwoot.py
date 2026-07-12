@@ -6,7 +6,7 @@ Chatwoot Connector — Inbound Channel Connector 参考实现。
 - HMAC-SHA256 签名验证
 - 平台会话映射为 anyagent session_key
 - agent 回复通过 Chatwoot API 回写到会话
-- 转人工信号处理（toggle_status → open，默认关闭，经 status_changes_enabled 显式开启）
+- 会话状态变更（handoff → open、bot 回复后 pending → open；默认开启，经 status_changes_enabled 显式关闭）
 - 会话生命周期事件注入
 
 参考：
@@ -219,9 +219,10 @@ class ChatwootHandoff(ConnectorHandoff):
     将 Chatwoot 会话状态切换为 open（移除 bot assignment），
     并可选择 assign 到特定团队 / 坐席。
 
-    默认 `status_changes_enabled=False`：跳过 toggle_status 调用（connector 不以
-    任何方式修改 Chatwoot 会话状态），仅保留 assignment 与 AI 摘要 private note；
-    显式传 True 才恢复 handoff → open 行为。
+    默认 `status_changes_enabled=True`：handoff 将会话切换为 open，且
+    open_conversation 在 bot 回复后将 pending 会话置为 open。
+    显式传 False 时跳过所有 toggle_status 调用（connector 不以任何方式修改
+    Chatwoot 会话状态），仅保留 assignment 与 AI 摘要 private note。
 
     API:
         POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/toggle_status
@@ -235,7 +236,7 @@ class ChatwootHandoff(ConnectorHandoff):
         account_id: str | int,
         access_token: str,
         http_client: httpx.AsyncClient | None = None,
-        status_changes_enabled: bool = False,
+        status_changes_enabled: bool = True,
     ) -> None:
         self._base_url = str(chatwoot_url).rstrip("/")
         self._account_id = str(account_id)
@@ -349,6 +350,36 @@ class ChatwootHandoff(ConnectorHandoff):
                 reason=f"Request error: {exc}",
                 metadata=results,
             )
+        finally:
+            if self._client is None:
+                await client.aclose()
+
+    async def open_conversation(self, platform_conversation_id: str) -> bool:
+        """将会话状态置为 open（bot 回复 pending 会话后调用，使其出现在默认 Open 列表）。
+
+        与 execute_handoff 不同：只切换状态，不做 assignment / 摘要 note。
+        受 status_changes_enabled 控制，关闭时为 no-op。失败不抛异常（回复已
+        送达，状态切换失败不应影响主流程），返回 False。
+        """
+        if not self._status_changes_enabled:
+            return False
+
+        client = await self._get_client()
+        try:
+            resp = await client.post(
+                f"/api/v1/accounts/{self._account_id}/conversations/"
+                f"{platform_conversation_id}/toggle_status",
+                json={"status": "open"},
+            )
+            resp.raise_for_status()
+            return True
+        except httpx.HTTPError as exc:
+            _LOGGER.warning(
+                "Chatwoot open conversation failed: conversation_id=%s error=%s",
+                platform_conversation_id,
+                exc,
+            )
+            return False
         finally:
             if self._client is None:
                 await client.aclose()
