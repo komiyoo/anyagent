@@ -126,7 +126,7 @@ def create_tool_runtime_app(
             else:
                 await resolved_workspace_event_store.aclose()
 
-    app = FastAPI(title="anyagent-tool-runtime", version="0.4.19", lifespan=_lifespan)
+    app = FastAPI(title="anyagent-tool-runtime", version="0.4.20", lifespan=_lifespan)
     app.state.anyagent_tool_runtime = runtime
     app.state.anyagent_tool_runtime_workspace = workspace
     app.state.anyagent_tool_runtime_internal_key = resolved_internal_key
@@ -547,6 +547,10 @@ def _resolve_plugin_roots(plugin_roots: tuple[str | Path, ...] | list[str | Path
     raw_items: list[str | Path] = []
     if plugin_roots is not None:
         raw_items.extend(plugin_roots)
+    else:
+        default_root = workspace / "plugins"
+        if default_root.is_dir():
+            raw_items.append(default_root)
 
     roots: list[Path] = []
     seen: set[str] = set()

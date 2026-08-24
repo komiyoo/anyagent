@@ -118,6 +118,10 @@ def _resolve_plugin_roots(plugin_roots: list[str | Path] | tuple[str | Path, ...
     else:
         env_value = os.getenv("ANYAGENT_PLUGIN_ROOTS", "")
         raw_items.extend(item.strip() for item in env_value.split(",") if item.strip())
+        if not raw_items:
+            default_root = workspace / "plugins"
+            if default_root.is_dir():
+                raw_items.append(default_root)
 
     roots: list[Path] = []
     seen: set[str] = set()

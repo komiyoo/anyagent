@@ -196,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         "--plugin-root",
         action="append",
         default=None,
-        help="Plugin root to scan for plugin.json files. May be repeated. Defaults to comma-separated $ANYAGENT_PLUGIN_ROOTS.",
+        help="Plugin root to scan for plugin.json files. May be repeated. Defaults to $ANYAGENT_PLUGIN_ROOTS, or ./plugins when that directory exists.",
     )
     serve.add_argument(
         "--plugins-fail-open",
@@ -264,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
         "--plugin-root",
         action="append",
         default=None,
-        help="Plugin root to scan for plugin.json files. May be repeated. Defaults to comma-separated $ANYAGENT_PLUGIN_ROOTS.",
+        help="Plugin root to scan for plugin.json files. May be repeated. Defaults to $ANYAGENT_PLUGIN_ROOTS, or ./plugins when that directory exists.",
     )
     dev.add_argument(
         "--plugins-fail-open",
