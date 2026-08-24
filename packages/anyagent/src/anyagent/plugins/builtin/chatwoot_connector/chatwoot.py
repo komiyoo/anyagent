@@ -356,11 +356,11 @@ class ChatwootHandoff(ConnectorHandoff):
                 await client.aclose()
 
     async def open_conversation(self, platform_conversation_id: str) -> bool:
-        """将会话状态置为 open（bot 回复 pending 会话后调用，使其出现在默认 Open 列表）。
+        """将会话状态置为 open（bot 回复后调用，使其保持在 Open 列表）。
 
-        与 execute_handoff 不同：只切换状态，不做 assignment / 摘要 note。
-        受 status_changes_enabled 控制，关闭时为 no-op。失败不抛异常（回复已
-        送达，状态切换失败不应影响主流程），返回 False。
+        只允许切到 open，从不 resolve / snooze。与 execute_handoff 不同：
+        不做 assignment / 摘要 note。受 status_changes_enabled 控制，关闭时
+        为 no-op。失败不抛异常（回复已送达，状态切换失败不应影响主流程）。
         """
         if not self._status_changes_enabled:
             return False

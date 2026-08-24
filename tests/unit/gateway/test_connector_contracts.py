@@ -35,6 +35,7 @@ from anyagent.plugins.builtin.chatwoot_connector.chatwoot import (
     conversation_assigned_to_human,
 )
 from anyagent.plugins.builtin.chatwoot_connector.plugin import (
+    _chatwoot_conversation_status,
     _chatwoot_skip_when_assigned_to_human,
     _chatwoot_status_changes_enabled,
     _extract_reply_and_handoff,
@@ -507,6 +508,15 @@ def test_chatwoot_status_changes_env_flag_parsing(monkeypatch):
     for raw in ("true", "1", "yes", "on", "True", ""):
         monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raw)
         assert _chatwoot_status_changes_enabled() is True
+
+
+def test_chatwoot_conversation_status_reads_nested_or_missing() -> None:
+    assert _chatwoot_conversation_status({"conversation": {"id": 1, "status": "pending"}}) == "pending"
+    assert _chatwoot_conversation_status({"conversation": {"id": 1, "status": "open"}}) == "open"
+    assert _chatwoot_conversation_status({"conversation": {"id": 1, "status": "resolved"}}) == "resolved"
+    assert _chatwoot_conversation_status({"conversation": {"id": 1}}) == ""
+    assert _chatwoot_conversation_status({"status": "open"}) == "open"
+    assert _chatwoot_conversation_status({"conversation": {}, "status": "resolved"}) == ""
 
 
 def test_chatwoot_skip_when_assigned_to_human_env_flag_parsing(monkeypatch):

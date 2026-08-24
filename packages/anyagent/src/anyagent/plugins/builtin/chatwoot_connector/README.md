@@ -12,7 +12,7 @@ Chatwoot 入站渠道 connector 参考实现，属于 anyagent Gateway 层 plugi
 | Outbound message delivery | ✅ | 通过 Chatwoot Agent Bot API 回写消息到会话 |
 | Human handoff | ✅ | handoff 切换会话状态 → open，并 assign team/agent + AI 摘要 note；`ANYAGENT_CHATWOOT_STATUS_CHANGES=false` 时不修改会话状态 |
 | Skip when assigned | ✅ | 会话已分配给真人坐席（`meta.assignee_type=User`）时不调用 agent、不写回客户消息；`ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN=false` 时关闭 |
-| Open on reply | ✅ | bot 回复成功后将 pending 会话置为 open（出现在默认 Open 列表而非等待中）；`ANYAGENT_CHATWOOT_STATUS_CHANGES=false` 时关闭 |
+| Open on reply | ✅ | bot 回复成功后将会话保持为 open（pending / resolved / snoozed / 缺 status 都会打开；已是 open 则不动）。从不 resolve / snooze。`ANYAGENT_CHATWOOT_STATUS_CHANGES=false` 时关闭 |
 | Conversation lifecycle events | ✅ | 监听 `message_created` / `conversation_resolved` 等事件并注入 event store |
 | Agent 主动调用工具 | ✅ | `app.chatwoot.send_message` / `app.chatwoot.handoff` 两个系统工具 |
 | Tool-based handoff bridge | ✅ | webhook 请求会自动向 `/v1/responses` 注入 `gateway.handoff`，走通用 Tool Runtime 主路径 |

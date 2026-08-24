@@ -256,7 +256,7 @@ def create_app(
                     if asyncio.iscoroutine(result):
                         await result
 
-    app = FastAPI(title="anyagent", version="0.4.21", lifespan=_lifespan)
+    app = FastAPI(title="anyagent", version="0.4.22", lifespan=_lifespan)
     if enable_studio:
         # Studio 前端独立部署（方案 B）：server 不再内嵌前端产物。
         # 通过 studio_dir 参数或 ANYAGENT_STUDIO_DIR 环境变量指向外部 build

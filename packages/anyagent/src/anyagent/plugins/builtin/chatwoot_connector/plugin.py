@@ -200,6 +200,15 @@ def _chatwoot_status_changes_enabled() -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
+def _chatwoot_conversation_status(body: dict[str, Any]) -> str:
+    conversation = body.get("conversation")
+    if isinstance(conversation, dict) and conversation.get("status") is not None:
+        return str(conversation.get("status") or "").strip().lower()
+    if not isinstance(conversation, dict):
+        return str(body.get("status") or "").strip().lower()
+    return ""
+
+
 def _chatwoot_skip_when_assigned_to_human() -> bool:
     """默认开启：会话已分配给真人坐席时不再调用 agent、不写回客户消息。"""
     raw = os.getenv("ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", "true").strip().lower()
@@ -431,15 +440,15 @@ async def _process_incoming_message(
             response_id=str(payload.get("id") or ""),
         )
 
-        # bot 已回复且未转人工时，把 pending 会话置为 open，使其出现在 Chatwoot
-        # 默认 Open 列表而非「等待中」。受 ANYAGENT_CHATWOOT_STATUS_CHANGES 控制
-        # （开关在 ChatwootHandoff.open_conversation 内部判断，关闭时为 no-op）。
+        # bot 已回复且未转人工时，将会话保持为 open。Chatwoot Agent Bot 新会话
+        # 默认 pending；webhook 也可能缺 status 或仍是 resolved/snoozed。
+        # 已经是 open 则不再打 API。connector 从不 resolve / snooze。
         conversation_opened = False
         if (
             reply_sent
             and handoff_item is None
             and not tool_handoff_executed
-            and str(body.get("conversation", {}).get("status", "")) == "pending"
+            and _chatwoot_conversation_status(body) != "open"
         ):
             open_conversation = getattr(getattr(connector, "handoff", None), "open_conversation", None)
             if open_conversation is not None:
@@ -636,8 +645,8 @@ def register(api: Any) -> None:
     - ANYAGENT_CHATWOOT_ACCESS_TOKEN: Agent Bot access_token
     - ANYAGENT_CHATWOOT_WEBHOOK_SECRET: webhook HMAC secret（或 credential_id 引用）
     - ANYAGENT_CHATWOOT_STATUS_CHANGES: 默认 true——handoff → open，且 bot 回复后
-      将 pending 会话置为 open；显式设为 false 时 connector 不修改 Chatwoot 会话
-      状态（handoff 不调用 toggle_status，仅保留 assignment/摘要 note）
+      将会话保持为 open（从不 resolve/snooze）；显式设为 false 时 connector 不修改
+      Chatwoot 会话状态（handoff 不调用 toggle_status，仅保留 assignment/摘要 note）
     - ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN: 默认 true——会话已分配给真人
       坐席时跳过 agent 回复；设为 false 时即使已分配仍由 bot 回复
     """
