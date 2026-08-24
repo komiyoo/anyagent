@@ -32,8 +32,10 @@ from anyagent.plugins.builtin.chatwoot_connector.chatwoot import (
     ChatwootHandoff,
     ChatwootWebhookAuth,
     build_platform_event_from_webhook,
+    conversation_assigned_to_human,
 )
 from anyagent.plugins.builtin.chatwoot_connector.plugin import (
+    _chatwoot_skip_when_assigned_to_human,
     _chatwoot_status_changes_enabled,
     _extract_reply_and_handoff,
     register as chatwoot_register,
@@ -505,6 +507,130 @@ def test_chatwoot_status_changes_env_flag_parsing(monkeypatch):
     for raw in ("true", "1", "yes", "on", "True", ""):
         monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raw)
         assert _chatwoot_status_changes_enabled() is True
+
+
+def test_chatwoot_skip_when_assigned_to_human_env_flag_parsing(monkeypatch):
+    monkeypatch.delenv("ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raising=False)
+    assert _chatwoot_skip_when_assigned_to_human() is True
+
+    for raw in ("false", "0", "no", "off", "False"):
+        monkeypatch.setenv("ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raw)
+        assert _chatwoot_skip_when_assigned_to_human() is False
+
+    for raw in ("true", "1", "yes", "on", "True", ""):
+        monkeypatch.setenv("ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raw)
+        assert _chatwoot_skip_when_assigned_to_human() is True
+
+
+def test_conversation_assigned_to_human_detects_webhook_and_api_shapes():
+    assert conversation_assigned_to_human(None) is False
+    assert conversation_assigned_to_human({"conversation": {"id": 68, "status": "open"}}) is False
+    assert conversation_assigned_to_human(
+        {
+            "event": "message_created",
+            "conversation": {
+                "id": 68,
+                "status": "open",
+                "meta": {
+                    "assignee_type": "User",
+                    "assignee": {"id": 153044, "name": "LyrikTrip CS", "type": "user"},
+                },
+            },
+        }
+    ) is True
+    assert conversation_assigned_to_human(
+        {
+            "id": 68,
+            "status": "open",
+            "meta": {
+                "assignee_type": "User",
+                "assignee": {
+                    "id": 153044,
+                    "name": "LyrikTrip CS",
+                    "type": None,
+                    "role": "administrator",
+                },
+            },
+        }
+    ) is True
+    assert conversation_assigned_to_human(
+        {
+            "conversation": {
+                "meta": {
+                    "assignee": {"id": 9, "name": "Lyra", "type": "agent_bot"},
+                }
+            }
+        }
+    ) is False
+    assert conversation_assigned_to_human(
+        {"conversation": {"meta": {"assignee": {"id": 1, "name": "Queue bot"}}}}
+    ) is False
+
+
+def test_chatwoot_get_conversation_returns_payload():
+    import asyncio
+
+    requests: list[httpx.Request] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "payload": {
+                    "id": 68,
+                    "status": "open",
+                    "meta": {"assignee_type": "User", "assignee": {"id": 153044, "role": "administrator"}},
+                }
+            },
+        )
+
+    async def _run() -> dict | None:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(_handler),
+            base_url="https://chatwoot.test",
+        ) as client:
+            handoff = ChatwootHandoff(
+                chatwoot_url="https://chatwoot.test",
+                account_id=145064,
+                access_token="token",
+                http_client=client,
+            )
+            return await handoff.get_conversation("68")
+
+    payload = asyncio.run(_run())
+    assert payload is not None
+    assert payload["id"] == 68
+    assert conversation_assigned_to_human(payload) is True
+    assert [request.url.path for request in requests] == [
+        "/api/v1/accounts/145064/conversations/68"
+    ]
+
+
+def test_chatwoot_get_conversation_skips_request_without_token():
+    import asyncio
+
+    requests: list[httpx.Request] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(500)
+
+    async def _run() -> dict | None:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(_handler),
+            base_url="https://chatwoot.test",
+        ) as client:
+            handoff = ChatwootHandoff(
+                chatwoot_url="https://chatwoot.test",
+                account_id=1,
+                access_token="",
+                http_client=client,
+            )
+            return await handoff.get_conversation("68")
+
+    assert asyncio.run(_run()) is None
+    assert requests == []
 
 
 class _RecorderAPI:

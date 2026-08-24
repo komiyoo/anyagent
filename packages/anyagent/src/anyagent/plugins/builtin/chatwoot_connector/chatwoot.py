@@ -7,6 +7,7 @@ Chatwoot Connector — Inbound Channel Connector 参考实现。
 - 平台会话映射为 anyagent session_key
 - agent 回复通过 Chatwoot API 回写到会话
 - 会话状态变更（handoff → open、bot 回复后 pending → open；默认开启，经 status_changes_enabled 显式关闭）
+- 已分配真人坐席时跳过 bot 回复（assignee_type=User；不把 status=open 当 handoff 信号）
 - 会话生命周期事件注入
 
 参考：
@@ -384,6 +385,37 @@ class ChatwootHandoff(ConnectorHandoff):
             if self._client is None:
                 await client.aclose()
 
+    async def get_conversation(self, platform_conversation_id: str) -> dict[str, Any] | None:
+        """读取会话当前状态（用于发信前再核 assignee）。
+
+        无 access_token 时不发请求，返回 None。失败不抛异常。
+        """
+        conversation_id = str(platform_conversation_id).strip()
+        if not self._access_token or not conversation_id:
+            return None
+
+        client = await self._get_client()
+        try:
+            resp = await client.get(
+                f"/api/v1/accounts/{self._account_id}/conversations/{conversation_id}"
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if not isinstance(data, dict):
+                return None
+            payload = data.get("payload", data)
+            return payload if isinstance(payload, dict) else None
+        except httpx.HTTPError as exc:
+            _LOGGER.warning(
+                "Chatwoot get conversation failed: conversation_id=%s error=%s",
+                conversation_id,
+                exc,
+            )
+            return None
+        finally:
+            if self._client is None:
+                await client.aclose()
+
 
 # ── 平台会话生命周期事件构建 ──────────────────────────────────────
 
@@ -445,6 +477,53 @@ def _dict_at(payload: dict[str, Any], key: str) -> dict[str, Any]:
 def _set_str(target: dict[str, str], key: str, value: Any) -> None:
     if isinstance(value, str) and value.strip():
         target[key] = value.strip()
+
+
+_HUMAN_ASSIGNEE_TYPE = "user"
+_BOT_ASSIGNEE_TYPES = {"agentbot", "captain"}
+_HUMAN_ASSIGNEE_ROLES = {"agent", "administrator"}
+
+
+def _normalize_assignee_token(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().lower().replace("_", "").replace("-", "")
+
+
+def _source_assigned_to_human(source: dict[str, Any]) -> bool:
+    meta = source.get("meta")
+    meta_dict = meta if isinstance(meta, dict) else {}
+    assignee_type = meta_dict.get("assignee_type", source.get("assignee_type"))
+    if _normalize_assignee_token(assignee_type) == _HUMAN_ASSIGNEE_TYPE:
+        return True
+
+    assignee = meta_dict.get("assignee", source.get("assignee"))
+    if not isinstance(assignee, dict) or not assignee:
+        return False
+    token = _normalize_assignee_token(assignee.get("type"))
+    if token in _BOT_ASSIGNEE_TYPES:
+        return False
+    if token == _HUMAN_ASSIGNEE_TYPE:
+        return True
+    role = assignee.get("role")
+    if isinstance(role, str) and role.strip().lower() in _HUMAN_ASSIGNEE_ROLES:
+        return True
+    email = assignee.get("email")
+    return isinstance(email, str) and bool(email.strip())
+
+
+def conversation_assigned_to_human(payload: dict[str, Any] | None) -> bool:
+    """Webhook body 或 GET conversation 载荷是否已分配给真人坐席。
+
+    本仓策略会把 bot 回复后的会话也改成 open，因此不能用 status=open 判断。
+    依据是 meta.assignee_type / assignee.type == user，或坐席带 agent/administrator role。
+    """
+    if not isinstance(payload, dict):
+        return False
+    conversation = payload.get("conversation")
+    if isinstance(conversation, dict) and _source_assigned_to_human(conversation):
+        return True
+    return _source_assigned_to_human(payload)
 
 
 def build_platform_event_from_webhook(

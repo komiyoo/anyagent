@@ -86,6 +86,13 @@ in the default Open list instead of Pending. Opting out with
 while keeping assignment and the AI summary private note; message delivery is
 unaffected.
 
+Chatwoot still delivers `message_created` after a human takes the conversation.
+Because this connector also opens bot-handled conversations, `status=open` is
+not a handoff signal. Since `anyagent>=0.4.21` the connector skips agent
+replies when the conversation is assigned to a human (`meta.assignee_type=User`
+or `assignee.type=user`), including a live re-read before sending. Disable with
+`ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN=false`.
+
 ### Session Key Convention
 
 ```

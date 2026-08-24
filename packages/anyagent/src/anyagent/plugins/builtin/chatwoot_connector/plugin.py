@@ -29,6 +29,7 @@ from anyagent.plugins.builtin.chatwoot_connector.chatwoot import (
     ChatwootOutboundDelivery,
     ChatwootWebhookAuth,
     build_platform_event_from_webhook,
+    conversation_assigned_to_human,
     extract_chatwoot_page_context,
 )
 
@@ -141,6 +142,18 @@ async def _handle_chatwoot_webhook(
             _LOGGER.debug("skipping non-incoming message: message_type=%s", message_type)
             return {"ok": True, "event": event_name, "skipped": True, "reason": f"message_type={message_type}"}
 
+        if _chatwoot_skip_when_assigned_to_human() and conversation_assigned_to_human(body):
+            _LOGGER.info(
+                "skipping incoming message; conversation assigned to human: conversation_id=%s",
+                conversation_id,
+            )
+            return {
+                "ok": True,
+                "event": event_name,
+                "skipped": True,
+                "reason": "assigned_to_human",
+            }
+
         if _chatwoot_process_incoming_async():
             _schedule_incoming_message_processing(
                 body=body,
@@ -185,6 +198,38 @@ def _chatwoot_status_changes_enabled() -> bool:
     """默认开启；显式设 ANYAGENT_CHATWOOT_STATUS_CHANGES=false 时 connector 不修改 Chatwoot 会话状态。"""
     raw = os.getenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", "true").strip().lower()
     return raw not in {"0", "false", "no", "off"}
+
+
+def _chatwoot_skip_when_assigned_to_human() -> bool:
+    """默认开启：会话已分配给真人坐席时不再调用 agent、不写回客户消息。"""
+    raw = os.getenv("ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", "true").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+async def _fetch_live_conversation(connector: Any, conversation_id: str) -> dict[str, Any] | None:
+    getter = getattr(getattr(connector, "handoff", None), "get_conversation", None)
+    if getter is None:
+        return None
+    try:
+        live = await getter(conversation_id)
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning("failed to refresh Chatwoot conversation before reply: %s", exc)
+        return None
+    return live if isinstance(live, dict) else None
+
+
+async def _conversation_owned_by_human(
+    *,
+    body: dict[str, Any],
+    conversation_id: str,
+    connector: Any,
+) -> bool:
+    if not _chatwoot_skip_when_assigned_to_human():
+        return False
+    if conversation_assigned_to_human(body):
+        return True
+    live = await _fetch_live_conversation(connector, conversation_id)
+    return conversation_assigned_to_human(live)
 
 
 def _schedule_incoming_message_processing(
@@ -248,6 +293,17 @@ async def _process_incoming_message(
     处理入站消息：调用 Agent API 生成回复，通过 Chatwoot API 写回。
     """
     from anyagent.gateway.connector_contracts import HandoffOutputItem, chatwoot_session_key
+
+    if await _conversation_owned_by_human(
+        body=body,
+        conversation_id=conversation_id,
+        connector=connector,
+    ):
+        _LOGGER.info(
+            "skipping incoming message; conversation assigned to human: conversation_id=%s",
+            conversation_id,
+        )
+        return {"processed": False, "skipped": True, "reason": "assigned_to_human"}
 
     message_content = _extract_message_content(body)
 
@@ -335,6 +391,23 @@ async def _process_incoming_message(
             }
 
         payload = response.json()
+        if await _conversation_owned_by_human(
+            body=body,
+            conversation_id=conversation_id,
+            connector=connector,
+        ):
+            _LOGGER.info(
+                "dropping agent reply; conversation assigned to human: conversation_id=%s",
+                conversation_id,
+            )
+            return {
+                "processed": True,
+                "reply_sent": False,
+                "skipped": True,
+                "reason": "assigned_to_human",
+                "status_code": response.status_code,
+            }
+
         reply_text, handoff_item = _extract_reply_and_handoff(payload)
 
         reply_sent = False
@@ -565,6 +638,8 @@ def register(api: Any) -> None:
     - ANYAGENT_CHATWOOT_STATUS_CHANGES: 默认 true——handoff → open，且 bot 回复后
       将 pending 会话置为 open；显式设为 false 时 connector 不修改 Chatwoot 会话
       状态（handoff 不调用 toggle_status，仅保留 assignment/摘要 note）
+    - ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN: 默认 true——会话已分配给真人
+      坐席时跳过 agent 回复；设为 false 时即使已分配仍由 bot 回复
     """
 
     chatwoot_url = os.getenv("ANYAGENT_CHATWOOT_URL", "https://app.chatwoot.com")
@@ -631,6 +706,12 @@ def register(api: Any) -> None:
             """工具：agent 发送消息到 Chatwoot 会话。"""
             conversation_id = str(args.get("conversation_id", ""))
             content = str(args.get("content", ""))
+            if _chatwoot_skip_when_assigned_to_human():
+                live = await _handoff.get_conversation(conversation_id)
+                if conversation_assigned_to_human(live):
+                    return json.dumps(
+                        {"ok": False, "skipped": True, "reason": "assigned_to_human"}
+                    )
             result = await _outbound.send_message(
                 platform_conversation_id=conversation_id,
                 content=content,

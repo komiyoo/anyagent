@@ -11,6 +11,7 @@ Chatwoot 入站渠道 connector 参考实现，属于 anyagent Gateway 层 plugi
 | Platform session binding | ✅ | `session_key = "chatwoot:{account_id}:{conversation_id}"` |
 | Outbound message delivery | ✅ | 通过 Chatwoot Agent Bot API 回写消息到会话 |
 | Human handoff | ✅ | handoff 切换会话状态 → open，并 assign team/agent + AI 摘要 note；`ANYAGENT_CHATWOOT_STATUS_CHANGES=false` 时不修改会话状态 |
+| Skip when assigned | ✅ | 会话已分配给真人坐席（`meta.assignee_type=User`）时不调用 agent、不写回客户消息；`ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN=false` 时关闭 |
 | Open on reply | ✅ | bot 回复成功后将 pending 会话置为 open（出现在默认 Open 列表而非等待中）；`ANYAGENT_CHATWOOT_STATUS_CHANGES=false` 时关闭 |
 | Conversation lifecycle events | ✅ | 监听 `message_created` / `conversation_resolved` 等事件并注入 event store |
 | Agent 主动调用工具 | ✅ | `app.chatwoot.send_message` / `app.chatwoot.handoff` 两个系统工具 |
@@ -46,6 +47,9 @@ export ANYAGENT_CHATWOOT_WEBHOOK_SECRET="your_webhook_hmac_secret"
 # 设为 false 时 connector 不修改 Chatwoot 会话状态（handoff 不调用
 # toggle_status，仅保留 assignment 与 AI 摘要 private note；消息收发不受影响）。
 # export ANYAGENT_CHATWOOT_STATUS_CHANGES="false"
+# 可选：默认 true——会话已分配给真人坐席时跳过 bot 回复。不能用 status=open
+# 判断（bot 回复后也会把 pending 置为 open）；依据是 assignee_type=User。
+# export ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN="false"
 ```
 
 ### Credential Vault（生产环境推荐）
@@ -120,7 +124,7 @@ chatwoot:{account_id}:{conversation_id}
 
 | 事件 | 处理方式 |
 |------|---------|
-| `message_created` | 提取消息文本 → 调用 Agent API → 回写回复 |
+| `message_created` | incoming 且未分配真人坐席：提取消息文本 → 调用 Agent API → 回写回复；已分配 `User`：ack 后跳过 |
 | `conversation_resolved` | 记录 event store |
 | `conversation_reopened` | 记录 event store |
 | `conversation_closed` | 记录 event store |

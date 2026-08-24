@@ -35,6 +35,7 @@
 ### Phase 1 — Responses API Provider Hardening
 
 - [x] P1 统一 Anthropic/Gemini provider 翻译宿主,补齐 Gemini function calling、Anthropic `tool_choice=required` 与 developer/system prompt 映射,并收敛 provider registry（Req: `requirements.md#req-4-5`; Impl: `packages/anyagent/src/anyagent/agent_runtime/model_providers/_translating_provider.py`; Module: `anyagent.agent_runtime.model_providers`）
+- [x] P1 Chatwoot 已分配真人坐席时跳过 bot 回复：webhook 快照 + 发信前 live GET，不把 `status=open` 当 handoff 信号（Req: `requirements.md#req-6`; Impl: `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/chatwoot.py`, `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/plugin.py`; Module: `anyagent.plugins.builtin.chatwoot_connector`）
 
 ## 参考
 
