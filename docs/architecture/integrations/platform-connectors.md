@@ -82,6 +82,34 @@ in the Agent Server. Two optional pieces:
   assigned-to-human check so a conversation taken over during the wait is not
   interrupted by the bot.
 
+Order of operations inside one inbound turn (Chatwoot `_process_incoming_message`):
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant CW as Chatwoot
+  participant C as Connector
+  participant S as Agent Server (/v1/responses)
+
+  CW->>C: webhook message_created
+  Note over C: started_at = now
+  C->>CW: set_typing(on)  [optional]
+  C->>S: POST /v1/responses
+  S-->>C: Response (scripted or model turn)
+  Note over C: floor = random(min, max) - elapsed<br/>sleep only if floor > 0
+  C->>CW: set_typing(off)  [finally]
+  C->>CW: GET conversation (assigned to human?)
+  alt still bot-owned
+    C->>CW: send_message(reply)
+  else taken over during the wait
+    Note over C: drop reply, reason=assigned_to_human
+  end
+```
+
+The typing indicator spans steps 3–6, so slow model turns also benefit. The
+floor (step 5) only extends turns that finished early; a 10 s model turn is
+sent immediately. The ownership re-check (step 7) runs after the wait.
+
 Chatwoot wiring and env vars (`CHATWOOT_TYPING_INDICATOR`,
 `CHATWOOT_REPLY_PACING_MIN_S` / `_MAX_S`, both off by default):
 `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/README.md`.

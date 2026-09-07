@@ -110,6 +110,29 @@ runtime:
 - 可观测：命中轮次写 `anyagent.response.scripted` stage event（`provider` / `variant_id` / `reason` / `text_chars`），不写 `anyagent.model.request`；Response 面不加任何自定义字段。
 - 位置与代价：判定在内置 runtime `/v1/responses` worker 内、session lease 之下、`run_tool_loop_*` 之前（`packages/anyagent/src/anyagent/server/routes/responses.py`）。命中前 skill 选择、context providers、prompt envelope 仍会执行——节省的是模型与工具成本。**分布式 runtime（`routes/distributed_responses.py`）当前不支持**。
 
+命中判定在 worker 内的位置，以及命中 / 未命中两条路径最终汇合到同一套持久化：
+
+```mermaid
+flowchart TB
+  ROUTE["route: 校验 / manifest / skills / context providers / prompt envelope"] --> LEASE["worker: session lease"]
+  LEASE --> CTX["prepare_response_session_context<br/>previous_snapshot → previous_transcript_items"]
+  CTX --> RESOLVE["resolve_scripted_reply<br/>按顺序 · 2s 超时 · 异常降级"]
+  RESOLVE --> HIT{命中?}
+  HIT -->|"是"| EVT["stage event<br/>anyagent.response.scripted"]
+  EVT --> SYN["build_text_response_payload<br/>/ iter_text_response_sse"]
+  HIT -->|"否"| MREQ["stage event<br/>anyagent.model.request"]
+  MREQ --> LOOP["run_tool_loop_*<br/>(pydantic-ai)"]
+  SYN --> FIN["finalize: event store · run final · session snapshot"]
+  LOOP --> FIN
+
+  classDef scripted fill:#e8f5e9,stroke:#2e7d32
+  classDef model fill:#e3f2fd,stroke:#1565c0
+  class EVT,SYN scripted
+  class MREQ,LOOP model
+```
+
+绿色为 scripted 路径、蓝色为模型路径；两者在 `FIN` 之后对 session snapshot、SDK 与 connector 不可区分，只靠 stage event 类型区分。
+
 回复节奏（避免瞬时回复暴露“预设”）不归 provider，归 connector：见 [platform-connectors.md](../integrations/platform-connectors.md#typing-indicator-and-reply-pacing)。
 
 ## 配置层级与 merge
