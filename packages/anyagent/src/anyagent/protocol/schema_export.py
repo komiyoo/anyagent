@@ -31,9 +31,11 @@ PROTOCOL_CHANGELOG: list[dict[str, Any]] = [
         "protocol_version": PROTOCOL_VERSION,
         "schema_version": SCHEMA_BUNDLE_VERSION,
         "date": "2026-09-07",
-        "summary": "Accept MCP source-name extension on function tool params.",
+        "summary": "Accept MCP source-name extension on function tool params; add scripted reply stage event.",
         "changes": [
             "Add optional `x-anyagent-source-name` to AnyAgentFunctionToolParam so MCP tools keep the raw server tool name through prompt-bundle validation.",
+            "Add `anyagent.response.scripted` stage event (AnyAgentScriptedReplyEvent) marking turns answered by a scripted reply provider without a model request.",
+            "Add `anyagent.protocol.scripted_reply.ScriptedReply` as the typed return value of scripted reply providers.",
         ],
     },
     {

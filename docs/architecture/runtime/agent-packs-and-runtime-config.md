@@ -91,6 +91,27 @@ runtime:
 
 每个 provider 应实现 `anyagent.agent_runtime.ContextProvider` 的 `build_context(request)`，返回 `ContextFragment` 列表。框架会将这些 fragment 作为独立业务/渠道上下文纳入 prompt envelope，与 agent-local `.anyagent/agents/<agent_id>/AGENTS.md`、skill catalog metadata、MCP/sandbox、environment fragment 一起写入 `anyagent.prompt.context` 审计事件和 rendered prompt preview。workspace 根目录 `AGENTS.md` 只作为研发 harness 元数据保留，不进入运行时模型 prompt。
 
+### `runtime.scripted_reply_providers`
+
+`runtime.scripted_reply_providers` 是与 context provider 平行的第二个 classpath 列表：**已知输入的确定性文本回复**。命中时框架不调用模型，直接合成一个正常的 OpenAI `Response`（一条 `message` + `output_text`），走与模型轮次相同的 event store / run final / session snapshot 路径，因此下一轮模型能在 `fallback_transcript_items` 里看到这句回复。
+
+```yaml
+runtime:
+  scripted_reply_providers:
+    - my_workspace.scripted:QuickPromptProvider
+```
+
+契约（`anyagent.agent_runtime.scripted_reply`）：
+
+- provider 实现 `async resolve(request: ScriptedReplyRequest) -> ScriptedReply | dict | None`；`None` 表示继续走 loop。多个 provider 按顺序执行，先命中先返回。
+- `ScriptedReplyRequest` = `ContextProviderRequest` 字段 + `previous_transcript_items`（本轮之前的会话 fallback transcript，`is_first_turn` 派生），供“首轮招呼语只回一次”之类判断。
+- `ScriptedReply`（`anyagent.protocol.scripted_reply`）只有 `text`（必填非空）、`variant_id`、`reason`。**不允许**工具调用、handoff、多轮；需要判断或工具的场景走 loop。
+- 失败语义：provider 抛异常、超时（默认 2s）、返回非法值一律降级为继续走 loop，只 warning；装载失败跳过该 provider，不影响 agent 启动。
+- 可观测：命中轮次写 `anyagent.response.scripted` stage event（`provider` / `variant_id` / `reason` / `text_chars`），不写 `anyagent.model.request`；Response 面不加任何自定义字段。
+- 位置与代价：判定在内置 runtime `/v1/responses` worker 内、session lease 之下、`run_tool_loop_*` 之前（`packages/anyagent/src/anyagent/server/routes/responses.py`）。命中前 skill 选择、context providers、prompt envelope 仍会执行——节省的是模型与工具成本。**分布式 runtime（`routes/distributed_responses.py`）当前不支持**。
+
+回复节奏（避免瞬时回复暴露“预设”）不归 provider，归 connector：见 [platform-connectors.md](../integrations/platform-connectors.md#typing-indicator-and-reply-pacing)。
+
 ## 配置层级与 merge
 
 `agent.yaml` 与 `mcp.json` 并非只有 workspace 单层，而是按固定优先级跨四层 deep-merge 后再交给运行时消费。层级在 `resolve_config_layers` 中冻结为 system → user → workspace → session（`packages/anyagent/src/anyagent/agent_packs.py:172`）：
@@ -187,7 +208,7 @@ run 完成后写回新的恢复游标，保证下一次请求可继续承接。
 
 冷/热字段边界（`_catalog_has_cold_restart_change`，`packages/anyagent/src/anyagent/server/app_builders.py:38`）：
 
-- **热字段**：`model`/`tools`/`skills`/`middlewares`/`context_providers` 等行为字段变化 → 即时换上新 catalog、刷新 models 配置、重置 manifest 缓存、更新 mtime 指纹，对后续请求立即生效（`packages/anyagent/src/anyagent/server/app_state.py:113`）。
+- **热字段**：`model`/`tools`/`skills`/`middlewares`/`context_providers`/`scripted_reply_providers` 等行为字段变化 → 即时换上新 catalog、刷新 models 配置、重置 manifest 缓存、更新 mtime 指纹，对后续请求立即生效（`packages/anyagent/src/anyagent/server/app_state.py:113`）。
 - **冷字段**：`sandbox`（含 `sandbox.mode`）与 `storage` 这类影响进程级资源装配的字段变化 → **只更新 mtime 指纹并 log warning `restart required`，不替换运行 catalog**（`packages/anyagent/src/anyagent/server/app_state.py:109`）。
 
 冷字段与上文 denylist 受管路径一致：这些字段在进程启动时已绑定 SandboxManager/Storage 等资源，热替换会造成运行态与配置态不一致，故强制走重启。更新 mtime 指纹是为了避免每请求重复刷同一条 warning。`AnyAgentServerApp.reload_catalog`（`packages/anyagent/src/anyagent/server/app_state.py:87`）则是 admin 显式触发的全量重载，不区分冷热。

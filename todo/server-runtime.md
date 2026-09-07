@@ -25,6 +25,15 @@
 - [x] P1 OTLP 导出到 Langfuse；未配置则关闭跟踪且服务可跑（Req: `requirements.md#req-5-13`、`requirements.md#req-4-7`; Impl: `packages/anyagent/src/anyagent/agent_runtime/loop/otel.py`; Module: `anyagent.agent_runtime.loop.otel`）
 - [x] P2 主路径验收通过后删除自研 translator 热路径，middleware 映射为 capabilities（Req: `requirements.md#req-4-7`; Impl: `packages/anyagent/src/anyagent/server/routes/responses.py`, `packages/anyagent/src/anyagent/agent_runtime/loop/hooks.py`; Module: `anyagent.agent_runtime.loop.hooks`）
 
+## 当前任务（scripted reply 扩展点与 connector 回复节奏）
+
+执行计划：`docs/plans/2026/09-07/scripted-reply-扩展点与-connector-回复节奏-614d.md`。
+
+- [x] P1 `ScriptedReply` 协议模型 + `anyagent.response.scripted` stage event + `ScriptedReplyRequest` / `ScriptedReplyProvider` 契约与 classpath 装载（Req: `requirements.md#req-4-6-1`; Impl: `packages/anyagent/src/anyagent/protocol/scripted_reply.py`, `packages/anyagent/src/anyagent/protocol/stage_events.py`, `packages/anyagent/src/anyagent/agent_runtime/scripted_reply.py`, `packages/anyagent/src/anyagent/agent_runtime/classpath.py`; Module: `anyagent.protocol.scripted_reply`, `anyagent.agent_runtime.scripted_reply`）
+- [x] P1 `RuntimeSpec.scripted_reply_providers` + 内置 runtime worker 内（session lease 下、loop 前）命中判定；命中合成 Response 走既有 finalize / SSE persist 路径，进入 `fallback_transcript_items`；异常/超时/装载失败降级继续 loop（Req: `requirements.md#req-4-6-1`; Impl: `packages/anyagent/src/anyagent/agent_packs.py`, `packages/anyagent/src/anyagent/server/handlers/scripted_reply.py`, `packages/anyagent/src/anyagent/server/routes/responses.py`, `packages/anyagent/src/anyagent/agent_runtime/loop/run.py`; Module: `anyagent.server.routes.responses`; Test: `tests/unit/agent_runtime/test_scripted_reply.py`, `tests/integration/server/test_scripted_reply_responses.py`）
+- [x] P1 Connector 回复节奏下限与 typing indicator：`ConnectorOutboundDelivery.set_typing` 可选能力、Chatwoot `toggle_typing_status` 实现、`CHATWOOT_REPLY_PACING_*` floor 在二次人工接管检查之前补足，默认关闭（Req: `requirements.md#req-6-1`; Impl: `packages/anyagent/src/anyagent/gateway/connector_contracts.py`, `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/chatwoot.py`, `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/plugin.py`; Module: `anyagent.plugins.builtin.chatwoot_connector`; Test: `tests/unit/gateway/test_chatwoot_reply_pacing.py`, `tests/integration/server/test_chatwoot_connector_flow.py`）
+- [ ] P2 分布式 runtime（`routes/distributed_responses.py` / `responses/response_execution.py`）支持 scripted reply（Req: `requirements.md#req-4-6-1`; 当前文档标注不支持）
+
 ## 当前事实
 
 - Server 入口:`packages/anyagent/src/anyagent/server/app.py`

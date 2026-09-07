@@ -61,6 +61,22 @@ Rules:
 - `skills.default_selected` may contain skill names or stable skill paths.
 - `sandbox.mode` is cold-start-sensitive. Restart the server after changing it.
 - `multiagent.spawn_allow_agent_ids` is empty by default, meaning no child agents may be spawned.
+- `runtime.context_providers` / `runtime.scripted_reply_providers` are classpath lists (`module.path:ClassName`) resolved from the workspace `src/` import path. Context providers inject `ContextFragment`s before the model call; scripted reply providers answer a known input with deterministic text **instead of** calling the model (text only, no tools/handoff). Both are deployer-trusted server-side code; failures degrade to "continue into the loop". Contract and hit semantics: `docs/architecture/runtime/agent-packs-and-runtime-config.md#runtimescripted_reply_providers`.
+
+Minimal scripted reply provider (`src/my_workspace/scripted.py`):
+
+```python
+from anyagent.agent_runtime import BaseScriptedReplyProvider, ScriptedReplyRequest
+
+
+class QuickPromptProvider(BaseScriptedReplyProvider):
+    async def resolve(self, request: ScriptedReplyRequest):
+        if request.is_first_turn and request.body.get("input") == "hi":
+            return {"text": "Hi! How can I help?", "variant_id": "greeting"}
+        return None
+```
+
+For channel-side pacing (typing indicator, reply floor) see the Chatwoot connector README; it is configured with `CHATWOOT_*` env vars, not in `agent.yaml`.
 
 ## models.yaml
 

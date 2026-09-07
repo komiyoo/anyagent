@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from typing import Any, AsyncIterator
 
@@ -9,11 +10,12 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from anyagent.agent_runtime import SubAgentExecutor, build_prompt_envelope
-from anyagent.agent_runtime.session_runtime import input_to_transcript_items
+from anyagent.agent_runtime.scripted_reply import ScriptedReplyMatch
+from anyagent.agent_runtime.session_runtime import input_to_transcript_items, read_fallback_transcript_items
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp, run_tool_loop_nonstream, run_tool_loop_stream_live
 from anyagent.agent_runtime.model_providers import get_default_model_provider
 from anyagent.gateway.session import session_partition_key
-from anyagent.agent_runtime.loop import PydanticAIModelHandle
+from anyagent.agent_runtime.loop import PydanticAIModelHandle, build_text_response_payload, iter_text_response_sse
 from anyagent.model_config import (
     ModelConfigError,
     apply_effective_model_to_body,
@@ -26,7 +28,12 @@ from anyagent.protocol.prompt_context import PromptContextAudit
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.protocol.sse import SSEBlockDecoder, encode_sse_block
 from anyagent.resource_quota import current_project_name, is_quota_exhausted
-from anyagent.protocol.stage_events import AnyAgentModelRequestEvent, AnyAgentPromptContextEvent, AnyAgentPromptContextRenderedEvent
+from anyagent.protocol.stage_events import (
+    AnyAgentModelRequestEvent,
+    AnyAgentPromptContextEvent,
+    AnyAgentPromptContextRenderedEvent,
+    AnyAgentScriptedReplyEvent,
+)
 from anyagent.server.app_builders import _dispatch_plugin_hook, _safe_error_message
 from anyagent.server.config.request_context import resolve_agent_id, resolve_session_key
 from anyagent.server.config.request_validation import (
@@ -38,6 +45,7 @@ from anyagent.server.config.request_validation import (
 from anyagent.server.handlers.auth import _require_user_auth
 from anyagent.server.handlers.context_providers import _build_context_provider_fragments
 from anyagent.server.handlers.middleware import _build_agent_middleware_chain
+from anyagent.server.handlers.scripted_reply import ScriptedReplyResolver, _build_scripted_reply_resolver
 from anyagent.server.handlers.persistence import _append_sse_chunk, _build_external_response_stream, _update_session_snapshot
 from anyagent.server.handlers.sse_blocks import (
     _build_completed_sse_block,
@@ -60,6 +68,9 @@ from anyagent.server.responses.streaming import build_response_event_appender
 from anyagent.server.handlers.http_errors import optional_response_payload_from_run
 from anyagent.server.runtime.lock_service import hold_session_lease
 from anyagent.storage import resolve_nonstream_replay_payload
+
+_logger = logging.getLogger("anyagent.server.routes.responses")
+
 
 def create_responses_router() -> APIRouter:
     router = APIRouter()
@@ -160,6 +171,16 @@ def create_responses_router() -> APIRouter:
         available_skills = _visible_enabled_skills(state, pack=pack)
         tool_context = _build_server_tool_context(pack=pack, body=body, selected_skills=selected_skills)
         context_fragments = await _build_context_provider_fragments(
+            pack=pack,
+            agent_id=agent_id,
+            session_key=session_key,
+            body=body,
+            metadata=metadata,
+            workspace_dir=state.workspace_dir,
+            tool_context=tool_context,
+            selected_skills=selected_skills,
+        )
+        scripted_reply_resolver = _build_scripted_reply_resolver(
             pack=pack,
             agent_id=agent_id,
             session_key=session_key,
@@ -332,6 +353,7 @@ def create_responses_router() -> APIRouter:
                     stage_sink=_stage_sink,
                     system_tool_executor_for_body=_system_tool_executor_for_body,
                     middleware_chain=middleware_chain,
+                    scripted_reply_resolver=scripted_reply_resolver,
                 ),
                 name=f"anyagent-stream-{response_id}",
             )
@@ -375,6 +397,7 @@ def create_responses_router() -> APIRouter:
                 stage_sink=_stage_sink,
                 system_tool_executor_for_body=_system_tool_executor_for_body,
                 middleware_chain=middleware_chain,
+                scripted_reply_resolver=scripted_reply_resolver,
             ),
             name=f"anyagent-run-{response_id}",
         )
@@ -438,6 +461,7 @@ async def run_stream_worker(
     stage_sink: Any,
     system_tool_executor_for_body: Any,
     middleware_chain: Any,
+    scripted_reply_resolver: ScriptedReplyResolver | None = None,
 ) -> None:
     stream_terminal_status = "completed"
     try:
@@ -461,6 +485,44 @@ async def run_stream_worker(
                     fragments=session_once_fragments,
                 )
                 body2 = prompt_envelope.apply_to_body(body=session_ctx.effective_body)
+                decoder = SSEBlockDecoder()
+
+                async def _persist_and_forward(chunk: bytes) -> None:
+                    await _append_sse_chunk(
+                        state,
+                        response_id=response_id,
+                        chunk=chunk,
+                        decoder=decoder,
+                        fallback_model=session_ctx.effective_body.get("model"),
+                        session_partition_key_value=session_partition_key_value,
+                        agent_id=agent_id,
+                        session_key=session_key,
+                        previous_snapshot=session_ctx.previous_snapshot,
+                        previous_snapshot_version=session_ctx.previous_snapshot_version,
+                        runtime_config=session_ctx.effective_runtime_config,
+                        request_transcript_items=session_ctx.request_transcript_items,
+                        prompt_audit=prompt_audit,
+                    )
+                    await output_queue.put(chunk)
+
+                scripted = await _resolve_scripted_reply_for_turn(
+                    resolver=scripted_reply_resolver,
+                    response_id=response_id,
+                    previous_snapshot=session_ctx.previous_snapshot,
+                    stage_sink=stage_sink,
+                )
+                if scripted is not None:
+                    payload = build_text_response_payload(
+                        response_id=response_id,
+                        model=str(session_ctx.effective_body.get("model") or "unknown"),
+                        text=scripted.reply.text,
+                        tools=list(body2.get("tools") or []) if isinstance(body2.get("tools"), list) else [],
+                        tool_choice=body2.get("tool_choice"),
+                    )
+                    async for chunk in iter_text_response_sse(payload, text=scripted.reply.text, response_id=response_id):
+                        await _persist_and_forward(chunk)
+                    return
+
                 await stage_sink(
                     AnyAgentModelRequestEvent(
                         response_id=response_id,
@@ -468,7 +530,6 @@ async def run_stream_worker(
                         prompt_cache_key=prompt_envelope.prompt_cache_key,
                     )
                 )
-                decoder = SSEBlockDecoder()
                 try:
                     async for chunk in run_tool_loop_stream_live(
                         model_provider=model_provider,
@@ -488,22 +549,7 @@ async def run_stream_worker(
                         system_tool_executor=system_tool_executor_for_body(body2),
                         middleware_chain=middleware_chain,
                     ):
-                        await _append_sse_chunk(
-                            state,
-                            response_id=response_id,
-                            chunk=chunk,
-                            decoder=decoder,
-                            fallback_model=session_ctx.effective_body.get("model"),
-                            session_partition_key_value=session_partition_key_value,
-                            agent_id=agent_id,
-                            session_key=session_key,
-                            previous_snapshot=session_ctx.previous_snapshot,
-                            previous_snapshot_version=session_ctx.previous_snapshot_version,
-                            runtime_config=session_ctx.effective_runtime_config,
-                            request_transcript_items=session_ctx.request_transcript_items,
-                            prompt_audit=prompt_audit,
-                        )
-                        await output_queue.put(chunk)
+                        await _persist_and_forward(chunk)
                 except asyncio.CancelledError:
                     stream_terminal_status = "cancelled"
                     _emit_server_response_event(
@@ -655,6 +701,7 @@ async def run_nonstream_worker(
     stage_sink: Any,
     system_tool_executor_for_body: Any,
     middleware_chain: Any,
+    scripted_reply_resolver: ScriptedReplyResolver | None = None,
 ) -> None:
     try:
         async def _run_nonstream_serialized() -> tuple[int, Any]:
@@ -676,13 +723,6 @@ async def run_nonstream_worker(
                     fragments=session_once_fragments,
                 )
                 body2 = prompt_envelope.apply_to_body(body=session_ctx.effective_body)
-                await stage_sink(
-                    AnyAgentModelRequestEvent(
-                        response_id=response_id,
-                        applied_body=body2,
-                        prompt_cache_key=prompt_envelope.prompt_cache_key,
-                    )
-                )
 
                 async def _finalize_nonstream_terminal(
                     *,
@@ -749,6 +789,30 @@ async def run_nonstream_worker(
                         error_json=error_json,
                     )
                     return response_status_code, final_state.response_json if final_state.response_json is not None else payload
+
+                scripted = await _resolve_scripted_reply_for_turn(
+                    resolver=scripted_reply_resolver,
+                    response_id=response_id,
+                    previous_snapshot=session_ctx.previous_snapshot,
+                    stage_sink=stage_sink,
+                )
+                if scripted is not None:
+                    payload = build_text_response_payload(
+                        response_id=response_id,
+                        model=str(session_ctx.effective_body.get("model") or "unknown"),
+                        text=scripted.reply.text,
+                        tools=list(body2.get("tools") or []) if isinstance(body2.get("tools"), list) else [],
+                        tool_choice=body2.get("tool_choice"),
+                    )
+                    return await _finalize_nonstream_terminal(payload=payload, response_status_code=200)
+
+                await stage_sink(
+                    AnyAgentModelRequestEvent(
+                        response_id=response_id,
+                        applied_body=body2,
+                        prompt_cache_key=prompt_envelope.prompt_cache_key,
+                    )
+                )
 
                 try:
                     status_code, payload = await run_tool_loop_nonstream(
@@ -846,6 +910,44 @@ async def run_nonstream_worker(
             metadata={"stream": False, "status_code": status_code, "status": payload_status},
         )
         await state.runs.remove(response_id)
+
+
+async def _resolve_scripted_reply_for_turn(
+    *,
+    resolver: ScriptedReplyResolver | None,
+    response_id: str,
+    previous_snapshot: dict[str, Any] | None,
+    stage_sink: Any,
+) -> ScriptedReplyMatch | None:
+    """Ask configured scripted reply providers; on a hit, record the marker stage event.
+
+    Runs under the session lease so ``previous_snapshot`` is authoritative. Any
+    failure degrades to ``None`` (continue into the loop).
+    """
+
+    if resolver is None:
+        return None
+    previous_items = read_fallback_transcript_items(previous_snapshot if isinstance(previous_snapshot, dict) else {})
+    try:
+        match = await resolver(previous_items)
+    except Exception:  # noqa: BLE001
+        _logger.warning("scripted reply resolver failed; continuing to loop", exc_info=True)
+        return None
+    if match is None:
+        return None
+    try:
+        await stage_sink(
+            AnyAgentScriptedReplyEvent(
+                response_id=response_id,
+                provider=match.provider_name,
+                variant_id=match.reply.variant_id,
+                reason=match.reply.reason,
+                text_chars=len(match.reply.text),
+            )
+        )
+    except Exception:  # noqa: BLE001
+        _logger.warning("failed to emit scripted reply event", exc_info=True)
+    return match
 
 
 def _emit_server_response_event(

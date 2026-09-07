@@ -50,40 +50,53 @@ Connector contract 见 [Platform Connectors](../../../architecture/integrations/
 
 ## Approach
 
-在 `/v1/responses` 处理链上、进入 agent loop **之前**，增加一个 scripted reply 扩展点。命中时由框架合成一个**正常的 Response**（`output` 为 message / `output_text`），走既有的 event store 写入与 session snapshot 更新路径返回；未命中时零开销继续走 loop。
+在内置 runtime 的 `/v1/responses` worker 内、**session lease 之下、`prepare_response_session_context` 之后、`run_tool_loop_*` 之前**，增加一个 scripted reply 扩展点。命中时由框架合成一个**正常的 Response**（`output` 为 message / `output_text`），直接交给该 worker 既有的 terminal finalizer（event store 写入 + run final + session snapshot CAS）返回；未命中时不付模型与工具成本继续走 loop。
 
-这个位置是刻意选的，三个理由：
+这个位置是刻意选的，四个理由：
 
 - **进上下文是免费的。** `response_to_transcript_items` / `build_fallback_transcript_items`（`packages/anyagent/src/anyagent/agent_runtime/session_runtime.py:396`、`:191`）消费的是 Response 结构，不关心它是不是模型产的。合成 Response 意味着不用为"合成轮次"新写一套持久化。
+- **finalize 只在 worker 内可达。** route 层（`packages/anyagent/src/anyagent/server/routes/responses.py:162-181`）命中时 run 已 `create_started`、`on_agent_start` 已派发、`anyagent.response.request` 已写；而 `_finalize_nonstream_terminal`（`:687-751`）与 `session_ctx`（previous_snapshot / version）只在 worker 内、session lease 之下。放 worker 内才能复用，且天然保序。
 - **消费侧零改动。** Gateway connector 从 `payload.output` 提取回复（`packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/plugin.py:554`），SDK 从 Event Store 读事件。两边都看不出差别。
-- **不碰迁移中的 loop。** 执行面正在换 pydantic-ai（见 [ADR · 分层边界](../../../architecture/decisions/pydantic-ai-loop-and-langfuse.md#分层边界)），扩展点落在 loop 之外，与该迁移无耦合。[^adr]
+- **不碰迁移中的 loop。** 执行面正在换 pydantic-ai（见 [ADR · 分层边界](../../../architecture/decisions/pydantic-ai-loop-and-langfuse.md#分层边界)）。pydantic-ai `Hooks` 只能改写请求、不能短路模型调用并返回最终文本，所以这不是 hook 能承载的横切能力；扩展点落在 loop 之外，与该迁移无耦合。[^adr]
 
-接口形状复用 `ContextProviderRequest`：同一个受信任的 server-side 输入（`agent_id` / `session_key` / `body` / `metadata` / `tool_context`），同一套 `agent.yaml` classpath 装载与 workspace import path 机制（`packages/anyagent/src/anyagent/server/handlers/context_providers.py:26`、`:45`）。部署者写一个类、在 `agent.yaml` 加一行，与写 context provider 的心智完全一致。返回 `None` 或一个 `ScriptedReply`。
+代价要写明：命中前 skill 选择、context providers、prompt envelope、MCP manager 获取仍会执行，本扩展点节省的是**模型与工具成本**，不是全部请求开销。
+
+接口形状：定义 `ScriptedReplyRequest`，字段 = `ContextProviderRequest`（`agent_id` / `session_key` / `body` / `metadata` / `tool_context` / `pack` / `selected_skills`）+ `previous_transcript_items`（来自 `session_ctx.previous_snapshot` 的 fallback transcript）。不原样复用 `ContextProviderRequest` 的原因是它不带历史，"首轮招呼语只回一次""上一轮已 scripted 则不再 scripted"都判不了。classpath 装载与 workspace import path 复用 context provider 的同一套机制（`packages/anyagent/src/anyagent/server/handlers/context_providers.py:26`、`:45`）。部署者写一个类、在 `agent.yaml` 加一行，与写 context provider 的心智一致。返回 `None` 或一个 `ScriptedReply`。
+
+**Protocol-first。** `ScriptedReply` 是跨边界 typed model，落 `anyagent.protocol.scripted_reply`；scripted 轮次的可识别标记是一条 typed Stage Event `AnyAgentScriptedReplyEvent`（`anyagent.protocol.stage_events`，携带 `provider` / `variant_id` / `reason`），写入 Event Store，SDK Stage Events 与审计一处解决。Response 顶层不加自定义字段，保持 OpenAI 兼容面不动。
 
 **边界要写清楚**，否则这个扩展点会变成"在 server 里写业务分支"的后门：scripted reply 只允许返回**文本**，不允许发起工具调用、不允许触发 handoff、不允许多轮。需要工具或判断的场景走 loop。
 
-**回复节奏归 connector**，不归扩展点。理由是它是渠道呈现问题而非生成问题：确定性回复瞬间返回会暴露"这句是预设的"，但给所有回复加固定延迟又会让本来就慢的模型回复更慢。正确形态是**节奏下限（floor）**：本轮从收到消息到准备发送若不足 `[min, max]` 内的随机值，补足差额再发；已经超过就立即发。这样确定性回复被垫到 2–4 秒，模型回复不受任何影响。同时补 typing indicator——纯 sleep 的体感比立刻回更差。
+**回复节奏归 connector**，不归扩展点。理由是它是渠道呈现问题而非生成问题：确定性回复瞬间返回会暴露"这句是预设的"，但给所有回复加固定延迟又会让本来就慢的模型回复更慢。正确形态是**节奏下限（floor）**：本轮从收到消息到准备发送若不足 `[min, max]` 内的随机值，补足差额再发；已经超过就立即发。这样确定性回复被垫到 2–4 秒，模型回复不受任何影响。typing indicator 在调 `/v1/responses` **之前**就打开、发送前关闭（`try/finally`）：模型路径几十秒同样受益，且与 floor 逻辑解耦。节奏补足必须放在 `_conversation_owned_by_human` 二次检查**之前**——等完再查再发，避免等待期间人工接管的会话被 bot 插话。
 
 ## Scope
 
-- In：`ScriptedReplyProvider` 契约与装载、`RuntimeSpec` 新增配置项、命中时的 Response 合成与持久化、可观测标记（scripted 轮次可被区分）、connector 回复节奏下限、Chatwoot typing indicator、对应文档与测试
-- Out：话术表内容与匹配规则（属消费侧）、把 scripted reply 做成可返回工具调用或多轮、为节奏下限新增独立配置文件、其他 connector 的 typing indicator（先只做 Chatwoot，契约留出位置）
+- In：`ScriptedReply` / `ScriptedReplyRequest` / `ScriptedReplyProvider` 契约与装载、`AnyAgentScriptedReplyEvent`、`RuntimeSpec` 新增配置项、内置 runtime 命中时的 Response 合成与持久化（非流式 + 流式）、connector 回复节奏下限、Chatwoot typing indicator、对应文档与测试
+- Out：话术表内容与匹配规则（属消费侧）、把 scripted reply 做成可返回工具调用或多轮、为节奏下限新增独立配置文件、其他 connector 的 typing indicator（先只做 Chatwoot，契约留出位置）、**分布式 runtime**（`packages/anyagent/src/anyagent/server/routes/distributed_responses.py` → `responses/response_tooling.py:250` 是另一条执行面，finalize 形状不同；本轮不支持，文档明确标注）、`anyagent doctor` 报告装载状态（context providers 今天也不报，不单独为 scripted reply 开口子）
 
 ## Files
 
-- `packages/anyagent/src/anyagent/agent_runtime/scripted_reply.py` — 新增。`ScriptedReply` / `ScriptedReplyProvider` 契约与 classpath 装载，参照 `agent_runtime/context_providers.py`
-- `packages/anyagent/src/anyagent/server/handlers/` — 新增装载器 + 在 `/v1/responses` 链上插入命中判定与 Response 合成
+- `packages/anyagent/src/anyagent/protocol/scripted_reply.py` — 新增。`ScriptedReply` pydantic model（wire-level SSOT）
+- `packages/anyagent/src/anyagent/protocol/stage_events.py` — 新增 `AnyAgentScriptedReplyEvent`
+- `packages/anyagent/src/anyagent/agent_runtime/scripted_reply.py` — 新增。`ScriptedReplyRequest` / `ScriptedReplyProvider` 契约、classpath 装载、带超时的 `resolve_scripted_reply`，参照 `agent_runtime/context_providers.py`
+- `packages/anyagent/src/anyagent/agent_runtime/loop/run.py` — `_response_payload` / `_iter_completed_sse` 提为公共 helper（合成 Response 与 SSE 的唯一形状来源）
+- `packages/anyagent/src/anyagent/server/handlers/scripted_reply.py` — 新增。装载器（复用 `_workspace_import_paths`）
+- `packages/anyagent/src/anyagent/server/routes/responses.py` — `run_nonstream_worker` / `run_stream_worker` 在 loop 入口前插入命中判定
 - `packages/anyagent/src/anyagent/agent_packs.py` — `RuntimeSpec` 增加 `scripted_reply_providers`
 - `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/plugin.py` — 回复节奏下限与 typing indicator 接线
+- `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/chatwoot.py` — `ChatwootOutboundDelivery.set_typing`
 - `packages/anyagent/src/anyagent/gateway/connector_contracts.py` — `ConnectorOutboundDelivery` 增加可选 typing indicator 能力
 
 ## Reuse
 
-- `packages/anyagent/src/anyagent/agent_runtime/context_providers.py` `ContextProviderRequest` / `load_context_provider_from_classpath` — 请求形状与 classpath 装载直接复用，不新造一套
+- `packages/anyagent/src/anyagent/agent_runtime/context_providers.py` `load_context_provider_from_classpath` — classpath 校验/导入/实例化模式照搬
 - `packages/anyagent/src/anyagent/server/handlers/context_providers.py:26` `_workspace_import_paths` — workspace `src/` 导入路径的既有处理
+- `packages/anyagent/src/anyagent/agent_runtime/loop/run.py:201` `_response_payload`、`:593` `_iter_completed_sse` — 已经是"message + output_text"与"单 delta + completed + [DONE]"的现成形状，提为公共后 scripted 与模型轮次共用同一来源
+- `packages/anyagent/src/anyagent/server/routes/responses.py:687` `_finalize_nonstream_terminal`、`:459-463` stream worker 的 persist 路径 — 合成 Response 后直接交给它们，不新写持久化
 - `packages/anyagent/src/anyagent/agent_runtime/session_runtime.py:396` `response_to_transcript_items`、`:191` `build_fallback_transcript_items` — 合成 Response 后的历史写入完全走这条既有路径
-- `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/plugin.py:292` `_process_incoming_message` — 节奏下限插在 `/v1/responses` 返回与 `outbound.send_message` 之间
-- `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/chatwoot.py` `ChatwootOutboundDelivery` — typing indicator 落在同一个 access token 与 HTTP client 上，不新增凭据
+- `packages/anyagent/src/anyagent/agent_runtime/loop/models.py:262` — 首轮 body 会 `pop("previous_response_id")`，scripted 的 `response_id` 成为 `last_response_id` 不会透传上游模型
+- `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/plugin.py:292` `_process_incoming_message` — 节奏下限插在 `/v1/responses` 返回与 `_conversation_owned_by_human` 二次检查之间
+- `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/chatwoot.py:116` `ChatwootOutboundDelivery` — typing indicator 落在同一个 access token 与 HTTP client 上，不新增凭据
 
 ## 依赖
 
@@ -100,53 +113,55 @@ PR3 不依赖 PR1/PR2，可并行。待办三态：`- [ ]` 未完成，`- [x]` �
 
 ## PR0 契约与文档
 
-- [ ] 定义 `ScriptedReply`：`text`（必填）、`reason` / `variant_id` 等可选标识字段；显式不含工具调用、handoff、多轮
-- [ ] 定义 `ScriptedReplyProvider`：入参复用 `ContextProviderRequest`，返回 `ScriptedReply | None`；`None` 表示继续走 loop
-- [ ] 明确失败语义：provider 抛异常或超时一律降级为继续走 loop，只 warning，不影响该轮回复
-- [ ] `docs/architecture/runtime/agent-loop-middleware.md` 的 §7 边界表补第三行：确定性回复 → scripted reply provider，并说明它与 context provider、middleware 的分工
-- [ ] `docs/architecture/api/responses-api-sdk-and-server.md` 说明 scripted 轮次在 Response 与事件里的可识别标记
-- [ ] `requirements.md` 在 `req-4-1` 或 `req-4-6-1` 下补一句能力描述，供 `todo/*.md` cite
-- [ ] `todo/server-runtime.md` 增任务条目并 cite 需求锚点
+- [x] `anyagent.protocol.scripted_reply.ScriptedReply`：`text`（必填、非空）、`variant_id` / `reason` 可选标识；显式不含工具调用、handoff、多轮
+- [x] `anyagent.protocol.stage_events.AnyAgentScriptedReplyEvent`：`type="anyagent.response.scripted"`，携带 `provider` / `variant_id` / `reason`；登记进 stage event 联合类型与 protocol schema 导出
+- [x] `anyagent.agent_runtime.scripted_reply`：`ScriptedReplyRequest`（ContextProviderRequest 字段 + `previous_transcript_items`）、`ScriptedReplyProvider` Protocol（`async resolve(request) -> ScriptedReply | None`）、`load_scripted_reply_provider_from_classpath`
+- [x] 明确失败语义：provider 抛异常或超时一律降级为继续走 loop，只 warning，不影响该轮回复
+- [x] `docs/architecture/runtime/agent-loop-middleware.md` 的 §7 边界表补第三行：确定性回复 → scripted reply provider，并说明为什么它既不是 context provider 也不是 pydantic-ai hook
+- [x] `docs/architecture/api/responses-api-sdk-and-server.md` 说明 scripted 轮次的可识别标记只在 Stage Event，Response 面不变；并标注分布式 runtime 不支持
+- [x] `requirements.md` 在 `req-4-6-1` 下补一句能力描述，供 `todo/*.md` cite
+- [x] `todo/server-runtime.md` 增任务条目并 cite 需求锚点
 
 验收：契约文件可 import；文档三处链接互通。无行为变更。
 
 ## PR1 装载与命中
 
-- [ ] `RuntimeSpec` 增加 `scripted_reply_providers: list[str]`（classpath 列表，语义与顺序同 `context_providers`，先命中先返回）
-- [ ] 装载器复用 `_workspace_import_paths`；装载失败 warning 跳过，不影响 agent 启动
-- [ ] 在 `/v1/responses` 处理链上、prompt envelope 组装与 loop 入口之间执行命中判定
-- [ ] provider 执行加超时保护，超时按未命中处理
-- [ ] `anyagent doctor` 能报出 scripted reply provider 的装载状态
-- [ ] 单测：未配置零开销、装载失败降级、抛异常降级、超时降级、返回 `None` 继续走 loop
+- [x] `RuntimeSpec` 增加 `scripted_reply_providers: list[str] | None`（classpath 列表，语义与顺序同 `context_providers`，先命中先返回）
+- [x] `server/handlers/scripted_reply.py` 装载器复用 `_workspace_import_paths`；装载失败 warning 跳过，不影响 agent 启动
+- [x] `run_nonstream_worker` / `run_stream_worker` 在 `prepare_response_session_context` 之后、`run_tool_loop_*` 之前执行命中判定；`previous_transcript_items` 取自 `session_ctx.previous_snapshot`
+- [x] provider 执行加 `asyncio.wait_for` 超时保护（默认 2s），超时按未命中处理
+- [-] `anyagent doctor` 能报出 scripted reply provider 的装载状态（context providers 今天也不报，不单独开口子）
+- [x] 单测：未配置不触发、装载失败降级、抛异常降级、超时降级、返回 `None` 继续走 loop
 
 验收：配一个恒返回 `None` 的 provider，行为与未配置完全一致。
 
 ## PR2 Response 合成与持久化
 
-- [ ] 命中时合成 Response：`output` 为一条 message + `output_text`，`usage` 计为 0，`status` 与 `id` 生成规则与模型轮次一致
-- [ ] 该轮走既有 session snapshot 更新路径，`fallback_transcript_items` 同时收进用户输入与合成回复——**这是本 PR 的核心验收点**
-- [ ] Event Store 写入该轮事件，并带 scripted 标记（`variant_id` 等 provider 给出的标识一并落库），使审计能区分 scripted 与模型轮次
-- [ ] 流式请求（`stream: true`）也要正确产出 SSE，不能只支持非流式
-- [ ] 单测 + 集成测：命中轮次 0 token；第二轮请求的 input 中能看到第一轮的合成回复；SSE 事件序列合法
-- [ ] 集成测走 Chatwoot connector 全链路：命中后 `payload.output` 可被 `_extract_reply_and_handoff` 正常提取
+- [x] `agent_runtime/loop/run.py` 的 `_response_payload` / `_iter_completed_sse` 提为公共 `build_text_response_payload` / `iter_text_response_sse`；scripted 轮次与模型轮次共用同一形状（现有 payload 不含 `usage`，scripted 也不加，保持一致）
+- [x] 非流式：命中时合成 payload 交给 `_finalize_nonstream_terminal`，`fallback_transcript_items` 同时收进用户输入与合成回复——**这是本 PR 的核心验收点**
+- [x] 流式：命中时把 `iter_text_response_sse` 的 chunk 推进既有 queue 与 persist 路径，SSE 序列为 delta → completed → [DONE]
+- [x] 命中时先写 `AnyAgentScriptedReplyEvent` 到 Event Store，再 finalize
+- [x] 单测 + 集成测：命中轮次不调用模型；第二轮请求的 input 中能看到第一轮的合成回复；SSE 事件序列合法
+- [x] 集成测走 Chatwoot connector 全链路：命中后 `payload.output` 可被 `_extract_reply_and_handoff` 正常提取
 
 验收：两轮会话，第一轮 scripted、第二轮模型，第二轮的模型输入包含第一轮合成回复。
 
 ## PR3 connector 节奏与 typing
 
-- [ ] `ConnectorOutboundDelivery` 增加可选 typing indicator 方法，默认 `NotImplementedError`，与 `send_private_note` 同样式
-- [ ] `ChatwootOutboundDelivery` 实现 typing indicator（Chatwoot `toggle_typing_status`），复用现有 access token 与 client
-- [ ] `_process_incoming_message` 增加回复节奏下限：记录处理起点，发送前若耗时不足则补足到 `[min, max]` 区间内的随机值
-- [ ] 环境变量开关，默认关闭（不改变现有部署行为）；开启后 typing indicator 在等待期间挂起
-- [ ] 节奏下限是 floor 不是 delay：耗时已超过区间上限时立即发送，不叠加
-- [ ] 单测：耗时不足时补足、耗时超出时不等待、开关关闭时零行为变化
+- [ ] 前置验证：用 Agent Bot access token 直接调 Chatwoot `POST .../conversations/{id}/toggle_typing_status`，确认该 token 有权限；不通则 typing 降级为 no-op 并记录。（代码侧降级已实现：`_set_typing_indicator` 捕获 `OutboundDeliveryError` / `NotImplementedError` 只 warning；本地无 `ANYAGENT_TEST_CHATWOOT_*` 凭据，live 验证待有环境时用 `tests/acceptance/server/acceptance_chatwoot_live_smoke.py` 同一组 env 补做）
+- [x] `ConnectorOutboundDelivery.set_typing(platform_conversation_id, *, typing: bool)`：可选实现，默认 `NotImplementedError`，与 `send_private_note` 同样式
+- [x] `ChatwootOutboundDelivery.set_typing` 调 `toggle_typing_status`，复用现有 access token 与 client
+- [x] `_process_incoming_message`：`CHATWOOT_TYPING_INDICATOR=true` 时在调 `/v1/responses` 前 typing on，发送前 `finally` typing off；失败只 warning
+- [x] `_process_incoming_message`：`CHATWOOT_REPLY_PACING_MIN_S` / `CHATWOOT_REPLY_PACING_MAX_S` 配置节奏下限，默认关闭；记录处理起点，`/v1/responses` 返回后、`_conversation_owned_by_human` 二次检查**之前**补足到 `[min, max]` 区间内的随机值
+- [x] 节奏下限是 floor 不是 delay：耗时已超过区间上限时立即发送，不叠加
+- [x] 单测：耗时不足时补足、耗时超出时不等待、开关关闭时零行为变化、typing on/off 成对且异常时仍 off
 
 验收：构造一个瞬时返回的回复，实际发送时间落在配置区间内；构造一个 10 秒回复，发送时间不被额外拉长。
 
 ## PR4 验收与发布
 
-- [ ] 相关 pytest 全绿
-- [ ] `docs/acceptance/README.md` 补 scripted reply 的验收入口
+- [x] 相关 pytest 全绿
+- [x] `docs/acceptance/README.md` 补 scripted reply 的验收入口
 - [ ] 版本号更新、commit、push；等云效 pipeline 构建并发布到 Packages
 - [ ] 用 `anyagent-dev-cli` 确认发布状态与产物版本，写进本节
 
@@ -168,12 +183,14 @@ uv run pytest tests/unit/gateway -q
 - 不扩展自研 4-hook middleware。按 [Agent Loop Middleware](../../../architecture/runtime/agent-loop-middleware.md) 的现行口径，新横切能力不落在那条链上。
 - 不在框架内置任何话术、匹配规则或语言表。命中逻辑与文案全部属于部署者。
 - 不给所有 connector 补 typing indicator。契约留出位置，实现先只做 Chatwoot。
+- 不在本轮支持分布式 runtime（`routes/distributed_responses.py`）。它的 finalize 形状不同，需要单独一轮；文档标注。
+- 不在 route 层做命中判定。命中前的 skill 选择 / context providers / prompt envelope 开销接受，换取 finalize 与保序完全复用。
 
-## Open questions
+## 已决
 
-1. scripted 轮次的可识别标记放在哪一层？Response 顶层字段会动到 OpenAI 兼容面，放 Event Store 事件与 `metadata` 更安全但 SDK 侧查询稍绕。倾向后者。
-2. 多个 scripted reply provider 时是「先命中先返回」还是只允许配一个？先按前者实现，若无实际多 provider 场景可收紧为一个。
-3. 节奏下限的配置形态：环境变量够用，还是应该进 connector 级配置（与 `CHATWOOT_*` 系列一致即可）？倾向沿用现有环境变量风格，不新增配置文件。
+1. scripted 标记：只放 Stage Event `anyagent.response.scripted`（typed，进 protocol SSOT），Response 面不动。
+2. 多 provider：先命中先返回，与 `context_providers` 顺序语义一致。
+3. 节奏与 typing 配置：沿用 `CHATWOOT_*` 环境变量（`anyagent.env.getenv`），默认关闭，不新增配置文件。
 
 [^middleware]: Agent Loop Middleware（过渡 / 历史）
 

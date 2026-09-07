@@ -5,6 +5,6 @@ __all__ = [
     "create_anyagent_client",
 ]
 
-__version__ = "0.4.26"
+__version__ = "0.4.27"
 
 from anyagent.agent_api_client import AnyAgent, AnyAgentSettings, create_anyagent_client

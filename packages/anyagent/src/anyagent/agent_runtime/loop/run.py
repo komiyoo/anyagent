@@ -198,7 +198,7 @@ def _final_response_id(canonical: str | None, model: Any, fallback: str) -> str:
     return fallback
 
 
-def _response_payload(
+def build_text_response_payload(
     *,
     response_id: str,
     model: str,
@@ -206,6 +206,11 @@ def _response_payload(
     tools: list[dict[str, Any]],
     tool_choice: Any,
 ) -> dict[str, Any]:
+    """Build a completed `Response` whose sole output is one assistant message with ``text``.
+
+    Shared by model turns and scripted reply turns so both produce the same shape.
+    """
+
     payload = build_minimal_openai_response_json(
         response_id=response_id,
         status="completed",
@@ -413,7 +418,7 @@ async def run_tool_loop_nonstream(
 
     text = result.output if isinstance(result.output, str) else str(result.output)
     model_name = prepared.get("model") if isinstance(prepared.get("model"), str) else "unknown"
-    payload = _response_payload(
+    payload = build_text_response_payload(
         response_id=_final_response_id(canonical_response_id, pai_model, response_id),
         model=str(model_name),
         text=text,
@@ -562,7 +567,7 @@ async def run_tool_loop_stream_live(
         )
         if hosted is not None and _is_incomplete_typed_output(e):
             _LOGGER.info("pydantic-ai loop ended without typed text; returning last model response: %s", e)
-            async for chunk in _iter_completed_sse(hosted):
+            async for chunk in iter_text_response_sse(hosted):
                 yield chunk
             return
         status, payload = _map_run_error(e, followup=False)
@@ -579,23 +584,25 @@ async def run_tool_loop_stream_live(
     text = result.output if isinstance(result.output, str) else str(result.output)
     model_name = prepared.get("model") if isinstance(prepared.get("model"), str) else "unknown"
     response_id = _final_response_id(canonical_response_id, pai_model, response_id)
-    payload = _response_payload(
+    payload = build_text_response_payload(
         response_id=response_id,
         model=str(model_name),
         text=text,
         tools=list(prepared.get("tools") or []),
         tool_choice=prepared.get("tool_choice"),
     )
-    async for chunk in _iter_completed_sse(payload, text=text, response_id=response_id):
+    async for chunk in iter_text_response_sse(payload, text=text, response_id=response_id):
         yield chunk
 
 
-async def _iter_completed_sse(
+async def iter_text_response_sse(
     payload: dict[str, Any],
     *,
     text: str | None = None,
     response_id: str | None = None,
 ) -> AsyncIterator[bytes]:
+    """Emit a completed text response as SSE: one ``output_text.delta``, ``response.completed``, ``[DONE]``."""
+
     rid = response_id or str(payload.get("id") or "resp_anyagent")
     body_text = text if text is not None else _text_from_hosted_payload(payload)
     if body_text:

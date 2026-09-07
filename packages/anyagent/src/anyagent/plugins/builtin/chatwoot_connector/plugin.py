@@ -15,6 +15,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
+import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -215,6 +218,76 @@ def _chatwoot_skip_when_assigned_to_human() -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
+def _chatwoot_typing_indicator_enabled() -> bool:
+    """默认关闭；CHATWOOT_TYPING_INDICATOR=true 时在调用 agent 期间挂起 typing 指示。"""
+    raw = (getenv("CHATWOOT_TYPING_INDICATOR", "false") or "false").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _chatwoot_reply_pacing_window() -> tuple[float, float] | None:
+    """回复节奏下限 ``[min, max]`` 秒；缺省或配置非法时关闭（返回 None）。
+
+    环境变量：CHATWOOT_REPLY_PACING_MIN_S / CHATWOOT_REPLY_PACING_MAX_S。
+    只配 MIN 时 MAX=MIN。这是 floor 不是 delay：耗时已超过区间上限时不再等待。
+    """
+    raw_min = (getenv("CHATWOOT_REPLY_PACING_MIN_S") or "").strip()
+    raw_max = (getenv("CHATWOOT_REPLY_PACING_MAX_S") or "").strip()
+    if not raw_min and not raw_max:
+        return None
+    try:
+        min_s = float(raw_min) if raw_min else 0.0
+        max_s = float(raw_max) if raw_max else min_s
+    except ValueError:
+        _LOGGER.warning("ignoring invalid CHATWOOT_REPLY_PACING_*: min=%r max=%r", raw_min, raw_max)
+        return None
+    if min_s < 0 or max_s < min_s:
+        _LOGGER.warning("ignoring invalid CHATWOOT_REPLY_PACING_*: min=%r max=%r", raw_min, raw_max)
+        return None
+    if max_s <= 0:
+        return None
+    return (min_s, max_s)
+
+
+def _reply_pacing_delay_s(*, elapsed_s: float, window: tuple[float, float] | None, target_s: float | None = None) -> float:
+    """Remaining wait so the turn lands inside ``window``; 0 when already past the target.
+
+    ``target_s`` is the random point in ``window`` (drawn here when omitted) so the
+    same helper is testable without patching ``random``.
+    """
+    if window is None:
+        return 0.0
+    min_s, max_s = window
+    target = target_s if target_s is not None else random.uniform(min_s, max_s)  # noqa: S311
+    target = min(max(target, min_s), max_s)
+    return max(0.0, target - max(0.0, elapsed_s))
+
+
+async def _apply_reply_pacing_floor(
+    *,
+    started_at: float,
+    window: tuple[float, float] | None,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> float:
+    delay = _reply_pacing_delay_s(elapsed_s=time.monotonic() - started_at, window=window)
+    if delay > 0:
+        await sleep(delay)
+    return delay
+
+
+async def _set_typing_indicator(connector: Any, conversation_id: str, *, typing: bool) -> bool:
+    """Best-effort typing toggle; connectors without the capability degrade to no-op."""
+    set_typing = getattr(getattr(connector, "outbound", None), "set_typing", None)
+    if set_typing is None:
+        return False
+    try:
+        return bool(await set_typing(conversation_id, typing=typing))
+    except NotImplementedError:
+        return False
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning("chatwoot typing indicator toggle failed (typing=%s): %s", typing, exc)
+        return False
+
+
 async def _fetch_live_conversation(connector: Any, conversation_id: str) -> dict[str, Any] | None:
     getter = getattr(getattr(connector, "handoff", None), "get_conversation", None)
     if getter is None:
@@ -300,8 +373,16 @@ async def _process_incoming_message(
 ) -> dict[str, Any]:
     """
     处理入站消息：调用 Agent API 生成回复，通过 Chatwoot API 写回。
+
+    回复节奏（可选）：typing 指示在调用 Agent API 前打开、发送前关闭；
+    ``CHATWOOT_REPLY_PACING_*`` 配置的下限在 Agent API 返回后、二次人工接管
+    检查之前补足，因此等待期间被人工接管的会话不会被 bot 插话。
     """
     from anyagent.gateway.connector_contracts import HandoffOutputItem, chatwoot_session_key
+
+    started_at = time.monotonic()
+    pacing_window = _chatwoot_reply_pacing_window()
+    typing_enabled = _chatwoot_typing_indicator_enabled()
 
     if await _conversation_owned_by_human(
         body=body,
@@ -370,14 +451,24 @@ async def _process_incoming_message(
         )
 
     try:
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=request.app),
-            base_url="http://anyagent.local",
-        ) as client:
-            headers = {}
-            if isinstance(state.api_key, str) and state.api_key:
-                headers["Authorization"] = f"Bearer {state.api_key}"
-            response = await client.post("/v1/responses", headers=headers, json=request_body)
+        pacing_delay_s = 0.0
+        if typing_enabled:
+            await _set_typing_indicator(connector, conversation_id, typing=True)
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=request.app),
+                base_url="http://anyagent.local",
+            ) as client:
+                headers = {}
+                if isinstance(state.api_key, str) and state.api_key:
+                    headers["Authorization"] = f"Bearer {state.api_key}"
+                response = await client.post("/v1/responses", headers=headers, json=request_body)
+
+            if response.status_code < 400:
+                pacing_delay_s = await _apply_reply_pacing_floor(started_at=started_at, window=pacing_window)
+        finally:
+            if typing_enabled:
+                await _set_typing_indicator(connector, conversation_id, typing=False)
 
         if response.status_code >= 400:
             emit_observability_event(
@@ -485,6 +576,7 @@ async def _process_incoming_message(
             "handoff_executed": bool((handoff_result and handoff_result.ok) or tool_handoff_executed),
             "conversation_opened": conversation_opened,
             "status_code": response.status_code,
+            "pacing_delay_s": round(pacing_delay_s, 3),
         }
 
     except Exception as exc:  # noqa: BLE001
@@ -649,6 +741,11 @@ def register(api: Any) -> None:
       Chatwoot 会话状态（handoff 不调用 toggle_status，仅保留 assignment/摘要 note）
     - CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN: 默认 true——会话已分配给真人
       坐席时跳过 agent 回复；设为 false 时即使已分配仍由 bot 回复
+    - CHATWOOT_TYPING_INDICATOR: 默认 false——true 时调用 Agent API 前打开
+      typing 指示、发送回复前关闭（toggle_typing_status，同一 access token）
+    - CHATWOOT_REPLY_PACING_MIN_S / CHATWOOT_REPLY_PACING_MAX_S: 默认关闭——
+      回复节奏下限（秒）：本轮耗时不足 [min, max] 内随机值时补足再发；已超过则
+      立即发。scripted reply 等瞬时回复因此不会暴露"预设"，模型回复不受影响
     """
 
     chatwoot_url = getenv("CHATWOOT_URL", "https://app.chatwoot.com") or "https://app.chatwoot.com"

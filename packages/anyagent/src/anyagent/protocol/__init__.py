@@ -10,6 +10,7 @@ __all__ = [
     "tool_manifest_extensions",
     "responses_optional",
     "context_fragments",
+    "scripted_reply",
     "prompt_context",
     "session_snapshot",
     "workspace",

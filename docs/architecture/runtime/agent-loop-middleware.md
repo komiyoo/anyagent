@@ -88,6 +88,7 @@ plugin 通过 manifest 的 `middlewares` 字段声明 middleware classpath(见 [
 
 - 页面来源、CRM 记录、租户信息、业务规则摘要等“进入模型前就应该稳定可见”的事实 → 用 `runtime.context_providers`。
 - loop 内每轮模型请求/工具调用的拦截、压缩、循环检测、审计改写 → 用 `runtime.middlewares`。
+- 已知输入的确定性文本回复（quick prompt、固定入口语、营业时间外自动回复）→ 用 `runtime.scripted_reply_providers`。它既不是 context provider（不影响是否调用模型），也不是 pydantic-ai hook（hook 只能改写请求，不能短路模型调用并返回最终文本）：它在内置 runtime 的 `/v1/responses` worker 内、session lease 之下、loop 入口之前判定，命中即合成正常 Response 走既有 finalize 路径，写 `anyagent.response.scripted` 事件；只允许文本，不允许工具调用 / handoff / 多轮。配置与契约见 [agent-packs-and-runtime-config.md](agent-packs-and-runtime-config.md#runtimescripted_reply_providers)。
 
 provider classpath 同样来自部署者控制的 `agent.yaml`，不是 agent/model 可控输入。provider 代码运行在 server 进程内，应在自身边界做外部输入校验、来源标记、超时与限长。
 
@@ -96,6 +97,8 @@ provider classpath 同样来自部署者控制的 `agent.yaml`，不是 agent/mo
 - 接口与链:`packages/anyagent/src/anyagent/agent_runtime/middleware.py`
 - Context provider 接口:`packages/anyagent/src/anyagent/agent_runtime/context_providers.py`
 - Context provider 装载:`packages/anyagent/src/anyagent/server/handlers/context_providers.py`
+- Scripted reply 契约:`packages/anyagent/src/anyagent/protocol/scripted_reply.py`、`packages/anyagent/src/anyagent/agent_runtime/scripted_reply.py`
+- Scripted reply 装载与命中:`packages/anyagent/src/anyagent/server/handlers/scripted_reply.py`、`packages/anyagent/src/anyagent/server/routes/responses.py`
 - 接入点:`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:87`、`:634`、`:644`、`:673`
 - 装载与配置:`packages/anyagent/src/anyagent/server/app.py:148`、`packages/anyagent/src/anyagent/agent_packs.py:106`
 - 内置压缩:`packages/anyagent/src/anyagent/agent_runtime/middlewares/context_compaction.py`

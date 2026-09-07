@@ -159,6 +159,7 @@ class RuntimeSpec(BaseModel):
 
     middlewares: list[str] | None = None
     context_providers: list[str] | None = None
+    scripted_reply_providers: list[str] | None = None
     subagent: SubAgentRuntimeSpec = Field(default_factory=SubAgentRuntimeSpec)
     loop_detection: LoopDetectionRuntimeSpec = Field(default_factory=LoopDetectionRuntimeSpec)
     context_compaction: ContextCompactionRuntimeSpec = Field(default_factory=ContextCompactionRuntimeSpec)

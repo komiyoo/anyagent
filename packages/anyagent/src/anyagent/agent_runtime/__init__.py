@@ -12,6 +12,13 @@ __all__ = [
     "ContextProviderLoadError",
     "ContextProviderRequest",
     "collect_context_provider_fragments",
+    "BaseScriptedReplyProvider",
+    "ScriptedReplyLoadError",
+    "ScriptedReplyMatch",
+    "ScriptedReplyProvider",
+    "ScriptedReplyRequest",
+    "load_scripted_reply_provider_from_classpath",
+    "resolve_scripted_reply",
     "build_prompt_envelope",
     "build_default_environment_context_values",
     "inject_skills_into_responses_body",
@@ -83,6 +90,15 @@ from .context_providers import (
     ContextProviderLoadError,
     ContextProviderRequest,
     collect_context_provider_fragments,
+)
+from .scripted_reply import (
+    BaseScriptedReplyProvider,
+    ScriptedReplyLoadError,
+    ScriptedReplyMatch,
+    ScriptedReplyProvider,
+    ScriptedReplyRequest,
+    load_scripted_reply_provider_from_classpath,
+    resolve_scripted_reply,
 )
 from .prompt_injection import build_agents_md_injection_text
 from .prompt_envelope import build_default_environment_context_values, build_prompt_envelope

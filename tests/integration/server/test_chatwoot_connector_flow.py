@@ -557,6 +557,73 @@ async def _run_chatwoot_connector_webhook_acknowledges_before_background_process
     ]
 
 
+def test_chatwoot_connector_applies_pacing_floor_and_typing_indicator(tmp_path: Path, monkeypatch) -> None:
+    asyncio.run(_run_chatwoot_connector_applies_pacing_floor_and_typing_indicator(tmp_path, monkeypatch))
+
+
+async def _run_chatwoot_connector_applies_pacing_floor_and_typing_indicator(tmp_path: Path, monkeypatch) -> None:
+    _write_main_agent(tmp_path)
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("CHATWOOT_ASYNC_PROCESSING", "false")
+    monkeypatch.setenv("CHATWOOT_TYPING_INDICATOR", "true")
+    monkeypatch.setenv("CHATWOOT_REPLY_PACING_MIN_S", "0.3")
+    monkeypatch.setenv("CHATWOOT_REPLY_PACING_MAX_S", "0.3")
+    release = asyncio.Event()
+    release.set()
+    provider = _SlowChatwootProvider(release)
+    monkeypatch.setattr(
+        "anyagent.server.routes.responses.get_default_model_provider",
+        lambda: provider,
+    )
+
+    app = create_app(
+        workspace_dir=tmp_path,
+        api_key="user-key",
+        admin_api_key="admin-key",
+        plugin_roots=[REFERENCE_PLUGIN_ROOT],
+    )
+    connector = app.state.anyagent.gateway_registry.channel_connectors["chatwoot"]
+    timeline: list[tuple[str, float]] = []
+
+    async def _record_send_message(platform_conversation_id: str, content: str, **_kwargs):
+        timeline.append(("send", time.monotonic()))
+        return type("SendResult", (), {"ok": True, "platform_message_id": "msg_1"})()
+
+    async def _record_typing(platform_conversation_id: str, *, typing: bool) -> bool:
+        timeline.append((f"typing_{'on' if typing else 'off'}", time.monotonic()))
+        return True
+
+    connector.outbound.send_message = _record_send_message
+    connector.outbound.set_typing = _record_typing
+
+    payload = {
+        "event": "message_created",
+        "message_type": "incoming",
+        "timestamp": 1717000000,
+        "account": {"id": 1},
+        "conversation": {"id": 42, "status": "open"},
+        "content": "hi",
+    }
+    raw_body, signature = _sign_chatwoot_payload(payload)
+
+    started = time.monotonic()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as http:
+        response = await http.post(
+            "/gateway/chatwoot/webhook/main",
+            headers={"x-chatwoot-signature": signature, "x-chatwoot-timestamp": str(payload["timestamp"])},
+            content=raw_body,
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["reply_sent"] is True
+        assert data["pacing_delay_s"] > 0
+
+    assert [name for name, _ in timeline] == ["typing_on", "typing_off", "send"]
+    send_at = next(at for name, at in timeline if name == "send")
+    assert send_at - started >= 0.3
+
+
 def _sign_chatwoot_payload(payload: dict, secret: bytes = b"test-chatwoot-secret") -> tuple[bytes, str]:
     raw_body = json.dumps(payload).encode("utf-8")
     signature = hmac.new(

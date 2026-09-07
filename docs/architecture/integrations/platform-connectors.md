@@ -65,6 +65,27 @@ Key design principles:
 - **Credential-safe**: Secrets go through Credential Vault (`credential_id` refs), never hardcoded.
 - **Plugin-native**: Connectors are loaded as `--plugin-root` plugins with `plugin.json` manifests.
 
+### Typing Indicator and Reply Pacing
+
+Reply pacing is a channel presentation concern, so it lives in the connector, not
+in the Agent Server. Two optional pieces:
+
+- `ConnectorOutboundDelivery.set_typing(platform_conversation_id, *, typing)` is an
+  optional capability. The base class raises `NotImplementedError`; callers must
+  degrade to no-op and always pair `typing=True` with a `finally` `typing=False`.
+  Chatwoot implements it via `toggle_typing_status` on the same Agent Bot token.
+- A **pacing floor** (not a delay): after `/v1/responses` returns, the connector
+  waits only until the turn has taken a random value in `[min, max]` seconds, then
+  sends. Slow model turns are never lengthened; instant turns (for example scripted
+  replies, see [agent-packs-and-runtime-config.md](../runtime/agent-packs-and-runtime-config.md#runtimescripted_reply_providers))
+  stop looking pre-canned. The wait happens **before** the second
+  assigned-to-human check so a conversation taken over during the wait is not
+  interrupted by the bot.
+
+Chatwoot wiring and env vars (`CHATWOOT_TYPING_INDICATOR`,
+`CHATWOOT_REPLY_PACING_MIN_S` / `_MAX_S`, both off by default):
+`packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/README.md`.
+
 ### Handoff Signaling
 
 AnyAgent currently supports two handoff signaling styles at the framework layer:

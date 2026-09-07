@@ -203,6 +203,9 @@ v0 事件类型最小集合：
 | `anyagent.tool.result` | Tool Runtime 返回后 | `tool_call_id`, `tool_name`, `status`, `meta`, `output` (摘要) |
 | `anyagent.command.planned` | 命令类工具参数派生 | `command` (摘要), `source_tool_call_id` |
 | `anyagent.command.result` | 命令类工具结果派生 | `exit_code`, `stdout/stderr` (摘要), `source_tool_call_id` |
+| `anyagent.response.scripted` | 本轮由 scripted reply provider 回答、未调用模型 | `provider`, `variant_id`, `reason`, `text_chars` |
+
+scripted 轮次的 Response 本体与模型轮次形状完全一致（一条 `message` + `output_text`，无 `usage`），OpenAI 兼容面不加任何标记；区分只靠这条 stage event（该轮不会有 `anyagent.model.request`）。仅内置 runtime 支持，分布式 runtime 不支持。配置与契约见 [agent-packs-and-runtime-config.md](../runtime/agent-packs-and-runtime-config.md#runtimescripted_reply_providers)。
 
 安全约束：
 - 默认只提供摘要（`bytes` + `sha256` + `preview`），不传输原始 IO

@@ -169,6 +169,8 @@ OpenAI 兼容 SSE 与 anyagent Stage Events 见：
 
 见 [docs/architecture/runtime/agent-packs-and-runtime-config.md](docs/architecture/runtime/agent-packs-and-runtime-config.md#跨请求上下文恢复)。
 
+部署者可通过 `runtime.scripted_reply_providers` 对已知输入返回确定性文本回复：命中时不调用模型，框架合成正常 Response 并走同一套 session snapshot 路径，使该轮进入后续上下文；仅文本、不含工具调用/handoff/多轮；以 `anyagent.response.scripted` 事件区分。见 [docs/architecture/runtime/agent-packs-and-runtime-config.md](docs/architecture/runtime/agent-packs-and-runtime-config.md#runtimescripted_reply_providers)。
+
 <a id="req-4-6-2"></a>
 
 #### 4.6.2 会话运行参数绑定与 merge 更新

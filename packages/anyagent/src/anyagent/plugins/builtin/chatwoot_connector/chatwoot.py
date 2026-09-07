@@ -122,6 +122,7 @@ class ChatwootOutboundDelivery(ConnectorOutboundDelivery):
 
     API:
         POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/messages
+        POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/toggle_typing_status
     """
 
     def __init__(
@@ -136,6 +137,38 @@ class ChatwootOutboundDelivery(ConnectorOutboundDelivery):
         self._account_id = str(account_id)
         self._access_token = access_token
         self._client = http_client
+
+    async def set_typing(self, platform_conversation_id: str, *, typing: bool) -> bool:
+        """Toggle the agent-bot typing indicator on a conversation.
+
+        Uses the same Agent Bot access token as ``send_message``. Failures are
+        raised as ``OutboundDeliveryError`` so the connector can degrade to no-op.
+        """
+
+        client = await self._get_client()
+        url = (
+            f"/api/v1/accounts/{self._account_id}/conversations/"
+            f"{platform_conversation_id}/toggle_typing_status"
+        )
+        try:
+            resp = await client.post(url, json={"typing_status": "on" if typing else "off"})
+            resp.raise_for_status()
+            return True
+        except httpx.HTTPStatusError as exc:
+            raise OutboundDeliveryError(
+                f"Chatwoot typing toggle failed: {exc.response.status_code} {exc.response.text}",
+                status_code=exc.response.status_code,
+                retryable=False,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise OutboundDeliveryError(
+                f"Chatwoot typing toggle request failed: {exc}",
+                status_code=502,
+                retryable=True,
+            ) from exc
+        finally:
+            if self._client is None:
+                await client.aclose()
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is not None:

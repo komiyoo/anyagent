@@ -269,6 +269,16 @@ class AnyAgentModelRequestEvent(StageEventBase):
     prompt_cache_key: str | None = None
 
 
+class AnyAgentScriptedReplyEvent(StageEventBase):
+    """The turn was answered by a scripted reply provider; no model request was made."""
+
+    type: Literal["anyagent.response.scripted"] = "anyagent.response.scripted"
+    provider: str
+    variant_id: str | None = None
+    reason: str | None = None
+    text_chars: int = Field(default=0, ge=0)
+
+
 class AnyAgentDoneEvent(StageEventBase):
     """Terminal stage event emitted when `[DONE]` is observed."""
 
@@ -399,6 +409,7 @@ StageEvent: TypeAlias = Annotated[
     | AnyAgentPromptContextEvent
     | AnyAgentPromptContextRenderedEvent
     | AnyAgentModelRequestEvent
+    | AnyAgentScriptedReplyEvent
     | AnyAgentWorkspaceLifecycleEvent
     | AnyAgentMcpServerLifecycleEvent
     | AnyAgentSubAgentSpawnedEvent

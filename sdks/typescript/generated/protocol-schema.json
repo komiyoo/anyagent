@@ -2,12 +2,14 @@
   "changelog": [
     {
       "changes": [
-        "Add optional `x-anyagent-source-name` to AnyAgentFunctionToolParam so MCP tools keep the raw server tool name through prompt-bundle validation."
+        "Add optional `x-anyagent-source-name` to AnyAgentFunctionToolParam so MCP tools keep the raw server tool name through prompt-bundle validation.",
+        "Add `anyagent.response.scripted` stage event (AnyAgentScriptedReplyEvent) marking turns answered by a scripted reply provider without a model request.",
+        "Add `anyagent.protocol.scripted_reply.ScriptedReply` as the typed return value of scripted reply providers."
       ],
       "date": "2026-09-07",
       "protocol_version": "0.1.10",
       "schema_version": "2026-09-07",
-      "summary": "Accept MCP source-name extension on function tool params."
+      "summary": "Accept MCP source-name extension on function tool params; add scripted reply stage event."
     },
     {
       "changes": [
@@ -10893,6 +10895,100 @@
           "title": "AnyAgentPromptContextRenderedEvent",
           "type": "object"
         },
+        "AnyAgentScriptedReplyEvent": {
+          "additionalProperties": false,
+          "description": "The turn was answered by a scripted reply provider; no model request was made.",
+          "properties": {
+            "provider": {
+              "title": "Provider",
+              "type": "string"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reason"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "text_chars": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Text Chars",
+              "type": "integer"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.response.scripted",
+              "default": "anyagent.response.scripted",
+              "title": "Type",
+              "type": "string"
+            },
+            "variant_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Variant Id"
+            }
+          },
+          "required": [
+            "response_id",
+            "provider"
+          ],
+          "title": "AnyAgentScriptedReplyEvent",
+          "type": "object"
+        },
         "AnyAgentSubAgentCompletedEvent": {
           "additionalProperties": false,
           "description": "A bounded sub-agent task has completed.",
@@ -12355,6 +12451,7 @@
                 "anyagent.model.stream_event": "#/$defs/AnyAgentModelStreamEvent",
                 "anyagent.prompt.context": "#/$defs/AnyAgentPromptContextEvent",
                 "anyagent.prompt.context.rendered": "#/$defs/AnyAgentPromptContextRenderedEvent",
+                "anyagent.response.scripted": "#/$defs/AnyAgentScriptedReplyEvent",
                 "anyagent.sandbox.workspace.checkpoint_failed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
                 "anyagent.sandbox.workspace.checkpointed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
                 "anyagent.sandbox.workspace.checkpointing": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
@@ -12398,6 +12495,9 @@
               },
               {
                 "$ref": "#/$defs/AnyAgentModelRequestEvent"
+              },
+              {
+                "$ref": "#/$defs/AnyAgentScriptedReplyEvent"
               },
               {
                 "$ref": "#/$defs/AnyAgentWorkspaceLifecycleEvent"
@@ -18909,6 +19009,49 @@
       "title": "SandboxPolicy",
       "type": "object"
     },
+    "anyagent.protocol.scripted_reply.ScriptedReply": {
+      "additionalProperties": false,
+      "description": "Deterministic text reply returned by a scripted reply provider.",
+      "properties": {
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why this input was answered deterministically.",
+          "title": "Reason"
+        },
+        "text": {
+          "description": "Assistant-visible reply text; becomes the sole output_text.",
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "variant_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Deployer-side identifier of the matched script/variant.",
+          "title": "Variant Id"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "ScriptedReply",
+      "type": "object"
+    },
     "anyagent.protocol.session_snapshot.PersistedSessionSnapshot": {
       "$defs": {
         "PromptContextAudit": {
@@ -20692,6 +20835,100 @@
         "response_id"
       ],
       "title": "AnyAgentPromptContextRenderedEvent",
+      "type": "object"
+    },
+    "anyagent.protocol.stage_events.AnyAgentScriptedReplyEvent": {
+      "additionalProperties": false,
+      "description": "The turn was answered by a scripted reply provider; no model request was made.",
+      "properties": {
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "response_id": {
+          "title": "Response Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "text_chars": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Text Chars",
+          "type": "integer"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "ts_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ts Ms"
+        },
+        "type": {
+          "const": "anyagent.response.scripted",
+          "default": "anyagent.response.scripted",
+          "title": "Type",
+          "type": "string"
+        },
+        "variant_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Variant Id"
+        }
+      },
+      "required": [
+        "response_id",
+        "provider"
+      ],
+      "title": "AnyAgentScriptedReplyEvent",
       "type": "object"
     },
     "anyagent.protocol.stage_events.AnyAgentSubAgentCompletedEvent": {
@@ -25209,6 +25446,100 @@
           "title": "AnyAgentPromptContextRenderedEvent",
           "type": "object"
         },
+        "AnyAgentScriptedReplyEvent": {
+          "additionalProperties": false,
+          "description": "The turn was answered by a scripted reply provider; no model request was made.",
+          "properties": {
+            "provider": {
+              "title": "Provider",
+              "type": "string"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reason"
+            },
+            "response_id": {
+              "title": "Response Id",
+              "type": "string"
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Seq"
+            },
+            "text_chars": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Text Chars",
+              "type": "integer"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "ts_ms": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ts Ms"
+            },
+            "type": {
+              "const": "anyagent.response.scripted",
+              "default": "anyagent.response.scripted",
+              "title": "Type",
+              "type": "string"
+            },
+            "variant_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Variant Id"
+            }
+          },
+          "required": [
+            "response_id",
+            "provider"
+          ],
+          "title": "AnyAgentScriptedReplyEvent",
+          "type": "object"
+        },
         "AnyAgentSubAgentCompletedEvent": {
           "additionalProperties": false,
           "description": "A bounded sub-agent task has completed.",
@@ -26297,6 +26628,7 @@
           "anyagent.model.stream_event": "#/$defs/AnyAgentModelStreamEvent",
           "anyagent.prompt.context": "#/$defs/AnyAgentPromptContextEvent",
           "anyagent.prompt.context.rendered": "#/$defs/AnyAgentPromptContextRenderedEvent",
+          "anyagent.response.scripted": "#/$defs/AnyAgentScriptedReplyEvent",
           "anyagent.sandbox.workspace.checkpoint_failed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
           "anyagent.sandbox.workspace.checkpointed": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
           "anyagent.sandbox.workspace.checkpointing": "#/$defs/AnyAgentWorkspaceLifecycleEvent",
@@ -26340,6 +26672,9 @@
         },
         {
           "$ref": "#/$defs/AnyAgentModelRequestEvent"
+        },
+        {
+          "$ref": "#/$defs/AnyAgentScriptedReplyEvent"
         },
         {
           "$ref": "#/$defs/AnyAgentWorkspaceLifecycleEvent"

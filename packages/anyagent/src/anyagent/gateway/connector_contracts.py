@@ -158,6 +158,25 @@ class ConnectorOutboundDelivery(ABC):
         """
         ...
 
+    async def set_typing(
+        self,
+        platform_conversation_id: str,
+        *,
+        typing: bool,
+    ) -> bool:
+        """
+        切换平台侧 "bot 正在输入" 指示。
+
+        可选能力：默认抛 NotImplementedError，调用方应捕获并降级为 no-op。
+        实现方必须保证 typing=False 幂等，调用方用 try/finally 成对调用，
+        避免指示器卡在 on。
+
+        Returns:
+            True 表示平台已接受切换。
+        """
+        _ = platform_conversation_id, typing
+        raise NotImplementedError("typing indicator not supported by this connector")
+
 
 # ── 人工接管信号 ──────────────────────────────────────────────────
 

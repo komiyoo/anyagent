@@ -16,6 +16,8 @@ Chatwoot 入站渠道 connector 参考实现，属于 anyagent Gateway 层 plugi
 | Conversation lifecycle events | ✅ | 监听 `message_created` / `conversation_resolved` 等事件并注入 event store |
 | Agent 主动调用工具 | ✅ | `app.chatwoot.send_message` / `app.chatwoot.handoff` 两个系统工具 |
 | Tool-based handoff bridge | ✅ | webhook 请求会自动向 `/v1/responses` 注入 `gateway.handoff`，走通用 Tool Runtime 主路径 |
+| Typing indicator | ✅ | `CHATWOOT_TYPING_INDICATOR=true` 时调用 Agent API 前打开、发送前关闭（`toggle_typing_status`，同一 bot token）；默认关闭 |
+| Reply pacing floor | ✅ | `CHATWOOT_REPLY_PACING_MIN_S` / `_MAX_S` 设定回复节奏下限：本轮耗时不足区间内随机值时补足再发，已超过则立即发。用于 scripted reply 等瞬时回复；默认关闭 |
 
 ## 架构
 
@@ -50,6 +52,14 @@ export CHATWOOT_WEBHOOK_SECRET="your_webhook_hmac_secret"
 # 可选：默认 true——会话已分配给真人坐席时跳过 bot 回复。不能用 status=open
 # 判断（bot 回复后也会把 pending 置为 open）；依据是 assignee_type=User。
 # export CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN="false"
+# 可选：默认关闭——调用 Agent API 期间挂起 typing 指示（需要 bot token 有
+# toggle_typing_status 权限；无权限时只 warning，不影响回复）。
+# export CHATWOOT_TYPING_INDICATOR="true"
+# 可选：默认关闭——回复节奏下限（秒）。本轮从收到 webhook 到准备发送若不足
+# [MIN, MAX] 内的随机值则补足；已超过则立即发（floor，不叠加）。等待放在
+# 二次人工接管检查之前，等待期间被接管的会话不会被 bot 插话。
+# export CHATWOOT_REPLY_PACING_MIN_S="2"
+# export CHATWOOT_REPLY_PACING_MAX_S="4"
 ```
 
 ### Credential Vault（生产环境推荐）
