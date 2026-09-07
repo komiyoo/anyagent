@@ -133,7 +133,7 @@ flowchart TB
 
 绿色为 scripted 路径、蓝色为模型路径；两者在 `FIN` 之后对 session snapshot、SDK 与 connector 不可区分，只靠 stage event 类型区分。
 
-回复节奏（避免瞬时回复暴露“预设”）不归 provider，归 connector：见 [platform-connectors.md](../integrations/platform-connectors.md#typing-indicator-and-reply-pacing)。
+回复节奏（避免瞬时回复暴露“预设”）不归 provider，归 connector：见 [platform-connectors.md](../integrations/platform-connectors.md#typing-indicator-与回复节奏)。
 
 ## 配置层级与 merge
 

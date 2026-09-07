@@ -65,24 +65,14 @@ Key design principles:
 - **Credential-safe**: Secrets go through Credential Vault (`credential_id` refs), never hardcoded.
 - **Plugin-native**: Connectors are loaded as `--plugin-root` plugins with `plugin.json` manifests.
 
-### Typing Indicator and Reply Pacing
+### Typing Indicator 与回复节奏
 
-Reply pacing is a channel presentation concern, so it lives in the connector, not
-in the Agent Server. Two optional pieces:
+回复节奏是渠道呈现问题，不是生成问题，所以放在 connector，不放在 Agent Server。两个可选能力：
 
-- `ConnectorOutboundDelivery.set_typing(platform_conversation_id, *, typing)` is an
-  optional capability. The base class raises `NotImplementedError`; callers must
-  degrade to no-op and always pair `typing=True` with a `finally` `typing=False`.
-  Chatwoot implements it via `toggle_typing_status` on the same Agent Bot token.
-- A **pacing floor** (not a delay): after `/v1/responses` returns, the connector
-  waits only until the turn has taken a random value in `[min, max]` seconds, then
-  sends. Slow model turns are never lengthened; instant turns (for example scripted
-  replies, see [agent-packs-and-runtime-config.md](../runtime/agent-packs-and-runtime-config.md#runtimescripted_reply_providers))
-  stop looking pre-canned. The wait happens **before** the second
-  assigned-to-human check so a conversation taken over during the wait is not
-  interrupted by the bot.
+- `ConnectorOutboundDelivery.set_typing(platform_conversation_id, *, typing)`：可选能力。基类默认抛 `NotImplementedError`，调用方必须降级为 no-op，且 `typing=True` 必须与 `finally` 中的 `typing=False` 成对出现，避免指示器卡在 on。Chatwoot 通过 `toggle_typing_status` 实现，复用同一个 Agent Bot access token。
+- **节奏下限（floor），不是 delay**：`/v1/responses` 返回后，connector 只把本轮补足到 `[min, max]` 秒内的随机值再发送。慢的模型轮次不会被拉长；瞬时轮次（例如 scripted reply，见 [agent-packs-and-runtime-config.md](../runtime/agent-packs-and-runtime-config.md#runtimescripted_reply_providers)）不再暴露“预设”。等待发生在**第二次人工接管检查之前**，等待期间被人工接管的会话不会被 bot 插话。
 
-Order of operations inside one inbound turn (Chatwoot `_process_incoming_message`):
+一次入站消息内的执行顺序（Chatwoot `_process_incoming_message`）：
 
 ```mermaid
 sequenceDiagram
@@ -93,26 +83,22 @@ sequenceDiagram
 
   CW->>C: webhook message_created
   Note over C: started_at = now
-  C->>CW: set_typing(on)  [optional]
+  C->>CW: set_typing(on)  [可选]
   C->>S: POST /v1/responses
-  S-->>C: Response (scripted or model turn)
-  Note over C: floor = random(min, max) - elapsed<br/>sleep only if floor > 0
+  S-->>C: Response（scripted 或模型轮次）
+  Note over C: floor = random(min, max) - elapsed<br/>仅当 floor > 0 时 sleep
   C->>CW: set_typing(off)  [finally]
-  C->>CW: GET conversation (assigned to human?)
-  alt still bot-owned
+  C->>CW: GET conversation（是否已分配真人？）
+  alt 仍由 bot 负责
     C->>CW: send_message(reply)
-  else taken over during the wait
-    Note over C: drop reply, reason=assigned_to_human
+  else 等待期间被人工接管
+    Note over C: 丢弃回复，reason=assigned_to_human
   end
 ```
 
-The typing indicator spans steps 3–6, so slow model turns also benefit. The
-floor (step 5) only extends turns that finished early; a 10 s model turn is
-sent immediately. The ownership re-check (step 7) runs after the wait.
+typing 指示覆盖第 3–6 步，慢的模型轮次同样受益。floor（第 5 步）只补足提前结束的轮次；耗时 10 秒的模型轮次立即发送。人工接管二次检查（第 7 步）在等待之后执行。
 
-Chatwoot wiring and env vars (`CHATWOOT_TYPING_INDICATOR`,
-`CHATWOOT_REPLY_PACING_MIN_S` / `_MAX_S`, both off by default):
-`packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/README.md`.
+Chatwoot 接线与环境变量（`CHATWOOT_TYPING_INDICATOR`、`CHATWOOT_REPLY_PACING_MIN_S` / `_MAX_S`，默认都关闭）：`packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/README.md`。
 
 ### Handoff Signaling
 
