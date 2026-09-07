@@ -7,6 +7,7 @@ from anyagent.mcp.manager import MCPServerManager
 from anyagent.mcp.models import MCPConfig, MCPServerConfig
 from anyagent.mcp.server import MCPServer
 from anyagent.mcp.util import mcp_tool_to_function_param, sanitize_mcp_tool_name
+from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
 
 
 class _FakeMCPServer:
@@ -57,6 +58,27 @@ def test_mcp_tool_to_function_param_keeps_source_name() -> None:
 
     assert param["name"] == "mcp.demo.read_file"
     assert param["x_anyagent_source_name"] == "Read File!"
+
+
+def test_function_tool_param_accepts_mcp_source_name() -> None:
+    param = mcp_tool_to_function_param(
+        {
+            "name": "maps_regeocode",
+            "description": "Reverse geocode",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        server_label="amap-maps",
+    )
+
+    tool = AnyAgentFunctionToolParam.model_validate(param)
+    assert tool.name == "mcp.amap-maps.maps_regeocode"
+    assert tool.x_anyagent_kind == "mcp"
+    assert tool.x_anyagent_source_name == "maps_regeocode"
+
+    hyphenated = dict(param)
+    hyphenated.pop("x_anyagent_source_name")
+    hyphenated["x-anyagent-source-name"] = "maps_regeocode"
+    assert AnyAgentFunctionToolParam.model_validate(hyphenated).x_anyagent_source_name == "maps_regeocode"
 
 
 def test_manager_calls_raw_source_tool_name_after_sanitize() -> None:

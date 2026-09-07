@@ -48,6 +48,11 @@ class AnyAgentFunctionToolParam(BaseModel):
         validation_alias=AliasChoices("x-anyagent-cli", "x_anyagent_cli"),
         serialization_alias="x-anyagent-cli",
     )
+    x_anyagent_source_name: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("x-anyagent-source-name", "x_anyagent_source_name"),
+        serialization_alias="x-anyagent-source-name",
+    )
 
 
 def validate_tool_choice(tool_choice: Any, allowed_tool_names: set[str]) -> str | None:

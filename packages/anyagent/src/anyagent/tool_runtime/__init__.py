@@ -16,7 +16,7 @@ __all__ = [
     "create_tool_runtime_app_async",
 ]
 
-__version__ = "0.4.24"
+__version__ = "0.4.25"
 
 from .models import ToolCategory, ToolDefinition, ToolExposure, RegisteredTool
 from .client import ToolRuntimeClient, ToolsetVersionMismatch, create_tool_runtime_client, execute_tool_runtime_tool, fetch_manifest_tools

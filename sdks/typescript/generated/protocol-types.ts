@@ -1,6 +1,6 @@
 /* eslint-disable */
 // Generated from anyagent.protocol schema bundle. Do not edit by hand.
-// schema_version: 2026-06-23
+// schema_version: 2026-09-07
 
 export type MCPServerTransport = "streamable_http" | "sse" | "stdio";
 
@@ -1118,6 +1118,7 @@ export type AnyAgentFunctionToolParam = {
   "type"?: "function";
   "x-anyagent-cli"?: Record<string, unknown> | null;
   "x-anyagent-kind"?: "command" | "mcp" | null;
+  "x-anyagent-source-name"?: string | null;
 };
 
 export type PluginCapability = {
