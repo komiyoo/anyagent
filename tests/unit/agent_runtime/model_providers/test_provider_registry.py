@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from anyagent.agent_runtime.model_providers.registry import PROVIDER_REGISTRY, get_provider_spec, resolve_provider_kind
+from anyagent.model_catalog import PROVIDER_REGISTRY, get_provider_spec, resolve_provider_kind
 
 
 def test_provider_registry_aliases_defaults_and_keys():
@@ -9,3 +9,4 @@ def test_provider_registry_aliases_defaults_and_keys():
     assert resolve_provider_kind("google_gemini") == "gemini"
     assert get_provider_spec("gemini").default_api_key_envs == ("GOOGLE_API_KEY", "GEMINI_API_KEY")
     assert get_provider_spec("anthropic").default_base_url == "https://api.anthropic.com/v1"
+    assert not hasattr(get_provider_spec("anthropic"), "build_from_selection")

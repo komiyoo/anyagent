@@ -10,10 +10,12 @@
   - [architecture/api/responses-api-sdk-and-server.md](architecture/api/responses-api-sdk-and-server.md)：SDK + Server 泳道与模块边界
   - [architecture/api/sdk-public-surface.md](architecture/api/sdk-public-surface.md)：AnyAgent SDK public surface、typed model facade、repo 内引用与验证入口
   - [architecture/control-plane/studio-control-plane-and-observability.md](architecture/control-plane/studio-control-plane-and-observability.md)：Studio 控制面、模式分层、观测与 skill 渠道化导入
+  - [architecture/runtime/agent-loop.md](architecture/runtime/agent-loop.md)：pydantic-ai agent loop、模型映射与类型分层
   - [architecture/runtime/sandbox-session-filesystem-design.md](architecture/runtime/sandbox-session-filesystem-design.md)：服务化沙箱会话文件系统设计
 - [security/README.md](security/README.md)：威胁模型、安全边界、审计留痕、凭证管理
 - [acceptance/README.md](acceptance/README.md)：验收与可复现手册
 - [performance/load-testing-baseline.md](performance/load-testing-baseline.md)：性能基线
+- [plans/README.md](plans/README.md)：按日落盘的执行计划
 
 ## 目录结构
 
@@ -23,6 +25,7 @@
 - `docs/security/` — 安全设计（威胁模型、sandbox、tool policy、credential vault）
 - `docs/acceptance/` — 验收入口
 - `docs/performance/` — 性能基线
+- `docs/plans/` — 按日落盘的执行计划
 - `docs/_dev/` — 研发草案（Draft/WIP，不保证长期稳定）
 - `docs/_notes/` — 第三方/个人调研笔记（非 SSOT）
 

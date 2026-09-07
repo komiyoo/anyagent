@@ -13,10 +13,10 @@ from anyagent.agent_runtime.session_runtime import input_to_transcript_items
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp, run_tool_loop_nonstream, run_tool_loop_stream_live
 from anyagent.agent_runtime.model_providers import get_default_model_provider
 from anyagent.gateway.session import session_partition_key
+from anyagent.agent_runtime.loop import PydanticAIModelHandle
 from anyagent.model_config import (
     ModelConfigError,
     apply_effective_model_to_body,
-    model_provider_for_selection,
     resolve_effective_model_selection,
 )
 from anyagent.observability import emit_observability_event
@@ -879,9 +879,12 @@ def _emit_server_response_event(
 
 
 def _model_provider_for_selection(selection) -> Any:
+    # Keep the openai default factory as the offline-smoke injection seam.
+    # All other kinds (including Anthropic/Gemini) are mapped inside the
+    # pydantic-ai adapter — do not instantiate in-repo vendor translators here.
     if selection.provider_kind == "openai" and not selection.uses_workspace_provider:
         return get_default_model_provider()
-    return model_provider_for_selection(selection)
+    return PydanticAIModelHandle(selection)
 
 
 def _resolve_agent_id(*, body: dict[str, Any], x_agent_id: str | None) -> str:

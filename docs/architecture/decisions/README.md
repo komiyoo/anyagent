@@ -19,6 +19,7 @@
 9. [protocol-versioning.md](protocol-versioning.md)：Protocol schema bundle 作为兼容性审查制品，CI 用 bundle diff 拦截字段删除、required 新增、类型/枚举收窄与 endpoint 破坏性变更。
 10. [storage-idempotency-and-cursor-semantics.md](storage-idempotency-and-cursor-semantics.md)：Run Store 负责 idempotency，Event Store 负责 seq cursor/replay，明确 retention 后允许 seq gaps 且不得重排事件。
 11. [second-runtime-rust-reference.md](second-runtime-rust-reference.md)：第二 server runtime 候选选定 Rust reference runtime PoC，并以 conformance target 接入 reference suite。
+12. [pydantic-ai-loop-and-langfuse.md](pydantic-ai-loop-and-langfuse.md)：托管面保持 AnyAgent Server；执行面 loop 换成 pydantic-ai；SDK 跟踪仍走 Event Store；Langfuse OTLP 为可选附加渠道。
 
 维护约定：
 

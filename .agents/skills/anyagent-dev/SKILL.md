@@ -27,6 +27,7 @@ Use this skill as the repo-level onboarding and implementation guide for buildin
    - Workspace and CLI: `README.md`, `packages/anyagent/src/anyagent/cli.py`
    - Agent packs/config merge: `docs/architecture/runtime/agent-packs-and-runtime-config.md`, `packages/anyagent/src/anyagent/agent_packs.py`
    - Server and SDK API: `docs/architecture/api/responses-api-sdk-and-server.md`
+   - Agent loop / models.yaml: `docs/architecture/runtime/agent-loop.md`
    - Skills: `docs/architecture/skills/skills-dynamic-disclosure.md`
    - Tool Runtime: `docs/architecture/tool-runtime/tool-runtime-contract.md`
    - Security/sandbox/credentials: `docs/security/security-threat-model.md`

@@ -54,28 +54,6 @@ class ModelProviderLiveResponseStream(Protocol):
         raise NotImplementedError
 
 
-@dataclass(slots=True)
-class BufferedLiveResponseStream:
-    events: list["openai.types.responses.response_stream_event.ResponseStreamEvent"]
-    completed: "openai.types.responses.response.Response"
-
-    async def __aenter__(self) -> "BufferedLiveResponseStream":
-        return self
-
-    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-        return None
-
-    def __aiter__(self) -> AsyncIterator["openai.types.responses.response_stream_event.ResponseStreamEvent"]:
-        return self._iter()
-
-    async def _iter(self) -> AsyncIterator["openai.types.responses.response_stream_event.ResponseStreamEvent"]:
-        for ev in self.events:
-            yield ev
-
-    async def wait_completed(self) -> "openai.types.responses.response.Response":
-        return self.completed
-
-
 class ModelProvider(Protocol):
     """
     Provider abstraction: returns OpenAI Responses API typed models.

@@ -38,7 +38,7 @@
 **Phase 1.8 — Internal Productivity（内部生产力提升）**
 
 - `todo/multi-agent.md`：Sub-Agent 最小可用版（`task()` tool 模式）（`requirements.md#req-13`）
-- `todo/server-runtime.md`：上下文压缩、循环检测、DeerFlow Skills 嵌入（`requirements.md#req-5`）
+- `todo/server-runtime.md`：上下文压缩、循环检测、DeerFlow Skills 嵌入（`requirements.md#req-5`）；pydantic-ai loop + Langfuse（`requirements.md#req-4-7`）
 
 **Phase 2 — Production Runtime Hardening**
 

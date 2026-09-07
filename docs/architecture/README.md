@@ -6,7 +6,7 @@
 
 - `overview/`：项目边界、路线图与跨仓职责
 - `api/`：OpenAI Responses API、SDK surface、Stage Events 与兼容矩阵
-- `runtime/`：Agent Packs、运行时实体、stateless service、sandbox session filesystem
+- `runtime/`：Agent Packs、agent loop、运行时实体、stateless service、sandbox session filesystem
 - `tool-runtime/`：Tool Runtime manifest/execute、registry、命名、tool exposure 分级与按需 search、context、幂等与取消
 - `storage/`：Session/Run/Event/Dedupe/Lock 等存储设计
 - `skills/`：Skills 动态披露与 Tool Runtime 交互
@@ -25,12 +25,13 @@
 4) [protocol-semantic-rules.md](protocol-semantic-rules.md)：Protocol schema bundle 中非 JSON Schema semantic rules 的维护口径与当前规则索引
 5) [api/responses-api-sdk-and-server.md](api/responses-api-sdk-and-server.md)：SDK + 内置 Server 泳道与模块边界
 6) [runtime/agent-packs-and-runtime-config.md](runtime/agent-packs-and-runtime-config.md)：Agent Packs、AGENTS.md 注入、AgentSpec、agent_id 路由与 session runtime config
-7) [tool-runtime/tool-runtime-contract.md](tool-runtime/tool-runtime-contract.md)：Tool Runtime manifest/execute、registry、tool naming、tool exposure 分级与按需 search、context、幂等与取消
-8) [runtime/stateless-agent-service-architecture.md](runtime/stateless-agent-service-architecture.md)：无状态服务语义（并发分片、幂等、事件补发）
-9) [storage/storage-minimal-design.md](storage/storage-minimal-design.md)：存储最小设计
-10) [skills/skills-dynamic-disclosure.md](skills/skills-dynamic-disclosure.md)：Skills 包结构、roots/scope、enable/disable、依赖、权限与动态披露
-11) [integrations/gateway-platform-routing.md](integrations/gateway-platform-routing.md)：Gateway 平台消息、session/thread 绑定与多 agent 路由
-12) [multi-agent/multi-agent-collaboration.md](multi-agent/multi-agent-collaboration.md)：Multi-Agent 编排工具、隔离、事件与 AgentControl
+7) [runtime/agent-loop.md](runtime/agent-loop.md)：pydantic-ai loop、模型映射、类型分层与 OTLP
+8) [tool-runtime/tool-runtime-contract.md](tool-runtime/tool-runtime-contract.md)：Tool Runtime manifest/execute、registry、tool naming、tool exposure 分级与按需 search、context、幂等与取消
+9) [runtime/stateless-agent-service-architecture.md](runtime/stateless-agent-service-architecture.md)：无状态服务语义（并发分片、幂等、事件补发）
+10) [storage/storage-minimal-design.md](storage/storage-minimal-design.md)：存储最小设计
+11) [skills/skills-dynamic-disclosure.md](skills/skills-dynamic-disclosure.md)：Skills 包结构、roots/scope、enable/disable、依赖、权限与动态披露
+12) [integrations/gateway-platform-routing.md](integrations/gateway-platform-routing.md)：Gateway 平台消息、session/thread 绑定与多 agent 路由
+13) [multi-agent/multi-agent-collaboration.md](multi-agent/multi-agent-collaboration.md)：Multi-Agent 编排工具、隔离、事件与 AgentControl
 
 ## 模块文档
 
@@ -41,12 +42,14 @@
 - [api/sdk-public-surface.md](api/sdk-public-surface.md)：AnyAgent SDK public surface、typed model facade、repo 内引用与验证入口
 - [api/sdk-compatibility-matrix.md](api/sdk-compatibility-matrix.md)：server/protocol/SDK/Studio 兼容矩阵
 - [api/agent-api-client-stage-events.md](api/agent-api-client-stage-events.md)：Client Stage Events 设计
+- [api/model-provider-translators.md](api/model-provider-translators.md)：过渡/历史。Responses 热路径已改 pydantic-ai，见 [decisions/pydantic-ai-loop-and-langfuse.md](decisions/pydantic-ai-loop-and-langfuse.md)
 
 ### Runtime、Storage 与 Sandbox
 
 - [runtime/agent-packs-and-runtime-config.md](runtime/agent-packs-and-runtime-config.md)：Agent Packs、AGENTS.md 注入、AgentSpec、agent_id 路由与 session runtime config
+- [runtime/agent-loop.md](runtime/agent-loop.md)：当前 agent loop（pydantic-ai）、模型映射与类型分层
 - [runtime/agent-server-runtime-entities.md](runtime/agent-server-runtime-entities.md)：运行时实体分层
-- [runtime/agent-loop-middleware.md](runtime/agent-loop-middleware.md)：Agent Loop 4-hook middleware 接口、内置上下文压缩与循环检测
+- [runtime/agent-loop-middleware.md](runtime/agent-loop-middleware.md)：历史。4-hook 不再扩展；见 [agent-loop.md](runtime/agent-loop.md)
 - [runtime/stateless-agent-service-architecture.md](runtime/stateless-agent-service-architecture.md)：无状态服务语义
 - [runtime/sandbox-session-filesystem-design.md](runtime/sandbox-session-filesystem-design.md)：服务化沙箱会话文件系统设计
 - [storage/storage-minimal-design.md](storage/storage-minimal-design.md)：存储最小设计
@@ -70,3 +73,4 @@
 关键 ADR：
 
 - [decisions/single-repo-multi-package-boundary.md](decisions/single-repo-multi-package-boundary.md)：server/client/studio 保持单仓库协作，通过 protocol/server/SDK/Studio 多包边界和同 repo SDK scaffold 维护兼容。
+- [decisions/pydantic-ai-loop-and-langfuse.md](decisions/pydantic-ai-loop-and-langfuse.md)：托管面保持；loop 换 pydantic-ai；SDK 跟踪仍走 Event Store；Langfuse OTLP 可选。完整 ADR 索引见 [decisions/README.md](decisions/README.md)。

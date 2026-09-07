@@ -494,7 +494,7 @@ anyagent/                            # 本仓库：Server Core + SDK + Protocol 
     src/anyagent/
       protocol/                      # 协议 SSOT（Responses/Tool Runtime/SSE/Multi-Agent）
         sandbox.py                   # Sandbox 策略模型（SandboxPolicy/NetworkSandboxPolicy/ResourceLimits）
-      agent_runtime/                 # Agent loop 运行时（model providers/tool loop/prompt 注入）
+      agent_runtime/                 # Agent loop：tool_loop 合同、loop/ pydantic-ai 适配、prompt 注入
       skills/                        # Skills 发现/加载/选择/权限
       mcp/                           # MCP server 管理（auth/连接/工具发现）
       gateway/                       # 会话映射/agent 路由/sequencer

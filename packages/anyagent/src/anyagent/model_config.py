@@ -10,8 +10,7 @@ import yaml
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from anyagent.agent_packs import AgentPack
-from anyagent.agent_runtime.model_providers import ModelProvider, get_default_model_provider
-from anyagent.agent_runtime.model_providers.registry import ModelProviderKind, get_provider_spec, resolve_provider_kind
+from anyagent.model_catalog import ModelProviderKind, resolve_provider_kind
 
 
 class ModelConfigError(Exception):
@@ -171,23 +170,6 @@ def _resolve_model_alias(selection: EffectiveModelSelection, workspace_config: W
         if alias == selection.model:
             return alias
     return None
-
-
-def model_provider_for_selection(selection: EffectiveModelSelection) -> ModelProvider:
-    if not selection.uses_workspace_provider and selection.provider_kind == "openai":
-        return get_default_model_provider()
-
-    try:
-        return get_provider_spec(selection.provider_kind).build_from_selection(selection)
-    except RuntimeError as e:
-        raise ModelConfigError(str(e)) from e
-
-
-def _env_value(name: str | None) -> str | None:
-    if not name:
-        return None
-    value = os.getenv(name)
-    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _expand_env_placeholders(value: Any, environ: dict[str, str]) -> Any:

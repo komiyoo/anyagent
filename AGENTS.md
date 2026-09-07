@@ -72,6 +72,10 @@ packages/anyagent/src/anyagent/
   protocol/          # 协议 SSOT
     sandbox.py       # Sandbox 策略模型（SandboxPolicy/NetworkSandboxPolicy/ResourceLimits）
   agent_runtime/     # Agent loop 运行时
+    loop/            # pydantic-ai 适配（模型映射、tool wrap、OTLP、hooks）
+    tool_execution.py # Tool Runtime execute / manifest
+    tool_loop.py     # run_tool_loop_* 对外合同
+    model_providers/ # ModelProvider 协议、OpenAI 默认工厂、kind 目录
   skills/            # Skills 系统
   mcp/               # MCP server 管理
   gateway/           # 会话/路由

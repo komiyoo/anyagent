@@ -4,13 +4,15 @@ doc_kind: architecture
 status: stable
 tags: ["agent-packs", "agents-md", "agent-spec", "session", "runtime-config"]
 summary: Agent Packs、AGENTS.md 注入、AgentSpec、agent_id 路由与 session runtime config 的稳定约束。
-req: ["requirements.md#req-2-1", "requirements.md#req-2-1-1", "requirements.md#req-2-2", "requirements.md#req-4-3-1", "requirements.md#req-4-6", "requirements.md#req-5", "requirements.md#req-5-13"]
+req: ["requirements.md#req-2-1", "requirements.md#req-2-1-1", "requirements.md#req-2-2", "requirements.md#req-4-3-1", "requirements.md#req-4-6", "requirements.md#req-4-7", "requirements.md#req-5", "requirements.md#req-5-13"]
 ---
 -->
 
 # Agent Packs 与 Runtime Config
 
 本文承接原 `requirements.md` 中已经稳定的配置即服务设计：业务工作区通过 `.anyagent/` 声明 agent 行为、工具、skills、MCP 与多 agent 策略，Core 在边界处解析并校验，运行时只消费已知形状的数据。
+
+提示与策略的归属、以及「不要平行引入 pydantic-ai spec」的口径见 [pydantic-ai loop + Langfuse ADR](../decisions/pydantic-ai-loop-and-langfuse.md#配置与提示)。loop 怎么跑见 [agent-loop.md](agent-loop.md)。pack 磁盘布局不随 loop 库迁移。
 
 ## Agent Packs
 

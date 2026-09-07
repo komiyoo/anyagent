@@ -1,11 +1,12 @@
 [project]
 name = "anyagent"
-version = "0.4.22"
+version = "0.4.23"
 description = "anyagent SDK (agent runtime + protocol + gateway + skills + tool runtime)"
 requires-python = ">=3.12"
 dependencies = [
   "pydantic>=2.8",
   "pydantic-settings>=2.4",
+  "pydantic-ai>=2.40",
   "jsonschema>=4.23",
   "httpx>=0.28",
   "pyyaml>=6.0",
@@ -41,6 +42,10 @@ s3 = [
 ]
 infisical = [
   "infisicalsdk>=1.0.16",
+]
+otel = [
+  "opentelemetry-sdk>=1.27",
+  "opentelemetry-exporter-otlp-proto-http>=1.27",
 ]
 external-storage = [
   "psycopg[binary]>=3.2",

@@ -15,7 +15,7 @@ import uvicorn
 import yaml
 
 from anyagent.agent_packs import AgentPackError, load_agent_catalog, preferred_agents_root, preferred_config_root, resolve_agents_root
-from anyagent.agent_runtime.model_providers.registry import get_provider_spec, resolve_provider_kind
+from anyagent.model_catalog import get_provider_spec, resolve_provider_kind
 from anyagent.model_config import WorkspaceModelsConfig, workspace_models_config_path
 from anyagent.observability import configure_observability_from_env
 from anyagent.protocol.admin_storage import StorageHealthResponse
@@ -1399,7 +1399,7 @@ def _render_models_yaml(
         "",
         "providers:",
         f"  {provider_name}:",
-        f"    # kind selects the provider adapter: openai | anthropic | gemini.",
+        f"    # kind maps to pydantic-ai: openai | openai_chat | anthropic | gemini.",
         f"    kind: {_yaml_scalar(provider['kind'])}",
     ]
     if "api_key_env" in provider:

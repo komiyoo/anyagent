@@ -40,7 +40,7 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 | Server         | `packages/anyagent/src/anyagent/server/app.py`                               | 提供 `/v1/responses`、`/internal/*`、`/admin/*` typed endpoints。                                      |
 | CLI            | `packages/anyagent/src/anyagent/cli.py`                                      | 提供 `serve`、`init`、`doctor`、config、storage、workspace 等 control-plane 入口。                     |
 | Python SDK     | `packages/anyagent/src/anyagent/agent_api_client.py`、`anyagent.types`       | OpenAI 兼容 client + events、agents、skills、tools、prompts、observability、admin、health namespaces。 |
-| Model Provider | `packages/anyagent/src/anyagent/agent_runtime/model_providers/`、`docs/architecture/api/model-provider-translators.md` | OpenAI Responses provider 直透；Anthropic/Gemini 经统一 translator 宿主、capability 裁决与 registry 路由。 |
+| Agent loop | `packages/anyagent/src/anyagent/agent_runtime/loop/`、`docs/architecture/runtime/agent-loop.md` | pydantic-ai 跑 model→tool→model；`models.yaml` kind 映射为模型字符串；自研 vendor translator 已删除。 |
 | TypeScript SDK | `sdks/typescript/`                                                           | 从 protocol export 生成 schema/types,通过 endpoint manifest 解析 schema-backed paths。                 |
 | Stage Events   | `anyagent.protocol.events`                                                   | 覆盖 prompt context、model stream、tool planned/result、command planned/result 与 done 主路径。        |
 | Storage        | `anyagent.storage`、server storage adapters                                  | 支持 in-memory、SQLite、PostgreSQL、Redis hot path 与 typed external SQL backend config。              |
@@ -124,7 +124,7 @@ Phase 1 ~ Phase 2 的主路径任务已全部完成。逐条任务历史见 Git 
 | ----- | ---------- | ------------ |
 | 1 | Protocol schema bundle 版本化、SDK conformance fixtures、TypeScript SDK 最小可用面 | `api/sdk-public-surface.md`、`api/sdk-compatibility-matrix.md`、`protocol-semantic-rules.md` |
 | 1.5 | Tool Deferred Loading + Search、Skill 注入管道、三类 Replay(prompt context / tool execution / model request)、Plugin Manifest v1 + MCP filter、配置层级 merge + 热重载 + MCP 生命周期/会话池 | `tool-runtime/tool-runtime-contract.md`、`runtime/agent-packs-and-runtime-config.md`、`control-plane/studio-control-plane-and-observability.md`、`integrations/platform-connectors.md` |
-| 1.8 | Sub-Agent 完整版、Agent Loop Middleware 4-hook 接口、上下文压缩、循环检测、Phase 1.8 Stage Events | `runtime/agent-loop-middleware.md`、`multi-agent/multi-agent-collaboration.md` |
+| 1.8 | Sub-Agent 完整版、当时的 4-hook middleware、上下文压缩、循环检测、Phase 1.8 Stage Events。loop 现已换 pydantic-ai | `runtime/agent-loop.md`、`runtime/agent-loop-middleware.md`（历史）、`multi-agent/multi-agent-collaboration.md` |
 | 2 | Tool Runtime contract 测试矩阵 + standalone 等价验收、Storage replay contract(PG+Redis)、跨节点 Run 调度与 lock contract、第二 sandbox backend、Unified Observability Sink | `tool-runtime/tool-runtime-contract.md`、`storage/storage-minimal-design.md`、`runtime/stateless-agent-service-architecture.md`、`runtime/sandbox-session-filesystem-design.md`、`decisions/`(run-scheduling-lock-contract、sandbox-backend-selection、storage-idempotency-and-cursor-semantics、observability-replay-sink-and-retention) |
 
 #### Phase 3 / 4 已完成 + Phase 2.5 待启动
@@ -149,6 +149,8 @@ Phase 1 ~ Phase 2 的主路径任务已全部完成。逐条任务历史见 Git 
 >
 
 > **决策记录（2026-05-29 技术调研）**：基于工作区仓库（Codex/DeerFlow/Pi-mono/OpenClaw/HiClaw）技术调研，Phase 1.8 新增 Middleware 接口（#14）作为框架扩展基础，循环检测和上下文压缩均作为内置 middleware 实现。Plugin Manifest v1（#9）扩展为含 middlewares/hooks 字段。详见 `docs/_notes/third-party/workspace-repos-tech-survey.md`。
+>
+> **决策记录（2026-09-06）**：托管面（Gateway、Session/Run/Event、Credential、Tool Runtime、`.anyagent` pack）保持不变。执行面 agent loop 改为 pydantic-ai。SDK 跟踪仍走 Event Store / Stage Events（写库）；Langfuse（OTLP）是附加渠道。不把业务提示迁入 SDK，不平行引入 pydantic-ai YAML spec。Rust 第二 runtime 不作为本轮 loop 替代。口径见 `docs/architecture/decisions/pydantic-ai-loop-and-langfuse.md`，任务入口 `todo/server-runtime.md`。
 
 ---
 

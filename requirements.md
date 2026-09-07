@@ -175,6 +175,12 @@ OpenAI 兼容 SSE 与 anyagent Stage Events 见：
 
 见 [docs/architecture/runtime/agent-packs-and-runtime-config.md](docs/architecture/runtime/agent-packs-and-runtime-config.md#runtime_config-绑定与-merge-更新)。
 
+<a id="req-4-7"></a>
+
+### 4.7 Agent loop 实现与 tracing
+
+Agent loop 由 pydantic-ai 执行；AnyAgent 保留托管面。自研 Event Store / Stage Events 仍是 SDK 消费渠道（写库）；Langfuse（OTLP）是附加渠道，未配置则关闭。Session/Run/Event 仍服务 resume 与协议补发。业务提示与策略留在消费侧 `.anyagent/`。见 [docs/architecture/decisions/pydantic-ai-loop-and-langfuse.md](docs/architecture/decisions/pydantic-ai-loop-and-langfuse.md)。
+
 <a id="req-5"></a>
 
 ## 5. 内部接口：Tool Runtime

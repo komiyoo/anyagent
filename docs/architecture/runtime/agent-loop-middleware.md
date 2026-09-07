@@ -1,22 +1,31 @@
 <!--
 ---
 doc_kind: architecture
-status: stable
-tags: ["middleware", "agent-loop", "context-compaction", "loop-detection", "runtime"]
-summary: 定义 anyagent agent loop 的 4-hook middleware 接口、内置上下文压缩与循环检测 middleware,以及 plugin middleware 的装载顺序与配置口径。
-req: ["requirements.md#req-5"]
+status: historical
+tags: ["middleware", "agent-loop", "context-compaction", "loop-detection", "runtime", "historical"]
+summary: 过渡/历史：自研 4-hook middleware。循环检测与压缩已映射为 pydantic-ai hooks / ProcessHistory，不再扩展 4-hook。
+req: ["requirements.md#req-5", "requirements.md#req-4-7"]
 ---
 -->
 
-# Agent Loop Middleware 架构
+# Agent Loop Middleware 架构（过渡 / 历史）
 
-本文定义 anyagent agent loop 的 **middleware 扩展机制**:一个让循环检测、上下文压缩、审计等横切能力可配置、可替换、可组合的统一接口,以及两个内置 middleware 的设计。
+本文是 **过渡/历史** 记录。`runtime.middlewares` 仍可声明 `loop_detection` / `context_compaction`，但执行面已把它们映射为 pydantic-ai `Hooks` / `ProcessHistory`（见 `packages/anyagent/src/anyagent/agent_runtime/loop/hooks.py`）。**不要再扩展自研 4-hook**；新横切能力走 pydantic-ai capabilities / hooks。现行代码与类型分层见 [agent-loop.md](agent-loop.md)。
 
-要解决的问题很具体:agent loop 是一个 `model → tool → model → …` 的迭代过程,很多横切需求(防止模型在同一工具上死循环、长对话超出 context window、审计每次模型请求)都需要在迭代的固定位置插入逻辑。把这些逻辑直接写进 loop 主体会让 `tool_loop.py` 越来越臃肿且不可替换。middleware 把这些插入点收敛成 4 个稳定 hook,内置能力与 plugin 能力走同一条装载链路。
+现行口径见 [pydantic-ai loop + Langfuse ADR · 配置与提示](../decisions/pydantic-ai-loop-and-langfuse.md#配置与提示)。
 
-对应需求:`requirements.md#req-5`
+对应需求:`requirements.md#req-5`、`requirements.md#req-4-7`
 
-## 1. 4-hook 接口
+配置名还在 `agent.yaml` 的 `runtime.middlewares` 里，执行已经换到 pydantic-ai：
+
+```mermaid
+flowchart LR
+  CFG["runtime.middlewares"] --> MAP["loop/hooks.py"]
+  MAP --> LD["Loop detection Hooks"]
+  MAP --> CC["ProcessHistory 压缩"]
+```
+
+## 1. 历史 4-hook 接口
 
 接口定义在 `packages/anyagent/src/anyagent/agent_runtime/middleware.py:55`(`AgentMiddleware` Protocol),围绕 agent loop 的一次迭代提供 4 个回调:
 

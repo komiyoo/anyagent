@@ -22,34 +22,43 @@ req: ["requirements.md#req-3-1", "requirements.md#req-5", "requirements.md#req-6
 
 ## 1. 组件总览
 
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│                        控制面 (Control)                           │
-│  ┌───────────┐  ┌────────┐  ┌──────────────────┐               │
-│  │ Agent API │  │ Studio │  │ Credential Vault │               │
-│  └─────┬─────┘  └───┬────┘  └────────┬─────────┘               │
-└────────┼─────────────┼────────────────┼─────────────────────────┘
-         │             │                │
-┌────────┼─────────────┼────────────────┼─────────────────────────┐
-│        │        执行面 (Execution)     │                         │
-│  ┌─────▼─────┐  ┌────▽────┐  ┌───────▽───────┐                 │
-│  │Tool Runtime│  │MCP Srvrs│  │ Plugin System │                 │
-│  └─────┬─────┘  └─────────┘  └───────────────┘                 │
-└────────┼────────────────────────────────────────────────────────┘
-         │
-┌────────┼────────────────────────────────────────────────────────┐
-│        │           隔离面 (Isolation)                             │
-│  ┌─────▽──────────────┐                                         │
-│  │ Sandbox / Workspace │                                        │
-│  └────────────────────┘                                         │
-└─────────────────────────────────────────────────────────────────┘
-         │
-┌────────┼────────────────────────────────────────────────────────┐
-│        │           状态面 (State)                                 │
-│  ┌─────▽──────┐  ┌───────┐  ┌────┐  ┌──────────────┐           │
-│  │ PostgreSQL │  │ Redis │  │ S3 │  │ Observability│           │
-│  └────────────┘  └───────┘  └────┘  └──────────────┘           │
-└─────────────────────────────────────────────────────────────────┘
+按控制面 / 执行面 / 隔离面 / 状态面划分。单进程 all-in-one 与分布式拆分共用同一套 protocol。Agent loop 在 Agent API 进程内，细节见 [agent-loop.md](../runtime/agent-loop.md)。
+
+```mermaid
+flowchart TB
+  subgraph control["控制面"]
+    API[Agent API]
+    STU[Studio]
+    VAULT[Credential Vault]
+  end
+
+  subgraph execution["执行面"]
+    TR[Tool Runtime]
+    MCP[MCP servers]
+    PLG[Plugin System]
+  end
+
+  subgraph isolation["隔离面"]
+    SB[Sandbox / Workspace]
+  end
+
+  subgraph state["状态面"]
+    PG[(PostgreSQL)]
+    RD[(Redis)]
+    S3[(S3)]
+    OBS[Observability / OTLP]
+  end
+
+  STU --> API
+  API --> TR
+  API --> MCP
+  VAULT --> TR
+  PLG --> TR
+  TR --> SB
+  API --> PG
+  API --> RD
+  API --> S3
+  API -.-> OBS
 ```
 
 ---
@@ -69,7 +78,7 @@ req: ["requirements.md#req-3-1", "requirements.md#req-5", "requirements.md#req-6
 - 对外提供 OpenAI Responses API 兼容的 `/v1/responses` 端点
 - Agent Pack 加载：从 `.anyagent/` 读取 agent.yaml、AGENTS.md、mcp.json
 - Skills 选择与 prompt context 注入
-- Agent loop 编排：model provider 调用 → tool call 提取 → execute → 回灌
+- Agent loop：经 `run_tool_loop_*` 把 envelope / manifest 交给 pydantic-ai；工具仍走 Tool Runtime execute。见 [agent-loop.md](../runtime/agent-loop.md)
 - MCP server 连接管理与工具发现
 - Session 序列化 / manifest cache / runtime config merge
 - Run/Event/Session 存储写入与查询
