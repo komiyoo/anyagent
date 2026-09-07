@@ -162,8 +162,8 @@ PR3 不依赖 PR1/PR2，可并行。待办三态：`- [ ]` 未完成，`- [x]` �
 
 - [x] 相关 pytest 全绿
 - [x] `docs/acceptance/README.md` 补 scripted reply 的验收入口
-- [ ] 版本号更新、commit、push；等云效 pipeline 构建并发布到 Packages
-- [ ] 用 `anyagent-dev-cli` 确认发布状态与产物版本，写进本节
+- [x] 版本号更新、commit、push；等云效 pipeline 构建并发布到 Packages（`scripts/anyagent-dev-cli version bump 0.4.27`；commits `155d6f9`、`425f4fe` 已推到 `origin/main`）
+- [ ] 用 `anyagent-dev-cli` 确认发布状态与产物版本，写进本节（本轮会话无 Yunxiao MCP 可用，未完成远端验证；待查条件：Codeup `anyagent` 仓 `main` 分支由 `425f4fe` 触发的最新 pipeline run，以及 Yunxiao Packages PyPI `lyriktrip` 仓 `anyagent==0.4.27` 是否出现）
 
 验收：消费侧能安装到含本能力的发布版本。
 
