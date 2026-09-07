@@ -273,6 +273,14 @@ Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → �
 - 不用 `git add -A`，只 add 本次改动的文件
 - `git push` 必须先征求用户同意
 
+### 本地质量门
+
+- 提交前必须过本地门禁，不要把 unit / pytest 失败留到 Yunxiao SDK build 才发现。设计真源：`docs/architecture/engineering/ci-pipeline.md`。
+- 若 `git config --get core.hooksPath` 不是 `.githooks`，先运行 `bash scripts/install-git-hooks.sh`。
+- `git commit` 跑 docs guardrails + `tests/unit`；`git push` 跑 pytest regressions + offline smokes。
+- 禁止 `git commit --no-verify` / `git push --no-verify`，除非用户明确要求跳过。
+- 仅在用户明确要求时使用 `ANYAGENT_SKIP_GIT_HOOKS=1`。
+
 ### 发版与 CD
 
 - 本项目代码有修改且需要发布新版本时，必须同步提升版本号；优先使用 `scripts/anyagent-dev-cli version bump <version> --dry-run` 校验，再去掉 `--dry-run` 写入。当前版本真源至少包含 `packages/anyagent/pyproject.toml`、`packages/anyagent/src/anyagent/__init__.py`、`packages/anyagent/src/anyagent/tool_runtime/__init__.py` 以及内置 FastAPI app 的 `version` 参数。
@@ -308,7 +316,7 @@ Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → �
 ## 9) Definition of Done
 
 - `todo/` 中任务已勾选，包含 `Req:` + `Impl:` + `Module:` 证据
-- 有最小验证闭环
+- 有最小验证闭环；本仓代码改动在 commit 前必须过本地 git hooks（`docs/architecture/engineering/ci-pipeline.md` Gate 0）
 - 若涉及安全边界变更：明确说明影响
 - 若本次交付需要发版：版本号已同步提升，用户已确认并完成 `git push`，且已通过 Yunxiao MCP 检查 pipeline 与 Yunxiao Packages 产物
 - 引用完整性：`python3 scripts/docs/check.py --root .` 无断链报错

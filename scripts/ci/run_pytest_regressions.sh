@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "[ci] pytest regressions: unit + contract + integration + targeted server acceptance"
 
-uv run --frozen --project packages/anyagent --extra external-storage python -m pytest tests/unit -q
+bash scripts/ci/run_unit_tests.sh
 uv run --frozen --project packages/anyagent --extra external-storage python -m pytest tests/contract -q
 uv run --frozen --project packages/anyagent --extra external-storage python -m pytest tests/integration -q
 uv run --frozen --project packages/anyagent --extra external-storage python -m pytest -q \

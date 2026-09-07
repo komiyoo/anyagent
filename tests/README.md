@@ -32,6 +32,10 @@ uv run --with pytest --project packages/anyagent python -m pytest tests/contract
 # integration
 uv run --with pytest --project packages/anyagent python -m pytest tests/integration -q
 
+# local commit / push gates (same commands as git hooks)
+bash scripts/ci/run_precommit_gate.sh
+bash scripts/ci/run_prepush_gate.sh
+
 # formal pytest regressions
 bash scripts/ci/run_pytest_regressions.sh
 

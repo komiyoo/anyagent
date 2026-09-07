@@ -181,6 +181,8 @@ npm --prefix sdks/typescript run smoke
 
 ## 运行约定
 
+本地提交前由 git hooks 强制跑门禁（安装：`bash scripts/install-git-hooks.sh`），详见 [engineering/ci-pipeline.md](../engineering/ci-pipeline.md)。
+
 推荐命令：
 
 ```bash

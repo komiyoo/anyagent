@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${ANYAGENT_SKIP_GIT_HOOKS:-}" == "1" ]]; then
+  echo "[hooks] skip pre-commit (ANYAGENT_SKIP_GIT_HOOKS=1)"
+  exit 0
+fi
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "pre-commit: uv not found on PATH; install uv or set ANYAGENT_SKIP_GIT_HOOKS=1" >&2
+  exit 1
+fi
+
+bash scripts/ci/run_precommit_gate.sh

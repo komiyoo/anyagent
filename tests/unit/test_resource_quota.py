@@ -31,6 +31,9 @@ def test_channel_for_tool_name() -> None:
 def test_emit_resource_exhausted_debounces_per_channel(monkeypatch) -> None:
     reset_resource_exhausted_debounce_for_tests()
     monkeypatch.setenv("PROJECT", "lt-anyagent-wks")
+    # Fresh CI containers often have monotonic() << debounce window. Using a
+    # sentinel of 0.0 for "never emitted" would swallow the first event.
+    monkeypatch.setattr("anyagent.resource_quota.time.monotonic", lambda: 12.0)
     seen: list[str] = []
 
     class _Sink:

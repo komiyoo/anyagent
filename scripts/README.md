@@ -10,6 +10,7 @@
   - `pack.py` 按 tags 输出最小文档上下文包。
   - `code_ref_allowlist.txt` 标注 generated / illustrative / cross-repo inline refs，供 `check.py --check-code-refs` 使用。
 - `scripts/ci/`：CI/本地质量门入口，详见 [ci/README.md](ci/README.md)。
+- `scripts/install-git-hooks.sh`：把本仓 `core.hooksPath` 指到 `.githooks/`，让 commit / push 走与 Yunxiao 测试段对齐的本地门禁。
 - repo-bound CLI：
   - `anyagent-dev-cli` 运行 `tools/anyagent-dev-cli/` 中的 TypeScript CLI，承载本仓长期复用的开发/发布自动化；开发后用 `npm --prefix tools/anyagent-dev-cli run install:local` 安装到 PATH。
 - release / 镜像同步：
@@ -30,6 +31,7 @@
 ## 常用命令
 
 ```bash
+bash scripts/install-git-hooks.sh
 python3 scripts/anyagent_progress.py --root .
 python3 scripts/docs/index.py --root .
 python3 scripts/docs/check.py --root . --check-index
@@ -41,8 +43,11 @@ uv run --project packages/anyagent python scripts/export_protocol_schema.py --ou
 uv run --project packages/anyagent python scripts/export_protocol_schema.py --format openapi --out build/openapi.json
 uv run --project packages/anyagent python scripts/protocol_schema_diff.py --old build/base-protocol-schema.json --new build/protocol-schema.json
 npm --prefix sdks/typescript run smoke
+bash scripts/ci/run_unit_tests.sh
+bash scripts/ci/run_precommit_gate.sh
 bash scripts/ci/run_offline_smokes.sh
 bash scripts/ci/run_pytest_regressions.sh
+bash scripts/ci/run_prepush_gate.sh
 bash scripts/ci/build_release_artifacts.sh
 ```
 

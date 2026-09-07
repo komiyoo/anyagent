@@ -82,8 +82,11 @@ def emit_resource_exhausted(
     name = channel.strip() or "unknown"
     now = time.monotonic()
     with _lock:
-        last = _last_emit_at.get(name, 0.0)
-        if now - last < RESOURCE_QUOTA_DEBOUNCE_S:
+        last = _last_emit_at.get(name)
+        # Missing keys must not use 0.0: fresh CI containers often have
+        # time.monotonic() < RESOURCE_QUOTA_DEBOUNCE_S, which would drop the
+        # first emit after reset.
+        if last is not None and now - last < RESOURCE_QUOTA_DEBOUNCE_S:
             return None
         _last_emit_at[name] = now
 
