@@ -11,6 +11,7 @@ import httpx
 
 from anyagent.protocol.alerts import AlertChannel, AlertEvent, AlertRule
 from anyagent.protocol.agent_api_internal import InternalObservabilityTimelineEvent
+from anyagent.resource_quota import current_project_name
 from anyagent.server.persistence.telemetry_store import ObservabilityQuery, TelemetryStore
 
 
@@ -46,6 +47,12 @@ def default_alert_rules() -> list[AlertRule]:
             rule_id="builtin.server_error",
             name="Server / connector error",
             event_types=list(DEFAULT_ERROR_EVENT_TYPES),
+            severity="error",
+        ),
+        AlertRule(
+            rule_id="builtin.quota_exhausted",
+            name="Resource quota exhausted",
+            event_types=["provider.quota_exhausted"],
             severity="error",
         ),
     ]
@@ -182,18 +189,30 @@ def _channel_payload(*, channel: AlertChannel, alert: AlertEvent) -> dict[str, A
 
 
 def _feishu_text(alert: AlertEvent) -> str:
+    payload = alert.payload or {}
+    project = payload.get("project")
+    if not isinstance(project, str) or not project.strip():
+        project = current_project_name()
+    channel = payload.get("channel")
     pieces = [
         f"[anyagent alert] {alert.rule_name}",
-        f"event_type={alert.source_event_type or alert.type}",
-        f"severity={alert.severity}",
     ]
+    if isinstance(project, str) and project.strip():
+        pieces.append(f"project={project.strip()}")
+    if isinstance(channel, str) and channel.strip():
+        pieces.append(f"channel={channel.strip()}")
+    pieces.extend(
+        [
+            f"event_type={alert.source_event_type or alert.type}",
+            f"severity={alert.severity}",
+        ]
+    )
     if alert.agent_id:
         pieces.append(f"agent_id={alert.agent_id}")
     if alert.session_key:
         pieces.append(f"session_key={alert.session_key}")
     if alert.response_id:
         pieces.append(f"response_id={alert.response_id}")
-    payload = alert.payload or {}
     status_code = payload.get("status_code")
     if status_code is not None:
         pieces.append(f"status_code={status_code}")
@@ -250,6 +269,8 @@ def _alert_type_for_event(event_type: str) -> str:
         return "server_response"
     if event_type.startswith("chatwoot."):
         return "connector"
+    if event_type == "provider.quota_exhausted":
+        return "quota"
     if event_type.startswith("server."):
         return "server"
     if event_type.startswith("anyagent.agent."):

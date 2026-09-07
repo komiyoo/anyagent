@@ -10,9 +10,9 @@ Chatwoot 入站渠道 connector 参考实现，属于 anyagent Gateway 层 plugi
 | Webhook 签名验证 | ✅ | HMAC-SHA256 验签（`X-Chatwoot-Signature` header） |
 | Platform session binding | ✅ | `session_key = "chatwoot:{account_id}:{conversation_id}"` |
 | Outbound message delivery | ✅ | 通过 Chatwoot Agent Bot API 回写消息到会话 |
-| Human handoff | ✅ | handoff 切换会话状态 → open，并 assign team/agent + AI 摘要 note；`ANYAGENT_CHATWOOT_STATUS_CHANGES=false` 时不修改会话状态 |
-| Skip when assigned | ✅ | 会话已分配给真人坐席（`meta.assignee_type=User`）时不调用 agent、不写回客户消息；`ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN=false` 时关闭 |
-| Open on reply | ✅ | bot 回复成功后将会话保持为 open（pending / resolved / snoozed / 缺 status 都会打开；已是 open 则不动）。从不 resolve / snooze。`ANYAGENT_CHATWOOT_STATUS_CHANGES=false` 时关闭 |
+| Human handoff | ✅ | handoff 切换会话状态 → open，并 assign team/agent + AI 摘要 note；`CHATWOOT_STATUS_CHANGES=false` 时不修改会话状态 |
+| Skip when assigned | ✅ | 会话已分配给真人坐席（`meta.assignee_type=User`）时不调用 agent、不写回客户消息；`CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN=false` 时关闭 |
+| Open on reply | ✅ | bot 回复成功后将会话保持为 open（pending / resolved / snoozed / 缺 status 都会打开；已是 open 则不动）。从不 resolve / snooze。`CHATWOOT_STATUS_CHANGES=false` 时关闭 |
 | Conversation lifecycle events | ✅ | 监听 `message_created` / `conversation_resolved` 等事件并注入 event store |
 | Agent 主动调用工具 | ✅ | `app.chatwoot.send_message` / `app.chatwoot.handoff` 两个系统工具 |
 | Tool-based handoff bridge | ✅ | webhook 请求会自动向 `/v1/responses` 注入 `gateway.handoff`，走通用 Tool Runtime 主路径 |
@@ -36,20 +36,20 @@ ChatwootOutboundDelivery (回写 Chatwoot API)
 ## 配置
 
 通过环境变量配置（推荐生产环境使用 Credential Vault 管理密钥）。
-如果你使用 Chatwoot 官方云，`ANYAGENT_CHATWOOT_URL` 可直接使用默认值 `https://app.chatwoot.com`：
+如果你使用 Chatwoot 官方云，`CHATWOOT_URL` 可直接使用默认值 `https://app.chatwoot.com`：
 
 ```bash
-export ANYAGENT_CHATWOOT_URL="https://app.chatwoot.com"
-export ANYAGENT_CHATWOOT_ACCOUNT_ID="1"
-export ANYAGENT_CHATWOOT_ACCESS_TOKEN="your_agent_bot_access_token"
-export ANYAGENT_CHATWOOT_WEBHOOK_SECRET="your_webhook_hmac_secret"
+export CHATWOOT_URL="https://app.chatwoot.com"
+export CHATWOOT_ACCOUNT_ID="1"
+export CHATWOOT_ACCESS_TOKEN="your_agent_bot_access_token"
+export CHATWOOT_WEBHOOK_SECRET="your_webhook_hmac_secret"
 # 可选：默认 true——handoff → open，且 bot 回复后将 pending 会话置为 open。
 # 设为 false 时 connector 不修改 Chatwoot 会话状态（handoff 不调用
 # toggle_status，仅保留 assignment 与 AI 摘要 private note；消息收发不受影响）。
-# export ANYAGENT_CHATWOOT_STATUS_CHANGES="false"
+# export CHATWOOT_STATUS_CHANGES="false"
 # 可选：默认 true——会话已分配给真人坐席时跳过 bot 回复。不能用 status=open
 # 判断（bot 回复后也会把 pending 置为 open）；依据是 assignee_type=User。
-# export ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN="false"
+# export CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN="false"
 ```
 
 ### Credential Vault（生产环境推荐）
@@ -66,9 +66,9 @@ curl -X POST http://localhost:8000/admin/credentials \
     "scope": {"level": "global"}
   }'
 
-export ANYAGENT_CHATWOOT_CREDENTIAL_ID="chatwoot_webhook_secret"
+export CHATWOOT_CREDENTIAL_ID="chatwoot_webhook_secret"
 # 如需沿用历史 kind，可显式声明：
-export ANYAGENT_CHATWOOT_CREDENTIAL_KIND="webhook_secret"
+export CHATWOOT_CREDENTIAL_KIND="webhook_secret"
 ```
 
 ## 启动

@@ -113,9 +113,9 @@ def test_chatwoot_connector_acceptance_smoke(tmp_path: Path, monkeypatch) -> Non
 
 async def _run_chatwoot_connector_acceptance_smoke(*, tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("CHATWOOT_ASYNC_PROCESSING", "false")
     monkeypatch.setattr(
         "anyagent.server.routes.responses.get_default_model_provider",
         lambda: _ChatwootAcceptanceProvider(),

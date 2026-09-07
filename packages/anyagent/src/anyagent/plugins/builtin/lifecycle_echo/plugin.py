@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
+from anyagent.env import getenv
 from anyagent.plugins.hooks import HookContext
 from anyagent.tool_runtime.models import ToolDefinition
 
@@ -26,7 +26,7 @@ def _record(event: str, context: HookContext) -> None:
         "metadata": context.metadata or {},
     }
     EVENTS.append(payload)
-    path = os.getenv("ANYAGENT_LIFECYCLE_ECHO_EVENTS_FILE")
+    path = getenv("LIFECYCLE_ECHO_EVENTS_FILE")
     if path:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)

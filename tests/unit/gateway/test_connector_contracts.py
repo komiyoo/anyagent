@@ -498,15 +498,15 @@ def test_chatwoot_open_conversation_swallows_api_errors():
 
 
 def test_chatwoot_status_changes_env_flag_parsing(monkeypatch):
-    monkeypatch.delenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raising=False)
+    monkeypatch.delenv("CHATWOOT_STATUS_CHANGES", raising=False)
     assert _chatwoot_status_changes_enabled() is True
 
     for raw in ("false", "0", "no", "off", "False"):
-        monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raw)
+        monkeypatch.setenv("CHATWOOT_STATUS_CHANGES", raw)
         assert _chatwoot_status_changes_enabled() is False
 
     for raw in ("true", "1", "yes", "on", "True", ""):
-        monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raw)
+        monkeypatch.setenv("CHATWOOT_STATUS_CHANGES", raw)
         assert _chatwoot_status_changes_enabled() is True
 
 
@@ -520,15 +520,15 @@ def test_chatwoot_conversation_status_reads_nested_or_missing() -> None:
 
 
 def test_chatwoot_skip_when_assigned_to_human_env_flag_parsing(monkeypatch):
-    monkeypatch.delenv("ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raising=False)
+    monkeypatch.delenv("CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raising=False)
     assert _chatwoot_skip_when_assigned_to_human() is True
 
     for raw in ("false", "0", "no", "off", "False"):
-        monkeypatch.setenv("ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raw)
+        monkeypatch.setenv("CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raw)
         assert _chatwoot_skip_when_assigned_to_human() is False
 
     for raw in ("true", "1", "yes", "on", "True", ""):
-        monkeypatch.setenv("ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raw)
+        monkeypatch.setenv("CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raw)
         assert _chatwoot_skip_when_assigned_to_human() is True
 
 
@@ -659,7 +659,7 @@ class _RecorderAPI:
 
 
 def test_register_enables_status_changes_by_default(monkeypatch):
-    monkeypatch.delenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", raising=False)
+    monkeypatch.delenv("CHATWOOT_STATUS_CHANGES", raising=False)
 
     api = _RecorderAPI()
     chatwoot_register(api)
@@ -672,7 +672,7 @@ def test_register_enables_status_changes_by_default(monkeypatch):
 
 
 def test_register_disables_status_changes_when_opted_out(monkeypatch):
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", "false")
+    monkeypatch.setenv("CHATWOOT_STATUS_CHANGES", "false")
 
     api = _RecorderAPI()
     chatwoot_register(api)
@@ -685,7 +685,7 @@ def test_register_disables_status_changes_when_opted_out(monkeypatch):
 
 
 def test_register_enables_status_changes_when_opted_in(monkeypatch):
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", "true")
+    monkeypatch.setenv("CHATWOOT_STATUS_CHANGES", "true")
 
     api = _RecorderAPI()
     chatwoot_register(api)

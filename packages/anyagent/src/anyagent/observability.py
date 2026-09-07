@@ -11,6 +11,7 @@ from urllib import request
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from anyagent.env import getenv
 from anyagent.protocol.observability import ObservabilityCategory, ObservabilityEvent, ObservabilityLevel
 
 
@@ -246,8 +247,8 @@ def redact_replay_payload(value: Any) -> Any:
 def configure_observability_from_env() -> None:
     """Configure logging and optional third-party HTTP sink from environment."""
 
-    log_format = os.getenv("ANYAGENT_LOG_FORMAT", "text").strip().lower()
-    log_level = os.getenv("ANYAGENT_LOG_LEVEL", "INFO").strip().upper() or "INFO"
+    log_format = (getenv("LOG_FORMAT", "text") or "text").strip().lower()
+    log_level = (getenv("LOG_LEVEL", "INFO") or "INFO").strip().upper() or "INFO"
     level = getattr(logging, log_level, logging.INFO)
     root = logging.getLogger("anyagent")
     root.setLevel(level)
@@ -260,17 +261,17 @@ def configure_observability_from_env() -> None:
         root.addHandler(handler)
 
     sinks: list[ObservabilitySink] = [LoggingSink()]
-    url = os.getenv("ANYAGENT_OBSERVABILITY_HTTP_URL", "").strip()
+    url = (getenv("OBSERVABILITY_HTTP_URL") or "").strip()
     if url:
-        headers = _parse_header_env(os.getenv("ANYAGENT_OBSERVABILITY_HTTP_HEADERS", ""))
+        headers = _parse_header_env(getenv("OBSERVABILITY_HTTP_HEADERS") or "")
         sinks.append(HttpJsonSink(url=url, headers=headers))
     _EMITTER.configure(sinks)
 
     replay_sinks: list[ReplayObservabilitySink] = []
-    replay_stdout = os.getenv("ANYAGENT_REPLAY_OBSERVABILITY_STDOUT", "").strip().lower()
+    replay_stdout = (getenv("REPLAY_OBSERVABILITY_STDOUT") or "").strip().lower()
     if replay_stdout in {"1", "true", "yes", "on"}:
         replay_sinks.append(StdoutJsonReplaySink())
-    replay_file = os.getenv("ANYAGENT_REPLAY_OBSERVABILITY_FILE", "").strip()
+    replay_file = (getenv("REPLAY_OBSERVABILITY_FILE") or "").strip()
     if replay_file:
         replay_sinks.append(FileJsonlReplaySink(replay_file))
     _REPLAY_EMITTER.configure(replay_sinks)
@@ -358,3 +359,23 @@ def _is_sensitive_key(key: str) -> bool:
         "credential_id",
         "auth_ref",
     }
+
+
+from anyagent.resource_quota import (  # noqa: E402
+    RESOURCE_QUOTA_EVENT,
+    channel_for_tool_name,
+    emit_resource_exhausted,
+    is_quota_exhausted,
+    maybe_emit_resource_exhausted,
+    reset_resource_exhausted_debounce_for_tests,
+)
+
+__all__ = [
+    "RESOURCE_QUOTA_EVENT",
+    "channel_for_tool_name",
+    "emit_observability_event",
+    "emit_resource_exhausted",
+    "is_quota_exhausted",
+    "maybe_emit_resource_exhausted",
+    "reset_resource_exhausted_debounce_for_tests",
+]

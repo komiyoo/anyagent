@@ -104,13 +104,13 @@ CLI profile note:
 Structured logs:
 
 ```bash
-ANYAGENT_LOG_FORMAT=json anyagent serve --workspace .
+LOG_FORMAT=json anyagent serve --workspace .
 ```
 
 Optional HTTP collector:
 
 ```bash
-ANYAGENT_OBSERVABILITY_HTTP_URL=https://collector.example.com/ingest \
+OBSERVABILITY_HTTP_URL=https://collector.example.com/ingest \
 anyagent serve --workspace .
 ```
 

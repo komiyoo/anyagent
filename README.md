@@ -269,8 +269,8 @@ anyagent storage migrate
 POSTGRES_SCHEMA_POLICY=runtime_create anyagent serve
 
 # 结构化日志与第三方采集（可选）
-ANYAGENT_LOG_FORMAT=json \
-ANYAGENT_OBSERVABILITY_HTTP_URL=https://collector.example.com/ingest \
+LOG_FORMAT=json \
+OBSERVABILITY_HTTP_URL=https://collector.example.com/ingest \
 anyagent serve --workspace ./my-workspace
 ```
 
@@ -429,7 +429,7 @@ await client.admin.delete_credential("cred_bocha_mcp")
 
 CLI Profile 也复用这条 Credential Vault 注入链路：`ToolCredentialSpec.injection_target` 现在除了 `header:*` 外，还支持 `env:NAME` 和 `file:relative/path`。manifest 只会暴露 target 名，不会暴露 secret，也不会暴露 `credential_id`；运行时若 profile 声明了 `credential_id`，它会优先于 request `auth_ref.ref` 被解析。
 
-独立 Tool Runtime 可通过 `--plugin-root` 或 `TOOL_RUNTIME_PLUGIN_ROOTS` 扫描包含 `plugin.json` 的插件目录，并使用 Core `anyagent.plugins` loader 与 `ToolRuntimePluginAPI` 将插件工具注册到统一 registry；加载失败默认 fail-closed，可用 `--plugins-fail-open` 或 `TOOL_RUNTIME_PLUGINS_FAIL_OPEN=1` 改为记录错误后继续启动。启用 `--admin-key` 或 `ADMIN_API_KEY` 后，`GET /admin/plugins/catalog`、SDK `client.admin.plugin_catalog()` 或 CLI `anyagent plugin catalog --admin-url <url> --admin-key <key>` 会返回 plugin roots、loaded plugin、registered tools、manifest/entrypoint cite、docs/schemas/tests refs 与 load errors，便于从工具追回插件来源。`anyagent init` / `anyagent config init` 生成的 `plugins/demo/` 只是脚手架示例；`anyagent serve` 与独立 Tool Runtime 默认扫描工作区 `./plugins`（可用 `--plugin-root` 或 `$ANYAGENT_PLUGIN_ROOTS` 覆盖）。要让示例工具出现在 agent 里，还需要把 `app.demo.echo` 加入目标 agent 的 `tools.requested_tool_names`。
+独立 Tool Runtime 可通过 `--plugin-root` 或 `TOOL_RUNTIME_PLUGIN_ROOTS` 扫描包含 `plugin.json` 的插件目录，并使用 Core `anyagent.plugins` loader 与 `ToolRuntimePluginAPI` 将插件工具注册到统一 registry；加载失败默认 fail-closed，可用 `--plugins-fail-open` 或 `TOOL_RUNTIME_PLUGINS_FAIL_OPEN=1` 改为记录错误后继续启动。启用 `--admin-key` 或 `ADMIN_API_KEY` 后，`GET /admin/plugins/catalog`、SDK `client.admin.plugin_catalog()` 或 CLI `anyagent plugin catalog --admin-url <url> --admin-key <key>` 会返回 plugin roots、loaded plugin、registered tools、manifest/entrypoint cite、docs/schemas/tests refs 与 load errors，便于从工具追回插件来源。`anyagent init` / `anyagent config init` 生成的 `plugins/demo/` 只是脚手架示例；`anyagent serve` 与独立 Tool Runtime 默认扫描工作区 `./plugins`（可用 `--plugin-root` 或 `$PLUGIN_ROOTS` 覆盖）。要让示例工具出现在 agent 里，还需要把 `app.demo.echo` 加入目标 agent 的 `tools.requested_tool_names`。
 
 进程内与独立 Tool Runtime 都会从 Core `anyagent.tool_runtime.builtin_tools` 注册内置工具：`core.web_fetch`、`core.web_search`，以及需要显式 allowlist 的 privileged `admin.credential_set`。这些内置工具与插件工具一样进入统一 registry，并通过 `ToolDefinition.credentials` 解析 credential 到 handler context 的 `_credentials`，例如 `core.web_fetch` 可把 `bearer_token` 注入为 `Authorization` header，`core.web_search` 可把 `api_key` 注入给 Tavily / SerpApi provider。
 

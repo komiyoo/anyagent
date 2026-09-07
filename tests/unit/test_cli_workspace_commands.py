@@ -110,7 +110,7 @@ def test_dev_serve_uses_local_defaults_and_prints_urls(monkeypatch, tmp_path, ca
     def fake_uvicorn_run(app, *, host, port, log_level):
         calls["uvicorn"] = {"app": app, "host": host, "port": port, "log_level": log_level}
 
-    monkeypatch.delenv("ANYAGENT_API_KEY", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
     monkeypatch.delenv("ADMIN_API_KEY", raising=False)
     monkeypatch.setattr("anyagent.cli.create_app", fake_create_app)
     monkeypatch.setattr("anyagent.cli.uvicorn.run", fake_uvicorn_run)

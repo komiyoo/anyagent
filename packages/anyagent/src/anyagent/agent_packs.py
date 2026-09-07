@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic import ValidationError
 
 from .config_merge import ConfigMergeError, deep_merge, validate_workspace_override_denylist
+from .env import getenv
 from .mcp import MCPConfig
 from .protocol.sandbox import SandboxPolicy
 from .tool_runtime.cli_profile_spec import BANNED_COMMAND_SHELLS, CliProfileSpec
@@ -222,8 +223,8 @@ def resolve_agents_root(workspace_dir: Path) -> Path:
 def resolve_config_layers(workspace_dir: Path, session_overrides: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Resolves system/user/workspace/session config roots in merge order."""
     workspace = Path(workspace_dir).expanduser().resolve()
-    system_root = Path(os.getenv("ANYAGENT_SYSTEM_CONFIG_DIR", DEFAULT_SYSTEM_CONFIG_DIR)).expanduser()
-    user_root = Path(os.getenv("ANYAGENT_USER_CONFIG_DIR", str(Path.home() / ANYAGENT_CONFIG_DIR))).expanduser()
+    system_root = Path(getenv("SYSTEM_CONFIG_DIR", DEFAULT_SYSTEM_CONFIG_DIR) or DEFAULT_SYSTEM_CONFIG_DIR).expanduser()
+    user_root = Path(getenv("USER_CONFIG_DIR", str(Path.home() / ANYAGENT_CONFIG_DIR)) or str(Path.home() / ANYAGENT_CONFIG_DIR)).expanduser()
     layers: list[dict[str, Any]] = [
         {"name": "system", "config_dir": system_root, "agents_dir": system_root / ANYAGENT_AGENTS_SUBDIR},
         {"name": "user", "config_dir": user_root, "agents_dir": user_root / ANYAGENT_AGENTS_SUBDIR},

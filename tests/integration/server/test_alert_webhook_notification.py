@@ -55,10 +55,10 @@ def test_alert_webhook_feishu_payload_on_error_event(tmp_path: Path, monkeypatch
 
 async def _run_alert_webhook_feishu_payload_on_error_event(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("ANYAGENT_ALERT_WEBHOOK_URL", "https://hooks.feishu.example/abc")
-    monkeypatch.setenv("ANYAGENT_ALERT_WEBHOOK_FORMAT", "feishu")
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://hooks.feishu.example/abc")
+    monkeypatch.setenv("ALERT_WEBHOOK_FORMAT", "feishu")
     monkeypatch.setenv(
-        "ANYAGENT_ALERT_WEBHOOK_HEADERS",
+        "ALERT_WEBHOOK_HEADERS",
         json.dumps({"Authorization": "Bearer tok"}),
     )
 
@@ -123,7 +123,7 @@ def test_no_alert_webhook_url_is_backward_compatible(tmp_path: Path, monkeypatch
 
 async def _run_no_alert_webhook_url_is_backward_compatible(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.delenv("ANYAGENT_ALERT_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
 
     app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
     state = app.state.anyagent
@@ -150,6 +150,58 @@ async def _run_no_alert_webhook_url_is_backward_compatible(tmp_path: Path, monke
         # An alert is still created in-memory, but no webhook fires (no channel).
         assert created
         assert posts == [], "no webhook POST should fire without a configured URL"
+    finally:
+        emitter.remove_sink(state.telemetry_observability_sink)
+
+
+def test_quota_exhausted_feishu_payload_includes_project_and_channel(tmp_path: Path, monkeypatch) -> None:
+    asyncio.run(_run_quota_exhausted_feishu_payload_includes_project_and_channel(tmp_path, monkeypatch))
+
+
+async def _run_quota_exhausted_feishu_payload_includes_project_and_channel(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_main_agent(tmp_path)
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://hooks.feishu.example/abc")
+    monkeypatch.setenv("ALERT_WEBHOOK_FORMAT", "feishu")
+    monkeypatch.setenv("PROJECT", "lt-anyagent-wks")
+
+    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    state = app.state.anyagent
+    rules = {rule.rule_id: rule for rule in await state.alert_store.list_rules()}
+    assert len(rules["builtin.quota_exhausted"].channels) == 1
+
+    emitter = get_observability_emitter()
+    emitter.add_sink(state.telemetry_observability_sink)
+    try:
+        posts: list[dict] = []
+        monkeypatch.setattr(
+            "anyagent.server.persistence.alerts.httpx.AsyncClient",
+            lambda *args, **kwargs: _RecordingAsyncClient(posts),
+        )
+        emit_observability_event(
+            "provider.quota_exhausted",
+            category="server",
+            level="error",
+            payload={
+                "project": "lt-anyagent-wks",
+                "channel": "jina",
+                "status_code": 402,
+                "error_type": "quota_exhausted",
+                "message": "credits exceeded",
+            },
+        )
+        created = await state.alert_evaluator.evaluate_once()
+        assert created
+        assert len(posts) == 1
+        text = posts[0]["json"]["content"]["text"]
+        assert "Resource quota exhausted" in text
+        assert "project=lt-anyagent-wks" in text
+        assert "channel=jina" in text
+        assert "event_type=provider.quota_exhausted" in text
+        assert "status_code=402" in text
+        assert "credits exceeded" in text
     finally:
         emitter.remove_sink(state.telemetry_observability_sink)
 

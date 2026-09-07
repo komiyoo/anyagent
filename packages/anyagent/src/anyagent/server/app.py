@@ -19,6 +19,7 @@ from anyagent.gateway.plugins import GatewayRegistry
 from anyagent.gateway.sequencer import KeyedSequencer
 from anyagent.gateway.tooling import register_gateway_tools
 from anyagent.mcp.manager import MCPManagerRegistry
+from anyagent.env import getenv
 from anyagent.observability import _parse_header_env, emit_observability_event, get_observability_emitter
 from anyagent.protocol.alerts import AlertChannel
 from anyagent.server.app_builders import (
@@ -164,11 +165,10 @@ def create_app(
     alert_rules = default_alert_rules()
     alert_webhook_channel = _build_alert_webhook_channel()
     if alert_webhook_channel is not None:
-        # Attach the configured webhook to the built-in error rule so server /
-        # connector failures fan out to the operator's notification endpoint.
+        webhook_rule_ids = {"builtin.server_error", "builtin.quota_exhausted"}
         alert_rules = [
             rule.model_copy(update={"channels": [*rule.channels, alert_webhook_channel]})
-            if rule.rule_id == "builtin.server_error"
+            if rule.rule_id in webhook_rule_ids
             else rule
             for rule in alert_rules
         ]
@@ -256,17 +256,17 @@ def create_app(
                     if asyncio.iscoroutine(result):
                         await result
 
-    app = FastAPI(title="anyagent", version="0.4.25", lifespan=_lifespan)
+    app = FastAPI(title="anyagent", version="0.4.26", lifespan=_lifespan)
     if enable_studio:
         # Studio 前端独立部署（方案 B）：server 不再内嵌前端产物。
-        # 通过 studio_dir 参数或 ANYAGENT_STUDIO_DIR 环境变量指向外部 build
+        # 通过 studio_dir 参数或 STUDIO_DIR 环境变量指向外部 build
         # 产物可挂载到 /studio，便于本地开发或自托管场景；均未设置时不挂载。
         # CLI 参数优先于环境变量。
         resolved_studio_dir: Path | None = None
         if studio_dir is not None:
             resolved_studio_dir = Path(studio_dir)
         else:
-            env_studio_dir = os.environ.get("ANYAGENT_STUDIO_DIR", "").strip()
+            env_studio_dir = (getenv("STUDIO_DIR") or "").strip()
             if env_studio_dir:
                 resolved_studio_dir = Path(env_studio_dir)
         if resolved_studio_dir is not None:
@@ -342,17 +342,17 @@ def create_app(
 
 
 def _build_alert_webhook_channel() -> AlertChannel | None:
-    """Build the alert webhook channel from ``ANYAGENT_ALERT_WEBHOOK_*`` env.
+    """Build the alert webhook channel from ``ALERT_WEBHOOK_*`` env.
 
     Returns ``None`` when no URL is configured so the alert evaluator keeps
     running with no-op fan-out (backward compatible with prior behavior).
     """
 
-    url = os.getenv("ANYAGENT_ALERT_WEBHOOK_URL", "").strip()
+    url = (getenv("ALERT_WEBHOOK_URL") or "").strip()
     if not url:
         return None
-    fmt = os.getenv("ANYAGENT_ALERT_WEBHOOK_FORMAT", "json").strip().lower() or "json"
+    fmt = (getenv("ALERT_WEBHOOK_FORMAT", "json") or "json").strip().lower() or "json"
     if fmt not in {"json", "feishu"}:
         fmt = "json"
-    headers = _parse_header_env(os.getenv("ANYAGENT_ALERT_WEBHOOK_HEADERS", ""))
+    headers = _parse_header_env(getenv("ALERT_WEBHOOK_HEADERS") or "")
     return AlertChannel(kind="webhook", url=url, headers=headers, format=fmt)

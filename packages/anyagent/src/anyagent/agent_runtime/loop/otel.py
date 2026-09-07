@@ -1,33 +1,28 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
-_LOGGER = logging.getLogger(__name__)
+from anyagent.env import getenv
 
-ENDPOINT_ENVS = ("ANYAGENT_OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT")
-HEADERS_ENVS = ("ANYAGENT_OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_HEADERS")
+_LOGGER = logging.getLogger(__name__)
 
 _PROVIDER: Any | None = None
 _CONFIGURED = False
 
 
 def otlp_endpoint() -> str | None:
-    for name in ENDPOINT_ENVS:
-        value = os.getenv(name)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+    value = getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
     return None
 
 
 def otlp_headers() -> dict[str, str]:
     raw = ""
-    for name in HEADERS_ENVS:
-        value = os.getenv(name)
-        if isinstance(value, str) and value.strip():
-            raw = value.strip()
-            break
+    value = getenv("OTEL_EXPORTER_OTLP_HEADERS")
+    if isinstance(value, str) and value.strip():
+        raw = value.strip()
     if not raw:
         return {}
     headers: dict[str, str] = {}

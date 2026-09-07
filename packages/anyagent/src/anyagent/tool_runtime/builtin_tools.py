@@ -13,6 +13,7 @@ from anyagent.tool_runtime.cli_profile import build_cli_profile_handler, build_c
 from anyagent.tool_runtime.cli_profile_spec import CliProfileSpec
 from anyagent.tool_runtime.models import ToolDefinition
 from anyagent.tool_runtime.registry import ToolRegistry
+from anyagent.resource_quota import maybe_emit_resource_exhausted
 
 
 logger = logging.getLogger("anyagent.tool_runtime")
@@ -223,7 +224,20 @@ def register_builtin_core_tools_sync(registry: ToolRegistry) -> None:
             if isinstance(topic, str) and topic.strip():
                 request_body["topic"] = topic.strip()
             client = AsyncTavilyClient(api_key=api_key)
-            payload = await client.search(timeout=timeout_ms / 1000.0, **request_body)
+            try:
+                payload = await client.search(timeout=timeout_ms / 1000.0, **request_body)
+            except Exception as exc:  # noqa: BLE001
+                status = getattr(exc, "status_code", None)
+                response = getattr(exc, "response", None)
+                if status is None and response is not None:
+                    status = getattr(response, "status_code", None)
+                maybe_emit_resource_exhausted(
+                    "tavily",
+                    status_code=int(status) if isinstance(status, int) else None,
+                    message=str(exc),
+                    error_type=type(exc).__name__,
+                )
+                raise
             return json.dumps(_normalize_tavily_results(payload, query=query, max_results=max_results), ensure_ascii=False)
 
         if provider == "serpapi":
@@ -240,7 +254,16 @@ def register_builtin_core_tools_sync(registry: ToolRegistry) -> None:
                     headers={"User-Agent": "anyagent/0"},
                     params=request_params,
                 )
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    maybe_emit_resource_exhausted(
+                        "serpapi",
+                        status_code=exc.response.status_code,
+                        message=exc.response.text,
+                        error_type="HTTPStatusError",
+                    )
+                    raise
                 payload = response.json()
             return json.dumps(
                 _normalize_serpapi_results(payload, query=query, max_results=max_results, engine=engine),

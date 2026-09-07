@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from anyagent.env import getenv
 from anyagent.protocol.context_fragments import render_context_fragment
 from anyagent.skills import SkillEnablement
 from anyagent.skills.models import SkillPackage
@@ -17,7 +18,7 @@ from .prompt_envelope import build_skill_catalog_fragment
 
 
 DEFAULT_SKILL_INJECTION_TOKEN_BUDGET = 8000
-SKILL_INJECTION_TOKEN_BUDGET_ENV = "ANYAGENT_SKILL_INJECTION_TOKEN_BUDGET"
+SKILL_INJECTION_TOKEN_BUDGET_ENV = "SKILL_INJECTION_TOKEN_BUDGET"
 
 
 @dataclass(frozen=True)
@@ -117,7 +118,7 @@ def resolve_skill_injection_token_budget(
     if isinstance(metadata, dict):
         raw = metadata.get("skill_injection_token_budget")
     if raw is None:
-        raw = (env or os.environ).get(SKILL_INJECTION_TOKEN_BUDGET_ENV)
+        raw = getenv(SKILL_INJECTION_TOKEN_BUDGET_ENV, environ=env or os.environ)
     if raw is None:
         return default
     try:

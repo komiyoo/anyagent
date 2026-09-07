@@ -132,7 +132,7 @@ class AnyAgentSettings(BaseSettings):
 
     base_url: AnyHttpUrl = Field(
         default="http://127.0.0.1:8787",
-        alias="ANYAGENT_AGENT_API_BASE_URL",
+        alias="AGENT_API_BASE_URL",
     )
     api_key: str = Field(alias="AGENT_API_KEY")
 

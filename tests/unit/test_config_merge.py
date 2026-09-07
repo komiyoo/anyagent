@@ -31,8 +31,8 @@ def test_load_agent_catalog_merges_system_user_workspace_and_session_layers(
     system = tmp_path / "system"
     user = tmp_path / "user"
     workspace = tmp_path / "workspace"
-    monkeypatch.setenv("ANYAGENT_SYSTEM_CONFIG_DIR", str(system))
-    monkeypatch.setenv("ANYAGENT_USER_CONFIG_DIR", str(user))
+    monkeypatch.setenv("SYSTEM_CONFIG_DIR", str(system))
+    monkeypatch.setenv("USER_CONFIG_DIR", str(user))
 
     _write_agent(
         system,
@@ -101,8 +101,8 @@ def test_workspace_layer_cannot_override_sensitive_values_from_higher_layers(
 ) -> None:
     system = tmp_path / "system"
     workspace = tmp_path / "workspace"
-    monkeypatch.setenv("ANYAGENT_SYSTEM_CONFIG_DIR", str(system))
-    monkeypatch.setenv("ANYAGENT_USER_CONFIG_DIR", str(tmp_path / "missing-user"))
+    monkeypatch.setenv("SYSTEM_CONFIG_DIR", str(system))
+    monkeypatch.setenv("USER_CONFIG_DIR", str(tmp_path / "missing-user"))
 
     _write_agent(
         system,
@@ -130,8 +130,8 @@ def test_workspace_layer_cannot_override_sensitive_values_from_higher_layers(
 
 def test_missing_system_and_user_layers_are_ignored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace = tmp_path / "workspace"
-    monkeypatch.setenv("ANYAGENT_SYSTEM_CONFIG_DIR", str(tmp_path / "missing-system"))
-    monkeypatch.setenv("ANYAGENT_USER_CONFIG_DIR", str(tmp_path / "missing-user"))
+    monkeypatch.setenv("SYSTEM_CONFIG_DIR", str(tmp_path / "missing-system"))
+    monkeypatch.setenv("USER_CONFIG_DIR", str(tmp_path / "missing-user"))
     _write_agent(
         workspace / ".anyagent",
         "main",

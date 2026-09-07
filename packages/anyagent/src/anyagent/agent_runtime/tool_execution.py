@@ -26,6 +26,7 @@ from anyagent.protocol.tool_manifest_extensions import (
     tool_source_for_kind,
 )
 from anyagent.protocol.tool_runtime import ExecuteRequest, ManifestRequest, ToolContext
+from anyagent.resource_quota import channel_for_tool_name, maybe_emit_resource_exhausted
 from anyagent.tool_runtime.client import ToolRuntimeClient
 
 from .model_providers import ModelProvider
@@ -372,6 +373,11 @@ async def _execute_one_tool(
                     output=output_text if isinstance(output_text, str) else str(output_text)
                 )
             except Exception as e:  # noqa: BLE001
+                maybe_emit_resource_exhausted(
+                    channel_for_tool_name(tool_name),
+                    message=str(e),
+                    error_type="mcp_error",
+                )
                 tool_result = build_error_tool_result(
                     error_type="mcp_error",
                     message=str(e),
@@ -416,6 +422,13 @@ async def _execute_one_tool(
             tool_result = build_completed_tool_result(output=tr.output)
         else:
             tool_result = {"status": tr.status, "error": tr.error.model_dump()}
+            error_message = tr.error.message if tr.error is not None else None
+            error_code = tr.error.code if tr.error is not None else None
+            maybe_emit_resource_exhausted(
+                channel_for_tool_name(tool_name),
+                message=error_message,
+                error_type=error_code or "tool_error",
+            )
 
         output_value = tr.output if tr.status == "completed" else None
         error_value = tr.error.model_dump() if tr.status != "completed" else None

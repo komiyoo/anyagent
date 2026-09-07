@@ -360,8 +360,8 @@ async def _run_internal_prompt_versions_and_diff(tmp_path: Path) -> None:
 async def _run_studio_is_mounted_via_env_and_disabled_by_flag(tmp_path: Path) -> None:
     _write_agent(tmp_path, "main", exposed=True, prompt="Main agent\n")
 
-    # Studio 独立部署（方案 B）：默认不挂载（无 ANYAGENT_STUDIO_DIR）。
-    monkeypatch_del = "ANYAGENT_STUDIO_DIR"
+    # Studio 独立部署（方案 B）：默认不挂载（无 STUDIO_DIR）。
+    monkeypatch_del = "STUDIO_DIR"
     saved = os.environ.pop(monkeypatch_del, None)
     try:
         default_app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
@@ -371,7 +371,7 @@ async def _run_studio_is_mounted_via_env_and_disabled_by_flag(tmp_path: Path) ->
             resp = await client.get("/studio/")
             assert resp.status_code == 404
 
-        # 设 ANYAGENT_STUDIO_DIR 指向临时 build 产物 → 挂载到 /studio。
+        # 设 STUDIO_DIR 指向临时 build 产物 → 挂载到 /studio。
         studio_dir = tmp_path / "studio_build"
         studio_dir.mkdir()
         (studio_dir / "index.html").write_text(

@@ -68,7 +68,6 @@ class _ToolThenTextModel(Model):
 def test_no_endpoint_skips_instrumentation(monkeypatch) -> None:
     reset_otel_for_tests()
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
-    monkeypatch.delenv("ANYAGENT_OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
     assert otlp_endpoint() is None
     caps = build_instrumentation_capabilities(agent_id="main", session_key="s", response_id="r")
     assert caps == []

@@ -149,9 +149,9 @@ def test_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp_path:
 
 async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp_path: Path, monkeypatch, caplog) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("CHATWOOT_ASYNC_PROCESSING", "false")
     caplog.set_level(logging.INFO)
     provider = _ChatwootFlowProvider()
     monkeypatch.setattr(
@@ -302,9 +302,9 @@ def test_chatwoot_connector_opens_pending_conversation_after_reply(tmp_path: Pat
 
 async def _run_chatwoot_connector_opens_pending_conversation_after_reply(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("CHATWOOT_ASYNC_PROCESSING", "false")
 
     release = asyncio.Event()
     release.set()  # 纯文本回复 provider：立即返回，无 handoff
@@ -375,9 +375,9 @@ async def _run_chatwoot_reply_open_capture(
     conversation: dict,
 ) -> tuple[list[str], dict]:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("CHATWOOT_ASYNC_PROCESSING", "false")
     release = asyncio.Event()
     release.set()
     provider = _SlowChatwootProvider(release)
@@ -468,9 +468,9 @@ async def _run_chatwoot_connector_webhook_acknowledges_before_background_process
     monkeypatch,
 ) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
-    monkeypatch.delenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", raising=False)
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.delenv("CHATWOOT_ASYNC_PROCESSING", raising=False)
 
     release = asyncio.Event()
     provider = _SlowChatwootProvider(release)
@@ -573,9 +573,9 @@ def test_chatwoot_connector_skips_reply_when_assigned_to_human(tmp_path: Path, m
 
 async def _run_chatwoot_connector_skips_reply_when_assigned_to_human(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("CHATWOOT_ASYNC_PROCESSING", "false")
     provider = _ChatwootFlowProvider()
     monkeypatch.setattr(
         "anyagent.server.routes.responses.get_default_model_provider",
@@ -636,9 +636,9 @@ def test_chatwoot_connector_skips_reply_when_live_assignee_is_human(tmp_path: Pa
 
 async def _run_chatwoot_connector_skips_reply_when_live_assignee_is_human(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("CHATWOOT_ASYNC_PROCESSING", "false")
     provider = _ChatwootFlowProvider()
     monkeypatch.setattr(
         "anyagent.server.routes.responses.get_default_model_provider",
@@ -703,10 +703,10 @@ def test_chatwoot_connector_replies_when_assigned_skip_disabled(tmp_path: Path, 
 
 async def _run_chatwoot_connector_replies_when_assigned_skip_disabled(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", "false")
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("CHATWOOT_ASYNC_PROCESSING", "false")
+    monkeypatch.setenv("CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", "false")
     release = asyncio.Event()
     release.set()
     provider = _SlowChatwootProvider(release)
@@ -769,9 +769,9 @@ def test_chatwoot_connector_drops_reply_if_assigned_during_agent_run(tmp_path: P
 
 async def _run_chatwoot_connector_drops_reply_if_assigned_during_agent_run(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("CHATWOOT_ASYNC_PROCESSING", "false")
     release = asyncio.Event()
     release.set()
     provider = _SlowChatwootProvider(release)

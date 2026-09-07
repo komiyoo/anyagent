@@ -126,9 +126,9 @@ def test_pool_cleanup_all_disconnects_everything() -> None:
 
 
 def test_pool_size_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ANYAGENT_MCP_STDIO_POOL_SIZE", "5")
+    monkeypatch.setenv("MCP_STDIO_POOL_SIZE", "5")
     assert MCPStdioConnectionPool().max_size == 5
-    monkeypatch.setenv("ANYAGENT_MCP_STDIO_POOL_SIZE", "not-an-int")
+    monkeypatch.setenv("MCP_STDIO_POOL_SIZE", "not-an-int")
     assert MCPStdioConnectionPool().max_size == 256
 
 

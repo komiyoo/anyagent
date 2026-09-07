@@ -15,10 +15,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from typing import Any
 
 import httpx
+from anyagent.env import getenv
 from anyagent.gateway.plugins import WebhookRoute
 from anyagent.observability import emit_observability_event
 from anyagent.plugins.hooks import HookContext
@@ -190,13 +190,13 @@ async def _handle_chatwoot_webhook(
 
 
 def _chatwoot_process_incoming_async() -> bool:
-    raw = os.getenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "true").strip().lower()
+    raw = (getenv("CHATWOOT_ASYNC_PROCESSING", "true") or "true").strip().lower()
     return raw not in {"0", "false", "no", "off"}
 
 
 def _chatwoot_status_changes_enabled() -> bool:
-    """默认开启；显式设 ANYAGENT_CHATWOOT_STATUS_CHANGES=false 时 connector 不修改 Chatwoot 会话状态。"""
-    raw = os.getenv("ANYAGENT_CHATWOOT_STATUS_CHANGES", "true").strip().lower()
+    """默认开启；显式设 CHATWOOT_STATUS_CHANGES=false 时 connector 不修改 Chatwoot 会话状态。"""
+    raw = (getenv("CHATWOOT_STATUS_CHANGES", "true") or "true").strip().lower()
     return raw not in {"0", "false", "no", "off"}
 
 
@@ -211,7 +211,7 @@ def _chatwoot_conversation_status(body: dict[str, Any]) -> str:
 
 def _chatwoot_skip_when_assigned_to_human() -> bool:
     """默认开启：会话已分配给真人坐席时不再调用 agent、不写回客户消息。"""
-    raw = os.getenv("ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", "true").strip().lower()
+    raw = (getenv("CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", "true") or "true").strip().lower()
     return raw not in {"0", "false", "no", "off"}
 
 
@@ -640,22 +640,22 @@ def register(api: Any) -> None:
     - 工具（app.chatwoot.send_message / app.chatwoot.handoff）
 
     环境变量配置（推荐走 Credential Vault，以下为开发环境 fallback）：
-    - ANYAGENT_CHATWOOT_URL: Chatwoot 实例 URL
-    - ANYAGENT_CHATWOOT_ACCOUNT_ID: Chatwoot account ID
-    - ANYAGENT_CHATWOOT_ACCESS_TOKEN: Agent Bot access_token
-    - ANYAGENT_CHATWOOT_WEBHOOK_SECRET: webhook HMAC secret（或 credential_id 引用）
-    - ANYAGENT_CHATWOOT_STATUS_CHANGES: 默认 true——handoff → open，且 bot 回复后
+    - CHATWOOT_URL: Chatwoot 实例 URL
+    - CHATWOOT_ACCOUNT_ID: Chatwoot account ID
+    - CHATWOOT_ACCESS_TOKEN: Agent Bot access_token
+    - CHATWOOT_WEBHOOK_SECRET: webhook HMAC secret（或 credential_id 引用）
+    - CHATWOOT_STATUS_CHANGES: 默认 true——handoff → open，且 bot 回复后
       将会话保持为 open（从不 resolve/snooze）；显式设为 false 时 connector 不修改
       Chatwoot 会话状态（handoff 不调用 toggle_status，仅保留 assignment/摘要 note）
-    - ANYAGENT_CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN: 默认 true——会话已分配给真人
+    - CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN: 默认 true——会话已分配给真人
       坐席时跳过 agent 回复；设为 false 时即使已分配仍由 bot 回复
     """
 
-    chatwoot_url = os.getenv("ANYAGENT_CHATWOOT_URL", "https://app.chatwoot.com")
-    account_id = os.getenv("ANYAGENT_CHATWOOT_ACCOUNT_ID", "1")
-    access_token = os.getenv("ANYAGENT_CHATWOOT_ACCESS_TOKEN", "")
-    webhook_secret = os.getenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "")
-    webhook_secret_kind_value = os.getenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "secret")
+    chatwoot_url = getenv("CHATWOOT_URL", "https://app.chatwoot.com") or "https://app.chatwoot.com"
+    account_id = getenv("CHATWOOT_ACCOUNT_ID", "1") or "1"
+    access_token = getenv("CHATWOOT_ACCESS_TOKEN") or ""
+    webhook_secret = getenv("CHATWOOT_WEBHOOK_SECRET") or ""
+    webhook_secret_kind_value = getenv("CHATWOOT_CREDENTIAL_KIND", "secret") or "secret"
     status_changes_enabled = _chatwoot_status_changes_enabled()
 
     # 构建 connector 实例
@@ -680,7 +680,7 @@ def register(api: Any) -> None:
         webhook_auth = _auth
         outbound = _outbound
         handoff = _handoff
-        webhook_secret_credential_id = os.getenv("ANYAGENT_CHATWOOT_CREDENTIAL_ID", "")
+        webhook_secret_credential_id = getenv("CHATWOOT_CREDENTIAL_ID") or ""
         webhook_secret = _chatwoot_webhook_secret
 
     connector_instance = _ChatwootConnector()

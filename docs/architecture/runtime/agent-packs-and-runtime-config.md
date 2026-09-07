@@ -95,8 +95,8 @@ runtime:
 
 `agent.yaml` 与 `mcp.json` 并非只有 workspace 单层，而是按固定优先级跨四层 deep-merge 后再交给运行时消费。层级在 `resolve_config_layers` 中冻结为 system → user → workspace → session（`packages/anyagent/src/anyagent/agent_packs.py:172`）：
 
-1. **system**：`ANYAGENT_SYSTEM_CONFIG_DIR`，默认 `/etc/anyagent`，承载平台运维下发的基线管控。
-2. **user**：`ANYAGENT_USER_CONFIG_DIR`，默认 `~/.anyagent`，承载部署者个人默认值。
+1. **system**：`SYSTEM_CONFIG_DIR`，默认 `/etc/anyagent`，承载平台运维下发的基线管控。
+2. **user**：`USER_CONFIG_DIR`，默认 `~/.anyagent`，承载部署者个人默认值。
 3. **workspace**：`<workspace_dir>/.anyagent`，业务工作区自带的 agent pack 配置。
 4. **session**：单次请求经 `metadata.context` 注入的 `session_overrides`，不落盘，优先级最高。
 
@@ -213,7 +213,7 @@ stdio 与 HTTP/SSE 两类传输的资源代价不同，故池化策略分流（`
 池实现 `MCPStdioConnectionPool` 是 `OrderedDict` + `asyncio.Lock` 的 LRU 缓存（`packages/anyagent/src/anyagent/mcp/session_pool.py:32`）：
 
 - 池键为 `(agent_id, server_label, session_key)`，`session_key=None` 时匿名请求共享同一 server 桶（`packages/anyagent/src/anyagent/mcp/session_pool.py:13`）。
-- 容量默认 256，可被环境变量 `ANYAGENT_MCP_STDIO_POOL_SIZE` 覆盖（`packages/anyagent/src/anyagent/mcp/session_pool.py:17`-`29`）。
+- 容量默认 256，可被环境变量 `MCP_STDIO_POOL_SIZE` 覆盖（`packages/anyagent/src/anyagent/mcp/session_pool.py:17`-`29`）。
 - `acquire` 命中时 `move_to_end` 刷新 LRU 顺序并复用已连接 server；未命中时由 `factory` 新建并连接，插入后若超容则 `popitem(last=False)` 逐出最久未用项并优雅 `disconnect`（关闭其子进程）（`packages/anyagent/src/anyagent/mcp/session_pool.py:53`-`77`）。
 
 池由 `MCPManagerRegistry` 单例注入所有 manager（`packages/anyagent/src/anyagent/mcp/manager.py:331`），因此 stdio 连接在所有 agent 与 session 间统一 LRU 受限。`MCPServerManager.cleanup` 只断开自己持有的 HTTP/SSE server，池化 stdio 连接的清理交给池的 `cleanup_all`，避免重复释放（`packages/anyagent/src/anyagent/mcp/manager.py:265`、`packages/anyagent/src/anyagent/mcp/session_pool.py:86`）。

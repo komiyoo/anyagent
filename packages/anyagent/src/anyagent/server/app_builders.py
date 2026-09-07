@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from anyagent.agent_packs import AgentCatalog
+from anyagent.env import getenv
 from anyagent.gateway.plugins import GatewayPluginAPI, GatewayRegistry, WebhookRoute
 from anyagent.plugins import LoadedPlugin, load_plugins_from_roots
 from anyagent.plugins.hooks import HookContext
@@ -105,7 +106,7 @@ def _safe_error_message(e: Exception) -> str:
 
 def _parse_cors_origins(value: str | list[str] | tuple[str, ...] | None) -> list[str]:
     if value is None:
-        value = os.getenv("ANYAGENT_CORS_ORIGINS", "")
+        value = getenv("CORS_ORIGINS") or ""
     if isinstance(value, str):
         return [item.strip() for item in value.split(",") if item.strip()]
     return [str(item).strip() for item in value if str(item).strip()]
@@ -116,7 +117,7 @@ def _resolve_plugin_roots(plugin_roots: list[str | Path] | tuple[str | Path, ...
     if plugin_roots is not None:
         raw_items.extend(plugin_roots)
     else:
-        env_value = os.getenv("ANYAGENT_PLUGIN_ROOTS", "")
+        env_value = getenv("PLUGIN_ROOTS") or ""
         raw_items.extend(item.strip() for item in env_value.split(",") if item.strip())
         if not raw_items:
             default_root = workspace / "plugins"

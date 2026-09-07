@@ -6,7 +6,7 @@ from anyagent.server.app_builders import _resolve_plugin_roots
 
 
 def test_resolve_plugin_roots_defaults_to_workspace_plugins(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("ANYAGENT_PLUGIN_ROOTS", raising=False)
+    monkeypatch.delenv("PLUGIN_ROOTS", raising=False)
     plugins = tmp_path / "plugins"
     plugins.mkdir()
 
@@ -16,7 +16,7 @@ def test_resolve_plugin_roots_defaults_to_workspace_plugins(tmp_path: Path, monk
 
 
 def test_resolve_plugin_roots_skips_missing_default_dir(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("ANYAGENT_PLUGIN_ROOTS", raising=False)
+    monkeypatch.delenv("PLUGIN_ROOTS", raising=False)
 
     roots = _resolve_plugin_roots(None, workspace=tmp_path)
 
@@ -28,7 +28,7 @@ def test_resolve_plugin_roots_env_overrides_default(tmp_path: Path, monkeypatch)
     (tmp_path / "plugins").mkdir()
     extra = tmp_path / "extra-plugins"
     extra.mkdir()
-    monkeypatch.setenv("ANYAGENT_PLUGIN_ROOTS", "extra-plugins")
+    monkeypatch.setenv("PLUGIN_ROOTS", "extra-plugins")
 
     roots = _resolve_plugin_roots(None, workspace=tmp_path)
 
@@ -37,7 +37,7 @@ def test_resolve_plugin_roots_env_overrides_default(tmp_path: Path, monkeypatch)
 
 
 def test_resolve_plugin_roots_explicit_list_skips_default(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("ANYAGENT_PLUGIN_ROOTS", raising=False)
+    monkeypatch.delenv("PLUGIN_ROOTS", raising=False)
     (tmp_path / "plugins").mkdir()
     custom = tmp_path / "custom"
     custom.mkdir()

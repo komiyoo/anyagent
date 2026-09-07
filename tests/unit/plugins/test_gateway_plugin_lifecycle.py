@@ -76,7 +76,7 @@ def test_gateway_loads_reference_plugin_catalog_tool_and_hooks(tmp_path: Path, m
 async def _run_gateway_loads_reference_plugin_catalog_tool_and_hooks(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
     events_file = tmp_path / "plugin-events.jsonl"
-    monkeypatch.setenv("ANYAGENT_LIFECYCLE_ECHO_EVENTS_FILE", str(events_file))
+    monkeypatch.setenv("LIFECYCLE_ECHO_EVENTS_FILE", str(events_file))
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app = create_app(

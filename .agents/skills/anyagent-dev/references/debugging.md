@@ -68,7 +68,7 @@ Loop / 模型 / 跟踪:
 - 工具必须打到 Tool Runtime `execute`，不要在业务仓另写一套 handler。
 - 流式客户端挂住时先看 SSE 是否有 `[DONE]`。
 - SDK 消费侧走 Event Store / Stage Events（`client.events`，写库）。Langfuse 是可选 OTLP 附加渠道。
-- 未设 `OTEL_EXPORTER_OTLP_ENDPOINT` / `ANYAGENT_OTEL_EXPORTER_OTLP_ENDPOINT` 时 OTLP 关闭，Event Store 与服务应仍能启动。
+- 未设 `OTEL_EXPORTER_OTLP_ENDPOINT` 时 OTLP 关闭，Event Store 与服务应仍能启动。
 
 Unexpected config after edits:
 

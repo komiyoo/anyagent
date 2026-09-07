@@ -53,9 +53,9 @@ def test_skill_injection_token_budget_resolves_metadata_before_env() -> None:
     assert (
         resolve_skill_injection_token_budget(
             metadata={"skill_injection_token_budget": "123"},
-            env={"ANYAGENT_SKILL_INJECTION_TOKEN_BUDGET": "456"},
+            env={"SKILL_INJECTION_TOKEN_BUDGET": "456"},
         )
         == 123
     )
-    assert resolve_skill_injection_token_budget(metadata={}, env={"ANYAGENT_SKILL_INJECTION_TOKEN_BUDGET": "456"}) == 456
+    assert resolve_skill_injection_token_budget(metadata={}, env={"SKILL_INJECTION_TOKEN_BUDGET": "456"}) == 456
     assert resolve_skill_injection_token_budget(metadata={"skill_injection_token_budget": "bad"}, env={}, default=99) == 99

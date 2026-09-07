@@ -15,6 +15,7 @@ import uvicorn
 import yaml
 
 from anyagent.agent_packs import AgentPackError, load_agent_catalog, preferred_agents_root, preferred_config_root, resolve_agents_root
+from anyagent.env import getenv
 from anyagent.model_catalog import get_provider_spec, resolve_provider_kind
 from anyagent.model_config import WorkspaceModelsConfig, workspace_models_config_path
 from anyagent.observability import configure_observability_from_env
@@ -176,27 +177,27 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help=(
             "Allowed browser origin for CORS. May be repeated. "
-            "Defaults to comma-separated $ANYAGENT_CORS_ORIGINS when unset."
+            "Defaults to comma-separated $CORS_ORIGINS when unset."
         ),
     )
     serve.add_argument("--sandbox-root", default=None, help="Optional root dir for local sandbox sessions.")
     serve.add_argument(
         "--studio-dir",
         default=None,
-        help="Directory of a built Studio bundle to mount at /studio. Defaults to $ANYAGENT_STUDIO_DIR. "
+        help="Directory of a built Studio bundle to mount at /studio. Defaults to $STUDIO_DIR. "
         "Studio is deployed independently; the server ships no bundled UI.",
     )
     serve.add_argument(
         "--no-studio",
         action="store_true",
-        help="Do not mount Studio at /studio even if --studio-dir or $ANYAGENT_STUDIO_DIR is set.",
+        help="Do not mount Studio at /studio even if --studio-dir or $STUDIO_DIR is set.",
     )
     serve.add_argument("--quiet", action="store_true", help="Suppress the JSON configuration banner printed on startup.")
     serve.add_argument(
         "--plugin-root",
         action="append",
         default=None,
-        help="Plugin root to scan for plugin.json files. May be repeated. Defaults to $ANYAGENT_PLUGIN_ROOTS, or ./plugins when that directory exists.",
+        help="Plugin root to scan for plugin.json files. May be repeated. Defaults to $PLUGIN_ROOTS, or ./plugins when that directory exists.",
     )
     serve.add_argument(
         "--plugins-fail-open",
@@ -264,7 +265,7 @@ def main(argv: list[str] | None = None) -> int:
         "--plugin-root",
         action="append",
         default=None,
-        help="Plugin root to scan for plugin.json files. May be repeated. Defaults to $ANYAGENT_PLUGIN_ROOTS, or ./plugins when that directory exists.",
+        help="Plugin root to scan for plugin.json files. May be repeated. Defaults to $PLUGIN_ROOTS, or ./plugins when that directory exists.",
     )
     dev.add_argument(
         "--plugins-fail-open",
@@ -318,13 +319,13 @@ def main(argv: list[str] | None = None) -> int:
     dev.add_argument(
         "--studio-dir",
         default=None,
-        help="Directory of a built Studio bundle to mount at /studio. Defaults to $ANYAGENT_STUDIO_DIR. "
+        help="Directory of a built Studio bundle to mount at /studio. Defaults to $STUDIO_DIR. "
         "Studio is deployed independently; the server ships no bundled UI.",
     )
     dev.add_argument(
         "--no-studio",
         action="store_true",
-        help="Do not mount Studio at /studio even if --studio-dir or $ANYAGENT_STUDIO_DIR is set.",
+        help="Do not mount Studio at /studio even if --studio-dir or $STUDIO_DIR is set.",
     )
 
     agent_api = sub.add_parser("agent-api", help="Distributed Agent API operations.")
@@ -489,10 +490,10 @@ def main(argv: list[str] | None = None) -> int:
         args.no_studio = False
         # dev defaults to the in-repo built Studio bundle so the local
         # development server mounts /studio without an explicit --studio-dir.
-        # Override with --studio-dir, $ANYAGENT_STUDIO_DIR, or --no-studio.
-        if not args.studio_dir and not os.getenv("ANYAGENT_STUDIO_DIR"):
+        # Override with --studio-dir, $STUDIO_DIR, or --no-studio.
+        if not args.studio_dir and not getenv("STUDIO_DIR"):
             args.studio_dir = str(Path(__file__).resolve().parents[2] / "studio" / "dist")
-        if not args.api_key and not os.getenv("ANYAGENT_API_KEY"):
+        if not args.api_key and not getenv("API_KEY"):
             args.api_key = "anyagent-dev-key"
         if not args.admin_key and not os.getenv("ADMIN_API_KEY"):
             args.admin_key = args.api_key or "anyagent-dev-key"
@@ -730,10 +731,10 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     configure_observability_from_env()
     workspace = Path(args.workspace).expanduser().resolve()
     _load_workspace_dotenv(workspace)
-    api_key = args.api_key or os.getenv("ANYAGENT_API_KEY")
+    api_key = args.api_key or getenv("API_KEY")
     admin_key = args.admin_key or os.getenv("ADMIN_API_KEY")
     enable_studio = not bool(args.no_studio)
-    studio_dir = args.studio_dir or os.getenv("ANYAGENT_STUDIO_DIR") or None
+    studio_dir = args.studio_dir or getenv("STUDIO_DIR") or None
     app = create_app(
         workspace_dir=str(workspace),
         api_key=api_key,

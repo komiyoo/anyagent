@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from collections import OrderedDict
 from collections.abc import Callable
+
+from anyagent.env import getenv
 
 from .server import MCPServer
 
@@ -15,11 +16,11 @@ logger = logging.getLogger("anyagent.mcp")
 PoolKey = tuple[str, str, str | None]
 
 _DEFAULT_POOL_SIZE = 256
-_POOL_SIZE_ENV = "ANYAGENT_MCP_STDIO_POOL_SIZE"
+_POOL_SIZE_ENV = "MCP_STDIO_POOL_SIZE"
 
 
 def _resolve_pool_size() -> int:
-    raw = os.getenv(_POOL_SIZE_ENV)
+    raw = getenv(_POOL_SIZE_ENV)
     if raw is None:
         return _DEFAULT_POOL_SIZE
     try:

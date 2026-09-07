@@ -230,7 +230,7 @@ flowchart TD
 ## Configuration
 
 - workspace：`models.yaml`、`.anyagent/agents/<id>/agent.yaml` 的 `runtime.middlewares`（`loop_detection` / `context_compaction` 映射为 hooks，不是新 4-hook API）
-- OTLP：`OTEL_EXPORTER_OTLP_ENDPOINT` 或 `ANYAGENT_OTEL_EXPORTER_OTLP_ENDPOINT`；头用 `OTEL_EXPORTER_OTLP_HEADERS` 或 `ANYAGENT_OTEL_EXPORTER_OTLP_HEADERS`
+- OTLP：`OTEL_EXPORTER_OTLP_ENDPOINT`；头用 `OTEL_EXPORTER_OTLP_HEADERS`
 - 未设 endpoint：OTLP 渠道关闭，Event Store / SDK events 不受影响
 - 不引入 Langfuse Python SDK；凭证只进消费侧 env / Infisical
 

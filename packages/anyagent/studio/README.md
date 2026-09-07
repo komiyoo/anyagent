@@ -93,10 +93,10 @@ The server no longer bundles Studio. To serve a locally built bundle from `anyag
 ```bash
 cd packages/anyagent/studio
 VITE_BASE=/studio/ npm run build
-ANYAGENT_STUDIO_DIR=packages/anyagent/studio/dist anyagent serve
+STUDIO_DIR=packages/anyagent/studio/dist anyagent serve
 ```
 
-Without `ANYAGENT_STUDIO_DIR`, or with `--no-studio`, the server mounts no Studio UI.
+Without `STUDIO_DIR`, or with `--no-studio`, the server mounts no Studio UI.
 
 ## Architecture Notes
 

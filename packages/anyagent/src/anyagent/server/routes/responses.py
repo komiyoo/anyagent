@@ -25,6 +25,7 @@ from anyagent.protocol.observability import ObservabilityLevel
 from anyagent.protocol.prompt_context import PromptContextAudit
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.protocol.sse import SSEBlockDecoder, encode_sse_block
+from anyagent.resource_quota import current_project_name, is_quota_exhausted
 from anyagent.protocol.stage_events import AnyAgentModelRequestEvent, AnyAgentPromptContextEvent, AnyAgentPromptContextRenderedEvent
 from anyagent.server.app_builders import _dispatch_plugin_hook, _safe_error_message
 from anyagent.server.config.request_context import resolve_agent_id, resolve_session_key
@@ -870,6 +871,13 @@ def _emit_server_response_event(
         "status": status,
         "error_type": error_type,
     }
+    project = current_project_name()
+    if project:
+        payload["project"] = project
+    if is_quota_exhausted(status_code=status_code, error_type=error_type):
+        payload["channel"] = "llm"
+        if not payload.get("error_type"):
+            payload["error_type"] = "quota_exhausted"
     emit_observability_event(
         event,
         category="server",

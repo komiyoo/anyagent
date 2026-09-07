@@ -46,8 +46,8 @@ def test_chatwoot_platform_event_persist_failure_emits_warning(tmp_path: Path, m
 
 async def _run_chatwoot_platform_event_persist_failure_emits_warning(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
 
     app = create_app(
         workspace_dir=tmp_path,
@@ -139,9 +139,9 @@ def test_chatwoot_empty_agent_response_emits_background_failed(tmp_path: Path, m
 
 async def _run_chatwoot_empty_agent_response_emits_background_failed(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
-    monkeypatch.setenv("ANYAGENT_CHATWOOT_ASYNC_PROCESSING", "false")
+    monkeypatch.setenv("CHATWOOT_WEBHOOK_SECRET", "test-chatwoot-secret")
+    monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
+    monkeypatch.setenv("CHATWOOT_ASYNC_PROCESSING", "false")
 
     provider = _FunctionCallOnlyProvider()
     monkeypatch.setattr(
