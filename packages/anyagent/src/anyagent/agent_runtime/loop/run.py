@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from pydantic_ai import Agent
-from pydantic_ai.exceptions import ModelHTTPError, UserError
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded, UserError
 from pydantic_ai.usage import UsageLimits
 
 from anyagent.mcp.manager import MCPServerManager
@@ -180,6 +180,10 @@ def _build_agent(
             capabilities=capabilities or None,
             name=agent_id,
             end_strategy="early",
+            # Hosted Responses treats empty / tool-only model output as a completed
+            # 200. pydantic-ai's default output retry would otherwise ask the model
+            # to "return text" and then 500.
+            retries={"output": 0},
         )
     _ = max_iters, instructions
     return agent, user_prompt, history, model
@@ -220,6 +224,53 @@ def _response_payload(
     )
     normalize_response_id(payload, response_id)
     return payload
+
+
+def _is_incomplete_typed_output(exc: BaseException) -> bool:
+    """pydantic-ai failed to produce a typed str; last model Response is still a hosted 200."""
+
+    return isinstance(exc, (UnexpectedModelBehavior, UsageLimitExceeded))
+
+
+def _hosted_payload_from_last_response(
+    *,
+    pai_model: Any,
+    canonical_response_id: str | None,
+    fallback_response_id: str,
+) -> dict[str, Any] | None:
+    """Dump the last OpenAI Response from the ModelProvider bridge, if any."""
+
+    last = getattr(pai_model, "_last_response", None)
+    dump = getattr(last, "model_dump", None)
+    if last is None or not callable(dump):
+        return None
+    payload = dump(exclude_none=True, by_alias=True)
+    if not isinstance(payload, dict):
+        return None
+    response_id = _final_response_id(canonical_response_id, pai_model, fallback_response_id)
+    normalize_response_id(payload, response_id)
+    payload.setdefault("object", "response")
+    payload.setdefault("status", "completed")
+    return payload
+
+
+def _text_from_hosted_payload(payload: dict[str, Any]) -> str:
+    chunks: list[str] = []
+    output = payload.get("output")
+    if not isinstance(output, list):
+        return ""
+    for item in output:
+        if not isinstance(item, dict) or item.get("type") not in {None, "message"}:
+            continue
+        if item.get("role") not in {None, "assistant"}:
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if isinstance(part, dict) and isinstance(part.get("text"), str) and part["text"]:
+                chunks.append(part["text"])
+    return "".join(chunks)
 
 
 def _map_run_error(exc: BaseException, *, followup: bool) -> tuple[int, dict[str, Any]]:
@@ -349,6 +400,14 @@ async def run_tool_loop_nonstream(
             usage_limits=UsageLimits(request_limit=max(1, max_iters)),
         )
     except Exception as e:  # noqa: BLE001
+        hosted = _hosted_payload_from_last_response(
+            pai_model=pai_model,
+            canonical_response_id=canonical_response_id,
+            fallback_response_id=response_id,
+        )
+        if hosted is not None and _is_incomplete_typed_output(e):
+            _LOGGER.info("pydantic-ai loop ended without typed text; returning last model response: %s", e)
+            return 200, hosted
         followup = getattr(pai_model, "_last_response", None) is not None
         return _map_run_error(e, followup=followup)
 
@@ -496,6 +555,16 @@ async def run_tool_loop_stream_live(
             usage_limits=UsageLimits(request_limit=max(1, max_iters)),
         )
     except Exception as e:  # noqa: BLE001
+        hosted = _hosted_payload_from_last_response(
+            pai_model=pai_model,
+            canonical_response_id=canonical_response_id,
+            fallback_response_id=response_id,
+        )
+        if hosted is not None and _is_incomplete_typed_output(e):
+            _LOGGER.info("pydantic-ai loop ended without typed text; returning last model response: %s", e)
+            async for chunk in _iter_completed_sse(hosted):
+                yield chunk
+            return
         status, payload = _map_run_error(e, followup=False)
         if status >= 400:
             if isinstance(e, (ModelProviderInvalidRequestError, ModelProviderUpstreamError, ModelProviderTransportError)):
@@ -517,19 +586,31 @@ async def run_tool_loop_stream_live(
         tools=list(prepared.get("tools") or []),
         tool_choice=prepared.get("tool_choice"),
     )
-    if text:
+    async for chunk in _iter_completed_sse(payload, text=text, response_id=response_id):
+        yield chunk
+
+
+async def _iter_completed_sse(
+    payload: dict[str, Any],
+    *,
+    text: str | None = None,
+    response_id: str | None = None,
+) -> AsyncIterator[bytes]:
+    rid = response_id or str(payload.get("id") or "resp_anyagent")
+    body_text = text if text is not None else _text_from_hosted_payload(payload)
+    if body_text:
         delta = {
             "type": "response.output_text.delta",
             "sequence_number": 1,
-            "item_id": f"msg_{response_id}",
+            "item_id": f"msg_{rid}",
             "output_index": 0,
             "content_index": 0,
-            "delta": text,
+            "delta": body_text,
             "logprobs": [],
         }
-        normalize_response_id(delta, response_id)
+        normalize_response_id(delta, rid)
         yield encode_sse_event("response.output_text.delta", json.dumps(delta, ensure_ascii=False, separators=(",", ":")))
     completed = {"type": "response.completed", "sequence_number": 2, "response": payload}
-    normalize_response_id(completed, response_id)
+    normalize_response_id(completed, rid)
     yield encode_sse_event("response.completed", json.dumps(completed, ensure_ascii=False, separators=(",", ":")))
     yield encode_sse_event(None, "[DONE]")

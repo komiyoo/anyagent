@@ -4,6 +4,8 @@ import asyncio
 import json
 from typing import Any
 
+from openai.types.responses.response import Response
+from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
 from pydantic_ai.models import Model, ModelRequestParameters
 from pydantic_ai.settings import ModelSettings
@@ -42,6 +44,74 @@ class _ToolRuntime:
             }
         )
         return ExecuteResponseCompleted(status="completed", output="lookup result", meta=ExecuteMeta())
+
+
+class _EmptyOutputProvider:
+    """Hosted smoke: model completes with empty output (no text, no tools)."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def create_response(
+        self,
+        *,
+        body: dict[str, Any],
+        idempotency_key: str | None = None,
+        timeout_s: float = 60.0,
+    ) -> Response:
+        _ = idempotency_key, timeout_s
+        self.calls += 1
+        return Response.model_validate(
+            {
+                "id": "resp_empty_output",
+                "object": "response",
+                "created_at": 123,
+                "model": str(body.get("model") or "gpt-test"),
+                "output": [],
+                "parallel_tool_calls": False,
+                "tool_choice": "auto",
+                "tools": list(body.get("tools") or []),
+                "status": "completed",
+            }
+        )
+
+
+class _UnknownToolCallProvider:
+    """Hosted smoke: model returns a function_call for a tool that is not in the manifest."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def create_response(
+        self,
+        *,
+        body: dict[str, Any],
+        idempotency_key: str | None = None,
+        timeout_s: float = 60.0,
+    ) -> Response:
+        _ = idempotency_key, timeout_s
+        self.calls += 1
+        return Response.model_validate(
+            {
+                "id": "resp_unknown_tool",
+                "object": "response",
+                "created_at": 123,
+                "model": str(body.get("model") or "gpt-test"),
+                "output": [
+                    ResponseFunctionToolCall(
+                        id="fc_orphan",
+                        call_id="call_orphan",
+                        name="core_web_search",
+                        arguments='{"q": "test"}',
+                        type="function_call",
+                    ).model_dump(exclude_none=True, by_alias=True),
+                ],
+                "parallel_tool_calls": False,
+                "tool_choice": "auto",
+                "tools": list(body.get("tools") or []),
+                "status": "completed",
+            }
+        )
 
 
 class _RecordingModel(Model):
@@ -244,3 +314,56 @@ async def _run_tool_loop_nonstream_unmapped_handle_fails_fast() -> None:
     assert payload["error"]["type"] == "invalid_request_error"
     assert "missing model id" in payload["error"]["message"]
     assert runtime.execute_calls == []
+
+
+def test_run_tool_loop_nonstream_empty_output_is_completed_200() -> None:
+    asyncio.run(_run_tool_loop_nonstream_empty_output_is_completed_200())
+
+
+async def _run_tool_loop_nonstream_empty_output_is_completed_200() -> None:
+    provider = _EmptyOutputProvider()
+    runtime = _ToolRuntime()
+    status, payload = await run_tool_loop_nonstream(
+        model_provider=provider,  # type: ignore[arg-type]
+        tool_runtime=runtime,  # type: ignore[arg-type]
+        agent_id="main",
+        session_key="sess-empty",
+        body={"model": "gpt-test", "input": "hello"},
+        idempotency_key=None,
+        tool_context=ToolContext(),
+        canonical_response_id="resp_empty_canonical",
+    )
+    assert status == 200, payload
+    assert payload.get("status") == "completed"
+    assert payload.get("output") == []
+    assert payload.get("id") == "resp_empty_canonical"
+    assert provider.calls == 1
+    assert runtime.execute_calls == []
+
+
+def test_run_tool_loop_nonstream_unknown_tool_call_is_completed_200() -> None:
+    asyncio.run(_run_tool_loop_nonstream_unknown_tool_call_is_completed_200())
+
+
+async def _run_tool_loop_nonstream_unknown_tool_call_is_completed_200() -> None:
+    provider = _UnknownToolCallProvider()
+    runtime = _ToolRuntime()
+    status, payload = await run_tool_loop_nonstream(
+        model_provider=provider,  # type: ignore[arg-type]
+        tool_runtime=runtime,  # type: ignore[arg-type]
+        agent_id="main",
+        session_key="sess-unknown",
+        body={"model": "gpt-test", "input": "search something"},
+        idempotency_key=None,
+        tool_context=ToolContext(),
+        canonical_response_id="resp_unknown_canonical",
+    )
+    assert status == 200, payload
+    output = payload.get("output") or []
+    types = [item.get("type") for item in output if isinstance(item, dict)]
+    assert "function_call" in types, payload
+    assert payload.get("id") == "resp_unknown_canonical"
+    assert not any(
+        isinstance(item, dict) and item.get("type") == "message" and item.get("content")
+        for item in output
+    )

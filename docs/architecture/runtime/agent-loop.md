@@ -57,7 +57,7 @@ flowchart TB
 
 | 概念 | 含义 |
 | --- | --- |
-| 托管合同 | `run_tool_loop_nonstream` / `run_tool_loop_stream_live` 的签名和 SSE 形态。Gateway / Responses 路由只认这一层。 |
+| 托管合同 | `run_tool_loop_nonstream` / `run_tool_loop_stream_live` 的签名和 SSE 形态。Gateway / Responses 路由只认这一层。模型返回空 output 或只剩未注册 tool call 时，HTTP 仍是 200，body 是最后一次模型 Response，不因 pydantic-ai 要 typed `str` 而 500。 |
 | prompt envelope | `AGENTS.md`、context providers、skill catalog 在进 pydantic-ai 之前组好，带 source path/hash。 |
 | 工具真源 | Tool Runtime `manifest` / `execute`。pydantic-ai tool 是包装，不是第二套 handler。 |
 | kind 目录 | `models.yaml` 的 `providers.*.kind`，由 `anyagent.model_catalog` 解析，再映射为 pydantic-ai 模型字符串。 |
