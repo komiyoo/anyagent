@@ -20,7 +20,7 @@ stages:
       build_job:
         name: 构建并发布 anyagent SDK
         runsOn:
-          group: public/cn-beijing
+          group: public/cn-hongkong
           container: registry.cn-beijing.aliyuncs.com/lyriktrip/python:anyagent-ci-py312-amd64
         steps:
           notify_step:

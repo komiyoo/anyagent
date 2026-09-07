@@ -3,6 +3,8 @@
 .env.local
 .venv/
 .vscode/
+# Repo-local Cursor MCP auth (keep tracked: .cursor/mcp.json.example)
+.cursor/mcp.json
 plugins/**/config.json
 
 # Runtime state and local caches

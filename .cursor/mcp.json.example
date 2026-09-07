@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "yunxiao": {
+      "url": "https://openapi-rdc.aliyuncs.com/ai/mcp",
+      "headers": {
+        "Authorization": "Bearer <your-yunxiao-personal-access-token>"
+      }
+    }
+  }
+}
