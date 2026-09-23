@@ -52,6 +52,8 @@
 
 ## 已完成任务
 
+- [x] P1 Chatwoot quick prompt 字段透传：请求 metadata 与平台事件保留 `lt_quick_prompt_id` / `quick_prompt_id`，复用既有来源合并与字符串校验（Req: `requirements.md#req-6`; Impl: `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/chatwoot.py:470`; Module: `anyagent.plugins.builtin.chatwoot_connector`; Test: `tests/unit/gateway/test_connector_contracts.py`, `tests/integration/server/test_chatwoot_connector_flow.py`）
+
 ### Phase 1 — Responses API Provider Hardening
 
 - [x] P1 统一 Anthropic/Gemini provider 翻译宿主（后续已删除，Responses 改 pydantic-ai）（Req: `requirements.md#req-4-5`; Impl: `packages/anyagent/src/anyagent/agent_runtime/loop/models.py`; Module: `anyagent.agent_runtime.loop.models`）

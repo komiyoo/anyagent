@@ -122,6 +122,14 @@ Agent 发送消息到 Chatwoot 会话。
 这允许 agent 用标准 function-call 路径触发转人工，而不需要上游 provider
 原生支持自定义 `handoff` output item。
 
+## 页面上下文
+
+Connector 将入口页面信息写入请求的
+`metadata.context.channel.ext.chatwoot_page_context`，并以同一内容记录
+`PlatformConversationEvent.metadata.chatwoot_page_context`。
+
+自 0.4.28 起，页面上下文保留 `lt_quick_prompt_id` 和 `quick_prompt_id`，供业务侧识别访客点击的快捷问题。字段来自 conversation、contact、sender、meta.sender 的 `custom_attributes`，按此顺序合并，后者覆盖前者；只接收非空字符串并去除两端空白。字段不会触发 SDK 内的业务路由。
+
 ## Session Key 格式
 
 ```

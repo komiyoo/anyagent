@@ -168,6 +168,14 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
     state = app.state.anyagent
     connector = state.gateway_registry.channel_connectors["chatwoot"]
 
+    response_requests: list[dict] = []
+
+    @app.middleware("http")
+    async def capture_response_request(request, call_next):
+        if request.url.path == "/v1/responses":
+            response_requests.append(await request.json())
+        return await call_next(request)
+
     sent_messages: list[dict] = []
     handoffs: list[dict] = []
 
@@ -212,6 +220,7 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
                 "lt_entry_url": "https://lyriktrip.com/guides/china",
                 "lt_entry_title": "China Travel Guide",
                 "lt_entry_path": "/guides/china",
+                "lt_quick_prompt_id": "page.guides/china.appsINeed",
             },
         },
         "event_info": {
@@ -281,9 +290,12 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
         "entry_url": "https://lyriktrip.com/guides/china",
         "entry_path": "/guides/china",
         "entry_title": "China Travel Guide",
+        "lt_quick_prompt_id": "page.guides/china.appsINeed",
         "widget_language": "en",
         "browser_language": "en-US",
     }
+    page_context = response_requests[0]["metadata"]["context"]["channel"]["ext"]["chatwoot_page_context"]
+    assert page_context["lt_quick_prompt_id"] == "page.guides/china.appsINeed"
     assert provider.bodies
     rendered_input = json.dumps(provider.bodies[0].get("input"), ensure_ascii=False)
     assert "Chatwoot page context" in rendered_input

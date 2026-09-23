@@ -33,6 +33,7 @@ from anyagent.plugins.builtin.chatwoot_connector.chatwoot import (
     ChatwootWebhookAuth,
     build_platform_event_from_webhook,
     conversation_assigned_to_human,
+    extract_chatwoot_page_context,
 )
 from anyagent.plugins.builtin.chatwoot_connector.plugin import (
     _chatwoot_conversation_status,
@@ -233,6 +234,7 @@ def test_build_platform_event_includes_chatwoot_page_context():
                 "lt_entry_url": "https://lyriktrip.com/guides/china",
                 "lt_entry_title": "China Travel Guide",
                 "lt_entry_path": "/guides/china",
+                "lt_quick_prompt_id": "page.guides/china.appsINeed",
             },
         },
         "event_info": {
@@ -249,9 +251,37 @@ def test_build_platform_event_includes_chatwoot_page_context():
         "entry_url": "https://lyriktrip.com/guides/china",
         "entry_path": "/guides/china",
         "entry_title": "China Travel Guide",
+        "lt_quick_prompt_id": "page.guides/china.appsINeed",
         "widget_language": "en",
         "browser_language": "en-US",
     }
+
+
+@pytest.mark.parametrize("path", [
+    ("conversation",), ("contact",), ("sender",), ("meta", "sender"),
+])
+def test_chatwoot_page_context_preserves_quick_prompt_ids(path):
+    webhook = {}
+    source = webhook
+    for key in path:
+        source = source.setdefault(key, {})
+    source["custom_attributes"] = {
+        "lt_quick_prompt_id": " page.guides/china.appsINeed ",
+        "quick_prompt_id": " practical.chinaPrep ",
+    }
+    assert extract_chatwoot_page_context(webhook) == {
+        "lt_quick_prompt_id": "page.guides/china.appsINeed",
+        "quick_prompt_id": "practical.chinaPrep",
+    }
+
+
+@pytest.mark.parametrize("value", [None, "", "  ", 123, ["appsINeed"]])
+def test_chatwoot_page_context_ignores_invalid_quick_prompt_ids(value):
+    assert extract_chatwoot_page_context({
+        "conversation": {"custom_attributes": {
+            "lt_quick_prompt_id": value, "quick_prompt_id": value,
+        }},
+    }) == {}
 
 
 def test_gateway_webhook_route_logs_chatwoot_page_context(caplog):

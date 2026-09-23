@@ -478,6 +478,8 @@ def extract_chatwoot_page_context(webhook_body: dict[str, Any]) -> dict[str, str
     _set_str(context, "entry_path", custom_attributes.get("lt_entry_path"))
     _set_str(context, "entry_title", custom_attributes.get("lt_entry_title"))
     _set_str(context, "entry_locale", custom_attributes.get("lt_entry_locale"))
+    _set_str(context, "lt_quick_prompt_id", custom_attributes.get("lt_quick_prompt_id"))
+    _set_str(context, "quick_prompt_id", custom_attributes.get("quick_prompt_id"))
     _set_str(context, "widget_language", event_info.get("widget_language"))
     _set_str(context, "browser_language", event_info.get("browser_language"))
     return context
