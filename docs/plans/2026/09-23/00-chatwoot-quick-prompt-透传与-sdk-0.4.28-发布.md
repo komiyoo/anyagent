@@ -27,11 +27,13 @@ Chatwoot 的 quick prompt custom attribute 未进入 `chatwoot_page_context`，�
 
 - [x] 在 `tests/unit/gateway/test_connector_contracts.py` 和 `tests/integration/server/test_chatwoot_connector_flow.py` 复现字段丢失，修复 `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/chatwoot.py`，同步 connector README 与 `todo/server-runtime.md`。修复前 6 项失败；修复后两份测试共 59 项通过。
 - [x] 用 `scripts/anyagent-dev-cli version bump` dry-run 后升至 0.4.28，更新 lock，完成测试与构建：`pytest tests -q` 为 524 passed、1 skipped；`uv build --project packages/anyagent` 成功。
-- [ ] 按 [发布清单](../../../release-checklist.md#checklist) 提交并 push，保留 commit/push hooks。
-- [ ] 核实 Yunxiao Packages 发布，升级 `../lt-anyagent-wks` 的依赖、lock 和当前版本文档，删除 quick prompt 兼容补丁并验收。
+- [x] 按 [发布清单](../../../release-checklist.md#checklist) 提交并 push，保留 commit/push hooks。发布提交 `d9c3711` 与 tag `v0.4.28` 已推送；云效 pipeline `4972656` run `101` 为 `SUCCESS`。
+- [x] 核实 Yunxiao Packages 发布，升级 `../lt-anyagent-wks` 的依赖、lock 和当前版本文档，删除 quick prompt 兼容补丁并验收。`uv sync --frozen` 安装 registry 发行包 0.4.28；消费侧全量 140 passed，doctor 无错误，agent list 正常，隔离目录的 prompt bundle 与 agent catalog 均 HTTP 200。
 
 ## 验证
 
 - SDK 回归覆盖字符串校验、Chatwoot custom attribute 来源、请求 metadata 与平台事件；commit/push hooks 执行 docs、unit、regression、offline smoke。
 - `uv build --project packages/anyagent` 验证 0.4.28 产物。
 - 消费侧从 Packages 安装后执行 pytest、doctor、agent list 和 prompt bundle smoke；不向客户会话发送测试消息。
+- TypeScript `npm --prefix sdks/typescript run smoke` 与 `run pack:check` 均通过；Python wheel/sdist metadata 和 CLI entrypoint 校验通过。
+- 消费侧验收使用已发布包，不使用相邻源码 checkout；prompt bundle 使用工作区配置副本与内存存储，不加载生产凭据。
