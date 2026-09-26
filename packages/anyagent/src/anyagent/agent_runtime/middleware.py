@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from openai.types.responses.response import Response
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from openai.types.responses.response_input_item_param import FunctionCallOutput
+from pydantic_ai.capabilities import AbstractCapability
 
 from anyagent.protocol.stage_events import StageEvent
 
@@ -108,9 +109,15 @@ class BaseMiddleware:
         return AfterToolResult()
 
 
+RuntimeMiddleware = AgentMiddleware | AbstractCapability[Any]
+
+
 class MiddlewareChain:
-    def __init__(self, middlewares: Sequence[AgentMiddleware] | None = None) -> None:
+    def __init__(self, middlewares: Sequence[RuntimeMiddleware] | None = None) -> None:
         self._middlewares = list(middlewares or [])
+        # Native capabilities run through pydantic-ai, which supplies their own
+        # RunContext and hook signatures. Never call them through the legacy API.
+        self._legacy_middlewares = [m for m in self._middlewares if not isinstance(m, AbstractCapability)]
 
     @property
     def empty(self) -> bool:
@@ -119,7 +126,7 @@ class MiddlewareChain:
     async def before_model_call(self, context: MiddlewareContext, body: dict[str, Any]) -> BeforeModelResult:
         current = body
         stop = False
-        for middleware in self._middlewares:
+        for middleware in self._legacy_middlewares:
             result = await middleware.before_model_call(context, current)
             if result.body is not None:
                 current = result.body
@@ -136,7 +143,7 @@ class MiddlewareChain:
     ) -> AfterModelResult:
         suppress_calls = False
         stop = False
-        for middleware in reversed(self._middlewares):
+        for middleware in reversed(self._legacy_middlewares):
             result = await middleware.after_model_call(context, response, calls)
             suppress_calls = suppress_calls or result.suppress_calls
             stop = stop or result.stop
@@ -149,7 +156,7 @@ class MiddlewareChain:
         context: MiddlewareContext,
         call: ResponseFunctionToolCall,
     ) -> BeforeToolResult:
-        for middleware in self._middlewares:
+        for middleware in self._legacy_middlewares:
             result = await middleware.before_tool_execute(context, call)
             if result.skip or result.override_output is not None:
                 return result
@@ -162,7 +169,7 @@ class MiddlewareChain:
         result: FunctionCallOutput | None,
     ) -> AfterToolResult:
         current = result
-        for middleware in reversed(self._middlewares):
+        for middleware in reversed(self._legacy_middlewares):
             hook_result = await middleware.after_tool_execute(context, call, current)
             if hook_result.result is not None:
                 current = hook_result.result
@@ -191,7 +198,7 @@ def load_middleware_from_classpath(
     classpath: str,
     *,
     kwargs: dict[str, Any] | None = None,
-) -> AgentMiddleware:
+) -> RuntimeMiddleware:
     """Import and instantiate an agent middleware from a ``"module.path:ClassName"`` string.
 
     This consumes a TRUSTED server-side configuration surface (`agent.yaml`
@@ -228,10 +235,9 @@ def load_middleware_from_classpath(
     except Exception as e:  # noqa: BLE001
         raise MiddlewareLoadError(f"failed to instantiate middleware {classpath!r}: {e}") from e
 
-    if not _is_middleware_like(instance):
+    if not isinstance(instance, AbstractCapability) and not _is_middleware_like(instance):
         raise MiddlewareLoadError(
             f"middleware {classpath!r} does not implement the AgentMiddleware hooks "
-            f"({', '.join(_MIDDLEWARE_HOOK_NAMES)})"
+            f"({', '.join(_MIDDLEWARE_HOOK_NAMES)}) and is not a pydantic-ai capability"
         )
     return instance
-

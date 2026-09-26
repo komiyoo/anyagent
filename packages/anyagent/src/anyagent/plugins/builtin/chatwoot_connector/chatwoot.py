@@ -561,6 +561,18 @@ def conversation_assigned_to_human(payload: dict[str, Any] | None) -> bool:
     return _source_assigned_to_human(payload)
 
 
+def message_id_from_webhook(webhook_body: dict[str, Any]) -> str | None:
+    """Normalize a Chatwoot message ID without mistaking booleans or objects for IDs."""
+    value = webhook_body.get("id")
+    if isinstance(value, int) and not isinstance(value, bool) and 0 < value < 10**32:
+        return str(value)
+    if isinstance(value, str):
+        value = value.strip()
+        if len(value) <= 32 and value.isascii() and value.isdecimal():
+            return value.lstrip("0") or None
+    return None
+
+
 def build_platform_event_from_webhook(
     *,
     account_id: str | int,
@@ -584,6 +596,13 @@ def build_platform_event_from_webhook(
         "account_id": str(account_id),
         "webhook_timestamp": webhook_body.get("timestamp") or webhook_body.get("created_at"),
     }
+    if event_name in {"message_created", "message_updated"}:
+        message_id = message_id_from_webhook(webhook_body)
+        if message_id is not None:
+            metadata["message_id"] = message_id
+        message_type = webhook_body.get("message_type")
+        if isinstance(message_type, str) and message_type in {"incoming", "outgoing", "template", "activity"}:
+            metadata["message_type"] = message_type
     page_context = extract_chatwoot_page_context(webhook_body)
     if page_context:
         metadata["chatwoot_page_context"] = page_context

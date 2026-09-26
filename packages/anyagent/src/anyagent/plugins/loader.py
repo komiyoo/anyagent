@@ -13,8 +13,8 @@ from typing import Any, Callable, Iterator
 import jsonschema
 
 from anyagent.agent_runtime.middleware import (
-    AgentMiddleware,
     MiddlewareLoadError,
+    RuntimeMiddleware,
     load_middleware_from_classpath,
 )
 
@@ -34,7 +34,7 @@ _ENTRYPOINT_RE = re.compile(r"^(?P<relpath>[^:]+):(?P<attr>[a-zA-Z_][a-zA-Z0-9_]
 class LoadedPlugin:
     manifest: PluginManifest
     plugin_dir: Path
-    middlewares: list[AgentMiddleware] = field(default_factory=list)
+    middlewares: list[RuntimeMiddleware] = field(default_factory=list)
     hooks: PluginHooks = field(default_factory=PluginHooks)
     declared_skills: list[str] = field(default_factory=list)
     declared_mcp_servers: list[str] = field(default_factory=list)
@@ -193,7 +193,7 @@ def _load_register_callable(plugin_dir: Path, *, plugin_id: str, entrypoint: str
 def _resolve_declared_capabilities(
     manifest: PluginManifest,
     plugin_dir: Path,
-) -> tuple[list[AgentMiddleware], PluginHooks, list[str], list[str], list[str]]:
+) -> tuple[list[RuntimeMiddleware], PluginHooks, list[str], list[str], list[str]]:
     """Resolve a v1 manifest's declarative capability fields.
 
     - middlewares / hooks: imported & instantiated (under plugin_dir on sys.path).
@@ -225,7 +225,7 @@ def _resolve_declared_capabilities(
             raise PluginLoadError(f"invalid declared tool name: {name!r}")
         declared_tools.append(name)
 
-    middlewares: list[AgentMiddleware] = []
+    middlewares: list[RuntimeMiddleware] = []
     hooks = PluginHooks()
     classpaths = [*manifest.middlewares, *manifest.hooks.values()]
     with _temporary_sys_path(plugin_root), _temporary_plugin_modules(classpaths):

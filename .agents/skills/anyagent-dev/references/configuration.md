@@ -62,6 +62,7 @@ Rules:
 - `sandbox.mode` is cold-start-sensitive. Restart the server after changing it.
 - `multiagent.spawn_allow_agent_ids` is empty by default, meaning no child agents may be spawned.
 - `runtime.context_providers` / `runtime.scripted_reply_providers` are classpath lists (`module.path:ClassName`) resolved from the workspace `src/` import path. Context providers inject `ContextFragment`s before the model call; scripted reply providers answer a known input with deterministic text **instead of** calling the model (text only, no tools/handoff). Both are deployer-trusted server-side code; failures degrade to "continue into the loop". Contract and hit semantics: `docs/architecture/runtime/agent-packs-and-runtime-config.md#runtimescripted_reply_providers`.
+- Since 0.4.29, `runtime.middlewares` classpaths may construct native pydantic-ai `Hooks` / `AbstractCapability` classes. Use native `before_model_request` / `after_model_request` for model-call policies; do not add a new legacy four-hook interface. Read per-run metadata/state from `ctx.deps.middleware_context`, not instance fields. Explicit lists replace defaults, so retain `loop_detection` and `context_compaction` when needed. Both nonstream and SSE deliver the checked final response. See `docs/architecture/runtime/agent-loop.md`.
 
 Minimal scripted reply provider (`src/my_workspace/scripted.py`):
 

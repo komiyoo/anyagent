@@ -212,6 +212,7 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
     payload = {
         "event": "message_created",
         "message_type": "incoming",
+        "id": 1001,
         "timestamp": 1717000000,
         "account": {"id": 1},
         "conversation": {
@@ -285,6 +286,8 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
     persisted = json.loads(platform_events.events[0].data)
     assert persisted["session_key"] == "chatwoot:1:42"
     assert persisted["event_type"] == "user_message"
+    assert persisted["metadata"]["message_id"] == "1001"
+    assert persisted["metadata"]["message_type"] == "incoming"
     assert persisted["metadata"]["chatwoot_page_context"] == {
         "referer": "https://lyriktrip.com/guides/china?utm_source=chat",
         "entry_url": "https://lyriktrip.com/guides/china",
@@ -296,6 +299,7 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
     }
     page_context = response_requests[0]["metadata"]["context"]["channel"]["ext"]["chatwoot_page_context"]
     assert page_context["lt_quick_prompt_id"] == "page.guides/china.appsINeed"
+    assert response_requests[0]["metadata"]["context"]["channel"]["message_id"] == "1001"
     assert provider.bodies
     rendered_input = json.dumps(provider.bodies[0].get("input"), ensure_ascii=False)
     assert "Chatwoot page context" in rendered_input

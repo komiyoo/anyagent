@@ -6,7 +6,7 @@ from collections import deque
 from typing import Any
 
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
-from pydantic_ai.capabilities import Hooks, ProcessHistory
+from pydantic_ai.capabilities import AbstractCapability, Hooks, ProcessHistory
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
 from pydantic_ai.tools import RunContext
 
@@ -28,7 +28,9 @@ def capabilities_from_middleware_chain(
         return []
     caps: list[Any] = []
     for middleware in getattr(chain, "_middlewares", []):
-        if isinstance(middleware, LoopDetectionMiddleware):
+        if isinstance(middleware, AbstractCapability):
+            caps.append(middleware)
+        elif isinstance(middleware, LoopDetectionMiddleware):
             caps.append(_loop_detection_hooks(middleware, response_id=response_id))
         elif isinstance(middleware, ContextCompactionMiddleware):
             caps.append(_compaction_history(middleware))

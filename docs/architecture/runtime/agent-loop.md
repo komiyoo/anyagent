@@ -105,13 +105,17 @@ flowchart LR
 | `anyagent.agent_runtime.loop.run` | 组 Agent、跑 loop、映射 SSE / `response.output` |
 | `anyagent.agent_runtime.loop.models` | kind → 模型字符串、`PydanticAIModelHandle`、离线 `ModelProvider` 桥 |
 | `anyagent.agent_runtime.loop.tools` | manifest function → Tool Runtime execute |
-| `anyagent.agent_runtime.loop.hooks` | `runtime.middlewares` 的压缩 / 循环检测 → pydantic-ai Hooks / ProcessHistory |
+| `anyagent.agent_runtime.loop.hooks` | `runtime.middlewares` 的压缩 / 循环检测 → pydantic-ai Hooks / ProcessHistory；直接接入原生 AbstractCapability |
 | `anyagent.agent_runtime.loop.otel` | OTLP env；无 endpoint 不导出 |
 | `anyagent.agent_runtime.tool_execution` | manifest 解析与单次 execute（含 Stage Events） |
 | `anyagent.model_catalog` | kind / 别名 / 默认 env |
 | `anyagent.agent_runtime.model_providers` | `ModelProvider` 协议、OpenAI Responses 默认工厂 |
 
 不要再加自研 4-hook 或 vendor HTTP translator。历史口径：[agent-loop-middleware.md](agent-loop-middleware.md)、[model-provider-translators.md](../api/model-provider-translators.md)。
+
+自 0.4.29 起，`runtime.middlewares` 的 classpath 类可继承 pydantic-ai `Hooks` 或其他 `AbstractCapability`，按配置顺序交给 `Agent.capabilities`。既有 `AgentMiddleware` 的工具回调仍由 `MiddlewareChain` 执行，原生能力不会再被当作旧 4-hook 调用。类来自部署者受信任代码，不能由访客 metadata 指定。显式配置列表会覆盖默认项，需要保留默认保护时把 `loop_detection` / `context_compaction` 一并列出。
+
+原生 hook 可经 `ctx.deps.middleware_context` 读取当轮 metadata、session 与独立的 `state`；不要把会话状态存在跨请求复用的 hook 实例上。`before_model_request` 可修改当轮请求，`after_model_request` 可返回校验后的 `ModelResponse`。非流式和当前 SSE 路径均在完整 `Agent.run` 后输出最终文本，校验前的文本不会作为 SSE delta 交付。对应回归：`tests/unit/agent_runtime/test_pydantic_ai_loop.py`。
 
 ## How It Works
 

@@ -183,6 +183,8 @@ OpenAI 兼容 SSE 与 anyagent Stage Events 见：
 
 Agent loop 由 pydantic-ai 执行；AnyAgent 保留托管面。自研 Event Store / Stage Events 仍是 SDK 消费渠道（写库）；Langfuse（OTLP）是附加渠道，未配置则关闭。Session/Run/Event 仍服务 resume 与协议补发。业务提示与策略留在消费侧 `.anyagent/`。见 [docs/architecture/decisions/pydantic-ai-loop-and-langfuse.md](docs/architecture/decisions/pydantic-ai-loop-and-langfuse.md)。
 
+`runtime.middlewares` 的受信任 classpath 可返回 pydantic-ai `AbstractCapability`（包括 `Hooks`）；原生能力直接交给 pydantic-ai，兼容既有工具 middleware，不扩展自研 4-hook。业务侧可在模型请求前补充当轮约束、在模型答复交付前校验，非流式与 SSE 使用同一执行路径。
+
 <a id="req-5"></a>
 
 ## 5. 内部接口：Tool Runtime
@@ -299,6 +301,8 @@ Gateway/Connector contract 已沉淀到：
 
 - [docs/architecture/integrations/gateway-platform-routing.md](docs/architecture/integrations/gateway-platform-routing.md)
 - [docs/architecture/integrations/platform-connectors.md](docs/architecture/integrations/platform-connectors.md)
+
+Chatwoot 消息事件保留有效的 `message_id` / `message_type`，入站请求复用 `ChannelContext.message_id`；`anyagent.response.request` 记录可选的 `channel_context`（仅 `provider` / `message_id`），供消费者准确关联消息与处理轮次。旧事件缺少这些字段时，消费者不得把按时间窗口推算的结果当作精确关联。
 
 <a id="req-6-1"></a>
 

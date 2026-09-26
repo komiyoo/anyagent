@@ -213,6 +213,8 @@ def test_chatwoot_webhook_auth_signature_tampering():
 def test_build_platform_event_message_created():
     webhook = {
         "event": "message_created",
+        "id": 1001,
+        "message_type": "incoming",
         "timestamp": 1717000000,
         "account": {"id": "1"},
         "conversation": {"id": "42"},
@@ -221,6 +223,17 @@ def test_build_platform_event_message_created():
     assert event.event_type == PlatformConversationEventType.USER_MESSAGE
     assert event.session_key == "chatwoot:1:42"
     assert event.platform == "chatwoot"
+    assert event.metadata["message_id"] == "1001"
+    assert event.metadata["message_type"] == "incoming"
+
+
+def test_platform_message_identity_rejects_invalid_ids_and_preserves_outgoing_type():
+    for invalid in (None, True, -1, "", {"id": 1}):
+        event = build_platform_event_from_webhook(account_id="1", webhook_body={
+            "event": "message_created", "id": invalid, "message_type": "outgoing", "conversation": {"id": 42},
+        })
+        assert "message_id" not in event.metadata
+        assert event.metadata["message_type"] == "outgoing"
 
 
 def test_build_platform_event_includes_chatwoot_page_context():

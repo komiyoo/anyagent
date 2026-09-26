@@ -11,6 +11,7 @@ from pydantic_ai.models import Model, ModelRequestParameters
 from pydantic_ai.settings import ModelSettings
 
 from anyagent.agent_runtime.loop import pydantic_ai_model_id
+from anyagent.agent_runtime.middleware import BaseMiddleware, MiddlewareChain, load_middleware_from_classpath
 from anyagent.agent_runtime.tool_loop import run_tool_loop_nonstream, run_tool_loop_stream_live
 from anyagent.model_config import ModelConfigError
 from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
@@ -151,6 +152,47 @@ class _RecordingModel(Model):
                 model_name=self.model_name,
             )
         return ModelResponse(parts=[TextPart(content="done")], model_name=self.model_name)
+
+
+def test_native_hooks_run_with_legacy_tool_hooks_before_nonstream_and_sse_output() -> None:
+    async def run(stream: bool) -> None:
+        calls = []
+
+        async def before(ctx, request_context):
+            calls.append("before")
+            return request_context
+
+        async def after(ctx, request_context, response):
+            calls.append("after")
+            if response.text:
+                return ModelResponse(parts=[TextPart(content="checked")], model_name=response.model_name)
+            return response
+
+        class LegacyToolHook(BaseMiddleware):
+            async def before_tool_execute(self, context, call):
+                calls.append("tool")
+                return await super().before_tool_execute(context, call)
+
+        native = load_middleware_from_classpath(
+            "pydantic_ai.capabilities:Hooks",
+            kwargs={"before_model_request": before, "after_model_request": after, "id": "test-native"},
+        )
+        options = dict(model_provider=_RecordingModel(), tool_runtime=_ToolRuntime(),
+                       agent_id="main", session_key="native", body={"input": "hello", "model": "recording"},
+                       idempotency_key=None, middleware_chain=MiddlewareChain([native, LegacyToolHook()]))
+        if stream:
+            wire = b"".join([chunk async for chunk in run_tool_loop_stream_live(**options)]).decode()
+            assert '"delta":"checked"' in wire
+            assert '"text":"checked"' in wire
+            assert '"delta":"done"' not in wire
+        else:
+            status, response = await run_tool_loop_nonstream(**options)
+            assert status == 200
+            assert response["output"][0]["content"][0]["text"] == "checked"
+        assert calls == ["before", "after", "tool", "before", "after"]
+
+    asyncio.run(run(False))
+    asyncio.run(run(True))
 
 
 def test_pydantic_ai_model_id_fail_fast_unmapped_kind() -> None:

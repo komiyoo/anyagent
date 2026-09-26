@@ -307,6 +307,11 @@ def create_responses_router() -> APIRouter:
                     "agent_id": agent_id,
                     "session_key": session_key,
                     "transcript_items": input_to_transcript_items(body.get("input")),
+                    # Reuse the typed channel contract; never persist arbitrary
+                    # channel extensions or credentials just to correlate a message.
+                    "channel_context": tool_context.channel.model_dump(
+                        include={"provider", "message_id"}, exclude_none=True
+                    ) if tool_context.channel is not None else None,
                 },
                 ensure_ascii=False,
             ),

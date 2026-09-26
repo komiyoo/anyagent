@@ -130,6 +130,8 @@ Connector 将入口页面信息写入请求的
 
 自 0.4.28 起，页面上下文保留 `lt_quick_prompt_id` 和 `quick_prompt_id`，供业务侧识别访客点击的快捷问题。字段来自 conversation、contact、sender、meta.sender 的 `custom_attributes`，按此顺序合并，后者覆盖前者；只接收非空字符串并去除两端空白。字段不会触发 SDK 内的业务路由。
 
+自 0.4.29 起，`message_created` / `message_updated` 平台事件的 metadata 还保留消息本身的 `message_id`（正整数，归一化为字符串）与 `message_type`（`incoming` / `outgoing` / `template` / `activity`）。非法 ID 或未知类型省略。处理入站消息时，同一 ID 写入 `metadata.context.channel.message_id`；`anyagent.response.request` 事件记录可选的 `channel_context: {provider, message_id}`，不复制 channel 的扩展数据。日志消费者可按 session + message ID 关联 `webhook_timestamp`，避免问候语、Bot 回复或重叠轮次造成时间错配。缺少 ID 的旧日志只能估算，不能回填成精确消息时间。
+
 ## Session Key 格式
 
 ```

@@ -52,6 +52,8 @@
 
 ## 已完成任务
 
+- [x] P1 受信任 middleware classpath 支持原生 pydantic-ai capability，模型输出校验覆盖非流式与 SSE，保留旧工具回调（Req: `requirements.md#req-4-7`; Impl: `packages/anyagent/src/anyagent/agent_runtime/middleware.py:112`, `packages/anyagent/src/anyagent/agent_runtime/loop/hooks.py:31`; Module: `anyagent.agent_runtime.middleware`, `anyagent.agent_runtime.loop.hooks`; Test: `tests/unit/agent_runtime/test_pydantic_ai_loop.py`）
+- [x] P1 Chatwoot 事件与 Responses 请求保留消息关联键，区分访客、Bot 和模板消息（Req: `requirements.md#req-6`; Impl: `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/chatwoot.py:564`, `packages/anyagent/src/anyagent/server/routes/responses.py:312`; Module: `anyagent.plugins.builtin.chatwoot_connector`, `anyagent.server.routes.responses`; Test: `tests/unit/gateway/test_connector_contracts.py`, `tests/integration/server/test_chatwoot_connector_flow.py`, `tests/integration/server/test_scripted_reply_responses.py`）
 - [x] P1 Chatwoot quick prompt 字段透传：请求 metadata 与平台事件保留 `lt_quick_prompt_id` / `quick_prompt_id`，复用既有来源合并与字符串校验（Req: `requirements.md#req-6`; Impl: `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/chatwoot.py:470`; Module: `anyagent.plugins.builtin.chatwoot_connector`; Test: `tests/unit/gateway/test_connector_contracts.py`, `tests/integration/server/test_chatwoot_connector_flow.py`）
 
 ### Phase 1 — Responses API Provider Hardening

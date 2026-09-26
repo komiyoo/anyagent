@@ -139,7 +139,9 @@ async def _run_scripted_hit_skips_model_and_enters_next_turn_context(tmp_path: P
         first = await http.post(
             "/v1/responses",
             headers=headers,
-            json={"model": "gpt-4o-mini", "input": [{"role": "user", "content": "hi"}], "metadata": {"session_key": "s1"}},
+            json={"model": "gpt-4o-mini", "input": [{"role": "user", "content": "hi"}], "metadata": {
+                "session_key": "s1", "context": {"channel": {"provider": "chatwoot", "message_id": "1001"}},
+            }},
         )
         assert first.status_code == 200, first.text
         payload = first.json()
@@ -159,6 +161,8 @@ async def _run_scripted_hit_skips_model_and_enters_next_turn_context(tmp_path: P
         scripted_payload = json.loads(scripted_row.data)
         assert scripted_payload["provider"] == "GreetingProvider"
         assert scripted_payload["variant_id"] == "greeting-v1"
+        request_row = next(item for item in events.events if item.event == "anyagent.response.request")
+        assert json.loads(request_row.data)["channel_context"] == {"provider": "chatwoot", "message_id": "1001"}
 
         run = await state.run_store.get(payload["id"])
         assert run is not None and run.effective_status == "completed"

@@ -34,6 +34,7 @@ from anyagent.plugins.builtin.chatwoot_connector.chatwoot import (
     build_platform_event_from_webhook,
     conversation_assigned_to_human,
     extract_chatwoot_page_context,
+    message_id_from_webhook,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -431,6 +432,7 @@ async def _process_incoming_message(
                     "provider": "chatwoot",
                     "account_id": account_id,
                     "thread_id": conversation_id,
+                    "message_id": message_id_from_webhook(body),
                     "ext": {
                         "platform_conversation_id": conversation_id,
                     },
