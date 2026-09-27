@@ -2,10 +2,10 @@
 type: Plan
 title: Scripted Reply 结构化消息透传
 description: ScriptedReply 的可选出站消息属性经 Response 消息项传到 connector；纯文本保持原样。
-resource: docs/plans/2026/09-27/00-scripted-reply-结构化消息透传.md
+resource: docs/plans/Archive/2026/09-27/00-scripted-reply-结构化消息透传.md
 tags: [计划]
 generated: { by: plan-docs/v2, at: "2026-09-27T19:43:04+08:00" }
-status: draft
+status: stable
 sources:
   - id: runtime
     resource: docs/architecture/runtime/agent-packs-and-runtime-config.md
@@ -19,7 +19,7 @@ sources:
 
 ## Context
 
-`ScriptedReply` 目前只携带文本；Chatwoot 结构化消息还需 `content_type` 与 `content_attributes`。现有 connector 在 `/v1/responses` 后提取文字并调用 `send_message`，后者尚未传出属性。契约以 [runtime scripted reply](../../../architecture/runtime/agent-packs-and-runtime-config.md#runtimescripted_reply_providers) 和 [connector contract](../../../architecture/integrations/platform-connectors.md#connector-contract-interfaces) 为准。
+`ScriptedReply` 目前只携带文本；Chatwoot 结构化消息还需 `content_type` 与 `content_attributes`。现有 connector 在 `/v1/responses` 后提取文字并调用 `send_message`，后者尚未传出属性。契约以 [runtime scripted reply](../../../../architecture/runtime/agent-packs-and-runtime-config.md#runtimescripted_reply_providers) 和 [connector contract](../../../../architecture/integrations/platform-connectors.md#connector-contract-interfaces) 为准。
 
 ## Approach
 
@@ -36,8 +36,8 @@ sources:
 
 - [x] 协议、合成 Response、Chatwoot 出站透传与回归测试通过。
 - [x] 更新 runtime/connector 文档、TODO 证据及文档检查。
-- [ ] 版本提升、完整门禁、commit/push，确认 Packages 产物。
+- [x] 版本提升、完整门禁、commit/push，确认 Packages 产物。
 
 ## Verification
 
-运行 SDK 单测及集成测试、`scripts/anyagent-dev-cli` 文档与版本检查；按仓库 hook 完成提交和推送门禁。消费侧从 Packages 安装新版本后再验收。
+SDK 0.4.30 提交 `57a5b0d` 已推送到 Codeup `main`，`v0.4.30` 标签已推送。全量测试 `531 passed, 1 skipped`；commit/push hooks、TypeScript smoke/pack、wheel/sdist、文档检查均通过。消费侧 `uv lock --upgrade-package anyagent` 与 `uv sync --locked` 已从 Packages 安装 0.4.30，清除 `PYTHONPATH` 后全量测试 `176 passed, 1 skipped`、doctor `ok=true`。云效流水线运行状态未能直接查询，本次以 Packages 正式包可安装为发布证据。

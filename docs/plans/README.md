@@ -16,7 +16,6 @@ _本区块由 `plan-docs` 的 `scripts/plan-index.py` 从各计划的 frontmatte
 | 0 | — | [pydantic-ai loop 与 Langfuse 跟踪](./2026/09-06/pydantic-ai-loop-与-langfuse-跟踪-c6cf.md) | — | — |
 | 0 | — | [Scripted Reply 扩展点与 connector 回复节奏](./2026/09-07/scripted-reply-扩展点与-connector-回复节奏-614d.md) | — | — |
 | 0 | 00 | [Chatwoot quick prompt 透传与 SDK 0.4.28 发布](./2026/09-23/00-chatwoot-quick-prompt-透传与-sdk-0.4.28-发布.md) | — | — |
-| 0 | 00 | [Scripted Reply 结构化消息透传](./2026/09-27/00-scripted-reply-结构化消息透传.md) | — | — |
 <!-- plan-index:end -->
 
 # Parent
