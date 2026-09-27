@@ -19013,6 +19013,34 @@
       "additionalProperties": false,
       "description": "Deterministic text reply returned by a scripted reply provider.",
       "properties": {
+        "content_attributes": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional outbound message attributes.",
+          "title": "Content Attributes"
+        },
+        "content_type": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional outbound message type.",
+          "title": "Content Type"
+        },
         "reason": {
           "anyOf": [
             {

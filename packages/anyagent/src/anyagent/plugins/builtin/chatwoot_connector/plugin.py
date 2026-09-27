@@ -371,6 +371,7 @@ async def _process_incoming_message(
     request: Any,
     state: Any,
     connector: Any,
+    input_source: str | None = None,
 ) -> dict[str, Any]:
     """
     处理入站消息：调用 Agent API 生成回复，通过 Chatwoot API 写回。
@@ -441,6 +442,8 @@ async def _process_incoming_message(
         },
         "stream": False,
     }
+    if input_source:
+        request_body["metadata"]["input_source"] = input_source
     page_context = extract_chatwoot_page_context(body)
     if page_context:
         request_body["metadata"]["context"]["channel"]["ext"]["chatwoot_page_context"] = page_context
@@ -511,13 +514,15 @@ async def _process_incoming_message(
             }
 
         reply_text, handoff_item = _extract_reply_and_handoff(payload)
+        content_type, content_attributes = _reply_delivery_attributes(payload)
 
         reply_sent = False
         if reply_text and connector and getattr(connector, "outbound", None) is not None:
             await connector.outbound.send_message(
                 platform_conversation_id=conversation_id,
                 content=reply_text,
-                content_type="text",
+                content_type=content_type,
+                metadata={"content_attributes": content_attributes} if content_attributes is not None else None,
             )
             reply_sent = True
 
@@ -671,6 +676,18 @@ def _extract_reply_and_handoff(payload: dict[str, Any]) -> tuple[str, Any | None
             handoff_item = HandoffOutputItem.model_validate(item)
 
     return "\n\n".join(texts), handoff_item
+
+
+def _reply_delivery_attributes(payload: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
+    for item in payload.get("output", []):
+        if isinstance(item, dict) and item.get("type") == "message":
+            content_type = item.get("content_type")
+            attributes = item.get("content_attributes")
+            if isinstance(content_type, str):
+                return content_type, attributes if isinstance(attributes, dict) else None
+            if isinstance(attributes, dict):
+                return "text", attributes
+    return "text", None
 
 
 async def _response_used_gateway_handoff(*, state: Any, response_id: str) -> bool:

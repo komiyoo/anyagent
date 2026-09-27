@@ -202,6 +202,8 @@ class ChatwootOutboundDelivery(ConnectorOutboundDelivery):
 
         if metadata:
             payload["private"] = bool(metadata.get("private", False))
+            if isinstance(metadata.get("content_attributes"), dict):
+                payload["content_attributes"] = metadata["content_attributes"]
 
         try:
             resp = await client.post(url, json=payload)

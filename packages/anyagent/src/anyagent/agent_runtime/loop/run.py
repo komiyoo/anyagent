@@ -205,6 +205,8 @@ def build_text_response_payload(
     text: str,
     tools: list[dict[str, Any]],
     tool_choice: Any,
+    content_type: str | None = None,
+    content_attributes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a completed `Response` whose sole output is one assistant message with ``text``.
 
@@ -228,6 +230,10 @@ def build_text_response_payload(
         ],
     )
     normalize_response_id(payload, response_id)
+    if content_type is not None:
+        payload["output"][0]["content_type"] = content_type
+    if content_attributes is not None:
+        payload["output"][0]["content_attributes"] = content_attributes
     return payload
 
 

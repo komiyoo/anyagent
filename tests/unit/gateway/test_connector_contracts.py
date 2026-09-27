@@ -40,8 +40,17 @@ from anyagent.plugins.builtin.chatwoot_connector.plugin import (
     _chatwoot_skip_when_assigned_to_human,
     _chatwoot_status_changes_enabled,
     _extract_reply_and_handoff,
+    _reply_delivery_attributes,
     register as chatwoot_register,
 )
+
+
+def test_scripted_delivery_attributes_are_taken_from_message_item() -> None:
+    output = {"output": [{"type": "message", "content_type": "input_select",
+                          "content_attributes": {"items": [{"title": "A", "value": "a"}]}}]}
+    assert _reply_delivery_attributes(output) == ("input_select", {"items": [{"title": "A", "value": "a"}]})
+    assert _reply_delivery_attributes({"output": [{"type": "message", "content_type": "markdown"}]}) == ("markdown", None)
+    assert _reply_delivery_attributes({"output": [{"type": "message"}]}) == ("text", None)
 from anyagent.server.routes.gateway_webhooks import (
     _find_connector_by_webhook,
     _resolve_webhook_secret_ref,

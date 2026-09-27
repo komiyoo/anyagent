@@ -1297,6 +1297,8 @@ export type SandboxPolicy = {
 };
 
 export type ScriptedReply = {
+  "content_attributes"?: Record<string, unknown> | null;
+  "content_type"?: string | null;
   "reason"?: string | null;
   "text": string;
   "variant_id"?: string | null;

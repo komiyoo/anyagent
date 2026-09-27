@@ -105,9 +105,9 @@ runtime:
 
 - provider 实现 `async resolve(request: ScriptedReplyRequest) -> ScriptedReply | dict | None`；`None` 表示继续走 loop。多个 provider 按顺序执行，先命中先返回。
 - `ScriptedReplyRequest` = `ContextProviderRequest` 字段 + `previous_transcript_items`（本轮之前的会话 fallback transcript，`is_first_turn` 派生），供“首轮招呼语只回一次”之类判断。
-- `ScriptedReply`（`anyagent.protocol.scripted_reply`）只有 `text`（必填非空）、`variant_id`、`reason`。**不允许**工具调用、handoff、多轮；需要判断或工具的场景走 loop。
+- `ScriptedReply`（`anyagent.protocol.scripted_reply`）有 `text`（必填非空）、`variant_id`、`reason`，以及可选的 `content_type` / `content_attributes` 出站消息属性。**不允许**工具调用、handoff、多轮；需要判断或工具的场景走 loop。
 - 失败语义：provider 抛异常、超时（默认 2s）、返回非法值一律降级为继续走 loop，只 warning；装载失败跳过该 provider，不影响 agent 启动。
-- 可观测：命中轮次写 `anyagent.response.scripted` stage event（`provider` / `variant_id` / `reason` / `text_chars`），不写 `anyagent.model.request`；Response 面不加任何自定义字段。
+- 可观测：命中轮次写 `anyagent.response.scripted` stage event（`provider` / `variant_id` / `reason` / `text_chars`），不写 `anyagent.model.request`；有出站属性时仅在 Response 的 assistant message item 上附 `content_type` / `content_attributes`，纯文本 Response 形状不变。
 - 位置与代价：判定在内置 runtime `/v1/responses` worker 内、session lease 之下、`run_tool_loop_*` 之前（`packages/anyagent/src/anyagent/server/routes/responses.py`）。命中前 skill 选择、context providers、prompt envelope 仍会执行——节省的是模型与工具成本。**分布式 runtime（`routes/distributed_responses.py`）当前不支持**。
 
 命中判定在 worker 内的位置，以及命中 / 未命中两条路径最终汇合到同一套持久化：

@@ -54,6 +54,17 @@ def test_scripted_reply_rejects_blank_text() -> None:
         ScriptedReply(text="ok", tool_calls=[])  # type: ignore[call-arg]
 
 
+def test_scripted_reply_accepts_optional_delivery_attributes() -> None:
+    plain = ScriptedReply(text="Hello")
+    assert plain.model_dump(exclude_none=True) == {"text": "Hello"}
+    structured = ScriptedReply(
+        text="Choose one",
+        content_type="input_select",
+        content_attributes={"items": [{"title": "A", "value": "a"}]},
+    )
+    assert structured.content_attributes == {"items": [{"title": "A", "value": "a"}]}
+
+
 def test_scripted_reply_stage_event_round_trips_through_decoder() -> None:
     event = AnyAgentScriptedReplyEvent(response_id="resp_1", provider="P", variant_id="v1", reason="greeting", text_chars=5)
     decoded = decode_stage_event(

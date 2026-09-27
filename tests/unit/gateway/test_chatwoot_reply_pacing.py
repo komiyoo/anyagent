@@ -145,3 +145,25 @@ def test_chatwoot_outbound_set_typing_posts_toggle_typing_status() -> None:
         ("/api/v1/accounts/7/conversations/42/toggle_typing_status", {"typing_status": "on"}),
         ("/api/v1/accounts/7/conversations/42/toggle_typing_status", {"typing_status": "off"}),
     ]
+
+
+def test_chatwoot_outbound_sends_structured_attributes_only_when_present() -> None:
+    seen: list[dict] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"id": 1})
+
+    async def _run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_handler), base_url="https://cw.example") as client:
+            outbound = ChatwootOutboundDelivery(chatwoot_url="https://cw.example", account_id=7, access_token="tok", http_client=client)
+            await outbound.send_message("42", "Hello")
+            await outbound.send_message("42", "Choose one", content_type="input_select",
+                                        metadata={"content_attributes": {"items": [{"title": "A", "value": "a"}]}})
+
+    asyncio.run(_run())
+    assert seen[0] == {"content": "Hello", "message_type": "outgoing", "content_type": "text"}
+    assert seen[1] == {"content": "Choose one", "message_type": "outgoing", "content_type": "input_select",
+                       "private": False, "content_attributes": {"items": [{"title": "A", "value": "a"}]}}

@@ -19,6 +19,8 @@ Chatwoot 入站渠道 connector 参考实现，属于 anyagent Gateway 层 plugi
 | Typing indicator | ✅ | `CHATWOOT_TYPING_INDICATOR=true` 时调用 Agent API 前打开、发送前关闭（`toggle_typing_status`，同一 bot token）；默认关闭 |
 | Reply pacing floor | ✅ | `CHATWOOT_REPLY_PACING_MIN_S` / `_MAX_S` 设定回复节奏下限：本轮耗时不足区间内随机值时补足再发，已超过则立即发。用于 scripted reply 等瞬时回复；默认关闭 |
 
+Scripted reply 可在 Response 消息项附可选的 `content_type` / `content_attributes`。connector 将其传到 Chatwoot outgoing API；普通模型回复和未带属性的 scripted reply 仍是纯文本。可信 workspace 插件可调用 `_process_incoming_message(..., input_source="...")`，复用响应生成、人工接管检查与出站路径；来源写入 Responses 请求 metadata。
+
 ## 架构
 
 ```

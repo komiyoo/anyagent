@@ -521,6 +521,8 @@ async def run_stream_worker(
                         response_id=response_id,
                         model=str(session_ctx.effective_body.get("model") or "unknown"),
                         text=scripted.reply.text,
+                        content_type=scripted.reply.content_type,
+                        content_attributes=scripted.reply.content_attributes,
                         tools=list(body2.get("tools") or []) if isinstance(body2.get("tools"), list) else [],
                         tool_choice=body2.get("tool_choice"),
                     )
@@ -806,6 +808,8 @@ async def run_nonstream_worker(
                         response_id=response_id,
                         model=str(session_ctx.effective_body.get("model") or "unknown"),
                         text=scripted.reply.text,
+                        content_type=scripted.reply.content_type,
+                        content_attributes=scripted.reply.content_attributes,
                         tools=list(body2.get("tools") or []) if isinstance(body2.get("tools"), list) else [],
                         tool_choice=body2.get("tool_choice"),
                     )
