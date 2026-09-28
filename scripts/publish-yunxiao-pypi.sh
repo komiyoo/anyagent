@@ -4,7 +4,7 @@ set -euo pipefail
 export PIP_DISABLE_PIP_VERSION_CHECK="${PIP_DISABLE_PIP_VERSION_CHECK:-1}"
 export PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
 export PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST:-mirrors.aliyun.com}"
-export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/root/.cache/pip}"
+export PIP_CACHE_DIR="${PIP_CACHE_DIR:-${HOME:-/tmp}/.cache/pip}"
 mkdir -p "$PIP_CACHE_DIR"
 
 export TWINE_REPOSITORY_URL="${TWINE_REPOSITORY_URL:-${ANYAGENT_PYPI_REPOSITORY_URL:-https://packages.aliyun.com/63d476f8d14a7f379aa798da/pypi/anyagent}}"
@@ -76,4 +76,17 @@ fi
 
 echo "${package_name}==${package_version} is not present in Yunxiao Packages yet; publishing ${package_dir}/dist/*."
 python -m twine check "${package_dir}"/dist/*
-python -m twine upload "${package_dir}"/dist/*
+
+upload_log="$(mktemp)"
+set +e
+python -m twine upload --skip-existing "${package_dir}"/dist/* >"$upload_log" 2>&1
+upload_status=$?
+set -e
+cat "$upload_log"
+if [[ "$upload_status" -ne 0 ]]; then
+  if grep -Eiq 'already exists|already been uploaded|file name has already|filename has already|文件已存在' "$upload_log"; then
+    echo "${package_name}==${package_version} already exists in Yunxiao Packages; skip package publish."
+    exit 0
+  fi
+  exit "$upload_status"
+fi
