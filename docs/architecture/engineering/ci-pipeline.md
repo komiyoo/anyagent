@@ -3,7 +3,7 @@
 doc_kind: architecture
 status: stable
 tags: ["ci", "quality-gate", "acceptance", "docs"]
-summary: anyagent CI 分层质量门设计：本地 git hooks、结构检查、协议/离线 smoke、可选在线验收。
+summary: anyagent CI 分层质量门与 GitHub Actions 发布：本地 hooks、离线 gate，main 上构建 Python SDK 并发布到云效 Packages。
 req: ["requirements.md#req-9", "requirements.md#req-7"]
 ---
 -->
@@ -81,19 +81,38 @@ bash scripts/install-git-hooks.sh
 - 该层依赖运行中的 `agent-api` / `tool-runtime` 服务以及外部密钥，已从当前 SDK 仓库剥离。
 - 如需为场景项目单独建立 CI，可在对应仓库内再配置 nightly / release 级门禁。
 
-## GitHub Actions 编排（本次落地）
+## GitHub Actions
 
-- Workflow：`.github/workflows/ci.yml`
-- 脚本分层：
-  - `scripts/ci/run_docs_guardrails.sh`
-  - `scripts/ci/run_unit_tests.sh`
-  - `scripts/ci/run_pytest_regressions.sh`
-  - `scripts/ci/run_offline_smokes.sh`
-  - `scripts/ci/run_precommit_gate.sh` / `scripts/ci/run_prepush_gate.sh`（本地 git hooks）
-  - `scripts/ci/run_live_storage_matrix.sh`（`workflow_dispatch` 手动触发）
-  - `scripts/ci/build_release_artifacts.sh`、`scripts/publish-yunxiao-pypi.sh`（仅 `push` 到 `main` 且 `offline-quality` 成功后的 `publish-packages` job）
+仓库 `origin` 是 `https://github.com/Lyrik-AI/AnyAgent`。Workflow 文件是 `.github/workflows/ci.yml`，名称 `anyagent-ci`，需要保持启用。云效 Flow `4972656` 已停用，不再构建或发布。
 
-`publish-packages` 只构建 Python wheel/sdist，并上传到云效 Packages PyPI 仓库 `anyagent`。版本已存在时发布脚本跳过上传。`sdks/typescript/` 不进入这条发布流程。云效 Flow `4972656` 已停用，不再承担构建。
+| 事件 | Job | 行为 |
+|---|---|---|
+| `pull_request`，以及 push 到 `main` | `offline-quality` | docs guardrails、协议 schema diff、pytest regressions、offline smokes |
+| push 到 `main`，且 `offline-quality` 成功 | `publish-packages` | 构建 Python wheel/sdist，并发布到云效 Packages |
+| `workflow_dispatch` | `live-storage-matrix` | 可选的在线存储矩阵，不发布包 |
+
+脚本入口：
+
+- `scripts/ci/run_docs_guardrails.sh`
+- `scripts/ci/run_unit_tests.sh`
+- `scripts/ci/run_pytest_regressions.sh`
+- `scripts/ci/run_offline_smokes.sh`
+- `scripts/ci/run_precommit_gate.sh` / `scripts/ci/run_prepush_gate.sh`（本地 git hooks）
+- `scripts/ci/run_live_storage_matrix.sh`
+- `scripts/ci/build_release_artifacts.sh`、`scripts/publish-yunxiao-pypi.sh`（只在 `publish-packages` 中调用）
+
+`publish-packages` 只处理 Python 包：
+
+- 构建 `packages/anyagent/dist/`，不重复跑 pytest。
+- 上传目标是云效 Packages PyPI 仓库 `anyagent`：`https://packages.aliyun.com/63d476f8d14a7f379aa798da/pypi/anyagent`。
+- GitHub Actions secret `TWINE_PASSWORD` 必填。用户名默认 `63c537efbb097da55ff323e3`。
+- 目标版本已经在该仓库里时，日志为 `already exists in Yunxiao Packages; skip package publish.`，job 成功，不产生新制品。
+- 只有版本号升高、且 Packages 里还没有这个版本时才会上传。
+- `sdks/typescript/` 不构建、不发布。Studio 仍通过仓库内 `file:` 依赖使用它。
+- `FEISHU_RELEASE_WEBHOOK_URL` 未设置时跳过飞书通知。
+- pip 缓存使用 `$HOME/.cache/pip`，不依赖 root 家目录。
+
+发版步骤见 [docs/release-checklist.md](../../release-checklist.md)。
 
 ## 失败处理策略
 
@@ -101,3 +120,4 @@ bash scripts/install-git-hooks.sh
 - Gate 1 失败：直接阻断合并（信息架构/证据链已失真）。
 - Gate 2 / 2.5 失败：阻断合并并要求补回归证据。
 - Gate 3：由场景项目自行定义阻断策略，不再属于当前仓库 CI 范围。
+- `publish-packages` 失败：测试已经通过，但包没有按预期上传或跳过。先看该 job 日志。版本已存在时的成功标志是 skip 日志，不是新制品。

@@ -12,7 +12,7 @@
 6. `run_precommit_gate.sh`：本地 `git commit` 门禁，跑 docs guardrails + unit tests。
 7. `run_prepush_gate.sh`：本地 `git push` 门禁，对齐 GitHub Actions `offline-quality`（pytest regressions + offline smokes）。
 8. `run_live_storage_matrix.sh`：live storage matrix 入口，当前覆盖 PG/Redis 与 MySQL/Redis 的 built-in server 验收。
-9. `build_release_artifacts.sh`：发布构建入口，只构建 Python wheel/sdist、执行 `twine check` 和最小 wheel metadata smoke；全量 pytest 应在 CI gate 中完成，不放在发版上传前重复执行。
+9. `build_release_artifacts.sh`：发布构建入口，只构建 Python wheel/sdist、执行 `twine check` 和最小 wheel metadata smoke。GitHub Actions 的 `publish-packages` 调用它，再调用 `scripts/publish-yunxiao-pypi.sh` 上传。版本已存在时上传脚本跳过，job 仍成功。全量 pytest 留在 `offline-quality`，不在发版上传前重复执行。
 
 本地 git hooks：
 

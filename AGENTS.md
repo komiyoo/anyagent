@@ -284,7 +284,7 @@ Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → �
 ### 发版与 CD
 
 - 本项目代码有修改且需要发布新版本时，必须同步提升版本号；优先使用 `scripts/anyagent-dev-cli version bump <version> --dry-run` 校验，再去掉 `--dry-run` 写入。当前版本真源至少包含 `packages/anyagent/pyproject.toml`、`packages/anyagent/src/anyagent/__init__.py`、`packages/anyagent/src/anyagent/tool_runtime/__init__.py` 以及内置 FastAPI app 的 `version` 参数。
-- 发布路径为：本地完成实现、TODO/文档同步、验证与版本提升后，经用户确认推送到 GitHub `main`（`https://github.com/Lyrik-AI/AnyAgent`，本仓 `origin`）。GitHub Actions 的 `publish-packages` job 只构建 Python SDK，并发布到 Yunxiao Packages PyPI。步骤真源：`docs/release-checklist.md`。
+- 发布路径为：本地完成实现、TODO/文档同步、验证与版本提升后，经用户确认推送到 GitHub `main`（`https://github.com/Lyrik-AI/AnyAgent`，本仓 `origin`）。GitHub Actions 的 `publish-packages` job 只构建 Python SDK，并发布到 Yunxiao Packages PyPI。版本已存在时该 job 成功并跳过上传。步骤真源：`docs/release-checklist.md`。构建编排真源：`docs/architecture/engineering/ci-pipeline.md`。
 - 发版后确认该 job 成功，并查询 Yunxiao Packages 中的对应版本；若无法访问 GitHub Actions 或 Yunxiao Packages，在最终回复中说明未完成的远端验证与需要复现的查询条件。
 
 ### 依赖与供应链

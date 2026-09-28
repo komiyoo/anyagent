@@ -22,10 +22,13 @@ server, or pipeline secrets, not in source-controlled dependency files.
 Source code and release tags live on GitHub:
 `https://github.com/Lyrik-AI/AnyAgent`.
 
-Pushing `main` runs `.github/workflows/ci.yml`. After `offline-quality`
-passes, `publish-packages` builds the Python SDK and uploads it to the Yunxiao
-Packages PyPI repository `anyagent`. `TWINE_PASSWORD` is a GitHub Actions
-secret. Detailed release steps live in `docs/release-checklist.md`.
+Pushing `main` runs `.github/workflows/ci.yml` (`anyagent-ci`). After
+`offline-quality` passes, `publish-packages` builds the Python SDK and
+publishes it to the Yunxiao Packages PyPI repository `anyagent`. If that
+version is already present, the job succeeds and skips the upload. A new
+artifact is uploaded only after the package version changes.
+`TWINE_PASSWORD` is a GitHub Actions secret. Detailed release steps live in
+`docs/release-checklist.md`.
 
 ```bash
 cd my-workspace   # 包含 .anyagent/ 配置目录
