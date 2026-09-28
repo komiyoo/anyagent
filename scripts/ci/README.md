@@ -10,7 +10,7 @@
 4. `run_unit_tests.sh`：`tests/unit` 快速回归，供 pre-commit 与 pytest regressions 复用。
 5. `run_pytest_regressions.sh`：正式 pytest 回归集合，当前覆盖 `unit`、`contract`、`integration` 与一组离线 server acceptance pytest。
 6. `run_precommit_gate.sh`：本地 `git commit` 门禁，跑 docs guardrails + unit tests。
-7. `run_prepush_gate.sh`：本地 `git push` 门禁，对齐 Yunxiao SDK build 的测试段（pytest regressions + offline smokes）。
+7. `run_prepush_gate.sh`：本地 `git push` 门禁，对齐 GitHub Actions `offline-quality`（pytest regressions + offline smokes）。
 8. `run_live_storage_matrix.sh`：live storage matrix 入口，当前覆盖 PG/Redis 与 MySQL/Redis 的 built-in server 验收。
 9. `build_release_artifacts.sh`：发布构建入口，只构建 Python wheel/sdist、执行 `twine check` 和最小 wheel metadata smoke；全量 pytest 应在 CI gate 中完成，不放在发版上传前重复执行。
 

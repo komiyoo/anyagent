@@ -71,3 +71,44 @@ jobs:
 
       - name: Live Storage Matrix
         run: bash scripts/ci/run_live_storage_matrix.sh
+
+  publish-packages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: offline-quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: anyagent-publish-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_INDEX_URL: https://pypi.org/simple
+      PIP_TRUSTED_HOST: pypi.org
+      ANYAGENT_PUBLISH_REQUIRED: "1"
+      TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+      FEISHU_RELEASE_WEBHOOK_URL: ${{ secrets.FEISHU_RELEASE_WEBHOOK_URL }}
+      FEISHU_RELEASE_WEBHOOK_SECRET: ${{ secrets.FEISHU_RELEASE_WEBHOOK_SECRET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Notify release start
+        run: |
+          python3 scripts/notify_release_start.py \
+            --project anyagent \
+            --branch "${{ github.ref_name }}" \
+            --previous-ref "${{ github.event.before }}" \
+            --target-ref "${{ github.sha }}"
+
+      - name: Build Python SDK
+        run: bash scripts/ci/build_release_artifacts.sh
+
+      - name: Publish Python SDK to Yunxiao Packages
+        run: bash scripts/publish-yunxiao-pypi.sh

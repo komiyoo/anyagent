@@ -9,6 +9,10 @@ password="${NPM_PASSWORD:-${ANYAGENT_NPM_PASSWORD:-}}"
 email="${ANYAGENT_NPM_EMAIL:-anyagent@example.com}"
 
 if [[ ( -z "$token" || "$token" == "REPLACE_ME" ) && ( -z "$password" || "$password" == "REPLACE_ME" ) ]]; then
+  if [[ "${ANYAGENT_PUBLISH_REQUIRED:-0}" == "1" ]]; then
+    echo "ANYAGENT_NPM_TOKEN/NPM_TOKEN or NPM_PASSWORD/ANYAGENT_NPM_PASSWORD is not configured; refusing to skip npm package publish." >&2
+    exit 1
+  fi
   echo "ANYAGENT_NPM_TOKEN/NPM_TOKEN or NPM_PASSWORD/ANYAGENT_NPM_PASSWORD encrypted variable is not configured; skip npm package publish."
   exit 0
 fi

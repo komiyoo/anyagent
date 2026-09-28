@@ -171,7 +171,7 @@ summary: anyagent (框架本体) 与 anyagent-apps (示例与模板) 的职责�
 
 - `apps/agent-api`、`apps/tool-runtime`、`apps/studio` 已删除，不保留兼容兜底。
 - `scripts/dev/start_services.sh --mode tool-runtime|agent-api|stack` 使用已安装或 Yunxiao Packages PyPI 已发布的 `anyagent tool-runtime serve` / `anyagent agent-api serve` 启动服务。
-- 业务 demo 需要新 SDK 能力时，先由 `anyagent` 仓 Yunxiao pipeline 发布 SDK 制品，再由 `anyagent-apps` 示例通过 `config/service-stack.toml` 消费最新 package。
+- 业务 demo 需要新 SDK 能力时，先把 `anyagent` 推到 GitHub `main`，由 GitHub Actions 发布到 Yunxiao Packages，再由 `anyagent-apps` 示例通过 `config/service-stack.toml` 消费最新 package。
 
 ## 4. Agent 安全边界
 

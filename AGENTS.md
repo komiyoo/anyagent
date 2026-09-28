@@ -275,7 +275,7 @@ Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → �
 
 ### 本地质量门
 
-- 提交前必须过本地门禁，不要把 unit / pytest 失败留到 Yunxiao SDK build 才发现。设计真源：`docs/architecture/engineering/ci-pipeline.md`。
+- 提交前必须过本地门禁，不要把 unit / pytest 失败留到 GitHub Actions 才发现。设计真源：`docs/architecture/engineering/ci-pipeline.md`。
 - 若 `git config --get core.hooksPath` 不是 `.githooks`，先运行 `bash scripts/install-git-hooks.sh`。
 - `git commit` 跑 docs guardrails + `tests/unit`；`git push` 跑 pytest regressions + offline smokes。
 - 禁止 `git commit --no-verify` / `git push --no-verify`，除非用户明确要求跳过。
@@ -284,8 +284,8 @@ Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → �
 ### 发版与 CD
 
 - 本项目代码有修改且需要发布新版本时，必须同步提升版本号；优先使用 `scripts/anyagent-dev-cli version bump <version> --dry-run` 校验，再去掉 `--dry-run` 写入。当前版本真源至少包含 `packages/anyagent/pyproject.toml`、`packages/anyagent/src/anyagent/__init__.py`、`packages/anyagent/src/anyagent/tool_runtime/__init__.py` 以及内置 FastAPI app 的 `version` 参数。
-- 发布路径为：本地完成实现、TODO/文档同步、验证与版本提升后，经用户确认执行 `git push`；Yunxiao pipeline 会自动构建并发布版本到 Yunxiao Packages。
-- 发版后可通过 Yunxiao MCP 检测流水线运行状态，并查询 Yunxiao Packages 中的构建产物；若无法访问 Yunxiao MCP，在最终回复中说明未完成的远端验证与需要复现的查询条件。
+- 发布路径为：本地完成实现、TODO/文档同步、验证与版本提升后，经用户确认推送到 GitHub `main`（`https://github.com/Lyrik-AI/AnyAgent`，本仓 `origin`）。GitHub Actions 的 `publish-packages` job 只构建 Python SDK，并发布到 Yunxiao Packages PyPI。步骤真源：`docs/release-checklist.md`。
+- 发版后确认该 job 成功，并查询 Yunxiao Packages 中的对应版本；若无法访问 GitHub Actions 或 Yunxiao Packages，在最终回复中说明未完成的远端验证与需要复现的查询条件。
 
 ### 依赖与供应链
 
@@ -318,7 +318,7 @@ Agent 应主动识别改进机会：SSOT 漂移 → 修复；验证盲区 → �
 - `todo/` 中任务已勾选，包含 `Req:` + `Impl:` + `Module:` 证据
 - 有最小验证闭环；本仓代码改动在 commit 前必须过本地 git hooks（`docs/architecture/engineering/ci-pipeline.md` Gate 0）
 - 若涉及安全边界变更：明确说明影响
-- 若本次交付需要发版：版本号已同步提升，用户已确认并完成 `git push`，且已通过 Yunxiao MCP 检查 pipeline 与 Yunxiao Packages 产物
+- 若本次交付需要发版：版本号已同步提升，用户已确认并完成推送到 GitHub `main`，且 GitHub Actions `publish-packages` 成功、Yunxiao Packages 上能看到对应版本
 - 引用完整性：`python3 scripts/docs/check.py --root .` 无断链报错
 - 双向 cite 检查：新增/修改的 todo、docs、ADR 满足 §1.2 引用约定中的双向 cite 最低要求
 - 复利检查：是否有可沉淀的工具/模式/约束

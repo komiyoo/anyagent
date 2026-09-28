@@ -4,7 +4,6 @@ anyagent 是一个**配置即服务**的 AI Agent 基础设施：通过 `AGENTS.
 
 PyPI distribution name: `anyagent`.
 Python import package: `anyagent`.
-Yunxiao Packages NPM package name: `anyagent`.
 
 Public documentation: https://lyriktrip.mintlify.app/
 
@@ -20,17 +19,13 @@ server, or pipeline secrets, not in source-controlled dependency files.
 
 ## Package Source
 
-Source code and release tags live in Codeup:
-`https://codeup.aliyun.com/63d476f8d14a7f379aa798da/anyagent.git`.
+Source code and release tags live on GitHub:
+`https://github.com/Lyrik-AI/AnyAgent`.
 
-The Yunxiao pipeline `4972656` (`anyagent build`) builds and verifies
-`packages/anyagent/dist/` from Codeup, stores the built files as a Flow artifact,
-and publishes them to the Yunxiao Packages PyPI repository when
-`TWINE_PASSWORD` is configured as an encrypted pipeline variable. The same
-pipeline verifies the TypeScript SDK from `sdks/typescript` and publishes it to
-the Yunxiao Packages NPM repository `npm-registry` when npm credentials are
-configured as encrypted pipeline variables. Detailed release steps live in
-`docs/release-checklist.md`.
+Pushing `main` runs `.github/workflows/ci.yml`. After `offline-quality`
+passes, `publish-packages` builds the Python SDK and uploads it to the Yunxiao
+Packages PyPI repository `anyagent`. `TWINE_PASSWORD` is a GitHub Actions
+secret. Detailed release steps live in `docs/release-checklist.md`.
 
 ```bash
 cd my-workspace   # 包含 .anyagent/ 配置目录

@@ -1,6 +1,9 @@
 # anyagent Python 3.12 CI Image
 
-This image backs the Yunxiao `anyagent build` pipeline:
+This image was the runner for the retired Yunxiao `anyagent build` pipeline.
+SDK release builds now run on GitHub-hosted runners in `.github/workflows/ci.yml`.
+The image remains available when a job needs the baked-in Rust toolchain for
+`tests/contract/test_second_runtime_poc.py`:
 
 ```text
 registry.cn-beijing.aliyuncs.com/lyriktrip/python:anyagent-ci-py312-amd64

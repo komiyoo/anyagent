@@ -19,7 +19,7 @@ req: ["requirements.md#req-9", "requirements.md#req-7"]
 
 ### Gate 0：本地 git hooks（必须，提交前）
 
-把 Yunxiao SDK build 里会失败的离线测试前移到本机 `commit` / `push`，避免坏测试进流水线。
+把 GitHub Actions 里会失败的离线测试前移到本机 `commit` / `push`，避免坏测试进流水线。
 
 首次 clone 后安装：
 
@@ -30,7 +30,7 @@ bash scripts/install-git-hooks.sh
 | Hook | 触发 | 命令 |
 |---|---|---|
 | `pre-commit` | `git commit` | `bash scripts/ci/run_precommit_gate.sh`（docs guardrails + `tests/unit`） |
-| `pre-push` | `git push` | `bash scripts/ci/run_prepush_gate.sh`（pytest regressions + offline smokes，对齐 Yunxiao SDK build 测试段） |
+| `pre-push` | `git push` | `bash scripts/ci/run_prepush_gate.sh`（pytest regressions + offline smokes，对齐 GitHub Actions `offline-quality`） |
 
 约束：
 
@@ -56,11 +56,10 @@ bash scripts/install-git-hooks.sh
 - `tests/acceptance/sdk/acceptance_anyagent_client_surface_smoke.py`
 - `tests/acceptance/sdk/acceptance_command_stage_derivation_smoke.py`
 - `tests/acceptance/mcp/acceptance_mcp_federation_smoke.py`
-- `npm --prefix sdks/typescript run smoke`
 
 目的：
 
-- 覆盖 Python / TypeScript SDK 协议稳定性、Client surface 与 MCP manifest 合并等关键链路。
+- 覆盖 Python SDK 协议稳定性、Client surface 与 MCP manifest 合并等关键链路。
 
 ### Gate 2.5：正式 pytest regressions（必须）
 
@@ -92,6 +91,9 @@ bash scripts/install-git-hooks.sh
   - `scripts/ci/run_offline_smokes.sh`
   - `scripts/ci/run_precommit_gate.sh` / `scripts/ci/run_prepush_gate.sh`（本地 git hooks）
   - `scripts/ci/run_live_storage_matrix.sh`（`workflow_dispatch` 手动触发）
+  - `scripts/ci/build_release_artifacts.sh`、`scripts/publish-yunxiao-pypi.sh`（仅 `push` 到 `main` 且 `offline-quality` 成功后的 `publish-packages` job）
+
+`publish-packages` 只构建 Python wheel/sdist，并上传到云效 Packages PyPI 仓库 `anyagent`。版本已存在时发布脚本跳过上传。`sdks/typescript/` 不进入这条发布流程。云效 Flow `4972656` 已停用，不再承担构建。
 
 ## 失败处理策略
 

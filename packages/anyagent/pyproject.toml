@@ -65,8 +65,7 @@ dev = [
   "pytest>=8.4",
 ]
 
-# 默认走阿里云 PyPI 镜像：uv.lock 会把下载 URL 锁到镜像域名，
-# 否则 Yunxiao CI（北京 runner）按锁文件直连 files.pythonhosted.org 只有 KB/s。
+# 默认走阿里云 PyPI 镜像：uv.lock 会把下载 URL 锁到镜像域名，方便国内安装。
 [[tool.uv.index]]
 name = "aliyun-mirror"
 url = "https://mirrors.aliyun.com/pypi/simple/"

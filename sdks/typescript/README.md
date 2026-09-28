@@ -1,7 +1,7 @@
 # AnyAgent TypeScript SDK
 
-This directory contains the in-repo TypeScript SDK package published to
-Yunxiao Packages NPM as `anyagent`.
+This directory contains the in-repo TypeScript client used by Studio through a
+`file:` dependency. Release CI does not build or publish it.
 
 It does not hand-write protocol shapes. The generated schema bundle comes from
 the Python protocol source of truth:

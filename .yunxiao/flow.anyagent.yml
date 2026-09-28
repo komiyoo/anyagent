@@ -1,12 +1,14 @@
+# Retired. SDK build and Yunxiao Packages publish run in
+# .github/workflows/ci.yml on push to GitHub main (Lyrik-AI/AnyAgent).
+# This pipeline must not trigger on Codeup push.
 sources:
   main_repo:
     type: codeup
     name: anyagent
     endpoint: https://codeup.aliyun.com/63d476f8d14a7f379aa798da/anyagent.git
-    branch: main
-    triggerEvents:
-      - push
-    branchesFilter: ^main$
+    branch: __retired__
+    triggerEvents: []
+    branchesFilter: ^__retired__$
     certificate:
       type: serviceConnection
       serviceConnection: dtrcgsysymyh6jgt
@@ -14,133 +16,19 @@ sources:
 defaultWorkspace: main_repo
 
 stages:
-  build_stage:
-    name: 构建阶段
+  retired_stage:
+    name: 已停用
     jobs:
-      build_job:
-        name: 构建并发布 anyagent SDK
+      retired_job:
+        name: 发布已迁到 GitHub Actions
         runsOn:
           group: public/cn-hongkong
           container: registry.cn-beijing.aliyuncs.com/lyriktrip/python:anyagent-ci-py312-amd64
         steps:
-          notify_step:
-            name: 构建前飞书通知
-            step: Command
-            with:
-              run: python3 scripts/notify_release_start.py --project anyagent
-          command_step:
-            name: 测试并构建 SDK
+          note_step:
+            name: 说明
             step: Command
             with:
               run: |
-                set -eu
-                export PIP_DISABLE_PIP_VERSION_CHECK=1
-                export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
-                export PIP_TRUSTED_HOST=mirrors.aliyun.com
-                export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/root/.cache/pip}"
-                export UV_CACHE_DIR="${UV_CACHE_DIR:-/root/.cache/uv}"
-                export UV_LINK_MODE=copy
-                mkdir -p "$PIP_CACHE_DIR" "$UV_CACHE_DIR"
-                if ! python -c "import ctypes" >/dev/null 2>&1; then
-                  echo "Python ctypes is unavailable after libffi setup; check libffi runtime." >&2
-                  exit 1
-                fi
-                python - <<'PY' || python -m pip install --upgrade build hatchling pytest twine uv
-                import importlib.util
-
-                missing = [
-                    module
-                    for module in ("build", "hatchling", "pytest", "twine", "uv")
-                    if importlib.util.find_spec(module) is None
-                ]
-                if missing:
-                    raise SystemExit(f"missing build tools: {', '.join(missing)}")
-                PY
-                bash scripts/ci/run_docs_guardrails.sh
-                bash scripts/ci/run_pytest_regressions.sh
-                bash scripts/ci/run_offline_smokes.sh
-                rm -rf packages/anyagent/dist
-                python -m build --no-isolation packages/anyagent
-                python -m twine check packages/anyagent/dist/*
-          upload_step:
-            step: ArtifactUpload
-            name: 上传 SDK 发行包
-            with:
-              uploadType: flowPublic
-              artifact: anyagent-sdk-dist
-              filePath:
-                - packages/anyagent/dist/
-                - docs/release-checklist.md
-                - .yunxiao/flow.anyagent.yml
-              includePathInArtifact: false
-          sync_github_step:
-            name: 同步对应分支到 GitHub
-            step: Command
-            with:
-              run: GITHUB_MIRROR_FORCE="${GITHUB_MIRROR_FORCE:-true}" bash scripts/mirror-codeup-to-github.sh
-          publish_step:
-            name: 发布到云效 PyPI
-            step: Command
-            with:
-              run: bash scripts/publish-yunxiao-pypi.sh
-          publish_typescript_step:
-            name: 发布 TypeScript SDK 到云效 NPM
-            step: Command
-            with:
-              run: |
-                set -eu
-                # Skip if no changes in TypeScript SDK since last commit
-                if ! git diff --name-only HEAD~1..HEAD 2>/dev/null | grep -q '^sdks/typescript/'; then
-                  echo "⏭️  No changes in sdks/typescript/; skipping TypeScript SDK publish."
-                  exit 0
-                fi
-                echo "📦 sdks/typescript/ changes detected; proceeding with TypeScript SDK publish."
-                export PIP_DISABLE_PIP_VERSION_CHECK=1
-                export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
-                export PIP_TRUSTED_HOST=mirrors.aliyun.com
-                export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/root/.cache/pip}"
-                export UV_CACHE_DIR="${UV_CACHE_DIR:-/root/.cache/uv}"
-                export UV_LINK_MODE=copy
-                mkdir -p "$PIP_CACHE_DIR" "$UV_CACHE_DIR"
-                ensure_node22() {
-                  if command -v node >/dev/null 2>&1 && [ "$(node -p 'Number(process.versions.node.split(".")[0])')" -ge 22 ]; then
-                    return 0
-                  fi
-                  node_version="${NODE_VERSION:-22.13.1}"
-                  case "$(uname -m)" in
-                    x86_64|amd64) node_arch="linux-x64" ;;
-                    aarch64|arm64) node_arch="linux-arm64" ;;
-                    *) echo "unsupported node install arch: $(uname -m)" >&2; exit 1 ;;
-                  esac
-                  node_url="https://npmmirror.com/mirrors/node/v${node_version}/node-v${node_version}-${node_arch}.tar.xz"
-                  python - "$node_url" <<'PY'
-                import shutil
-                import sys
-                import tarfile
-                import urllib.request
-                from pathlib import Path
-
-                url = sys.argv[1]
-                archive = Path("/tmp/node.tar.xz")
-                target = Path("/tmp/node")
-                urllib.request.urlretrieve(url, archive)
-                shutil.rmtree(target, ignore_errors=True)
-                target.mkdir(parents=True, exist_ok=True)
-                with tarfile.open(archive, "r:xz") as tar:
-                    for member in tar.getmembers():
-                        parts = Path(member.name).parts[1:]
-                        if not parts:
-                            continue
-                        member.name = str(Path(*parts))
-                        tar.extract(member, target)
-                PY
-                  export PATH="/tmp/node/bin:$PATH"
-                }
-                ensure_node22
-                node --version
-                npm --version
-                uv sync --project packages/anyagent --frozen
-                npm --prefix sdks/typescript ci
-                npm --prefix sdks/typescript run smoke:no-sync
-                npm --prefix sdks/typescript run pack:check
-                bash scripts/publish-yunxiao-npm.sh
+                echo "anyagent SDK publish moved to GitHub Actions on Lyrik-AI/AnyAgent."
+                echo "This Flow pipeline no longer builds or publishes."

@@ -11,6 +11,10 @@ export TWINE_REPOSITORY_URL="${TWINE_REPOSITORY_URL:-${ANYAGENT_PYPI_REPOSITORY_
 export TWINE_USERNAME="${TWINE_USERNAME:-${ANYAGENT_PYPI_USERNAME:-63c537efbb097da55ff323e3}}"
 
 if [[ -z "${TWINE_PASSWORD:-}" || "${TWINE_PASSWORD:-}" == "REPLACE_ME" ]]; then
+  if [[ "${ANYAGENT_PUBLISH_REQUIRED:-0}" == "1" ]]; then
+    echo "TWINE_PASSWORD is not configured; refusing to skip package publish." >&2
+    exit 1
+  fi
   echo "TWINE_PASSWORD encrypted variable is not configured; skip package publish."
   exit 0
 fi

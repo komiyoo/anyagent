@@ -10,15 +10,13 @@
   - `pack.py` 按 tags 输出最小文档上下文包。
   - `code_ref_allowlist.txt` 标注 generated / illustrative / cross-repo inline refs，供 `check.py --check-code-refs` 使用。
 - `scripts/ci/`：CI/本地质量门入口，详见 [ci/README.md](ci/README.md)。
-- `scripts/install-git-hooks.sh`：把本仓 `core.hooksPath` 指到 `.githooks/`，让 commit / push 走与 Yunxiao 测试段对齐的本地门禁。
+- `scripts/install-git-hooks.sh`：把本仓 `core.hooksPath` 指到 `.githooks/`，让 commit / push 走与 GitHub Actions `offline-quality` 对齐的本地门禁。
 - repo-bound CLI：
   - `anyagent-dev-cli` 运行 `tools/anyagent-dev-cli/` 中的 TypeScript CLI，承载本仓长期复用的开发/发布自动化；开发后用 `npm --prefix tools/anyagent-dev-cli run install:local` 安装到 PATH。
-- release / 镜像同步：
+- release：
   - `ci/build_release_artifacts.sh`
-  - `publish-yunxiao-pypi.sh`
-  - `publish-yunxiao-npm.sh`
+  - `publish-yunxiao-pypi.sh`（GitHub Actions `publish-packages` 的上传入口）
   - `notify_release_start.py`
-  - `mirror-codeup-to-github.sh`
 - 本地凭证模板：
   - `credentials.yaml.template`
   - `init-credentials.sh`
