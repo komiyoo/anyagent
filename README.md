@@ -3,7 +3,6 @@
 anyagent 是一个**配置即服务**的 AI Agent Server 内核加 SDK。在 workspace 里写好 `AGENTS.md`、`agent.yaml`、`mcp.json` 和 skills，`anyagent serve` 一条命令就能启动一个兼容 OpenAI Responses API 的 Agent Server，不需要写服务端代码。
 
 - PyPI distribution 与 Python import 包名：`anyagent`
-- 公开文档：https://lyriktrip.mintlify.app/
 
 ## 设计理念
 
