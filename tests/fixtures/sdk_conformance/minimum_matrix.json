@@ -1,468 +1,468 @@
 {
-  "schema_version": "2026-09-07",
+  "schema_version": "2026-10-07",
   "description": "Minimum SDK conformance surface for the single-repo multi-package boundary.",
   "operations": [
     {
       "name": "health",
       "kind": "protocol_model",
       "fixture": "health.ok",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "responses.create",
       "kind": "openai_response",
       "fixture": "responses.create.completed",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "responses.stream",
       "kind": "sse_stream",
       "fixture": "response_stream_sse_blocks",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "responses.retrieve",
       "kind": "openai_response",
       "fixture": "responses.retrieve.in_progress",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "responses.cancel",
       "kind": "openai_response",
       "fixture": "responses.cancel.cancelled",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "events.list",
       "kind": "protocol_model",
       "fixture": "events.list.empty_done",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "responses.prompt_context",
       "kind": "protocol_model",
       "fixture": "responses.prompt_context.rendered",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "responses.tool_executions",
       "kind": "protocol_model",
       "fixture": "responses.tool_executions.detail",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "responses.model_request",
       "kind": "protocol_model",
       "fixture": "responses.model_request.applied_body",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "agents.list",
       "kind": "protocol_model",
       "fixture": "agents.list.main",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "agents.get",
       "kind": "protocol_model",
       "fixture": "agents.detail.main",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "tools.catalog",
       "kind": "protocol_model",
       "fixture": "tools.catalog.exec",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "skills.list",
       "kind": "protocol_model",
       "fixture": "skills.list.repo_helper",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "prompts.preview",
       "kind": "protocol_model",
       "fixture": "prompt.bundle.preview",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "observability.summary",
       "kind": "protocol_model",
       "fixture": "observability.summary",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "observability.runs",
       "kind": "protocol_model",
       "fixture": "observability.runs",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "observability.timeline",
       "kind": "protocol_model",
       "fixture": "observability.timeline",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "observability.metrics",
       "kind": "protocol_model",
       "fixture": "observability.metrics",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "observability.tools",
       "kind": "protocol_model",
       "fixture": "observability.tools",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "observability.errors",
       "kind": "protocol_model",
       "fixture": "observability.errors",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "observability.trace",
       "kind": "protocol_model",
       "fixture": "observability.trace",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.storage.health",
       "kind": "protocol_model",
       "fixture": "admin.storage.health",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.tools.catalog",
       "kind": "protocol_model",
       "fixture": "admin.tools.catalog",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.plugins.catalog",
       "kind": "protocol_model",
       "fixture": "admin.plugins.catalog",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.plugins.capabilities",
       "kind": "protocol_model",
       "fixture": "admin.plugins.capabilities",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.credentials.list",
       "kind": "protocol_model",
       "fixture": "admin.credentials.list",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.credentials.set",
       "kind": "protocol_model",
       "fixture": "admin.credentials.set",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.credentials.delete",
       "kind": "protocol_model",
       "fixture": "admin.credentials.delete",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.workspace.agent.create",
       "kind": "protocol_model",
       "fixture": "admin.workspace.agent.create",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.workspace.agent.files",
       "kind": "protocol_model",
       "fixture": "admin.workspace.agent.files",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.workspace.agent.file.update",
       "kind": "protocol_model",
       "fixture": "admin.workspace.agent.file.update",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.skill.import",
       "kind": "protocol_model",
       "fixture": "admin.skill.import",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.skill.install",
       "kind": "protocol_model",
       "fixture": "admin.skill.install",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.skill.update.check",
       "kind": "protocol_model",
       "fixture": "admin.skill.update.check",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.skill.update.apply",
       "kind": "protocol_model",
       "fixture": "admin.skill.update.apply",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.agent.skills.update",
       "kind": "protocol_model",
       "fixture": "admin.agent.skills.update",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.agent.config.update",
       "kind": "protocol_model",
       "fixture": "admin.agent.config.update",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "mcp.config",
       "kind": "protocol_model",
       "fixture": "mcp.config.http",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "tool.context",
       "kind": "protocol_model",
       "fixture": "tool.context.auth_ref",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.tool.planned",
       "kind": "type_adapter",
       "fixture": "stage_event.tool.planned",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.command.result",
       "kind": "type_adapter",
       "fixture": "stage_event.command.result",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.subagent.spawned",
       "kind": "type_adapter",
       "fixture": "stage_event.subagent.spawned",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.subagent.completed",
       "kind": "type_adapter",
       "fixture": "stage_event.subagent.completed",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.subagent.timeout",
       "kind": "type_adapter",
       "fixture": "stage_event.subagent.timeout",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.context.compacted",
       "kind": "type_adapter",
       "fixture": "stage_event.context.compacted",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.agent.loop_warning",
       "kind": "type_adapter",
       "fixture": "stage_event.agent.loop_warning",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.agent.loop_terminated",
       "kind": "type_adapter",
       "fixture": "stage_event.agent.loop_terminated",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "tool_runtime.execute.response",
       "kind": "type_adapter",
       "fixture": "tool_runtime.execute.response",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "negative.credential.scope",
       "kind": "request_negative",
       "fixture": "credential.agent_scope_missing_agent_id",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "negative.stage_event.seq",
       "kind": "type_adapter_negative",
       "fixture": "stage_event.seq_zero",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "tool_runtime.manifest.request",
       "kind": "protocol_model",
       "fixture": "tool_runtime.manifest.request",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "tool_runtime.manifest.response",
       "kind": "protocol_model",
       "fixture": "tool_runtime.manifest.response",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "sessions.list",
       "kind": "protocol_model",
       "fixture": "sessions.list",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "sessions.get",
       "kind": "protocol_model",
       "fixture": "sessions.get",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "evaluations.datasets.list",
       "kind": "protocol_model",
       "fixture": "evaluations.datasets.list",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "evaluations.datasets.upsert",
       "kind": "protocol_model",
       "fixture": "evaluations.dataset.upsert",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "evaluations.run",
       "kind": "protocol_model",
       "fixture": "evaluations.run",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "evaluations.runs.list",
       "kind": "protocol_model",
       "fixture": "evaluations.runs.list",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "observability.alerts",
       "kind": "protocol_model",
       "fixture": "observability.alerts",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "audit.events",
       "kind": "protocol_model",
       "fixture": "audit.events",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "prompts.versions.list",
       "kind": "protocol_model",
       "fixture": "prompts.versions.list",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "prompts.versions.create",
       "kind": "protocol_model",
       "fixture": "prompts.version.create",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "prompts.versions.restore",
       "kind": "protocol_model",
       "fixture": "prompts.version.restore",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.sandboxes.list",
       "kind": "protocol_model",
       "fixture": "admin.sandboxes.list",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.sandboxes.workspace.reclaim",
       "kind": "protocol_model",
       "fixture": "admin.sandboxes.reclaim",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.workspace.agent.mcp.servers",
       "kind": "protocol_model",
       "fixture": "admin.mcp.servers.list",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "admin.workspace.agent.mcp.server.enabled",
       "kind": "protocol_model",
       "fixture": "admin.mcp.server.enabled",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "tool_runtime.execute.request",
       "kind": "protocol_model",
       "fixture": "tool_runtime.execute.request",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.model.stream_event",
       "kind": "type_adapter",
       "fixture": "stage_event.model.stream_event",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.tool.result",
       "kind": "type_adapter",
       "fixture": "stage_event.tool.result",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.command.planned",
       "kind": "type_adapter",
       "fixture": "stage_event.command.planned",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.prompt.context",
       "kind": "type_adapter",
       "fixture": "stage_event.prompt.context",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.sandbox.workspace.restored",
       "kind": "type_adapter",
       "fixture": "stage_event.sandbox.workspace.restored",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.mcp.server.ready",
       "kind": "type_adapter",
       "fixture": "stage_event.mcp.server.ready",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "stage_event.done",
       "kind": "type_adapter",
       "fixture": "stage_event.done",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "tool_runtime.execute.response.cancelled",
       "kind": "type_adapter",
       "fixture": "tool_runtime.execute.response.cancelled",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     },
     {
       "name": "tool_runtime.execute.response.error",
       "kind": "type_adapter",
       "fixture": "tool_runtime.execute.response.error",
-      "protocol_version": "0.1.10"
+      "protocol_version": "0.2.0"
     }
   ],
   "language_checks": [

@@ -39,8 +39,8 @@ def _fixture_names(fixture: dict[str, Any], key: str) -> set[str]:
 def test_protocol_schema_export_includes_core_models_and_unions() -> None:
     bundle = export_protocol_schema_bundle()
 
-    assert bundle["schema_version"] == "2026-09-07"
-    assert bundle["protocol_version"] == "0.1.10"
+    assert bundle["schema_version"] == "2026-10-07"
+    assert bundle["protocol_version"] == "0.2.0"
     assert bundle["protocol_package"] == "anyagent.protocol"
     assert bundle["changelog"] == export_protocol_changelog()
     assert bundle["changelog"][0]["protocol_version"] == bundle["protocol_version"]

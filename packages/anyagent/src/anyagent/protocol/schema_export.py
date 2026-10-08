@@ -21,8 +21,8 @@ from pydantic import BaseModel, TypeAdapter
 import anyagent.protocol as protocol_pkg
 
 
-SCHEMA_BUNDLE_VERSION = "2026-09-07"
-PROTOCOL_VERSION = "0.1.10"
+SCHEMA_BUNDLE_VERSION = "2026-10-07"
+PROTOCOL_VERSION = "0.2.0"
 OPENAPI_VERSION = "3.1.0"
 
 
@@ -30,6 +30,16 @@ PROTOCOL_CHANGELOG: list[dict[str, Any]] = [
     {
         "protocol_version": PROTOCOL_VERSION,
         "schema_version": SCHEMA_BUNDLE_VERSION,
+        "date": "2026-10-07",
+        "summary": "Breaking: remove StorageComponentCapabilities.long_term_owner.",
+        "changes": [
+            "Remove `long_term_owner` from StorageComponentCapabilities in `/admin/storage/health` capabilities. Its `anyagent-apps` value named a project that no longer exists; use `tier` to tell reference from external backends.",
+            "Migration: the model forbids extra fields, so upgrade the server and the Python/TypeScript SDK together; an older SDK fails to parse a newer server's storage health payload and vice versa.",
+        ],
+    },
+    {
+        "protocol_version": "0.1.10",
+        "schema_version": "2026-09-07",
         "date": "2026-09-07",
         "summary": "Accept MCP source-name extension on function tool params; add scripted reply stage event.",
         "changes": [

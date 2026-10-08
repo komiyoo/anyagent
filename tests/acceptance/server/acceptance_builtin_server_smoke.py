@@ -943,7 +943,6 @@ async def _run_admin_storage_health_reports_backends(*, tmp_path: Path, monkeypa
         assert payload["redis"]["reachable"] is True
         assert payload["stores"]["events"]["type"] in {"CachedEventStore", "RedisEventStore"}
         assert payload["capabilities"]["event_store"]["tier"] == "external"
-        assert payload["capabilities"]["event_store"]["long_term_owner"] == "anyagent-apps"
         assert payload["capabilities"]["run_store"]["supports_idempotency"] is True
         assert payload["capabilities"]["session_lock"]["supports_keyed_serialization"] is True
 

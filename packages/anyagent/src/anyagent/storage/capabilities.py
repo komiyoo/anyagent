@@ -28,10 +28,8 @@ def _base_capabilities(component: Any) -> dict[str, Any]:
     uses_redis = any("Redis" in token for token in tokens)
     uses_external = any("External" in token for token in tokens)
     tier = "reference"
-    owner = "anyagent"
     if uses_postgres or uses_redis or uses_external or any("Cached" in token for token in tokens):
         tier = "external"
-        owner = "anyagent-apps"
 
     if uses_postgres and uses_redis:
         source_of_truth = "postgres+redis"
@@ -54,7 +52,6 @@ def _base_capabilities(component: Any) -> dict[str, Any]:
 
     return {
         "tier": tier,
-        "long_term_owner": owner,
         "source_of_truth": source_of_truth,
         "requires_services": requires_services,
         "restart_recovery": source_of_truth != "process_memory",

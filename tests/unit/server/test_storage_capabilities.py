@@ -20,7 +20,6 @@ def test_build_storage_capability_matrix_reports_reference_inmemory_components()
     )
 
     assert matrix["event_store"]["tier"] == "reference"
-    assert matrix["event_store"]["long_term_owner"] == "anyagent"
     assert matrix["event_store"]["supports_replay"] is True
     assert matrix["run_store"]["supports_idempotency"] is True
     assert matrix["session_store"]["supports_snapshot_cas"] is True
@@ -61,7 +60,6 @@ def test_build_storage_capability_matrix_reports_external_cached_components() ->
             os.environ["REDIS_DSN"] = old_redis
 
     assert matrix["event_store"]["tier"] == "external"
-    assert matrix["event_store"]["long_term_owner"] == "anyagent-apps"
     assert matrix["event_store"]["source_of_truth"] == "postgres+redis"
     assert matrix["run_store"]["cross_instance"] is True
     assert matrix["session_store"]["restart_recovery"] is True

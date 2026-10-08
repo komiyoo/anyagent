@@ -43,6 +43,10 @@ Additive fields, additive enum values and new endpoint operations are allowed by
 - Runtime-only internal envelopes, such as replay observability export payloads, should stay outside `anyagent.protocol.*` unless they become public wire contracts.
 - If a future release intentionally breaks compatibility, the change must bump `protocol_version`, update the changelog, cite the affected requirements, and include migration notes.
 
+## Recorded Breaking Changes
+
+- `0.2.0` (2026-10-07): removed `StorageComponentCapabilities.long_term_owner` from `/admin/storage/health` capabilities (Req: `requirements.md#req-3-1`). Its `anyagent-apps` value named a project that no longer exists, and `tier` already distinguishes reference from external backends. Migration: upgrade the server and the Python/TypeScript SDK together, because the model forbids extra fields. Details are in the bundle changelog in `schema_export.py`.
+
 ## References
 
 - `packages/anyagent/src/anyagent/protocol/schema_export.py`

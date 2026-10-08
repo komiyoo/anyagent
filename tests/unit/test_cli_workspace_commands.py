@@ -396,7 +396,6 @@ def test_storage_health_cli_reads_typed_admin_api(monkeypatch, capsys) -> None:
                 "capabilities": {
                     "events": {
                         "tier": "reference",
-                        "long_term_owner": "anyagent",
                         "source_of_truth": "packages/anyagent/src/anyagent/storage",
                         "requires_services": [],
                         "restart_recovery": False,

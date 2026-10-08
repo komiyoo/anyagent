@@ -82,7 +82,6 @@ def main() -> int:
             "capabilities": {
                 "session_store": {
                     "tier": "external",
-                    "long_term_owner": "anyagent-apps",
                     "source_of_truth": "postgres+redis",
                     "requires_services": ["postgres", "redis"],
                     "restart_recovery": True,

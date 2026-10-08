@@ -26,7 +26,6 @@ class StorageComponentCapabilities(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tier: Literal["reference", "external"]
-    long_term_owner: Literal["anyagent", "anyagent-apps"]
     source_of_truth: str
     requires_services: list[str] = Field(default_factory=list)
     restart_recovery: bool

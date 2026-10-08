@@ -2,6 +2,16 @@
   "changelog": [
     {
       "changes": [
+        "Remove `long_term_owner` from StorageComponentCapabilities in `/admin/storage/health` capabilities. Its `anyagent-apps` value named a project that no longer exists; use `tier` to tell reference from external backends.",
+        "Migration: the model forbids extra fields, so upgrade the server and the Python/TypeScript SDK together; an older SDK fails to parse a newer server's storage health payload and vice versa."
+      ],
+      "date": "2026-10-07",
+      "protocol_version": "0.2.0",
+      "schema_version": "2026-10-07",
+      "summary": "Breaking: remove StorageComponentCapabilities.long_term_owner."
+    },
+    {
+      "changes": [
         "Add optional `x-anyagent-source-name` to AnyAgentFunctionToolParam so MCP tools keep the raw server tool name through prompt-bundle validation.",
         "Add `anyagent.response.scripted` stage event (AnyAgentScriptedReplyEvent) marking turns answered by a scripted reply provider without a model request.",
         "Add `anyagent.protocol.scripted_reply.ScriptedReply` as the typed return value of scripted reply providers."
@@ -1503,14 +1513,6 @@
           "title": "Cross Instance",
           "type": "boolean"
         },
-        "long_term_owner": {
-          "enum": [
-            "anyagent",
-            "anyagent-apps"
-          ],
-          "title": "Long Term Owner",
-          "type": "string"
-        },
         "requires_services": {
           "items": {
             "type": "string"
@@ -1621,7 +1623,6 @@
       },
       "required": [
         "tier",
-        "long_term_owner",
         "source_of_truth",
         "restart_recovery",
         "cross_instance"
@@ -1738,14 +1739,6 @@
               "title": "Cross Instance",
               "type": "boolean"
             },
-            "long_term_owner": {
-              "enum": [
-                "anyagent",
-                "anyagent-apps"
-              ],
-              "title": "Long Term Owner",
-              "type": "string"
-            },
             "requires_services": {
               "items": {
                 "type": "string"
@@ -1856,7 +1849,6 @@
           },
           "required": [
             "tier",
-            "long_term_owner",
             "source_of_truth",
             "restart_recovery",
             "cross_instance"
@@ -24190,8 +24182,8 @@
     }
   },
   "protocol_package": "anyagent.protocol",
-  "protocol_version": "0.1.10",
-  "schema_version": "2026-09-07",
+  "protocol_version": "0.2.0",
+  "schema_version": "2026-10-07",
   "semantic_rules": {
     "anyagent.protocol.credential_vault.CredentialScope": [
       {

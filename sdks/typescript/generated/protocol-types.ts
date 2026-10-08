@@ -1,6 +1,6 @@
 /* eslint-disable */
 // Generated from anyagent.protocol schema bundle. Do not edit by hand.
-// schema_version: 2026-09-07
+// schema_version: 2026-10-07
 
 export type MCPServerTransport = "streamable_http" | "sse" | "stdio";
 
@@ -97,7 +97,6 @@ export type StorageBackendConfig = {
 
 export type StorageComponentCapabilities = {
   "cross_instance": boolean;
-  "long_term_owner": "anyagent" | "anyagent-apps";
   "requires_services"?: Array<string>;
   "restart_recovery": boolean;
   "source_of_truth": string;
