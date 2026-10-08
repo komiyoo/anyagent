@@ -41,12 +41,13 @@ bash scripts/install-git-hooks.sh
 
 ### Gate 1：结构与文档护栏（必须）
 
-- `python3 scripts/docs/check.py --root .`
+- `python3 scripts/docs/check.py --root . --check-code-refs`
 - `python3 scripts/anyagent_progress.py --root .`
 
 目的：
 
 - 防止 Markdown 断链与任务锚点漂移。
+- 防止文档中的代码引用在代码移动或删除后失效；示意路径与生成产物登记在 `scripts/docs/code_ref_allowlist.txt`。
 - 保持任务文档结构可机械读取。
 
 ### Gate 2：离线 SDK / MCP smoke（必须）
@@ -70,16 +71,10 @@ bash scripts/install-git-hooks.sh
 - 把 `unit / contract / integration / targeted server acceptance pytest` 收口成稳定 CI 入口
 - 让高频回归不再只依赖 smoke 脚本
 
-### Gate 3：应用层兼容验收（迁出到场景项目）
+### Gate 3：应用层验收（不在本仓）
 
-- 同级项目：`../anyagent-apps`
-- 文档入口：`../anyagent-apps/docs/acceptance/`
-- 脚本入口：`../anyagent-apps/tests/acceptance/`
-
-说明：
-
-- 该层依赖运行中的 `agent-api` / `tool-runtime` 服务以及外部密钥，已从当前 SDK 仓库剥离。
-- 如需为场景项目单独建立 CI，可在对应仓库内再配置 nightly / release 级门禁。
+- 依赖运行中的服务和外部密钥的应用层验收，由各业务仓库针对所依赖的 `anyagent` 版本自行建立门禁。
+- 本仓不维护示例应用，也不为业务仓库的验收承担 CI。
 
 ## GitHub Actions
 
@@ -119,5 +114,5 @@ bash scripts/install-git-hooks.sh
 - Gate 0 失败：阻断本地 commit / push，先修测试再提交。
 - Gate 1 失败：直接阻断合并（信息架构/证据链已失真）。
 - Gate 2 / 2.5 失败：阻断合并并要求补回归证据。
-- Gate 3：由场景项目自行定义阻断策略，不再属于当前仓库 CI 范围。
+- Gate 3：由业务仓库自行定义阻断策略，不属于当前仓库 CI 范围。
 - `publish-packages` 失败：测试已经通过，但包没有按预期上传或跳过。先看该 job 日志。版本已存在时的成功标志是 skip 日志，不是新制品。

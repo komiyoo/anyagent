@@ -40,5 +40,5 @@
 - `docs/architecture/overview/roadmap.md` Phase 1.5 / Phase 2
 - `packages/anyagent/src/anyagent/protocol/prompt_context.py` — RenderedPromptFragment 模型
 - `packages/anyagent/src/anyagent/protocol/stage_events.py` — 现有 stage event 定义
-- `packages/anyagent/src/anyagent/server/response_persistence.py` — 现有持久化上下文
+- `packages/anyagent/src/anyagent/server/responses/response_persistence.py` — 现有持久化上下文
 - `packages/anyagent/src/anyagent/server/app.py` L949-1034 — `/internal/prompt/bundle` 参考实现

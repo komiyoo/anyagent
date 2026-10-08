@@ -183,11 +183,11 @@ flowchart TB
 
 分层架构：
 
-```text
-Agent API → Tool Runtime → SandboxManager → Sandbox Backend
-                                              ├── LocalUnsafe（开发态）
-                                              ├── OpenSandbox（生产）
-                                              └── External（协议预留）
+```mermaid
+flowchart LR
+  api["Agent API"] --> tr["Tool Runtime"] --> mgr["SandboxManager"]
+  mgr -- "opensandbox（生产）" --> osb["OpenSandboxWorkspaceBackend"]
+  mgr -- "local-unsafe（开发）/ external（外层容器隔离）" --> local["LocalUnsafeBackend"]
 ```
 
 关键约束：
@@ -296,80 +296,43 @@ Agent API → Tool Runtime → SandboxManager → Sandbox Backend
 
 ### 3.1 连接矩阵
 
-```text
-┌──────────────┬──────────────────┬────────────────────────────────────────┐
-│ 调用方        │ 被调用方          │ 连接方式                               │
-├──────────────┼──────────────────┼────────────────────────────────────────┤
-│ Client/SDK   │ Agent API        │ HTTP: POST /v1/responses (SSE)         │
-│ Studio       │ Agent API        │ HTTP: /v1, /internal/*, /admin/*       │
-│ Agent API    │ Tool Runtime     │ HTTP: /internal/tools/* (进程内或远端)   │
-│ Agent API    │ MCP Servers      │ stdio / HTTP+SSE / Streamable HTTP     │
-│ Agent API    │ Model Provider   │ HTTPS: OpenAI/Anthropic/Gemini API     │
-│ Agent API    │ Storage          │ TCP: PostgreSQL / Redis protocol        │
-│ Agent API    │ Credential Vault │ 进程内接口 / HTTP (future)              │
-│ Tool Runtime │ Sandbox          │ HTTP: OpenSandbox Lifecycle API         │
-│ Tool Runtime │ Credential Vault │ 进程内 resolve 接口                     │
-│ Tool Runtime │ Plugin           │ 进程内 Python 调用                      │
-│ Sandbox      │ S3               │ HTTPS: 对象存储 API（宿主侧代理）       │
-│ Sandbox      │ Redis            │ TCP: lease 续租（宿主侧代理）            │
-└──────────────┴──────────────────┴────────────────────────────────────────┘
-```
+| 调用方 | 被调用方 | 连接方式 |
+|---|---|---|
+| Client / SDK | Agent API | HTTP：`POST /v1/responses`（SSE） |
+| Studio | Agent API | HTTP：`/v1`、`/internal/*`、`/admin/*` |
+| Agent API | Tool Runtime | 进程内调用，或 HTTP `/internal/tools/*` |
+| Agent API | MCP Servers | stdio / HTTP+SSE / Streamable HTTP |
+| Agent API | Model Provider | HTTPS：OpenAI / Anthropic / Gemini API |
+| Agent API | Storage | TCP：PostgreSQL / Redis |
+| Agent API | Credential Vault | 进程内接口 |
+| Tool Runtime | Sandbox | HTTP：OpenSandbox Lifecycle API + execd 代理 |
+| Tool Runtime | Credential Vault | 进程内 resolve |
+| Tool Runtime | Plugin | 进程内 Python 调用 |
+| Sandbox 管理（宿主侧） | S3 / Redis | 快照存取、lease 续租 |
 
 ### 3.2 关键接口契约
 
 #### Agent API ↔ Tool Runtime
 
-```text
-POST /internal/tools/manifest
-  Request:  { tenant_id?, agent_id, session_key, context, enabled_skills?, requested_tool_names? }
-  Response: { tools[], toolset_version, decisions? }
-
-POST /internal/tools/execute
-  Request:  { tenant_id?, agent_id, session_key, response_id, tool_call_id,
-              tool_name, arguments_json, deadline_ms, context }
-  Response: { status, output, meta: { duration_ms, output_truncated, audit_ref } }
-
-POST /internal/tools/cancel
-  Request:  { tenant_id?, agent_id, session_key, response_id, tool_call_id }
-  Response: { status: "cancelled" | "not_found" | "already_completed" }
-```
-
-鉴权：mTLS 或签名 JWT / internal key。详见 [tool-runtime-contract.md](../tool-runtime/tool-runtime-contract.md)。
+三个端点：`POST /internal/tools/manifest`、`POST /internal/tools/execute`、`POST /internal/tools/cancel`。请求与响应字段以 `anyagent.protocol.tool_runtime` 中的模型为准，语义见 [tool-runtime-contract.md](../tool-runtime/tool-runtime-contract.md)。鉴权：mTLS 或签名 JWT / internal key。
 
 #### Agent API ↔ Model Provider
 
-```text
-转发 POST 请求到上游 LLM（OpenAI / Anthropic / Gemini）
-  - 携带 tools[]、system prompt、input messages
-  - 接收 streaming response（含 tool_calls）
-  - 回灌 function_call_output 继续推理直到 final response
-```
+请求上游 LLM（OpenAI / Anthropic / Gemini）时携带 `tools[]`、system prompt 和输入消息，接收流式响应（含 tool calls），再把工具结果回灌继续推理，直到得到最终响应。loop 细节见 [agent-loop.md](../runtime/agent-loop.md)。
 
 #### Agent API ↔ MCP Server
 
-```text
-stdio 模式：
-  Agent API 拉起子进程 → JSON-RPC over stdin/stdout
-
-HTTP/SSE 模式：
-  Agent API → HTTP POST (tool invoke) → MCP Server
-  Agent API ← SSE (tool result stream) ← MCP Server
-
-凭证注入：
-  mcp.json 中声明 credential_id → Credential Vault resolve → Authorization header
-```
+- stdio 模式：Agent API 拉起子进程，通过 stdin/stdout 走 JSON-RPC。
+- HTTP / SSE 模式：Agent API 用 HTTP POST 调用工具，通过 SSE 接收结果流。
+- 凭证注入：`mcp.json` 声明 `credential_id`，由 Credential Vault 解析后注入 `Authorization` header。
 
 #### Tool Runtime ↔ Sandbox
 
-```text
-OpenSandbox Lifecycle API：
-  POST /sandboxes          → 创建 sandbox
-  POST /sandboxes/:id/exec → 执行命令
-  GET  /sandboxes/:id/fs   → 文件读取
-  PUT  /sandboxes/:id/fs   → 文件写入
-  POST /sandboxes/:id/snapshot → 快照
-  DELETE /sandboxes/:id    → 销毁
-```
+- OpenSandbox Lifecycle API（`/sandboxes`）：创建、查询、删除沙箱，并获取 execd 代理地址。
+- execd 代理：在沙箱内执行命令、上传和下载文件。
+- 快照由 Core 打包 workspace 后写入快照存储，不依赖 OpenSandbox 的快照接口。
+
+实现见 `packages/anyagent/src/anyagent/server/sandbox/opensandbox_backend.py`。
 
 ---
 
@@ -377,14 +340,15 @@ OpenSandbox Lifecycle API：
 
 ### 4.1 本地最小（开发 / Demo）
 
-```text
-┌─────────────────────────────────────────┐
-│         anyagent serve (单进程)           │
-│                                         │
-│  Agent API + Tool Runtime + Studio      │
-│  + in-memory storage + local sandbox    │
-│  + env credential backend               │
-└─────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  subgraph serve["anyagent serve（单进程）"]
+    api["Agent API"] --> tr["Tool Runtime"]
+    studio["Studio"] --> api
+    api --> mem[("in-memory storage")]
+    tr --> sandbox["local sandbox"]
+    tr --> cred["内存凭据库"]
+  end
 ```
 
 命令：`anyagent serve`
@@ -398,18 +362,18 @@ OpenSandbox Lifecycle API：
 
 ### 4.2 插件型小生产
 
-```text
-┌──────────────────────┐     ┌──────────────────────┐
-│    Agent API serve   │────▶│  Tool Runtime serve  │
-│                      │     │  --plugin-root plugins│
-│  + Studio            │     │  + credential resolve │
-│  + MCP management    │     └──────────┬───────────┘
-└──────────┬───────────┘                │
-           │                            │
-     ┌─────▼─────┐              ┌───────▼───────┐
-     │ PostgreSQL │              │ Plugin: reddit│
-     │ (optional) │              │ Plugin: slack │
-     └───────────┘              └───────────────┘
+```mermaid
+flowchart LR
+  subgraph apiproc["anyagent agent-api serve"]
+    api["Agent API + Studio + MCP 管理"]
+  end
+  subgraph trproc["anyagent tool-runtime serve"]
+    tr["Tool Runtime + 凭据解析"]
+    plugins["插件（--plugin-root plugins）"]
+  end
+  api -- "/internal/tools/*" --> tr
+  tr --> plugins
+  api --> pg[("PostgreSQL（可选）")]
 ```
 
 命令：
@@ -426,41 +390,25 @@ anyagent tool-runtime serve --plugin-root plugins --port 8788
 
 ### 4.3 生产级全拓扑
 
-```text
-SDK / Client
-    │
-    ▼
-┌─────────────────────────────────────────────────┐
-│              Agent API (N replicas)              │
-│  /v1/responses │ /internal/* │ /admin/*          │
-│  agent loop    │ skills      │ MCP pool          │
-└───┬────────┬────────┬────────┬──────────────────┘
-    │        │        │        │
-    ▼        ▼        ▼        ▼
-┌──────┐ ┌──────┐ ┌───────┐ ┌─────────────────────┐
-│Model │ │ MCP  │ │Cred.  │ │  Tool Runtime Pool  │
-│Provdr│ │Srvrs │ │Vault  │ │  (M replicas)       │
-└──────┘ └──────┘ └───┬───┘ └───────┬─────────────┘
-                      │             │
-                      │      ┌──────▼──────────────┐
-                      │      │  Plugin Tools       │
-                      │      │  + Sandbox Manager  │
-                      │      └──────┬──────────────┘
-                      │             │
-                      │      ┌──────▼──────────────┐
-                      │      │  OpenSandbox Pool   │
-                      │      │  (sandbox containers)│
-                      │      └──────┬──────────────┘
-                      │             │
-              ┌───────▼─────────────▼──────────────┐
-              │          State Layer                │
-              │                                    │
-              │  PostgreSQL: runs/sessions/events/  │
-              │             telemetry/workspace meta│
-              │  Redis: locks/leases/event bus      │
-              │  S3: workspace snapshots            │
-              │  Infisical: credential secrets      │
-              └────────────────────────────────────┘
+```mermaid
+flowchart TB
+  client["SDK / Client"] --> api["Agent API × N<br/>/v1/responses、/internal/*、/admin/*<br/>agent loop、skills、MCP pool"]
+  api --> model["Model Provider"]
+  api --> mcp["MCP Servers"]
+  api --> tr["Tool Runtime 池 × M<br/>插件工具 + SandboxManager"]
+  tr --> vault["Credential Vault"]
+  tr --> osb["OpenSandbox 池（沙箱容器）"]
+  subgraph state["状态层"]
+    pg[("PostgreSQL<br/>runs / sessions / events / telemetry / workspace 元数据")]
+    redis[("Redis<br/>锁 / lease / event bus")]
+    s3[("S3<br/>workspace 快照")]
+    secrets[("Infisical / Vault<br/>凭证")]
+  end
+  api --> pg
+  api --> redis
+  tr --> redis
+  tr --> s3
+  vault --> secrets
 ```
 
 特点：
@@ -487,12 +435,12 @@ SDK / Client
 | MCP | 子进程 stdio | 远程 HTTP/SSE |
 | Studio | 内嵌静态资源 | 可独立部署 |
 
-切换方式：
+切换方式（取值以代码为准，查询入口见 [guides/README.md](../../guides/README.md#以代码为准)）：
 
-- `TOOL_RUNTIME_BASE_URL`：设置后 Agent API 通过 HTTP 调用远端 Tool Runtime
-- `STORAGE_MODE`：`memory` / `sqlite` / `postgres+redis`
-- `SANDBOX_BACKEND`：`local-unsafe` / `opensandbox` / `external`
-- `CREDENTIAL_BACKEND`：`env` / `file` / `infisical`
+- Tool Runtime：`anyagent agent-api serve` 通过 `--tool-runtime-url` 或 `TOOL_RUNTIME_BASE_URL` 调用远端 Tool Runtime。
+- 存储：`STORAGE_PROFILE`（`ServerSettings` / `StorageSettings`）。
+- 沙箱：agent 的 `sandbox.mode`；独立 Tool Runtime 另有 `SANDBOX_BACKEND`（`ToolRuntimeSettings`）。
+- 凭据：`MCP_CREDENTIAL_STORE_BACKEND`。
 
 ---
 
@@ -500,70 +448,46 @@ SDK / Client
 
 ### 6.1 一次 tool call 的完整路径（分布式模式）
 
-```text
-Client
-  │ POST /v1/responses (stream=true)
-  ▼
-Agent API
-  │ 1. acquire lease lock (Redis)
-  │ 2. load session snapshot (PostgreSQL)
-  │ 3. build prompt envelope (AGENTS.md + skills + context)
-  │ 4. request tool manifest (→ Tool Runtime)
-  │ 5. call upstream LLM (→ Model Provider)
-  │ 6. receive tool_call from LLM response
-  │ 7. emit anyagent.tool.planned event (→ Event Store)
-  │
-  ▼
-Tool Runtime
-  │ 8. resolve credential (→ Credential Vault)
-  │ 9. validate tool policy
-  │ 10. route to handler:
-  │     - plugin tool → plugin handler
-  │     - exec → SandboxManager
-  │
-  ▼ (if exec)
-Sandbox Runtime
-  │ 11. create/resume sandbox
-  │ 12. execute command in isolated env
-  │ 13. return stdout/stderr/exit_code
-  │
-  ▼ (back to Tool Runtime)
-Tool Runtime
-  │ 14. format output, enforce limit
-  │ 15. return { status, output, meta }
-  │
-  ▼ (back to Agent API)
-Agent API
-  │ 16. emit anyagent.tool.result event
-  │ 17. feed tool result back to LLM
-  │ 18. receive final response
-  │ 19. emit events, write run terminal state
-  │ 20. release lease lock
-  │ 21. send SSE [DONE]
-  ▼
-Client
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Client
+  participant API as Agent API
+  participant ST as Storage（PG / Redis）
+  participant LLM as Model Provider
+  participant TR as Tool Runtime
+  participant V as Credential Vault
+  participant SB as Sandbox
+  C->>API: POST /v1/responses（stream=true）
+  API->>ST: 获取会话 lease 锁，读取 session 快照
+  Note over API: 组装 prompt envelope（AGENTS.md + skills + context）
+  API->>TR: 拉取 tool manifest
+  API->>LLM: 调用上游模型
+  LLM-->>API: tool call
+  API->>ST: 写入 anyagent.tool.planned 事件
+  API->>TR: execute
+  TR->>V: resolve 凭证
+  Note over TR: 校验 tool policy，路由到插件 handler 或 exec
+  opt 工具是 exec
+    TR->>SB: 创建或恢复沙箱并执行命令
+    SB-->>TR: stdout / stderr / exit code
+  end
+  Note over TR: 格式化输出并截断
+  TR-->>API: status / output / meta
+  API->>ST: 写入 anyagent.tool.result 事件
+  API->>LLM: 回灌工具结果
+  LLM-->>API: 最终响应
+  API->>ST: 写入 run 终态，释放 lease 锁
+  API-->>C: SSE 事件 + [DONE]
 ```
 
 ### 6.2 凭证流（Credential Flow）
 
-```text
-Plugin 声明:
-  plugin.json → credentials[]: { id: "reddit_api_key", type: "api_key" }
+插件工具通过 `ToolDefinition.credentials` 声明需要的凭证，执行时由 Tool Runtime resolve 并注入 handler 的 `_credentials`。完整流程见 [credential-vault.md](../../security/credential-vault.md#22-凭证流转路径)。安全边界：
 
-运行时注入:
-  Agent API (tool execute request)
-    → context.auth_ref = { kind: "secret_ref", ref: "sec_reddit_default" }
-  Tool Runtime (credential resolve)
-    → Credential Vault.resolve("sec_reddit_default")
-    → inject into handler context._credentials["reddit_api_key"]
-  Plugin handler
-    → 使用 _credentials["reddit_api_key"] 调用外部 API
-
-安全边界:
-  - Agent 只见 credential_id（如 "sec_reddit_default"）
-  - Tool Runtime 在执行瞬间 resolve，不持久化明文
-  - Sandbox 内不注入任何凭证
-```
+- Agent 只见 `credential_id`。
+- Tool Runtime 在执行时 resolve，不持久化明文。
+- 沙箱内不注入任何凭证。
 
 ---
 

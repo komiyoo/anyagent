@@ -3,28 +3,29 @@
 #
 # Patterns use fnmatch against normalized repo-relative paths.
 
-# Generated workspace examples from README / docs.
-.anyagent/agents/*
-.anyagent/credentials
-.anyagent/secrets.yaml
+# Generated workspace examples from README / docs. This repo has no root
+# .anyagent/, so every .anyagent/ path in docs describes a user workspace.
+# The skill shipped with this repo lives under .agents/skills/, not here.
+.anyagent
+.anyagent/*
 docs/_manifest.txt
 plugins/demo
 plugins/demo/*
 tests/smoke.py
 
-# Removed anyagent-apps service shells kept in docs as migration markers.
-apps/agent-api
-apps/tool-runtime
-apps/studio
-anyagent-apps/apps/agent-api
-anyagent-apps/apps/tool-runtime
-anyagent-apps/apps/studio
+# Build outputs; ignored by git and created by `uv build` / the Studio build.
+packages/anyagent/dist
+packages/anyagent/studio/dist
+packages/anyagent/src/anyagent/studio_static
 
-# Cross-repo anyagent-apps references.
-anyagent-apps/docs/*
-anyagent-apps/plugins/*
-scripts/dev/start_services.sh
-tests/acceptance/agent_api/_core_app.py
+# Scripts of the external plan-docs skill, cited by docs/plans/README.md.
+scripts/todos.py
+scripts/plan-index.py
+
+# Third-party repository paths cited by docs/_notes/third-party/ surveys.
+backend/packages/harness/deerflow/*
+packages/agent/src/harness/*
+packages/coding-agent/src/*
 
 # Planned test-suite folders referenced by strategy docs.
 tests/contract/events

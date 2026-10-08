@@ -34,10 +34,10 @@ related: ["studio-pages-inventory.md", "studio-control-plane-and-observability.m
 
 ### 2.1 Layout 层级
 
-```
-Old: Page → Section → Card → Card.Header → Card.Content → Content  (6 层)
-New: Page → Panel → Content                                       (3 层)
-```
+| | 层级 | 层数 |
+|---|---|---|
+| 旧 | Page → Section → Card → Card.Header → Card.Content → Content | 6 |
+| 新 | Page → Panel → Content | 3 |
 
 **新层级定义**:
 
@@ -394,48 +394,25 @@ h3, .text-h3 {
 ### 3.1 Observability 页面（示例重构）
 
 **优化前** (首屏 ~5 条信息):
-```
-┌─────────────────────────────┐
-│ Observability               │ ← 大标题 + 副标题 (60px)
-├─────────────────────────────┤
-│  ┌─────────┐ ┌─────────┐   │
-│  │ Runs    │ │ Tokens  │   │ ← 独立卡片 (110px each)
-│  │ 1,247   │ │ 3.2M    │   │
-│  └─────────┘ └─────────┘   │
-├─────────────────────────────┤
-│ Run History                 │
-│  ┌─────────────────────┐   │
-│  │ 14:23 Success 2.3s  │   │ ← 大间距行 (48px each)
-│  └─────────────────────┘   │
-│  ┌─────────────────────┐   │
-│  │ 14:20 Error   4.1s  │   │
-│  └─────────────────────┘   │
-└─────────────────────────────┘
+
+```mermaid
+block-beta
+  columns 2
+  title["Observability 大标题 + 副标题（60px）"]:2
+  runs["Runs 卡片 1,247（110px）"]
+  tokens["Tokens 卡片 3.2M（110px）"]
+  history["Run History：每条记录一张卡片，行高 48px"]:2
 ```
 
 **优化后** (首屏 8-10 条 + 聚合):
-```
-┌─────────────────────────────────────┐
-│ Observability                       │ ← 紧凑标题 (36px)
-├─────────────────────────────────────┤
-│ Runs 1,247 · Tokens 3.2M · Avg 2.3s│ ← stat-strip (32px)
-│ · Tools 24 · Errors 52 (4.2%)      │
-├─────────────────────────────────────┤
-│ ▼ Run History (12)                 │ ← 可折叠 (32px)
-│ Time    Status  Duration  Tokens   │ ← 表头 (28px)
-│ 14:23   ✓       2.3s      1,247    │ ← 紧凑行 (32px each)
-│ 14:20   ✗       4.1s      2,103    │
-│ 14:18   ✓       1.8s        892    │
-│ 14:15   ✓       2.1s      1,456    │
-│ 14:12   ✓       1.9s        734    │
-│ 14:10   ✗       5.2s      3,201    │
-│ 14:08   ✓       2.0s      1,189    │
-│ 14:05   ✓       2.4s      1,523    │
-├─────────────────────────────────────┤
-│ ▶ Tool Stats (collapsed)           │ ← 默认折叠
-│ ▶ Errors (52)                      │
-│ ▶ Timeline                         │
-└─────────────────────────────────────┘
+
+```mermaid
+block-beta
+  columns 1
+  title["Observability 紧凑标题（36px）"]
+  stats["stat-strip：Runs · Tokens · Avg · Tools · Errors（32px）"]
+  history["▼ Run History：表头 Time / Status / Duration / Tokens（28px），紧凑行 32px，首屏约 8 行"]
+  folded["▶ Tool Stats · ▶ Errors · ▶ Timeline（默认折叠）"]
 ```
 
 **改进量化**:

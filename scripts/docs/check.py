@@ -19,11 +19,13 @@ from pathlib import PurePosixPath
 _MD_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
 _IMPL_PATH_LINE_RE = re.compile(r"([A-Za-z0-9_./-]+):([0-9]{1,9})")
+# Path segments use \w so non-ASCII file names (for example dated plans with
+# Chinese titles) are matched whole instead of being cut at the first CJK char.
 _CODE_PATH_LINE_RE = re.compile(
-    r"(?<![A-Za-z0-9_])"
-    r"((?:\.\./|\./)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+)"
+    r"(?<!\w)"
+    r"((?:\.\./|\./)?[\w.-]+(?:/[\w.-]+)+)"
     r"(?::([0-9]{1,9}))?"
-    r"(?![A-Za-z0-9_])"
+    r"(?!\w)"
 )
 _CODE_REF_ALLOWLIST_REL = Path("scripts/docs/code_ref_allowlist.txt")
 _SKIP_DIR_NAMES = {
@@ -91,6 +93,7 @@ def _iter_docs_for_index(root: Path, include_notes: bool) -> list[Path]:
         docs_dir / "architecture",
         docs_dir / "security",
         docs_dir / "performance",
+        docs_dir / "guides",
         docs_dir / "_dev",
     ]
     if include_notes:

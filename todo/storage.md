@@ -10,7 +10,7 @@
 
 - 共享存储模型 / contract / replay:`packages/anyagent/src/anyagent/storage/`
 - Reference external adapters:in-memory、SQLite、PostgreSQL、Redis hot path
-- Migration glue:`packages/anyagent/src/anyagent/server/migrations.py`
+- Migration glue:`packages/anyagent/src/anyagent/server/db/migrations.py`
 - 长期文档:`docs/architecture/storage/storage-minimal-design.md`
 
 ## 里程碑

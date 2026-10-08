@@ -220,7 +220,7 @@ run 完成后写回新的恢复游标，保证下一次请求可继续承接。
 
 ## Config 热重载与冷/热字段边界
 
-为支持改 agent 配置而无需重启进程，每个 HTTP 请求进入业务路由前都会经 `_config_hot_reload_middleware` 触发一次按需重载检查（`packages/anyagent/src/anyagent/server/app.py:467`）。设计动因是配置即服务下“边解析边消费”，但又要避免每请求全量重载的开销，故以 mtime 轮询做廉价变更检测。
+为支持改 agent 配置而无需重启进程，每个 HTTP 请求进入业务路由前都会经 `_config_hot_reload_middleware` 触发一次按需重载检查（`packages/anyagent/src/anyagent/server/app.py` 的 `_config_hot_reload_middleware`）。设计动因是配置即服务下“边解析边消费”，但又要避免每请求全量重载的开销，故以 mtime 轮询做廉价变更检测。
 
 检测与重载流程（`AnyAgentServerApp.refresh_config_if_needed`，`packages/anyagent/src/anyagent/server/app_state.py:98`）：
 

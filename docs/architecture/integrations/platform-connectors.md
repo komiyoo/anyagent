@@ -28,8 +28,8 @@ Contract decision: `docs/architecture/decisions/plugin-connector-contract-v1.md`
 
 Manifest schema artifact: `docs/schemas/plugin-manifest.schema.json`.
 
-Connector packages live outside `anyagent-apps` unless they are only example
-documentation. A platform connector can be:
+This repo ships only the built-in reference connector. Other connectors live in
+business repos or standalone packages. A platform connector can be:
 
 - an official upstream package or CLI integrated through skills
 - an optional AnyAgent plugin package loaded with `--plugin-root`
@@ -40,9 +40,9 @@ documentation. A platform connector can be:
 | Platform | Current Core stance | Package / path | Notes |
 |---|---|---|---|
 | **Chatwoot** | Built-in reference implementation ✅ | `anyagent.plugins.builtin.chatwoot_connector` | Inbound channel connector with webhook receiver, HMAC signature verification, outbound message delivery, handoff, and conversation lifecycle events. Serves as the reference pattern for all platform connectors. See [Chatwoot Connector README](../../../packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/README.md). |
-| Lark / Feishu | Use official CLI and skills for outbound actions | `larksuite/cli`, `@larksuite/cli`, `lark-cli` | `anyagent-apps/plugins/lark-cli/README.md` is documentation only. Inbound webhook / gateway connectors are separate plugins or packages loaded through the Core plugin contract. |
-| Discord | No in-repo framework implementation | optional connector package | Keep out of `anyagent-apps` until there is a real package with manifest, docs, schema, tests, and smoke validation. |
-| Telegram | No in-repo framework implementation | optional connector package | Keep out of `anyagent-apps` until there is a real package with manifest, docs, schema, tests, and smoke validation. |
+| Lark / Feishu | Use official CLI and skills for outbound actions | `larksuite/cli`, `@larksuite/cli`, `lark-cli` | Outbound actions go through the official CLI and skills; no wrapper lives in this repo. Inbound webhook / gateway connectors are separate plugins or packages loaded through the Core plugin contract. |
+| Discord | No in-repo framework implementation | optional connector package | Build it as a package with manifest, docs, schema, tests, and smoke validation. |
+| Telegram | No in-repo framework implementation | optional connector package | Build it as a package with manifest, docs, schema, tests, and smoke validation. |
 | Intercom | No in-repo framework implementation | optional connector package | Connector contract supports Intercom via `ConnectorWebhookAuth` / `ConnectorOutboundDelivery` / `ConnectorHandoff` interfaces. |
 
 ## Connector Contract Interfaces
@@ -157,5 +157,5 @@ A connector is framework-grade only when all of these are true:
   not stored in agent config or plugin config.
 - A targeted smoke proves manifest loading and at least one safe tool path.
 
-`anyagent-apps` may keep example usage and business bundles, but it must not become
-the source of truth for connector contracts or long-lived platform wrappers.
+Business repos may keep their own connector packages and business bundles, but the
+connector contract itself stays in this repo.

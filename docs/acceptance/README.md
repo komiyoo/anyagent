@@ -1,6 +1,6 @@
 # Acceptance 文档索引
 
-当前仓库已收敛为配置化 built-in Agent Server + SDK：`anyagent serve` 从 workspace `.anyagent/` 配置启动 OpenAI Responses API 兼容服务，内置 in-process Tool Runtime 与最小存储；生产级分布式实践模板仍在同级项目 `../anyagent-apps/`。
+当前仓库已收敛为配置化 built-in Agent Server + SDK：`anyagent serve` 从 workspace `.anyagent/` 配置启动 OpenAI Responses API 兼容服务，内置 in-process Tool Runtime 与最小存储。本仓只验收框架自身行为；业务 agent 的应用层验收由各业务仓库负责。
 
 当前可执行的最小验收入口：
 
@@ -28,5 +28,3 @@ Scripted reply（确定性回复扩展点）与 connector 回复节奏的验收�
 ```bash
 uv run --project packages/anyagent pytest tests/unit/agent_runtime/test_scripted_reply.py tests/unit/gateway/test_chatwoot_reply_pacing.py tests/integration/server/test_scripted_reply_responses.py tests/integration/server/test_chatwoot_connector_flow.py -q
 ```
-
-如需运行应用层集成验收、Responses API 在线兼容验收或 demo 定制化回归，请到同级项目 `../anyagent-apps/docs/acceptance/`。

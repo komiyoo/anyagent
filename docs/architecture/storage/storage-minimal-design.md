@@ -15,12 +15,12 @@ req: ["requirements.md#req-3-1"]
 当前口径补充：
 
 - 本文描述的 `Session/Run/Event/Dedupe/Lock` 语义属于 `anyagent` Core 的长期边界。
-- `PostgreSQL + Redis` 的 typed runtime adapter 已进入 `packages/anyagent/src/anyagent/storage/external/`；deployment wiring 与生产运行手册由 `anyagent-apps` 的示例配置和服务栈文档消费，storage retention / rollout replay 运维语义由 Core CLI 承载。
-- Core 边界不是整套 production deployment，而是 store interfaces、状态模型、一致性语义、reference external adapters 与基础运维入口；`anyagent-apps` 承载示例配置和运行手册。
-- 当前已落地的共享抽象位于 `packages/anyagent/src/anyagent/storage/`，业务示例通过已发布 SDK/CLI 消费这些 records / contracts / runtime bundle。
+- `PostgreSQL + Redis` 的 typed runtime adapter 已进入 `packages/anyagent/src/anyagent/storage/external/`；storage migration / retention / rollout replay 运维语义由 Core CLI 承载。
+- Core 边界不是整套 production deployment，而是 store interfaces、状态模型、一致性语义、reference external adapters 与基础运维入口；外部服务的部署与运行手册由业务仓库负责。
+- 当前已落地的共享抽象位于 `packages/anyagent/src/anyagent/storage/`，业务仓库通过已发布 SDK/CLI 消费这些 records / contracts / runtime bundle。
 - `/internal/events/*` 的 replay/list/stream helper 也已开始收敛到 `packages/anyagent/src/anyagent/storage/replay.py`。
 - 会话准备与 snapshot 写回相关的共享编排 helper 已开始收敛到 `packages/anyagent/src/anyagent/agent_runtime/session_runtime.py`。
-- 当前 `anyagent` 也已通过 `packages/anyagent/src/anyagent/storage/capabilities.py` 与 `/admin/storage/health` 暴露 reference/external backend capability matrix，用来明确 Core reference backend 边界与长期归属。
+- 当前 `anyagent` 也已通过 `packages/anyagent/src/anyagent/storage/capabilities.py` 与 `/admin/storage/health` 暴露 reference/external backend capability matrix，用来区分 reference 与 external backend 及其能力。
 - MySQL 当前已先作为 typed contract (`MySQLDsn` / `ExternalSqlBackendConfig`) 进入 Core，为多 SQL backend 接入预留协议位。
 - 共享 schema apply helper 当前已开始进入 `packages/anyagent/src/anyagent/storage/external/migrations.py`；Core CLI 已提供 `anyagent storage migrate`、`anyagent storage retention` 与 `anyagent storage replay` 等基础运维入口。
 - 外置存储驱动已拆为可选 extras：`anyagent[postgres]`、`anyagent[mysql]`、`anyagent[redis]` 与聚合 `anyagent[external-storage]`。默认安装必须能启动内存模式；PG/MySQL/Redis 驱动只在选择对应外置 backend 或运维命令时成为必需依赖。
@@ -57,10 +57,10 @@ req: ["requirements.md#req-3-1"]
   - `snapshot_version` / CAS / idempotency / replay cursor / `[DONE]` 等一致性语义
   - `STORAGE_MODE=none` 对应的 reference 行为
   - `packages/anyagent/src/anyagent/storage/external/` 下的 SQL/Redis typed reference adapters、schema apply helper 与 backend capability matrix
-- 属于 `anyagent-apps` 的部分：
-  - PostgreSQL / Redis 的生产部署 wiring、外置服务配置、运行手册与环境模板
-  - 生产部署下的 lease / event bus / hot cache 策略与运维入口
-  - migration / retention / rollout replay 等运维命令
+  - migration / retention / rollout replay 等运维命令（`anyagent storage *`）
+- 属于业务仓库的部分：
+  - PostgreSQL / Redis 实例的部署、连接配置、运行手册与环境模板
+  - 在 Core 提供的 storage profile 中选择适合自身负载的组合
 
 ## 3. 推荐技术选型（How）
 
@@ -89,8 +89,8 @@ req: ["requirements.md#req-3-1"]
 
 说明：
 
-- 这里的 “推荐生产默认” 指的是工作区当前的应用层部署选择；`anyagent` Core 提供 reference external adapters、typed contract 与基础 storage ops CLI，`anyagent-apps` 继续负责示例配置、迁移期服务接线、生产运行手册与平台化 wiring。
-- Core 应冻结这些后端所需的抽象、一致性语义、可复用 adapter contract 和最小运维闭环；生产部署策略继续由 `anyagent-apps` 承载。
+- 这里的 “推荐生产默认” 是给业务仓库的部署建议；`anyagent` Core 提供 reference external adapters、typed contract 与基础 storage ops CLI。
+- Core 应冻结这些后端所需的抽象、一致性语义、可复用 adapter contract 和最小运维闭环；生产部署策略由业务仓库决定。
 
 为什么是这个组合：
 
@@ -298,7 +298,6 @@ Core 提供一个 Postgres 清理命令（默认 **plan-only**，不会写库；
 
 - `packages/anyagent/src/anyagent/storage/retention.py`
 - CLI：`anyagent storage retention`（兼容平铺入口：`anyagent storage-retention`）
-- 迁移期 apps 兼容入口：`agent-api-retention`（转发到 Core 实现）
 
 执行示例：
 

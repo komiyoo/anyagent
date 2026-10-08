@@ -42,5 +42,5 @@ The internal envelope keeps observability exports testable and backend-neutral w
 - Prompt replay API model: `packages/anyagent/src/anyagent/protocol/agent_api_internal.py:153`
 - Replay SDK helpers: `packages/anyagent/src/anyagent/agent_api_client.py:305`, `sdks/typescript/src/client.ts:491`
 - Prompt replay persistence knobs: `packages/anyagent/src/anyagent/persistence/config.py:17`
-- Observability summary counters: `packages/anyagent/src/anyagent/server/telemetry_store.py:343`
+- Observability summary counters: `packages/anyagent/src/anyagent/server/persistence/telemetry_store.py` 的 `RunEventTelemetryStore.summary`
 - Existing observability sink fan-out: `packages/anyagent/src/anyagent/observability.py:13`

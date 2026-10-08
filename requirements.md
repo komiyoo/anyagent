@@ -23,14 +23,13 @@ anyagent 是配置化、无服务化的 Agent Server Core + SDK。业务项目�
 
 仓库边界已经沉淀到：
 
-- [docs/architecture/overview/apps-packages-boundary.md](docs/architecture/overview/apps-packages-boundary.md)
+- [docs/architecture/overview/framework-boundary.md](docs/architecture/overview/framework-boundary.md)
 - [docs/architecture/decisions/single-repo-multi-package-boundary.md](docs/architecture/decisions/single-repo-multi-package-boundary.md)
 
 口径：
 
 - `anyagent` 是 Server Core、SDK、Protocol、production runtime、ops CLI、storage/tool/runtime/plugin contract 真源。
-- `anyagent-apps` 是示例、模板、业务 workspace 与消费侧验收真源。
-- 历史 `anyagent-apps/apps/*` 服务壳不再作为生产能力或兼容入口。
+- 本仓不提供示例应用项目或部署模板；业务 workspace、业务插件、部署编排与业务验收由各业务仓库自行维护。
 
 ### 0.2 交付形态（配置即服务）
 
@@ -372,7 +371,7 @@ Chatwoot 消息事件保留有效的 `message_id` / `message_type`，入站请�
 
 ### 9.2 Gateway 端到端验收
 
-消费侧验收入口在 `anyagent-apps/docs/acceptance/README.md`，Core 侧 connector contract 见 [docs/architecture/integrations/platform-connectors.md](docs/architecture/integrations/platform-connectors.md)。
+平台接入的端到端验收由业务仓库负责；本仓的 Chatwoot connector 验收入口见 [docs/acceptance/README.md](docs/acceptance/README.md)，Core 侧 connector contract 见 [docs/architecture/integrations/platform-connectors.md](docs/architecture/integrations/platform-connectors.md)。
 
 ## 10. 分期
 

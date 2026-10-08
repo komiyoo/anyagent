@@ -44,4 +44,4 @@ ANYAGENT_TEST_CHATWOOT_CONVERSATION_ID=42 \
 uv run --project packages/anyagent pytest tests/acceptance/server/acceptance_chatwoot_live_smoke.py -q
 ```
 
-应用层集成验收与在线兼容验收已迁到同级项目 `../anyagent-apps/tests/acceptance/`。
+业务 agent 的应用层验收由各业务仓库自行维护，不在本仓。

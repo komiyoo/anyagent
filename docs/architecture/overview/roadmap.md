@@ -15,7 +15,7 @@ summary: anyagent 仓库的长期架构方向、当前事实锚点、设计边�
 
 边界约定：
 
-- 本文不规划 `anyagent-apps`、`amap-mcp-server` 或其他消费侧仓库的任何工作。各仓库 roadmap 各自维护。
+- 本文不规划任何业务仓库的工作，各仓库 roadmap 各自维护。
 - 具体任务状态、执行清单、验收记录维护在 `todo/*.md`、测试脚本或 release 记录中,本文只列出 Phase 级目标与对应 todo 入口。
 
 ---
@@ -88,8 +88,8 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 ### 3.5 仓库边界
 
 - `anyagent` = protocol、server、SDK、runtime primitives、Tool Runtime、credential/connector contract 与文档真源。
-- 消费侧仓库(例如 `anyagent-apps`)如何使用 anyagent、如何做业务验收、如何打包部署模板,**不在本仓 roadmap 范围内**。
-- 本仓不为消费仓的发布消费链路、demo 维护、acceptance 入口承担任务;只保证对外的协议、SDK、CLI、文档真源稳定可消费。
+- 本仓不提供示例应用项目。业务仓库如何使用 anyagent、如何做业务验收、如何部署,**不在本仓 roadmap 范围内**,分工见 [framework-boundary.md](framework-boundary.md)。
+- 本仓只保证对外的协议、SDK、CLI、文档真源稳定可消费。
 
 ---
 
@@ -133,7 +133,7 @@ Phase 1 ~ Phase 2 的主路径任务已全部完成。逐条任务历史见 Git 
 | ------ | --- | ------------------------------------------ | ----- | --------- | ----------------------------- |
 | **P4** | 21  | Credential v2 (DB/Vault/session/轮转/审计) | 3     | ✅ 已完成 | `todo/security-compliance.md` |
 | **P4** | 22  | Multi-Agent contract（quota/replay contract） | 4  | ✅ 已完成 | `todo/multi-agent.md`        |
-| **P4** | 23  | Reference conformance suite + Rust runtime PoC | 4 | ✅ 已完成 | `todo/multi-runtime.md`      |
+| **P4** | 23  | Reference conformance suite（Rust runtime PoC 已撤回） | 4 | ✅ 已完成 | `todo/multi-runtime.md`      |
 | **P3** | 24  | Control-Plane Backend API（Sessions/MCP/Sandbox/Audit/Eval/Prompt 版本/Alert） | 2.5 | ✅ 已完成 | `todo/studio-backend.md` |
 
 状态图例：🔲 未开始 · 🔵 进行中 · ✅ 已完成
@@ -142,7 +142,7 @@ Phase 1 ~ Phase 2 的主路径任务已全部完成。逐条任务历史见 Git 
 
 - #21 已完成 preview 实现；PostgreSQL schema 由 Alembic 管理，长期口径见 `docs/security/credential-vault.md`。
 - #22 已完成 storage lock quota primitive 与 multi-agent replay contract；长期口径见 `docs/architecture/multi-agent/multi-agent-collaboration.md`。
-- #23 已完成 reference conformance suite M1 补齐、Rust second-runtime ADR 与 PoC target；长期口径见 `docs/architecture/decisions/second-runtime-rust-reference.md`。
+- #23 已完成 reference conformance suite M1 补齐；Rust second-runtime PoC 只返回写死的 JSON，已于 2026-10-07 撤回并删除，见 `docs/architecture/decisions/second-runtime-rust-reference.md`。
 - #24 已完成 Sessions/MCP/Sandbox/Audit 查询面、Alert 后端、Evaluations/Dataset 后端与 Prompt 版本管理；长期口径见 `docs/architecture/control-plane/studio-control-plane-and-observability.md`。
 
 > **决策记录（2026-05-29）**：当前仅公司内部使用，多租户/水平扩展需求推迟。Phase 2 中的分布式加固（#18 跨节点调度、#19 第二 sandbox backend）降为 P3，有外部用户需求后再投入。新增 Phase 1.8 聚焦内部高频需求：Sub-Agent、上下文压缩、循环检测、Middleware 接口。

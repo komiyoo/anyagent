@@ -43,4 +43,4 @@ bash scripts/ci/run_pytest_regressions.sh
 bash scripts/ci/run_offline_smokes.sh
 ```
 
-需要 `agent-api` / `tool-runtime` / storage / OpenAI 兼容面的集成验收，请到同级项目 `../anyagent-apps`。
+本仓只覆盖框架自身行为；业务 agent 的应用层验收由各业务仓库针对所依赖的 `anyagent` 版本自行维护。

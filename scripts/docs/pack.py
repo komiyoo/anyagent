@@ -230,6 +230,7 @@ def _iter_candidate_docs(root: Path, include_notes: bool) -> Iterable[Path]:
         docs_dir / "architecture",
         docs_dir / "security",
         docs_dir / "performance",
+        docs_dir / "guides",
         docs_dir / "_dev",
     ]
     if include_notes:
@@ -270,6 +271,9 @@ def _load_entry(root: Path, path: Path) -> DocEntry | None:
         meta.setdefault("status", "stable")
     elif rel.parts[:2] == ("docs", "performance"):
         meta.setdefault("doc_kind", "performance")
+        meta.setdefault("status", "stable")
+    elif rel.parts[:2] == ("docs", "guides"):
+        meta.setdefault("doc_kind", "guide")
         meta.setdefault("status", "stable")
     elif rel.parts[:2] == ("docs", "_dev"):
         meta.setdefault("doc_kind", "dev")

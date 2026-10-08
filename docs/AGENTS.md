@@ -5,7 +5,7 @@
 ## 目标
 
 - 把 `docs/` 当作 agent 的 harness：可导航、可复现、可机械校验。
-- 长期维护文档（`docs/acceptance|architecture|security|performance/`）保持稳定、可引用、可验收。
+- 长期维护文档（`docs/acceptance|architecture|security|performance|guides/`）保持稳定、可引用、可验收。
 - 研发草案（`docs/_dev/`）可快速迭代，但必须有清晰的“毕业/归档”路径。
 - 文档系统要帮助 agent 做 protocol-first、boundary parsing、strict boundary 和 predictable structure 的判断，而不是把代码实现重新叙述一遍。
 
@@ -13,7 +13,8 @@
 
 - 新增/移动任何 `docs/**.md`：同步更新对应目录的 `README.md`（目录级 TOC）。
 - 不把实现真相放在 `docs/_notes/`：需要约束落地时，回写到 `requirements.md` 或长期维护文档。
-- 文档里避免重复粘贴协议/字段：以 `requirements.md` 与 `anyagent.protocol.*` 为准，文档只做解释与约束引用。
+- 代码是事实真源，文档只引用、不抄写：协议字段、CLI 参数、环境变量、HTTP 接口、默认值、extras、工具清单等能从代码或运行时接口查到的枚举信息，不在文档里复制，改为指向定义它的代码（文件路径 + 符号名）或查询入口（`--help`、OpenAPI 导出、`/admin/*/capabilities`、`doctor --json`）。文档写代码表达不了的内容：为什么这样设计、边界与约束、操作顺序、取舍建议。查询入口汇总见 `docs/guides/README.md`。
+- 图表用 Markdown 原生格式，不用 ASCII 或框线字符画图：架构、流程、时序和页面布局用 Mermaid（`flowchart`、`sequenceDiagram`、`block-beta`），对照矩阵用 Markdown 表格，操作步骤用有序列表。纯目录树可以保留文本形式。
 - 影响公开 contract、SDK 类型、配置、事件、存储 schema、运行入口或模块归属的代码变更，必须同步检查最近的长期维护文档和 TODO 证据。
 - 不把 `AGENTS.md` 当作架构真源；`AGENTS.md` 只承载 agent 行为约束，项目事实回到 README、requirements、todo 或长期维护 docs。
 
@@ -22,6 +23,7 @@
 - `docs/**` 内部引用：优先用 **相对路径** Markdown 链接（可点击），例如 `[storage-minimal-design.md](architecture/storage/storage-minimal-design.md)`。
 - 仓库根目录（如 `README.md`）引用 docs：用 `docs/...` 形式的仓库相对路径链接，例如 `docs/README.md`。
 - “证据引用”（面向可复盘的实现证据）：使用 `path:line`（例如 `packages/anyagent/src/...:42`），放在反引号里，避免与文档链接混淆。
+- 长期维护文档引用实现时，优先写 `path` + 符号名（例如 `packages/anyagent/src/anyagent/tool_runtime/settings.py` 的 `ToolRuntimeSettings`）；`path:line` 留给 TODO 证据和一次性排查。`check.py --check-code-refs` 只校验行号没有超出文件范围，代码移动后行号会悄悄指错位置。
 
 ## YAML 元信息（Front Matter，可选）
 
@@ -39,7 +41,7 @@
 
 推荐字段（按需填写，不要求齐全）：
 
-- `doc_kind`: `acceptance` | `architecture` | `security` | `performance` | `dev` | `notes`
+- `doc_kind`: `acceptance` | `architecture` | `security` | `performance` | `guide` | `dev` | `notes`
 - `status`: `stable` | `wip` | `draft` | `deprecated`
 - `tags`: 字符串数组（用于按主题筛选，例如 `["stateless","idempotency"]`）
 - `summary`: 1 句话摘要（用于 context pack 的快速预览）

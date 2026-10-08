@@ -15,7 +15,7 @@ summary: 定义会话分片串行、幂等、事件补发与慢消费者治理�
 
 - 本文描述的是 `anyagent` Core 应拥有的无状态服务语义，而不只是某个应用层 demo 的局部实现。
 - production-grade 实现真源已收敛到 `anyagent` Core。
-- replay / resume / session-run-event orchestration、PG/Redis backend 与分布式 service shell 归属 `anyagent`；`anyagent-apps` 只保留业务示例配置、服务栈文档和消费侧验收。
+- replay / resume / session-run-event orchestration、PG/Redis backend 与分布式 service shell 归属 `anyagent`；外部服务的部署与业务验收由业务仓库负责。
 
 ## 1. 核心概念：为什么“会话内串行”不会阻塞全系统
 
@@ -92,10 +92,10 @@ summary: 定义会话分片串行、幂等、事件补发与慢消费者治理�
   - keyed serialization / idempotency / replay / resume / cancellation 的服务语义
   - request normalization / response assembly / event emission 的共享 orchestration
   - built-in server 可复用的 reference service layer
-- `anyagent-apps` 应拥有：
-  - PostgreSQL / Redis / Event Bus 的 production 实现
-  - 分布式 Ingress / Worker / deployment wiring
-  - 应用层运维与 rollout/replay 工具
+  - PostgreSQL / Redis backend 实现、分布式 Agent API / Tool Runtime 服务入口，以及 rollout/replay 运维命令
+- 业务仓库（部署方）应拥有：
+  - PostgreSQL / Redis / Event Bus 等外部服务的部署
+  - Ingress、进程编排与扩缩容等 deployment wiring
 
 ### 3.3 执行语义
 

@@ -13,8 +13,9 @@ installation docs change.
    - keep the PyPI distribution name as `anyagent`
    - keep `packages/anyagent/src/anyagent/__init__.py`, server metadata, Tool Runtime metadata, and `packages/anyagent/uv.lock` aligned
 2. Update install and consumer docs:
-   - README Yunxiao Packages PyPI installation guidance
-   - downstream examples in `anyagent-apps` when startup behavior changes
+   - Yunxiao Packages PyPI installation guidance in `docs/guides/deployment.md`
+   - quickstart commands in `docs/guides/getting-started.md` when CLI or startup behavior changes
+   - `.agents/skills/anyagent-dev/` when workspace, CLI, or deployment behavior that business repos rely on changes
 3. Run local verification:
    - `uv lock --project packages/anyagent`
    - `uv run --project packages/anyagent pytest tests -q`
@@ -50,10 +51,6 @@ installation docs change.
    - install the published version from Yunxiao Packages PyPI in a clean environment when the version changed
    - run `anyagent --help`
    - run `anyagent serve --help`
-10. Update downstream consumers if needed:
-   - `anyagent-apps/config/service-stack.example.toml`
-   - `anyagent-apps/docs/service-stack-guide.md`
-   - `anyagent-apps/examples/*`
 
 ## Notes
 
@@ -64,7 +61,7 @@ installation docs change.
 - Feishu notification runs only when `FEISHU_RELEASE_WEBHOOK_URL` is set. It is currently unset, so the notify step logs a skip and continues.
 - `sdks/typescript/` stays in the repo for Studio's `file:` typecheck dependency and for the checked-in protocol schema baseline. Release CI does not build or publish it.
 - `scripts/notify_release_start.py` skips notification when `FEISHU_RELEASE_WEBHOOK_URL` is unset; when it is set, a failed Feishu response fails the job before package construction.
-- `anyagent-apps` consumes the installed/published Python `anyagent` package; it does not publish the SDK.
+- This repo ships no example application. Business repos consume the published Python `anyagent` package and own their own upgrades.
 - The publish job installs build tools from `https://pypi.org/simple`.
 - Consumers install from the PyPI-compatible Yunxiao Packages repository using the distribution name `anyagent`.
 - Twine upload uses `TWINE_REPOSITORY_URL`, `TWINE_USERNAME`, and `TWINE_PASSWORD`. The publish script defaults the first two; `TWINE_PASSWORD` comes from the GitHub Actions secret.

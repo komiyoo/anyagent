@@ -4,6 +4,27 @@
 
 本文用于明确 anyagent v0 在 **Agent API / Tool Runtime / Gateway / Plugins / Sandbox** 之间的信任边界、外部输入面，以及每一层应承担的校验责任（谁校验什么、谁不信任谁）。
 
+## 0. Agent 能力边界总览
+
+核心原则：**沙箱内自由，沙箱外隔离**。Agent 能看到资源，但只能通过 server 中介使用；命令执行通过统一的 `exec` tool 路由到沙箱，沙箱后端对 agent loop 透明。
+
+| 类别 | Agent 的能力或限制 |
+|---|---|
+| **可以做**（沙箱内，通过 `exec`） | 执行任意命令（curl / git / pip / python / node 等）；访问外部网站和 API；读写沙箱内文件；安装依赖；运行代码。同一 session 内多次 `exec` 共享同一个沙箱 |
+| **可以看**（只读） | 可用的 Skills、MCP Servers、Tools 列表及其 schema；凭据别名 `credential_id`（不含实际值）；自身的 AgentSpec |
+| **可以用**（经 server 中介） | 调用 Tools 时由 server 执行并注入凭据；调用 MCP Tools 时由 server 管理连接；使用 API Key 时由 server 注入 header，agent 看不到原值 |
+| **不能越过**（沙箱隔离） | 沙箱不挂载宿主机环境变量和凭证文件；egress 策略拒绝访问内部服务（anyagent / PG / Redis）；不同 session 的沙箱互相隔离；CPU、内存、磁盘、超时和 TTL 有上限 |
+
+Server 中介层负责：
+
+- Credential Vault：密钥只能写入，不能读出。
+- Tool Policy：deny 优先于 allow。
+- Context 隔离：`_credentials` 不回传给 agent。
+- 沙箱策略与后端分离：`SandboxPolicy` 描述策略，后端可以替换。
+- 审计：所有工具调用结构化留痕，不含敏感值。
+
+沙箱策略细节见 [sandbox-security.md](sandbox-security.md)，凭据见 [credential-vault.md](credential-vault.md)，工具策略见 [tool-policy.md](tool-policy.md)。
+
 ## 1. 系统角色与信任边界
 
 ### 1.1 外部调用方（不可信）

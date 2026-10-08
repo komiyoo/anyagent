@@ -85,6 +85,17 @@ v0 启动时加载：
 - 业务方不得注册 `core.*` / `sandbox.*`；平台插件只能注册自身 `<channel>.*`。
 - 热更新工具包走控制面 `register/heartbeat`，必须受信任、可审计、可回滚，`toolset_version` 单调递增。
 
+## 内置工具与插件加载
+
+内置工具由 `packages/anyagent/src/anyagent/tool_runtime/builtin_tools.py` 的 `register_builtin_core_tools_sync` 注册，需要显式 allowlist 的 privileged 工具由同文件的 `register_privileged_core_tools_sync` 注册；工具清单以这两个函数为准。内置工具与插件工具走同一个 registry，凭据都通过 `ToolDefinition.credentials` 解析到 handler context 的 `_credentials`，不另开注入通道。
+
+插件以包含 `plugin.json` 的目录形式提供，由 `anyagent.plugins` loader 通过 `ToolRuntimePluginAPI` 注册到 registry。约定：
+
+- 插件根目录默认取 `<workspace>/plugins`，可由 CLI 参数或环境变量覆盖。解析逻辑在 `packages/anyagent/src/anyagent/server/app_builders.py` 与 `packages/anyagent/src/anyagent/tool_runtime/server.py` 的 `_resolve_plugin_roots`。
+- 加载失败默认 fail-closed，启动报错；显式开启 fail-open 后记录错误并继续启动。
+- 插件被加载不等于对 agent 可见：工具仍需出现在目标 agent 的 `tools.requested_tool_names` 中。`anyagent init` 生成的 `plugins/demo/` 会被加载，但其工具默认不在任何 agent 的工具清单里。
+- 来源追溯：`GET /admin/plugins/catalog`（SDK `client.admin.plugin_catalog()`，CLI `anyagent plugin catalog`）返回 plugin roots、已加载插件、注册的工具、manifest/entrypoint 与 docs/schemas/tests 引用以及加载错误。契约见 [plugin-connector-contract-v1.md](../decisions/plugin-connector-contract-v1.md)。
+
 ## Tool Exposure 分级与按需发现
 
 为避免把全部工具 schema 一次性灌进 agent loop 而浪费 context token，每个 `ToolDefinition` 携带 `exposure` 分级，registry 据此决定哪些工具进入初始 manifest、哪些只能按需发现。字段定义见 `packages/anyagent/src/anyagent/tool_runtime/models.py:9`（`ToolExposure = Literal["direct","deferred","hidden"]`）与 `packages/anyagent/src/anyagent/tool_runtime/models.py:29`（`exposure: ToolExposure = "direct"`，默认 direct）。

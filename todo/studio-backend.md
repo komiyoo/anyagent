@@ -16,7 +16,7 @@ Studio 控制面前端（16 页）骨架已落地并消费现有 typed API，但
 - Server 入口：`packages/anyagent/src/anyagent/server/app.py`
 - 已落地端点：`/v1/responses`(+get/cancel)、`/internal/agents`、`/internal/tools/*`、`/internal/skills/list`、`/internal/observability/{summary,runs,timeline,metrics,tools,errors,traces}`、`/internal/responses/{id}/{prompt-context,tool-executions,model-request}`、`/internal/events/{list,stream}`、`/admin/credentials*`、`/admin/workspace/agents*`、`/admin/plugins/*`、`/admin/storage/health`
 - Stage events（已发但缺查询/告警面）：`anyagent.mcp.server.{starting,ready,failed}`、`anyagent.sandbox.workspace.*`、`anyagent.agent.{loop_warning,loop_terminated}`（`packages/anyagent/src/anyagent/protocol/stage_events.py`）
-- Telemetry / observability 真源：`anyagent.protocol.observability`、`packages/anyagent/src/anyagent/server/telemetry_store.py`
+- Telemetry / observability 真源：`anyagent.protocol.observability`、`packages/anyagent/src/anyagent/server/persistence/telemetry_store.py`
 
 ## 里程碑（Milestones）
 

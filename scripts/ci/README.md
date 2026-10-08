@@ -22,5 +22,5 @@
 补充：
 
 - `python3 scripts/docs/check.py --root .`：默认检查 Markdown link 与 TODO `Impl:` 证据。
-- `python3 scripts/docs/check.py --root . --check-code-refs`：额外检查反引号里的 `path` / `path:line` 明文引用，并读取 `scripts/docs/code_ref_allowlist.txt` 跳过 generated / illustrative / cross-repo refs，适合做迁移清理或大规模重构后的断链扫描。
+- `python3 scripts/docs/check.py --root . --check-code-refs`：额外检查反引号里的 `path` / `path:line` 明文引用（文件存在、行号不超出文件长度），并读取 `scripts/docs/code_ref_allowlist.txt` 跳过 generated / illustrative / cross-repo refs。`run_docs_guardrails.sh` 默认带此参数，代码移动或删除后文档引用失效会在 commit 与 CI 阶段直接失败。
 - 脚本总览见 [../README.md](../README.md)。

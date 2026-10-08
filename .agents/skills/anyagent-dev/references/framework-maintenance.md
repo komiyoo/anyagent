@@ -4,7 +4,7 @@ Use this reference when anyagent itself changes and downstream developer guidanc
 
 ## Update Trigger
 
-Whenever a framework change touches any item below, inspect and update `.anyagent/skills/anyagent-dev/` in the same change:
+Whenever a framework change touches any item below, inspect and update `.agents/skills/anyagent-dev/` in the same change:
 
 - CLI commands, flags, default keys, or generated workspace layout.
 - `.anyagent/` config schema, merge layers, hot/cold reload boundaries, or agent routing.
@@ -31,11 +31,11 @@ Whenever a framework change touches any item below, inspect and update `.anyagen
 3. Keep examples executable and secrets redacted.
 4. Validate:
    ```bash
-   python3 /Users/ticoag/.codex/skills/.system/skill-creator/scripts/quick_validate.py .anyagent/skills/anyagent-dev
+   python3 /Users/ticoag/.codex/skills/.system/skill-creator/scripts/quick_validate.py .agents/skills/anyagent-dev
    python3 scripts/docs/check.py --root .
    anyagent doctor --workspace .
    ```
-5. If this repo's generated demo workspace behavior changed, also check `README.md` and `packages/anyagent/src/anyagent/cli.py` examples.
+5. If this repo's generated demo workspace behavior changed, also check `docs/guides/getting-started.md` and `packages/anyagent/src/anyagent/cli.py` examples.
 
 ## Style
 

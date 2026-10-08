@@ -72,7 +72,7 @@ Connector contract 见 [Platform Connectors](../../../architecture/integrations/
 ## Scope
 
 - In：`ScriptedReply` / `ScriptedReplyRequest` / `ScriptedReplyProvider` 契约与装载、`AnyAgentScriptedReplyEvent`、`RuntimeSpec` 新增配置项、内置 runtime 命中时的 Response 合成与持久化（非流式 + 流式）、connector 回复节奏下限、Chatwoot typing indicator、对应文档与测试
-- Out：话术表内容与匹配规则（属消费侧）、把 scripted reply 做成可返回工具调用或多轮、为节奏下限新增独立配置文件、其他 connector 的 typing indicator（先只做 Chatwoot，契约留出位置）、**分布式 runtime**（`packages/anyagent/src/anyagent/server/routes/distributed_responses.py` → `responses/response_tooling.py:250` 是另一条执行面，finalize 形状不同；本轮不支持，文档明确标注）、`anyagent doctor` 报告装载状态（context providers 今天也不报，不单独为 scripted reply 开口子）
+- Out：话术表内容与匹配规则（属消费侧）、把 scripted reply 做成可返回工具调用或多轮、为节奏下限新增独立配置文件、其他 connector 的 typing indicator（先只做 Chatwoot，契约留出位置）、**分布式 runtime**（`packages/anyagent/src/anyagent/server/routes/distributed_responses.py` → `packages/anyagent/src/anyagent/server/responses/response_tooling.py` 是另一条执行面，finalize 形状不同；本轮不支持，文档明确标注）、`anyagent doctor` 报告装载状态（context providers 今天也不报，不单独为 scripted reply 开口子）
 
 ## Files
 

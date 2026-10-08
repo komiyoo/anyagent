@@ -10,7 +10,7 @@ req: ["requirements.md#req-2-1", "requirements.md#req-2-2", "requirements.md#req
 
 # Studio Control Plane and Observability
 
-本文固定 AnyAgent Studio 的控制面与观测面口径。内置 Studio 源码随 `anyagent` Python package 打包；协议模型、agent 配置语义、skill/MCP/tool enablement、观测事件与 SDK 查询面属于 `anyagent`，业务示例和外部部署模板由 `anyagent-apps` 消费。
+本文固定 AnyAgent Studio 的控制面与观测面口径。内置 Studio 源码随 `anyagent` Python package 打包；协议模型、agent 配置语义、skill/MCP/tool enablement、观测事件与 SDK 查询面属于 `anyagent`。
 
 ## 1. 模式分层
 
@@ -74,25 +74,23 @@ Alert v0 的 wire model 定义在 `anyagent.protocol.alerts`：`AlertRule` / `Al
 
 | 类别 | 事件类 / type | 存什么 | 写入器 |
 |---|---|---|---|
-| Prompt context（rendered） | `AnyAgentPromptContextRenderedEvent` / `anyagent.prompt.context.rendered`（`stage_events.py:281`） | 注入后**完整渲染的 prompt 片段** `fragments: list[RenderedPromptFragment]` 加 `total_chars`、`prompt_cache_key`；区别于仅做摘要审计的 `anyagent.prompt.context`（`stage_events.py:275`） | `PromptContextPersistence.persist`（`persistence/prompt_context.py:53`） |
-| Tool execution（detail） | `AnyAgentToolExecutionDetailEvent` / `anyagent.tool.execution.detail`（`stage_events.py:246`） | 单次工具调用的**完整 input/output 加 timing**：`arguments_json`、`output`、`status`、`duration_ms`、`output_truncated`、`error`、`audit_ref`；补足 planned/result 摘要无法回放的全量 payload | `ToolExecutionPersistence.persist`（`persistence/tool_execution.py:49`） |
-| Model request | `AnyAgentModelRequestEvent` / `anyagent.model.request`（`stage_events.py:261`） | 发往模型 provider 的**首个请求体 `applied_body`**（即 prompt envelope 注入后的完整 body）加 `prompt_cache_key`；落库前脱敏 | `ModelRequestPersistence.persist`（`persistence/model_request.py:51`） |
+| Prompt context（rendered） | `AnyAgentPromptContextRenderedEvent` | 注入后**完整渲染的 prompt 片段**；区别于仅做摘要审计的 `anyagent.prompt.context` | `PromptContextPersistence` |
+| Tool execution（detail） | `AnyAgentToolExecutionDetailEvent` | 单次工具调用的**完整 input/output 与耗时**，补足 planned/result 摘要无法回放的全量 payload | `ToolExecutionPersistence` |
+| Model request | `AnyAgentModelRequestEvent` | 发往模型 provider 的**首个请求体**（prompt envelope 注入后的完整 body）；落库前脱敏 | `ModelRequestPersistence` |
 
-写入开关与体积上限统一收口在 `PersistenceConfig`（`persistence/config.py:8`），默认全开、production-safe：`persist_rendered_context` 加 `rendered_context_max_bytes`（默认 512KiB，超限截断 rendered fragments）、`persist_tool_execution_detail` 加 `tool_execution_max_bytes`（256KiB，超限置事件 `output_truncated`）、`persist_model_request` 加 `model_request_max_bytes`（1MiB）。rendered prompt context 由“总序列化字节数”而非条数治理。
+事件字段以 `stage_events.py` 中的模型为准；写入器在 `packages/anyagent/src/anyagent/persistence/`。写入开关与体积上限统一收口在 `packages/anyagent/src/anyagent/persistence/config.py` 的 `PersistenceConfig`，默认全开；rendered prompt context 按总序列化字节数而非条数限制，超限截断。
 
-三个查询端点收口在 `packages/anyagent/src/anyagent/server/internal_replay.py`，均从 event store 按 `response_id` 扫描分页、取目标 type 的最新一条，返回 `anyagent.protocol.agent_api_internal` 下的稳定 SDK 模型（公共兼容边界）：
-
-- `GET /internal/responses/{response_id}/tool-executions`（`internal_replay.py:31`）→ `InternalResponseToolExecutionsResponse`，回放全部 tool execution detail。
-- `GET /internal/responses/{response_id}/model-request`（`internal_replay.py:60`）→ `InternalResponseModelRequestResponse`，回放 `applied_body` 加 `prompt_cache_key`。
-- `GET /internal/responses/{response_id}/prompt-context`（`internal_replay.py:90`）→ `InternalResponsePromptContextResponse`；优先返回 rendered fragments（`fallback="rendered"`），缺失时降级为审计摘要（`fallback="audit"`）。
+三个查询端点注册在 `packages/anyagent/src/anyagent/server/routes/internal_replay.py`（`/internal/responses/{response_id}/tool-executions`、`/model-request`、`/prompt-context`），均从 event store 按 `response_id` 扫描、取目标 type 的最新一条，返回 `anyagent.protocol.agent_api_internal` 下的稳定 SDK 模型（公共兼容边界）。prompt-context 优先返回 rendered fragments，缺失时降级为审计摘要。
 
 ### 2.2 Observability Sink Envelope、脱敏与 Replay Retention
 
-**统一出口 envelope。** 上述 replay payload 除了供 SDK/HTTP 查询，还经一条 server 内部 sink 通路对接外部审计/OTel。出口模型是 `ReplayObservabilityEnvelope`（`packages/anyagent/src/anyagent/observability.py:27`，`extra="forbid"`，含 `schema_version`、`category`、`event_type`、`response_id`、`seq`、`trace_id`、`ts_ms`、`payload`）。关键边界：**envelope 是 server 内部模型，不进 protocol bundle、不生成 TypeScript 类型**——把出口格式当对外 wire contract 会迫使大体积、需随后端演进的数据背上 schema 兼容承诺。`build_replay_observability_envelope`（`observability.py:213`）只接受 `REPLAY_EVENT_TYPES`（`observability.py:18`，即上述三个 type）的 stage event，按 `_replay_category` 映射 category 后封装。Sink 接口 `ReplayObservabilitySink`（`observability.py:81`）是 additive 的：内置从 `StdoutJsonReplaySink`（`observability.py:91`）与 `FileJsonlReplaySink`（`observability.py:98`，按行追加 JSONL）起步，OTel 作为同一 envelope 背后的 adapter 接入，而非核心循环的直接依赖；经 `REPLAY_OBSERVABILITY_STDOUT` / `REPLAY_OBSERVABILITY_FILE` 配置（`observability.py:269`）。这与面向 `ObservabilityEvent` 的 `LoggingSink`/`HttpJsonSink`（`observability.py:50`、`observability.py:62`）是两套并行 fan-out。
+以下符号均在 `packages/anyagent/src/anyagent/observability.py`，另有注明的除外。
 
-**脱敏策略。** model request 落库前剥离凭证：`ModelRequestPersistence.persist` 在构造事件时对 `applied_body` 调 `redact_replay_payload`（`persistence/model_request.py:68`），同时 envelope 封装时 `payload` 也再过一次 `redact_replay_payload`（`observability.py:236`）。脱敏键集合见 `_is_sensitive_key`（`observability.py:346`），命中 `authorization`、`credential_id`、`api_key`、`token`、`secret`、`auth_ref` 等（连字符/下划线归一）即递归替换为 `[REDACTED]`。因此 Authorization 头、credential_id 等注入材料不会以明文进入持久化 replay 或外部 sink，对应需求锚点 `requirements.md#req-3-1`。
+**统一出口 envelope。** 上述 replay payload 除了供 SDK/HTTP 查询，还经一条 server 内部 sink 通路对接外部审计/OTel，出口模型是 `ReplayObservabilityEnvelope`。关键边界：**envelope 是 server 内部模型，不进 protocol bundle、不生成 TypeScript 类型**——把出口格式当对外 wire contract 会迫使大体积、需随后端演进的数据背上 schema 兼容承诺。`build_replay_observability_envelope` 只接受 `REPLAY_EVENT_TYPES`（即上述三个 type）的 stage event。Sink 接口 `ReplayObservabilitySink` 是 additive 的：内置 stdout 与 JSONL 文件两种 sink，OTel 作为同一 envelope 背后的 adapter 接入，而非核心循环的直接依赖。这与面向 `ObservabilityEvent` 的 `LoggingSink` / `HttpJsonSink` 是两套并行 fan-out。
 
-**独立 retention。** replay 事件体积远大于普通审计/run 事件，故走**独立 TTL 且过期更早**：`replay_event_store_retention_s` 默认 1 小时（`storage/settings.py:33`），短于通用 `event_store_retention_s` 的 2 小时（`storage/settings.py:32`）与 `session_store_retention_s` 的 24 小时。清理由 `prune_expired_replay_events`（`server/persistence/events.py:799`）按 `REPLAY_EVENT_TYPES` 定向裁剪触发，event store 各后端实现 `prune_replay_events`：内存后端 `storage/inmemory.py:381`、SQLAlchemy 外部后端 `storage/external/sqlalchemy_backend.py:404`、合约定义 `storage/contracts.py:95`。replay TTL 与 run/session retention 各自配置，互不绑定。
+**脱敏策略。** model request 落库前和 envelope 封装时各过一次 `redact_replay_payload`，敏感键判定见 `_is_sensitive_key`，命中即递归替换为 `[REDACTED]`。因此 Authorization 头、credential_id 等注入材料不会以明文进入持久化 replay 或外部 sink，对应需求锚点 `requirements.md#req-3-1`。
+
+**独立 retention。** replay 事件体积远大于普通审计/run 事件，故走**独立 TTL 且过期更早**，与 run/session retention 各自配置、互不绑定，默认值见 `packages/anyagent/src/anyagent/storage/settings.py` 的 `StorageSettings`。清理由 `packages/anyagent/src/anyagent/server/persistence/events.py` 的 `prune_expired_replay_events` 按 `REPLAY_EVENT_TYPES` 定向裁剪，各 event store 后端实现合约 `packages/anyagent/src/anyagent/storage/contracts.py` 中的 `prune_replay_events`。
 
 ## 3. 页面功能设计稿
 

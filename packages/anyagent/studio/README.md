@@ -38,10 +38,12 @@ Saving uses optimistic `sha256` checks and fixed file kinds from the server. Reg
 
 ## Run
 
-The production path is served directly by Core:
+The production path is served directly by Core. Any workspace works; create a
+throwaway one with `anyagent init` if you do not have one:
 
 ```bash
-anyagent serve --workspace ../../anyagent-apps/examples/demo-workspace --port 8787
+anyagent init --workspace /tmp/studio-workspace
+anyagent serve --workspace /tmp/studio-workspace --port 8787
 open http://127.0.0.1:8787/
 ```
 
@@ -51,7 +53,7 @@ For frontend development, start an AnyAgent server first:
 
 ```bash
 anyagent serve \
-  --workspace ../../anyagent-apps/examples/demo-workspace \
+  --workspace /tmp/studio-workspace \
   --cors-origin http://127.0.0.1:5177 \
   --port 8787
 ```

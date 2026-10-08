@@ -23,18 +23,14 @@ Scripted reply 可在 Response 消息项附可选的 `content_type` / `content_a
 
 ## 架构
 
-```
-Chatwoot webhook 事件
-  ↕
-POST /gateway/chatwoot/webhook
-  ↕
-ChatwootWebhookAuth (验签)
-  ↕
-Webhook handler (解析事件)
-  ↕
-Agent API (/v1/responses)  →  agent loop  →  SSE 回复
-  ↕
-ChatwootOutboundDelivery (回写 Chatwoot API)
+```mermaid
+flowchart TB
+  cw["Chatwoot webhook 事件"] --> hook["POST /gateway/chatwoot/webhook"]
+  hook --> auth["ChatwootWebhookAuth（验签）"]
+  auth --> handler["Webhook handler（解析事件）"]
+  handler --> api["Agent API /v1/responses → agent loop"]
+  api --> out["ChatwootOutboundDelivery（回写 Chatwoot API）"]
+  out --> cw
 ```
 
 ## 配置

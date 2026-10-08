@@ -4,9 +4,12 @@
 
 ## 入口（从这里开始）
 
+- [guides/README.md](guides/README.md)：使用指南
+  - [guides/getting-started.md](guides/getting-started.md)：安装、生成 workspace、启动服务与调用接口
+  - [guides/deployment.md](guides/deployment.md)：部署形态、外置存储、观测、凭据后端与插件
 - [architecture/README.md](architecture/README.md)：核心架构与关键交互
   - [architecture/overview/roadmap.md](architecture/overview/roadmap.md)：Phase 1-4 演进路线图
-  - [architecture/overview/apps-packages-boundary.md](architecture/overview/apps-packages-boundary.md)：anyagent vs anyagent-apps 职责边界
+  - [architecture/overview/framework-boundary.md](architecture/overview/framework-boundary.md)：anyagent 框架与业务仓库的职责边界
   - [architecture/api/responses-api-sdk-and-server.md](architecture/api/responses-api-sdk-and-server.md)：SDK + Server 泳道与模块边界
   - [architecture/api/sdk-public-surface.md](architecture/api/sdk-public-surface.md)：AnyAgent SDK public surface、typed model facade、repo 内引用与验证入口
   - [architecture/control-plane/studio-control-plane-and-observability.md](architecture/control-plane/studio-control-plane-and-observability.md)：Studio 控制面、模式分层、观测与 skill 渠道化导入
@@ -19,6 +22,7 @@
 
 ## 目录结构
 
+- `docs/guides/` — 使用指南（安装、配置、启动、部署操作）
 - `docs/architecture/` — 架构设计（长期维护）
   - `docs/architecture/decisions/` — 架构决策记录（ADR）
   - `docs/architecture/engineering/` — 工程流程（CI、质量门）

@@ -188,12 +188,12 @@ flowchart TB
   - 定义 `SandboxPolicy` 扩展位与会话工作区语义
   - 定义 `SessionWorkspaceRecord` 等 typed contract
   - 定义 exec 生命周期事件和错误语义
-
-- `anyagent-apps`
-  - 实现 `Workspace Service`
-  - 接线 OpenSandbox/K8s/object storage/PG/Redis
-  - 实现 restore/checkpoint/hibernate/destroy 运维能力与验收脚本
+  - 实现 `WorkspaceService`：restore/checkpoint/hibernate/destroy 编排，以及 metadata/lease/snapshot/event 存储适配（见 §6.6）
   - 提供 admin/control-plane 视角的 runtime diagnostics 与 workspace lifecycle 调试事件缓冲
+
+- 业务仓库（部署方）
+  - 部署 OpenSandbox、对象存储、PG/Redis，配置 K8s 网络与安全策略
+  - 通过 Tool Runtime 环境变量把这些服务接入 Core
 
 - `OpenSandbox`
   - 提供 Lifecycle API 与 execd 代理能力
@@ -287,6 +287,23 @@ workspace lifecycle 还需要一条单独的控制面观察链，用于解释“
 - 当事件由 `exec` 触发时，`trace_id` 与 `audit_ref` 需要沿调用链透传到 workspace lifecycle 事件，便于把 tool runtime 审计日志、workspace 事件和后续 tracing 系统串成一条链
 - v1 不把这条 event buffer 当作跨进程持久化真源；真正的长期事件真源仍应由更高层 event store 承担
 - `jsonl` event store 的定位是“控制面持久 audit sink”，不是跨实例强一致总线；它解决的是重启后还能查、能排障、能最小回放，而不是替代正式的事件基础设施
+
+### 6.6 独立 Tool Runtime 的管理接口与组装
+
+独立 Tool Runtime 在 `/admin/sandbox/*` 下提供 workspace 的 health、列表、详情、lifecycle 事件、休眠和删除接口，路由注册在 `packages/anyagent/src/anyagent/tool_runtime/server.py` 的 `create_tool_runtime_app`，请求/响应模型在 `anyagent.protocol.admin_storage`。这些接口服务于 `sandbox.filesystem.persistence_mode=session_hot_cold` 的生命周期调试；event store 选用 jsonl 后端时，事件在重启后仍可回放。
+
+Core 侧组件：
+
+| 模块 | 职责 |
+|---|---|
+| `anyagent.server.sandbox.workspace_snapshots` | local-file / S3 兼容快照存储（S3 需 `anyagent[s3]`） |
+| `anyagent.server.sandbox.workspace_persistence` | local-file / Postgres workspace 元数据，in-memory / Redis workspace lease 与 `hold_workspace_lease` |
+| `anyagent.server.sandbox.workspace_events` | in-memory / jsonl lifecycle event store |
+| `anyagent.server.sandbox.opensandbox_backend` | `OpenSandboxWorkspaceBackend`：OpenSandbox Lifecycle API + execd proxy |
+| `anyagent.server.sandbox.workspace_service` | `WorkspaceService`：restore / hibernate / delete / health 编排 |
+| `anyagent.server.sandbox.workspace_runtime` | `build_workspace_runtime`：组装 metadata / lease / snapshot / event / backend / service |
+
+组装链路：`ToolRuntimeSettings`（`packages/anyagent/src/anyagent/tool_runtime/settings.py`，环境变量以此为准）把沙箱与 workspace 相关配置解析为 `WorkspaceRuntimeConfig`；`create_tool_runtime_app_async` 和 `anyagent tool-runtime serve` 据此构造 `WorkspaceRuntimeAssembly`，让 `exec` 与上述管理接口共用同一个 `WorkspaceService`。Postgres / Redis 后端依赖对应 extras，并保持 lazy import。
 
 ## 7. 一次请求的端到端时序
 
@@ -400,7 +417,7 @@ NPM_CONFIG_CACHE=/workspace/.cache/npm
 
 这意味着我们不把“容器状态快照”当成能力边界，而是把“workspace 工作区快照”当成能力边界。
 
-## 10. Core 与 Apps 的集成边界
+## 10. Core 与部署方的集成边界
 
 ### 10.1 `anyagent` Core 应新增的语义
 
@@ -422,22 +439,13 @@ NPM_CONFIG_CACHE=/workspace/.cache/npm
 
 这样 agent loop 不需要理解对象存储、restore、generation 等基础设施细节。
 
-### 10.2 `anyagent-apps` 应实现的内容
+### 10.2 部署方负责的内容
 
-`anyagent-apps` 侧实现 `Workspace Service`，负责：
+`WorkspaceService` 与各存储适配已在 Core 实现（§6.6）。部署方负责：
 
-- `ensure_workspace`
-- `checkpoint_workspace`
-- `hibernate_workspace`
-- `restore_workspace`
-- `destroy_workspace`
-
-以及下面这些 production glue：
-
-- PostgreSQL schema
-- Redis lease / hot route hints
-- 对象存储 bucket 与 retention
-- OpenSandbox 导入导出
+- 提供 PostgreSQL / Redis 实例并执行 schema 迁移
+- 对象存储 bucket 与 retention 策略
+- OpenSandbox 部署
 - K8s 网络与安全配置
 
 ## 11. 安全设计
@@ -609,7 +617,7 @@ OpenSandbox 的真实返回会包含比 workspace lifecycle 更多的运行时�
 
 因此，v1 应在 typed model 中增加一份 `runtime_diagnostics`，但它属于**控制面诊断字段**，不是 agent loop 输入，也不是 `exec` tool 的模型可见输出。
 
-当前 apps 侧的推荐落地方式是：
+当前 Core 的落地方式是：
 
 - 在 `admin/workspace` 与 metadata store 中保留 `runtime_diagnostics`
 - 默认只收最小运行态字段，不收 provider 原始 metadata
@@ -631,7 +639,7 @@ v1 交付至少要证明下面六件事：
 推荐按下面顺序推进：
 
 1. 在 `anyagent` 中补齐 protocol/storage contract 和事件语义
-2. 在 `anyagent-apps` 中实现 `Workspace Service` 与 PG/Redis/object storage schema
+2. 在 `anyagent` Core 中实现 `WorkspaceService` 与 PG/Redis/object storage 适配（已完成，见 §6.6）
 3. 用 OpenSandbox 跑通“首次创建 -> checkpoint -> hibernate -> restore -> exec”闭环
 4. 为 admin/control-plane 补 `runtime_diagnostics` typed model，先承载 OpenSandbox 的最小运行态信息，不进入 agent loop
 5. 补安全策略与 acceptance

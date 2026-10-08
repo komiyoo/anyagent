@@ -99,8 +99,8 @@ provider classpath 同样来自部署者控制的 `agent.yaml`，不是 agent/mo
 - Context provider 装载:`packages/anyagent/src/anyagent/server/handlers/context_providers.py`
 - Scripted reply 契约:`packages/anyagent/src/anyagent/protocol/scripted_reply.py`、`packages/anyagent/src/anyagent/agent_runtime/scripted_reply.py`
 - Scripted reply 装载与命中:`packages/anyagent/src/anyagent/server/handlers/scripted_reply.py`、`packages/anyagent/src/anyagent/server/routes/responses.py`
-- 接入点:`packages/anyagent/src/anyagent/agent_runtime/tool_loop.py:87`、`:634`、`:644`、`:673`
-- 装载与配置:`packages/anyagent/src/anyagent/server/app.py:148`、`packages/anyagent/src/anyagent/agent_packs.py:106`
+- 接入点:`packages/anyagent/src/anyagent/agent_runtime/loop/run.py` 的 `build_text_response_payload` / `iter_text_response_sse`（scripted reply 与模型回合共用同一响应形状）
+- 装载与配置:`packages/anyagent/src/anyagent/server/handlers/scripted_reply.py` 的 `_build_scripted_reply_resolver`、`packages/anyagent/src/anyagent/agent_packs.py` 的 `RuntimeSpec.scripted_reply_providers`
 - 内置压缩:`packages/anyagent/src/anyagent/agent_runtime/middlewares/context_compaction.py`
 - 内置循环检测:`packages/anyagent/src/anyagent/agent_runtime/middlewares/loop_detection.py`
 - Stage Events:`packages/anyagent/src/anyagent/protocol/stage_events.py:358`(compacted)、`:371`(loop warning)、`:380`(loop terminated)

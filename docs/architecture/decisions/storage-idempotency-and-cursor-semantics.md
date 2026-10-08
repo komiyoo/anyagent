@@ -62,5 +62,5 @@ Replay cursors are owned by the Event Store.
 
 - `packages/anyagent/src/anyagent/storage/replay.py`
 - `packages/anyagent/src/anyagent/storage/contracts.py`
-- `packages/anyagent/src/anyagent/server/idempotency.py`
+- `packages/anyagent/src/anyagent/server/responses/idempotency.py`
 - `docs/architecture/storage/storage-minimal-design.md`

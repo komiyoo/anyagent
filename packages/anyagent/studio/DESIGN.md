@@ -231,32 +231,24 @@ Applied to: panel mount/unmount, toast enter/exit, command palette open.
 
 ### State Management Topology
 
+```mermaid
+flowchart TB
+  pages["Pages and components"]
+  subgraph stores["Zustand stores — src/stores/ (global singletons)"]
+    s["settings, chat, ui, agentConfig, ...<br/>some persisted to localStorage"]
+  end
+  subgraph hooks["Custom hooks — src/hooks/ (API-bound data)"]
+    h["useWorkspaceCatalog, useObservability,<br/>useSkillsManagement, useCredentials, ..."]
+  end
+  client["src/anyagentClient.ts<br/>REST + OpenAI streaming"]
+  server["AnyAgent server API"]
+  pages --> stores
+  pages --> hooks
+  hooks --> client
+  client --> server
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Zustand Stores (Global Singletons)                     │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐  │
-│  │ settings │ │   chat   │ │    ui    │ │agentConfig│  │
-│  │ Store    │ │  Store   │ │  Store   │ │  Store    │  │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └─────┬─────┘  │
-│       │             │            │              │        │
-│  localStorage  localStorage  localStorage   memory      │
-└───────┼─────────────┼────────────┼──────────────┼───────┘
-        │             │            │              │
-┌───────┼─────────────┼────────────┼──────────────┼───────┐
-│  Custom Hooks (API-Bound Data)                          │
-│  ┌──────────────┐ ┌────────────┐ ┌──────────────────┐   │
-│  │useWorkspace  │ │useObserv-  │ │useSkillsMgmt     │   │
-│  │Catalog       │ │ability     │ │useCredentials    │   │
-│  │useToolCatalog│ │            │ │useMcpDrafts      │   │
-│  │useAgentFiles │ │            │ │                  │   │
-│  └──────┬───────┘ └─────┬──────┘ └────────┬─────────┘   │
-│         │                │                 │             │
-│         ▼                ▼                 ▼             │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │  anyagentClient.ts (REST + OpenAI Streaming)    │    │
-│  └─────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────┘
-```
+
+The store and hook lists are not exhaustive; see `src/stores/` and `src/hooks/`.
 
 ### Data Flow Patterns
 

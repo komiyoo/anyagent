@@ -85,48 +85,24 @@ class AuthRef(BaseModel):
 
 ### 2.1 系统分层
 
-```
-                    ┌────────────────────────────┐
-                    │   Admin API / CLI / 部署脚本 │
-                    │   (set / delete / list)      │
-                    └──────────┬─────────────────┘
-                               │ write-only
-                    ┌──────────▼─────────────────┐
-                    │     CredentialStore          │
-                    │   (抽象层，可插拔后端)         │
-                    │   ┌───────────────────────┐ │
-                    │   │ EnvBackend (v1 默认)   │ │
-                    │   │ FileBackend            │ │
-                    │   │ InfisicalBackend       │ │
-                    │   │ DatabaseBackend (v2)   │ │
-                    │   │ VaultBackend (v2)      │ │
-                    │   └───────────────────────┘ │
-                    └──────────┬─────────────────┘
-                               │ resolve (internal only)
-                    ┌──────────▼─────────────────┐
-                    │     Tool Runtime Router      │
-                    │   execute() 时自动注入凭证     │
-                    └──────────┬─────────────────┘
-                               │ context (含已注入凭证)
-                    ┌──────────▼─────────────────┐
-                    │     Tool Handler             │
-                    │   (只看到注入后的 token，      │
-                    │    不知道来源和存储方式)        │
-                    └──────────────────────────────┘
-
-    Agent API / Model  ←── 全程只看到 auth_ref (kind+ref)，看不到明文
+```mermaid
+flowchart TB
+  admin["Admin API / CLI / 部署脚本<br/>set / delete / list"] -- "只写" --> store["CredentialStore<br/>可插拔后端（见 3.3、3.4）"]
+  store -- "resolve（仅内部）" --> tr["Tool Runtime execute<br/>执行前注入凭证"]
+  tr -- "context._credentials" --> handler["Tool Handler<br/>只拿到注入后的值，不知道来源"]
+  model["Agent API / Model"] -. "全程只见 auth_ref（kind + ref）" .-> tr
 ```
 
 ### 2.1.1 Workspace runtime env projection
 
 Credential Vault 解决的是 tool handler 执行期的凭证解析与注入；另一个常见场景是第三方 stdio MCP、CLI 或模型 provider 只能从环境变量读取凭证。Core 支持 workspace 启动期按白名单把 Credential Vault 引用一次性投影成 runtime env：
 
-```text
-<workspace>/.anyagent/secrets.yaml
-        → AnyAgent Agent API / Tool Runtime 启动时读取
-        → 通过 Credential Vault resolver 解析 runtime_env 白名单中的 AuthRef
-        → 写入当前服务进程 os.environ
-        → MCP stdio 子进程、CLI、模型 provider、业务脚本按普通环境变量读取
+```mermaid
+flowchart LR
+  secrets[".anyagent/secrets.yaml"] -- "启动时读取" --> svc["Agent API / Tool Runtime"]
+  svc -- "按 runtime_env 白名单 resolve" --> vault["Credential Vault"]
+  svc -- "写入" --> env["服务进程 os.environ"]
+  env --> consumers["MCP stdio 子进程 / CLI /<br/>模型 provider / 业务脚本"]
 ```
 
 示例：
@@ -160,24 +136,24 @@ runtime_env:
 
 ### 2.2 凭证流转路径
 
-```
-1. 配置阶段（部署/运维）：
-   Admin → POST /admin/credentials { credential_id, kind, value, scope }
-        → CredentialStore.set()
-        → 持久化（env file / DB / Vault）
-
-2. 工具声明阶段（插件注册）：
-   Plugin → register_tool(ToolDefinition{ credentials: [ToolCredentialSpec(...)] })
-         → 声明 "本工具需要 kind=bearer_token 的凭证，注入到 header:Authorization"
-
-3. 执行阶段（运行时）：
-   Agent API → Tool Runtime execute(tool_name, args, context{ auth_ref })
-            → Router:
-               a. 查找 tool 的 ToolCredentialSpec 声明
-               b. CredentialStore.resolve(auth_ref, scope={agent_id})
-               c. 将明文值注入到 handler 的 resolved_credentials context
-            → Handler(args, context_with_credentials)
-            → Handler 使用 context["_credentials"]["header:Authorization"] 发起请求
+```mermaid
+sequenceDiagram
+  participant Admin as 运维 / Admin
+  participant Store as CredentialStore
+  participant Plugin as 插件
+  participant API as Agent API
+  participant TR as Tool Runtime
+  participant H as Tool Handler
+  Note over Admin,Store: 1. 配置阶段
+  Admin->>Store: POST /admin/credentials（credential_id, kind, value, scope）
+  Note over Plugin,TR: 2. 工具声明阶段
+  Plugin->>TR: 注册工具，ToolDefinition.credentials 声明需要的凭证与注入位置
+  Note over API,H: 3. 执行阶段
+  API->>TR: execute(tool_name, args, context.auth_ref)
+  TR->>Store: resolve(auth_ref, agent_id)
+  Store-->>TR: 明文值（仅内部）
+  TR->>H: 调用 handler，context._credentials 带注入值
+  H->>H: 用 _credentials 中的 header:Authorization 发起请求
 ```
 
 ### 2.3 个人级场景（OpenClaw 类）的扩展点
@@ -280,13 +256,8 @@ class CredentialStore(ABC):
 
 向后兼容现有的环境变量方式。凭证映射规则：
 
-```
-credential_id = "cred_openai_default"
-→ 环境变量名 = CREDENTIAL__CRED_OPENAI_DEFAULT（前缀 CREDENTIAL__ + 大写 credential_id）
-
-credential_id 也可以直接映射到现有环境变量名：
-→ 通过 metadata.env_var_name = "OPENAI_API_KEY" 指定
-```
+- 默认按 `CREDENTIAL__` 前缀加大写 `credential_id` 取环境变量，例如 `cred_openai_default` 对应 `CREDENTIAL__CRED_OPENAI_DEFAULT`。
+- 也可以通过 `metadata.env_var_name`（例如 `OPENAI_API_KEY`）直接映射到已有的环境变量。
 
 `resolve()` 逻辑：
 1. 优先查找 `metadata.env_var_name` 指定的环境变量
@@ -334,6 +305,16 @@ VAULT_MOUNT=secret
 VAULT_CREDENTIAL_ROOT_PATH=anyagent/credentials
 ```
 
+### 3.4 运行时后端选择与能力查询
+
+后端由 `MCP_CREDENTIAL_STORE_BACKEND` 选择。Core server 与独立 Tool Runtime 共用 `packages/anyagent/src/anyagent/server/security/credential_runtime.py` 中的 `CredentialRuntimeConfig`、`build_credential_resolver_from_config` 和 `build_credential_store_from_config` 组装 resolver 与 admin store，可选取值和每个后端需要的环境变量以这里为准。语义约定：
+
+- 未设置时，`anyagent serve` 使用 Admin API 的 write-only 内存凭据库，重启后丢失。
+- 不带 `-write` 后缀的取值只提供 resolver；带 `-write` 后缀的取值让同一后端同时作为 admin store，支持 `/admin/credentials` 写入。外部系统托管的后端（如 Infisical）即使带 `-write` 也保持只读，凭据在外部系统中维护。
+- 独立 Tool Runtime 读取同一组环境变量（解析入口 `ToolRuntimeSettings`），用 `--admin-key` 或 `ADMIN_API_KEY` 启用 `/admin/credentials`。
+
+运行时以 `GET /admin/credentials/capabilities` 为准：Core server 与独立 Tool Runtime 都提供该接口，返回当前 resolver/admin store、是否只读、缺少的 extras/env 以及规划中的后端，不返回任何凭证明文。
+
 ## 4. 管理接口
 
 ### 4.1 Admin API
@@ -345,6 +326,7 @@ POST   /admin/credentials              # 创建或更新凭证
 DELETE /admin/credentials/{id}          # 删除凭证
 GET    /admin/credentials               # 列出凭证引用（不返回 value）
 GET    /admin/credentials/{id}          # 获取凭证元信息（不返回 value）
+GET    /admin/credentials/capabilities  # 当前后端能力矩阵（见 3.4，不返回 value）
 ```
 
 **关键约束**：
@@ -450,287 +432,41 @@ anyagent credential delete --id cred_openai_default
 
 ### 5.1 凭证清单（Credential Manifest）
 
-部署时使用一个 `credentials.yaml` 文件声明所有需要的凭证：
+部署时用一个 YAML 清单声明需要的凭证，再通过 Admin API 批量写入。字段与解析规则以 `packages/anyagent/src/anyagent/cli.py` 的 `_cmd_import` / `_import_resolve_value` 为准，模板见 `scripts/credentials.yaml.template`。约束：
 
-```yaml
-# credentials.yaml — 部署时凭证注入清单
-# 注意：此文件包含敏感信息，务必 chmod 600 且不提交到版本控制
+- 每条凭证包含 `credential_id`、`kind`、`scope`，可选 `metadata`。
+- 值的来源依次为 `value`、`value_from_env`（环境变量未设置时取 `default_value`）、`default_value`。清单里建议只写 `value_from_env`，不写明文。
+- 含明文值的清单文件必须 `chmod 600`，不提交到版本控制。
 
-credentials:
-  # ── 模型 Provider ──
-  - credential_id: cred_openai_default
-    kind: api_key
-    scope: { level: global }
-    metadata:
-      display_name: "OpenAI API Key"
-      provider: openai
-      usage: "默认模型调用（OPENAI_BASE_URL + OPENAI_API_KEY）"
-    # value 来源优先级：
-    #   1. 本文件的 value 字段（直接指定）
-    #   2. value_from_env 指定的环境变量名
-    value_from_env: OPENAI_API_KEY
-
-  - credential_id: cred_openai_base_url
-    kind: base_url
-    scope: { level: global }
-    metadata:
-      display_name: "OpenAI Base URL"
-      provider: openai
-      usage: "模型 API 入口（支持兼容 API 如 DashScope、DeepSeek 等）"
-    value_from_env: OPENAI_BASE_URL
-    # 若未设置环境变量，使用默认值
-    default_value: "https://api.openai.com/v1"
-
-  # ── 搜索 ──
-  - credential_id: cred_websearch_default
-    kind: api_key
-    scope: { level: global }
-    metadata:
-      display_name: "Web Search API Key"
-      provider: websearch
-      usage: "core.web_search 工具的搜索引擎 API Key（如 Tavily / SerpAPI / Bing）"
-    value_from_env: WEBSEARCH_API_KEY
-
-  - credential_id: cred_bocha_mcp
-    kind: bearer_token
-    scope: { level: global }
-    metadata:
-      display_name: "Bocha MCP Token"
-      provider: bocha
-      usage: "Agent Pack 中 `bocha-mcp` server 的 Authorization Bearer token"
-    value_from_env: CREDENTIAL__CRED_BOCHA_MCP
-
-  - credential_id: cred_websearch_engine
-    kind: config
-    scope: { level: global }
-    metadata:
-      display_name: "Web Search Engine Type"
-      provider: websearch
-      usage: "搜索引擎类型：tavily / serpapi / bing"
-    value_from_env: WEBSEARCH_ENGINE
-    default_value: "tavily"
-
-  # ── 平台：飞书 ──
-  - credential_id: cred_feishu_default
-    kind: bearer_token
-    scope: { level: global }
-    metadata:
-      display_name: "飞书 Tenant Access Token"
-      provider: feishu
-      usage: "飞书开放平台 API 调用"
-    value_from_env: FEISHU_TENANT_ACCESS_TOKEN
-
-  - credential_id: cred_feishu_app_id
-    kind: oauth2_client_id
-    scope: { level: global }
-    metadata:
-      display_name: "飞书 App ID"
-      provider: feishu
-    value_from_env: FEISHU_APP_ID
-
-  - credential_id: cred_feishu_app_secret
-    kind: oauth2_client_secret
-    scope: { level: global }
-    metadata:
-      display_name: "飞书 App Secret"
-      provider: feishu
-    value_from_env: FEISHU_APP_SECRET
-
-  # ── 平台：GitHub ──
-  - credential_id: cred_github_pat
-    kind: bearer_token
-    scope: { level: global }
-    metadata:
-      display_name: "GitHub Personal Access Token"
-      provider: github
-      usage: "GitHub API 调用（代码仓库操作、Issue 管理等）"
-    value_from_env: GITHUB_TOKEN
-
-  # ── 第三方 API（示例） ──
-  - credential_id: cred_custom_api_example
-    kind: api_key
-    scope: { level: agent, agent_id: main }
-    metadata:
-      display_name: "自定义 API Key（示例）"
-      provider: custom
-      usage: "示例：仅 main agent 可用的第三方 API"
-    value_from_env: CUSTOM_API_KEY
-```
-
-### 5.2 Docker Compose 注入方式
-
-```yaml
-# docker-compose.yaml（示例片段）
-services:
-  tool-runtime:
-    environment:
-      # ── anyagent 内部密钥 ──
-      TOOL_RUNTIME_INTERNAL_KEY: "${TOOL_RUNTIME_INTERNAL_KEY}"
-      ADMIN_API_KEY: "${ADMIN_API_KEY}"
-
-      # ── Credential Store 配置 ──
-      CREDENTIAL_STORE_BACKEND: "env"          # env | file | database
-      CREDENTIAL_STORE_FILE_ROOT: "/data/credentials"
-
-      # ── 凭证通过环境变量注入（EnvBackend 模式） ──
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
-      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
-      WEBSEARCH_API_KEY: "${WEBSEARCH_API_KEY}"
-      WEBSEARCH_ENGINE: "${WEBSEARCH_ENGINE:-tavily}"
-      FEISHU_TENANT_ACCESS_TOKEN: "${FEISHU_TENANT_ACCESS_TOKEN}"
-      FEISHU_APP_ID: "${FEISHU_APP_ID}"
-      FEISHU_APP_SECRET: "${FEISHU_APP_SECRET}"
-      GITHUB_TOKEN: "${GITHUB_TOKEN}"
-
-    volumes:
-      # FileBackend 模式：挂载凭证目录
-      - ./credentials:/data/credentials:ro
-
-  agent-api:
-    environment:
-      AGENT_API_KEY: "${AGENT_API_KEY}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
-      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
-      TOOL_RUNTIME_BASE_URL: "http://tool-runtime:8788"
-      TOOL_RUNTIME_INTERNAL_KEY: "${TOOL_RUNTIME_INTERNAL_KEY}"
-```
-
-### 5.3 一键初始化脚本
+### 5.2 批量导入
 
 ```bash
-#!/bin/bash
-# scripts/init-credentials.sh — 部署后首次运行，从 credentials.yaml 批量注入凭证
-
-set -euo pipefail
-
-CREDENTIALS_FILE="${1:-credentials.yaml}"
-ADMIN_URL="${ADMIN_URL:-http://127.0.0.1:8788}"
-ADMIN_KEY="${ADMIN_API_KEY:?ADMIN_API_KEY must be set}"
-
-echo "Loading credentials from ${CREDENTIALS_FILE}..."
-
-# 使用 yq 解析 YAML，逐条调用 Admin API
-yq -r '.credentials[]' "${CREDENTIALS_FILE}" | while IFS= read -r cred; do
-    cred_id=$(echo "$cred" | yq -r '.credential_id')
-    kind=$(echo "$cred" | yq -r '.kind')
-    scope=$(echo "$cred" | yq -c '.scope')
-    metadata=$(echo "$cred" | yq -c '.metadata // {}')
-
-    # 确定 value 来源
-    value_from_env=$(echo "$cred" | yq -r '.value_from_env // empty')
-    direct_value=$(echo "$cred" | yq -r '.value // empty')
-    default_value=$(echo "$cred" | yq -r '.default_value // empty')
-
-    if [ -n "$direct_value" ]; then
-        value="$direct_value"
-    elif [ -n "$value_from_env" ]; then
-        value="${!value_from_env:-$default_value}"
-    else
-        value="$default_value"
-    fi
-
-    if [ -z "$value" ]; then
-        echo "  SKIP ${cred_id}: no value available"
-        continue
-    fi
-
-    echo "  SET ${cred_id} (kind=${kind})"
-    curl -sf -X POST "${ADMIN_URL}/admin/credentials" \
-        -H "Authorization: Bearer ${ADMIN_KEY}" \
-        -H "Content-Type: application/json" \
-        -d "$(jq -n \
-            --arg id "$cred_id" \
-            --arg kind "$kind" \
-            --arg value "$value" \
-            --argjson scope "$scope" \
-            --argjson metadata "$metadata" \
-            '{credential_id: $id, kind: $kind, value: $value, scope: $scope, metadata: $metadata}'
-        )" > /dev/null
-done
-
-echo "Done. Credentials loaded."
+anyagent credential import --admin-url <url> --admin-key "$ADMIN_API_KEY" --file credentials.yaml --skip-missing
 ```
 
-### 5.4 Kubernetes Secret 注入方式
+`scripts/init-credentials.sh` 是这条命令的封装。导入只写不读，不会回读明文。
 
-```yaml
-# k8s/credential-secret.yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: anyagent-credentials
-type: Opaque
-stringData:
-  OPENAI_API_KEY: "sk-..."
-  OPENAI_BASE_URL: "https://api.openai.com/v1"
-  WEBSEARCH_API_KEY: "tvly-..."
-  FEISHU_APP_ID: "cli_..."
-  FEISHU_APP_SECRET: "..."
-  GITHUB_TOKEN: "ghp_..."
-  ADMIN_API_KEY: "adm_..."
-  AGENT_API_KEY: "agt_..."
-  TOOL_RUNTIME_INTERNAL_KEY: "int_..."
----
-# k8s/tool-runtime-deployment.yaml（片段）
-spec:
-  containers:
-    - name: tool-runtime
-      envFrom:
-        - secretRef:
-            name: anyagent-credentials
-```
+### 5.3 部署平台注入
+
+Docker Compose、K8s Secret 等编排由业务仓库负责，分工见 [framework-boundary.md](../architecture/overview/framework-boundary.md)。无论用哪种平台：
+
+- 用 `MCP_CREDENTIAL_STORE_BACKEND` 选择凭据后端（见 3.4）：env 后端从进程环境变量读取，file 后端从只读挂载的目录读取。
+- 凭证只注入 Agent API / Tool Runtime 进程，不注入沙箱。
+- `ADMIN_API_KEY`、`AGENT_API_KEY`、`TOOL_RUNTIME_INTERNAL_KEY` 等内部密钥与业务凭证一样通过平台的 secret 机制管理。
 
 ## 6. 工具执行时的凭证注入流程
 
-### 6.1 Router 增强逻辑
+### 6.1 执行时的注入步骤
 
-在 `Router.execute()` 中，policy 校验通过后、handler 执行前，增加凭证 resolve 步骤：
+实现见 `packages/anyagent/src/anyagent/server/runtime/in_process.py` 的 `InProcessToolRuntimeService.execute` 与 `_resolve_tool_credentials`。约定：
 
-```python
-# 伪代码：Router.execute() 增强
-async def execute(self, *, tool_name, arguments_json, context, deadline_ms=None):
-    # ... 现有逻辑：查找工具、policy 校验 ...
-
-    td: ToolDefinition = rt.definition
-
-    # ── 新增：凭证注入 ──
-    resolved_creds = {}
-    for cred_spec in td.credentials:
-        ref = AuthRef(kind=cred_spec.ref_kind, ref=context.get("auth_ref", {}).get("ref"))
-        value = await self._credential_store.resolve(
-            auth_ref=ref,
-            scope_context={"agent_id": context.get("agent_id")}
-        )
-        if value is None and cred_spec.required:
-            return ToolResult(status="error", error={
-                "type": "tool_authorization_error",
-                "code": "credential_not_found",
-                "message": f"required credential kind={cred_spec.ref_kind} not configured",
-            }, ...)
-        if value is not None:
-            formatted = cred_spec.format.replace("{value}", value)
-            resolved_creds[cred_spec.injection_target] = formatted
-
-    # 将 resolved_creds 注入到 context（handler 可用，但不回传给 Agent）
-    enriched_context = {**context, "_credentials": resolved_creds}
-
-    # 调用 handler
-    output = await rt.handler(args, enriched_context)
-```
+- policy 校验通过后、handler 执行前，按 `ToolDefinition.credentials` 逐项 resolve 凭证。
+- 必需凭证缺失时，工具返回 `credential_not_found` 授权错误，不调用 handler。
+- resolve 出的值按 `format` 格式化后，以 `injection_target` 为键放入 context 的 `_credentials`；`_credentials` 只对 handler 可见，不回传给 Agent。
 
 ### 6.2 Handler 使用凭证
 
-插件 handler 从 `context["_credentials"]` 中获取已注入的凭证：
-
-```python
-# 改造前（v0，直接读环境变量）：
-token = os.getenv("FEISHU_TENANT_ACCESS_TOKEN")
-headers = {"Authorization": f"Bearer {token}"}
-
-# 改造后（v1，从注入的 context 获取）：
-auth_header = context.get("_credentials", {}).get("header:Authorization", "")
-headers = {"Authorization": auth_header}
-```
+handler 从 `context["_credentials"]` 读取已注入的值（例如 `header:Authorization`），不再直接读环境变量。
 
 ### 6.3 凭证 resolve 优先级
 
@@ -755,27 +491,19 @@ headers = {"Authorization": auth_header}
 
 ### 7.1 企业级场景部署流程
 
-```
-1. 运维准备 credentials.yaml（包含模型 Key、搜索 Key、平台 Token 等）
-2. docker-compose up（凭证通过环境变量或 Secret 注入）
-3. 运行 scripts/init-credentials.sh（批量注册凭证到 CredentialStore）
-4. Agent Pack 中的 agent.yaml 配置工具白名单和 policy
-5. 用户通过 Agent API 使用预制的 Agent 和工具
-   → 工具执行时 Tool Runtime 自动注入凭证
-   → Agent/模型全程不接触密钥
-```
+1. 运维准备 `credentials.yaml`（模型 Key、搜索 Key、平台 Token 等）。
+2. 启动服务，凭证通过环境变量或平台 Secret 注入。
+3. 运行 `scripts/init-credentials.sh`，批量写入 CredentialStore。
+4. 在 Agent Pack 的 `agent.yaml` 中配置工具白名单和 policy。
+5. 用户通过 Agent API 使用预制的 agent 和工具；工具执行时由 Tool Runtime 注入凭证，agent 和模型全程不接触密钥。
 
 ### 7.2 个人级场景部署流程
 
-```
-1. 用户部署 anyagent（最小配置：AGENT_API_KEY + OPENAI_API_KEY）
-2. Agent 的 AgentSpec 开启 admin.credential_set 工具
-3. 用户通过对话告诉 Agent："请配置飞书的 App ID 和 Secret"
-4. Agent 调用 admin.credential_set 写入凭证
-5. 后续工具调用自动使用已配置的凭证
-   → Agent 只在 set 的那一刻"经手"明文（由用户主动提供）
-   → 之后无法通过任何工具回读
-```
+1. 用户部署 anyagent（最小配置：`AGENT_API_KEY` + `OPENAI_API_KEY`）。
+2. 在 AgentSpec 中开启 `admin.credential_set` 工具。
+3. 用户在对话中让 agent 配置凭证，例如“请配置飞书的 App ID 和 Secret”。
+4. agent 调用 `admin.credential_set` 写入凭证。
+5. 后续工具调用自动使用已配置的凭证。agent 只在写入时经手一次用户主动提供的明文，之后无法通过任何工具回读。
 
 ## 8. 安全约束（强约束）
 

@@ -66,7 +66,7 @@ sequenceDiagram
   SDK-->>App: typed StageEvent stream
 ```
 
-### 2.2 分布式模式（anyagent-apps）
+### 2.2 分布式模式（`anyagent agent-api serve` + `anyagent tool-runtime serve`）
 
 ```mermaid
 sequenceDiagram
@@ -140,7 +140,7 @@ sequenceDiagram
 - Credential Vault（EnvBackend 默认）
 - Tool Policy enforcement
 
-分布式 Agent API 与 built-in server 共享同一套 Core helper：主编排、manifest cache / requested tool names、request validation、stream/nonstream event persistence 与 terminal finalizer 均归属 `anyagent.server.*`。同级项目 `anyagent-apps` 不再保留 `apps/agent-api` 服务壳，消费侧验收通过 Core distributed app 或已发布 SDK/CLI 入口验证。
+分布式 Agent API 与 built-in server 共享同一套 Core helper：主编排、manifest cache / requested tool names、request validation、stream/nonstream event persistence 与 terminal finalizer 均归属 `anyagent.server.*`。分布式 Agent API 只有 Core 这一份实现，由 `anyagent agent-api serve` 启动。
 
 ### 3.4 Client SDK（`AnyAgent`）
 
@@ -216,16 +216,11 @@ scripted 轮次的 Response 本体与模型轮次形状完全一致（一条 `me
 
 anyagent 通过 `mcp.json` 配置 MCP server 连接：
 
-```text
-Agent Pack 配置:
-  .anyagent/agents/<agent_id>/mcp.json
-    → MCPServerManager 加载
-    → 工具发现 → 合并到 manifest
-    → 执行时通过 MCP 连接池调用
-
-凭证注入:
-  mcp.json 中的 credential_id
-    → Credential Vault resolve
-    → 注入到 MCP 连接的 Authorization header
-    → Agent 不见原值
+```mermaid
+flowchart LR
+  cfg[".anyagent/agents/#lt;agent_id#gt;/mcp.json"] --> mgr["MCPServerManager 加载"]
+  mgr --> disc["工具发现，合并进 manifest"]
+  disc --> invoke["执行时经 MCP 连接池调用"]
+  cfg -- "credential_id" --> vault["Credential Vault resolve"]
+  vault -- "注入 Authorization header，agent 不见原值" --> invoke
 ```

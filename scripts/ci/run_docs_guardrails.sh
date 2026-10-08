@@ -2,6 +2,6 @@
 set -euo pipefail
 
 echo "[ci] docs guardrails"
-python3 scripts/docs/check.py --root .
+python3 scripts/docs/check.py --root . --check-code-refs
 python3 scripts/anyagent_progress.py --root .
 

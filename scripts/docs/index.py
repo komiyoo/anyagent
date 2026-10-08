@@ -160,6 +160,9 @@ def _infer_kind_status(rel: Path, meta: dict[str, Any]) -> dict[str, Any]:
         elif rel.parts[1] == "performance":
             meta.setdefault("doc_kind", "performance")
             meta.setdefault("status", "stable")
+        elif rel.parts[1] == "guides":
+            meta.setdefault("doc_kind", "guide")
+            meta.setdefault("status", "stable")
         elif rel.parts[1] == "_dev":
             meta.setdefault("doc_kind", "dev")
             meta.setdefault("status", "wip")
@@ -187,6 +190,7 @@ def _iter_docs_markdown(root: Path, include_notes: bool) -> Iterable[Path]:
         docs_dir / "architecture",
         docs_dir / "security",
         docs_dir / "performance",
+        docs_dir / "guides",
         docs_dir / "_dev",
     ]
     if include_notes:

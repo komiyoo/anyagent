@@ -30,56 +30,23 @@ anyagent 的 Agent 安全模型不是"全面禁止"，而是**沙箱内给予充
 - **策略层（Protocol）**：定义沙箱策略模型，与平台/后端无关，放在 `anyagent.protocol.sandbox`
 - **后端层（Server）**：可插拔的沙箱后端实现，放在 `anyagent.server.sandbox`
 
-```text
-┌── Protocol 层 (anyagent.protocol.sandbox) ────────────────────┐
-│                                                                 │
-│  SandboxPolicy:                                                 │
-│    mode: opensandbox | external | local-unsafe | disabled       │
-│    network: NetworkSandboxPolicy                                │
-│    filesystem: FileSystemSandboxPolicy                          │
-│    resources: ResourceLimits                                    │
-│    lifecycle: session-isolated                                  │
-│                                                                 │
-│  NetworkSandboxPolicy:                                          │
-│    allow_internet: bool       # 允许外网访问                    │
-│    deny_ranges: list[str]     # 拒绝的内网 CIDR                 │
-│                                                                 │
-│  FileSystemSandboxPolicy:                                       │
-│    workspace_mount: str | None   # 挂载的工作目录               │
-│    read_only_paths: list[str]    # 只读挂载路径                  │
-│                                                                 │
-│  ResourceLimits:                                                │
-│    cpu: str                   # e.g. "1"                        │
-│    memory: str                # e.g. "512Mi"                    │
-│    disk: str                  # e.g. "1Gi"                      │
-│    timeout: int               # 单次命令超时 (秒)               │
-│    ttl: int                   # 沙箱最长存活 (秒)               │
-│    output_max_bytes: int      # stdout/stderr 截断              │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-          ↓ 配置来源：agent.yaml → SandboxPolicy
-          ↓ 运行时：Tool Runtime 透明注入
-
-┌── Server 层 (anyagent.server.sandbox) ────────────────────────┐
-│                                                                 │
-│  SandboxManager:                                                │
-│    session_partition_key → SandboxInstance 映射                  │
-│    lazy create / TTL destroy / session end cleanup               │
-│                                                                 │
-│  SandboxBackend (ABC, pluggable):                               │
-│  ├─ OpenSandboxBackend:                                         │
-│  │    OpenSandbox SDK → create / commands.run / files.* / kill  │
-│  ├─ ExternalSandboxBackend:                                     │
-│  │    直接执行（K8s Pod / Docker container 即沙箱）              │
-│  └─ LocalUnsafeBackend:                                         │
-│       本地直接执行（开发模式，明确标记风险）                     │
-│                                                                 │
-│  ExecHandler:                                                   │
-│    Tool Runtime 内置的命令执行 handler                           │
-│    → SandboxManager.get_or_create() → backend.execute()         │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  yaml["agent.yaml 的 sandbox 段"] --> policy
+  subgraph protocol["Protocol 层：anyagent.protocol.sandbox"]
+    policy["SandboxPolicy<br/>mode / network / filesystem / resources"]
+  end
+  subgraph server["Server 层：anyagent.server.sandbox"]
+    exec["exec tool handler"] --> manager["SandboxManager.execute"]
+    manager -- "mode = opensandbox" --> osb["OpenSandboxWorkspaceBackend"]
+    manager -- "mode = local-unsafe / external" --> local["LocalUnsafeBackend"]
+  end
+  policy --> manager
 ```
+
+- 策略字段以 `packages/anyagent/src/anyagent/protocol/sandbox.py` 中的 `SandboxPolicy`、`NetworkSandboxPolicy`、`FileSystemSandboxPolicy`、`ResourceLimits` 为准。
+- `external` 模式与 `local-unsafe` 走同一个本地执行后端，区别在于 `external` 依赖外层容器或 Pod 提供隔离；`disabled` 时不注册 `exec`。
+- 路由逻辑见 `packages/anyagent/src/anyagent/server/sandbox/manager.py` 的 `SandboxManager.execute`。
 
 ### 2.1 与 Codex 架构的对比
 
@@ -96,8 +63,8 @@ anyagent 的 Agent 安全模型不是"全面禁止"，而是**沙箱内给予充
 
 ### 2.2 为什么采用策略-后端分离
 
-1. **Protocol 层可复用**：`SandboxPolicy` 放在 `anyagent.protocol` 中，anyagent-apps 的分布式部署可直接消费相同的策略模型
-2. **后端可替换**：本地开发用 `LocalUnsafeBackend`，`anyagent serve` 用 `OpenSandboxBackend`，K8s 部署用 `ExternalSandboxBackend`——agent loop 无感知
+1. **Protocol 层可复用**：`SandboxPolicy` 放在 `anyagent.protocol` 中，all-in-one 与拆分部署消费同一套策略模型
+2. **后端可替换**：本地开发用 `local-unsafe`，需要容器隔离时用 `opensandbox`，已运行在隔离容器或 Pod 内时用 `external`——agent loop 无感知
 3. **配置驱动**：策略从 `agent.yaml` 解析，不硬编码在代码中
 4. **与 Codex 的 `ExternalSandbox` 概念对齐**：当进程已在外部沙箱中运行时，跳过内部沙箱机制
 
@@ -118,66 +85,35 @@ anyagent 默认集成 [OpenSandbox](https://github.com/alibaba/OpenSandbox)（�
 | 生命周期管理 | `create/kill/renew/healthcheck` | 需自行实现 |
 | K8s 扩展 | 原生支持 Kubernetes 调度 | 需自行编排 |
 
-### 3.2 OpenSandboxBackend 集成架构
+### 3.2 OpenSandbox 集成架构
 
-```text
-┌─────────────── anyagent Server ─────────────────────────┐
-│                                                          │
-│  Agent Loop                                              │
-│    ├─ model response: tool_call("exec", {cmd: "..."})   │
-│    ├─ Tool Runtime: route to ExecHandler                │
-│    └─ ExecHandler:                                       │
-│         ├─ SandboxManager.get_or_create(session_key)    │
-│         │     → lazy create if first call in session    │
-│         │     → reuse if sandbox exists for session     │
-│         ├─ OpenSandboxBackend.execute(cmd)              │
-│         │     → OpenSandbox SDK call                    │
-│         ├─ 输出截断 + 审计记录                           │
-│         └─ return tool response                         │
-│                                                          │
-│  ┌─── OpenSandbox SDK ─────┐                             │
-│  │ sandbox = Sandbox()      │                             │
-│  │ sandbox.commands.run()   │                             │
-│  │ sandbox.files.write()    │                             │
-│  │ sandbox.files.read()     │                             │
-│  └────────┬─────────────────┘                             │
-│            │ API call                                     │
-└────────────┼──────────────────────────────────────────────┘
-             │
-             ▼
-┌─── OpenSandbox Server ───────────────────────────────────┐
-│  FastAPI lifecycle server                                 │
-│  ├─ Docker runtime (local)                                │
-│  └─ Kubernetes runtime (production)                       │
-│                                                           │
-│  ┌──── Sandbox Container ──────────────────────────────┐  │
-│  │  execd (Go daemon)                                  │  │
-│  │  ├─ command execution                               │  │
-│  │  ├─ file operations                                 │  │
-│  │  ├─ Jupyter kernel (Code Interpreter)               │  │
-│  │  │                                                  │  │
-│  │  │  Agent 在此自由操作:                              │  │
-│  │  │  ├─ curl https://example.com                     │  │
-│  │  │  ├─ pip install requests                         │  │
-│  │  │  ├─ python script.py                             │  │
-│  │  │  ├─ 读写沙箱内文件                               │  │
-│  │  │  └─ 访问允许的外部网络                            │  │
-│  │  │                                                  │  │
-│  │  │  但不可以:                                        │  │
-│  │  │  ├─ 访问宿主机文件系统                            │  │
-│  │  │  ├─ 读取 anyagent 的环境变量/凭证                 │  │
-│  │  │  └─ 访问内部服务 (egress 策略阻止)               │  │
-│  │  └─ egress controller                               │  │
-│  └─────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  subgraph server["anyagent Server"]
+    loop["Agent loop：模型发起 exec 调用"] --> tr["Tool Runtime：路由到 exec handler"]
+    tr --> mgr["SandboxManager.execute"]
+    mgr --> osb["OpenSandboxWorkspaceBackend<br/>按 session 创建或复用沙箱，输出截断与审计"]
+  end
+  subgraph opensandbox["OpenSandbox（Docker 本地 / Kubernetes 生产）"]
+    life["Lifecycle API"]
+    subgraph box["Sandbox 容器"]
+      execd["execd：命令执行与文件操作"]
+      egress["egress 控制"]
+    end
+    life --> box
+  end
+  osb -- "create / get / delete" --> life
+  osb -- "execd 代理：命令与文件" --> execd
 ```
 
-### 3.3 ExternalSandboxBackend（K8s / Docker 部署模式）
+后端实现见 `packages/anyagent/src/anyagent/server/sandbox/opensandbox_backend.py`。Agent 在容器内可以做什么、不能做什么见 [security-threat-model.md](security-threat-model.md#0-agent-能力边界总览)。
+
+### 3.3 `external` 模式（K8s / Docker 部署）
 
 借鉴 Codex 的 `SandboxPolicy::ExternalSandbox` 语义：**进程已在外部沙箱中运行，跳过内部沙箱机制**。
 
 适用场景：
-- anyagent-apps 在 K8s 中部署，Agent 运行在独立 Pod 内，Pod 本身即沙箱
+- 业务方在 K8s 中部署，Agent 运行在独立 Pod 内，Pod 本身即沙箱
 - Docker Compose 部署，Agent 运行在隔离容器内
 - CI/CD 环境中运行（容器即沙箱）
 
@@ -197,7 +133,7 @@ sandbox:
     allow_internet: true
 ```
 
-### 3.4 LocalUnsafeBackend（开发模式）
+### 3.4 `local-unsafe` 模式（开发）
 
 仅限本地开发环境，命令在宿主机直接执行，**无任何隔离**。
 
@@ -218,6 +154,24 @@ sandbox:
 
 ### 4.1 统一命令入口：`exec` tool
 
+Model 通过 `exec` tool 发起命令执行。anyagent 不将沙箱暴露为独立的工具命名空间（如 `sandbox.exec`/`sandbox.python`），而是将其作为 **Tool Runtime 内置的命令执行 handler**——沙箱是执行环境，不是 tool 抽象。
+
+```mermaid
+sequenceDiagram
+  participant M as Model
+  participant TR as Tool Runtime
+  participant SM as SandboxManager
+  participant B as 沙箱后端
+  M->>TR: function_call exec {cmd}
+  TR->>SM: execute(policy, agent_id, session_key, cmd)
+  Note over SM: 同一 session 首次调用时创建 workspace，之后复用
+  SM->>B: 执行命令
+  B-->>SM: stdout / stderr / exit code
+  SM-->>TR: 结果
+  Note over TR: 输出截断、审计记录
+  TR-->>M: tool response
+```
+
 ### 4.2 CLI Profile 与 `local-unsafe` 边界
 
 CLI Profile 复用同一条命令执行安全边界，但目标是把“允许执行什么命令、继承哪些环境变量、如何注入凭证”从 prompt 约定提升为结构化配置。实现真源：
@@ -236,57 +190,21 @@ CLI Profile 复用同一条命令执行安全边界，但目标是把“允许�
 - `allow_command_prefixes` 是可选白名单；即使不开前缀限制，仍会拒绝 `bash/sh/zsh/pwsh/python/python3/node/perl/env/sudo` 以及 `-c/-lc` 这类解释器壳 token，避免 profile 退化成“任意再包一层 shell”。
 - doctor 会对 exposed agent 上的 `local-unsafe` CLI profile 给 warning，提醒它只适用于可信本地开发，不应被当作生产隔离方案。
 
-Model 通过 `exec` tool 发起命令执行。anyagent 不将沙箱暴露为独立的工具命名空间（如 `sandbox.exec`/`sandbox.python`），而是将其作为 **Tool Runtime 内置的命令执行 handler**——沙箱是执行环境，不是 tool 抽象。
-
-```text
-Model → FunctionCall("exec", {cmd: "curl https://example.com"})
-  → Tool Runtime
-    → ToolRegistry.get_tool("exec")
-    → ExecHandler.handle(arguments, context)
-      → SandboxManager.get_or_create(session_partition_key)
-        → 首次调用: backend.create_sandbox(policy)
-        → 后续调用: 复用已有 sandbox instance
-      → backend.execute(cmd, sandbox_instance)
-        → OpenSandbox SDK / 直接执行 / ...
-      → 输出截断（output_max_bytes）
-      → 审计记录
-    → tool response → Model
-```
-
-### 4.2 与 Codex exec_command 的对比
+### 4.3 与 Codex exec_command 的对比
 
 | 维度 | Codex `exec_command` | anyagent `exec` |
 |---|---|---|
 | 参数 | `{cmd, workdir, shell, tty, yield_time_ms, sandbox_permissions, ...}` | `{cmd, workdir, timeout}` (v0 精简) |
 | shell 选择 | model 可指定 shell，handler 通过 `Shell::derive_exec_args()` 解析 | server 默认 shell（配置驱动），不暴露给 model |
-| 沙箱选择 | `Orchestrator.run()` → `SandboxManager.select_initial()` → `transform()` | `ExecHandler` → `SandboxManager.get_or_create()` → `backend.execute()` |
+| 沙箱选择 | `Orchestrator.run()` → `SandboxManager.select_initial()` → `transform()` | exec handler → `SandboxManager.execute` → 按 `mode` 选择后端 |
 | 沙箱粒度 | 命令级（每次命令独立沙箱进程） | **会话级**（同 session 复用同一沙箱容器） |
 | 审批流程 | `ExecApprovalRequirement` → user approve/reject | Tool Policy allow/deny（无交互式审批） |
 | 权限请求 | model 可通过 `sandbox_permissions` / `additional_permissions` 请求提权 | v0 不支持运行时提权（由配置静态决定） |
 | 交互续写 | `write_stdin` tool 配套 PTY 交互 | v0 不支持交互式（命令一次性执行） |
 
-### 4.3 Tool 注册
+### 4.4 Tool 注册
 
-`exec` tool 由 Tool Runtime 自动注册（当 `sandbox.mode != disabled` 时），agent loop 和 model 无需感知沙箱后端：
-
-```python
-# anyagent/server/sandbox/exec_handler.py (伪代码)
-EXEC_TOOL = ToolDefinition(
-    name="exec",
-    description="Execute a shell command in the sandbox environment.",
-    parameters={
-        "type": "object",
-        "properties": {
-            "cmd": {"type": "string", "description": "Shell command to execute."},
-            "workdir": {"type": "string", "description": "Working directory (sandbox-relative)."},
-            "timeout": {"type": "integer", "description": "Timeout in seconds."},
-        },
-        "required": ["cmd"],
-        "additionalProperties": False,
-    },
-    category="core",  # core 类别，非 sandbox 类别
-)
-```
+`exec` tool 由 Tool Runtime 自动注册（当 `sandbox.mode != disabled` 时），agent loop 和 model 无需感知沙箱后端。工具定义见 `packages/anyagent/src/anyagent/server/sandbox/exec_handler.py` 的 `EXEC_TOOL`，注册入口是 `packages/anyagent/src/anyagent/tool_runtime/builtin_tools.py` 的 `register_sandbox_exec_tool`。对模型只暴露 `cmd`、`workdir`、`timeout` 三个参数。
 
 注意：`exec` tool 的 `category` 是 `core`（而非 `sandbox`），因为命令执行是核心能力，沙箱是执行策略而非工具类型。`sandbox` 类别保留给未来可能的沙箱管理工具（如 `sandbox.snapshot`、`sandbox.reset`）。
 
@@ -296,10 +214,11 @@ EXEC_TOOL = ToolDefinition(
 
 每个 `session_partition_key`（`"{agent_id}::{session_key}"`）对应一个独立的沙箱实例：
 
-```text
-Session A (agent:main::session_001)  →  Sandbox Instance A
-Session B (agent:main::session_002)  →  Sandbox Instance B
-Session C (agent:legal::session_001) →  Sandbox Instance C
+```mermaid
+flowchart LR
+  a["main::session_001"] --> A["沙箱 A"]
+  b["main::session_002"] --> B["沙箱 B"]
+  c["legal::session_001"] --> C["沙箱 C"]
 ```
 
 生命周期管理：
@@ -312,48 +231,20 @@ Session C (agent:legal::session_001) →  Sandbox Instance C
 
 ### 5.2 状态持续性（Per-Session 的核心优势）
 
-同一 session 内多次 `exec` 调用共享沙箱文件系统，支持有状态的工作流：
+同一 session 内多次 `exec` 调用共享沙箱文件系统，支持有状态的工作流。例如用户说“帮我分析这份 CSV 数据”，agent 在同一个沙箱里依次执行：
 
-```text
-用户: "帮我分析这份 CSV 数据"
+1. `pip install pandas matplotlib`：安装依赖
+2. `cat > data.csv << 'EOF' ...`：写入数据
+3. `python analyze.py`：运行分析脚本
+4. `cat result.json`：读取结果
 
-Agent 执行序列（同一 sandbox instance）:
-  1. exec("pip install pandas matplotlib")     ← 安装依赖
-  2. exec("cat > data.csv << 'EOF'\n...")       ← 写入数据
-  3. exec("python analyze.py")                  ← 运行分析脚本
-  4. exec("cat result.json")                    ← 读取结果
-
-所有步骤共享文件系统——第 1 步安装的包在第 3 步可用，第 2 步写入的文件在第 3 步可读。
-```
+第 1 步安装的包在第 3 步可用，第 2 步写入的文件在第 3 步可读。
 
 这是 anyagent 相对于 Codex 的关键优势：Codex 的进程级沙箱每次命令独立隔离，无法支持此类有状态工作流。
 
 ### 5.3 SandboxManager
 
-```python
-# anyagent/server/sandbox/manager.py (伪代码)
-class SandboxManager:
-    """
-    管理 session_partition_key → SandboxInstance 的映射。
-    线程安全，支持并发 session。
-    """
-    _instances: dict[str, SandboxInstance]
-    _backend: SandboxBackend
-    _default_policy: SandboxPolicy
-
-    async def get_or_create(
-        self,
-        session_partition_key: str,
-        policy: SandboxPolicy | None = None,
-    ) -> SandboxInstance:
-        """获取已有实例或创建新实例。"""
-
-    async def destroy(self, session_partition_key: str) -> None:
-        """主动销毁实例。"""
-
-    async def cleanup_expired(self) -> int:
-        """清理 TTL 过期的实例。返回清理数量。"""
-```
+`SandboxManager`（`packages/anyagent/src/anyagent/server/sandbox/manager.py`）按 session 管理 workspace：执行命令时按需创建或恢复 workspace，并提供 checkpoint、hibernate、destroy 等生命周期操作。热冷分层与恢复流程见 [sandbox-session-filesystem-design.md](../architecture/runtime/sandbox-session-filesystem-design.md)。
 
 ## 6. 安全策略
 
@@ -474,37 +365,25 @@ tools:
 
 ### 8.1 网页源码获取
 
-```text
-用户: "帮我获取 example.com 的网页源码"
-
-Agent 选择: exec
-命令: curl -s https://www.example.com
-→ 在 per-session 沙箱中执行，返回网页 HTML
-```
+用户说“帮我获取 example.com 的网页源码”，agent 调用 `exec` 执行 `curl -s https://www.example.com`，命令在该 session 的沙箱中运行并返回 HTML。
 
 ### 8.2 数据分析（有状态工作流）
 
-```text
-用户: "写个 Python 脚本分析这份 CSV 数据"
+用户说“写个 Python 脚本分析这份 CSV 数据”，agent 在同一个 session 沙箱中依次执行：
 
-Agent 执行序列（同一 session sandbox）:
-1. exec: pip install pandas matplotlib
-2. exec: cat > /workspace/data.csv << 'EOF' ... EOF
-3. exec: cat > /workspace/analyze.py << 'EOF' ... EOF
-4. exec: cd /workspace && python analyze.py
-5. exec: cat /workspace/result.json
-```
+1. `pip install pandas matplotlib`
+2. `cat > /workspace/data.csv << 'EOF' ... EOF`
+3. `cat > /workspace/analyze.py << 'EOF' ... EOF`
+4. `cd /workspace && python analyze.py`
+5. `cat /workspace/result.json`
 
 ### 8.3 项目构建与测试
 
-```text
-用户: "clone 这个 GitHub 仓库并跑测试"
+用户说“clone 这个 GitHub 仓库并跑测试”，agent 在同一个 session 沙箱中依次执行：
 
-Agent 执行序列（同一 session sandbox）:
-1. exec: git clone https://github.com/example/repo.git /workspace/repo
-2. exec: cd /workspace/repo && pip install -r requirements.txt
-3. exec: cd /workspace/repo && python -m pytest -v
-```
+1. `git clone https://github.com/example/repo.git /workspace/repo`
+2. `cd /workspace/repo && pip install -r requirements.txt`
+3. `cd /workspace/repo && python -m pytest -v`
 
 ## 9. 隔离等级
 
