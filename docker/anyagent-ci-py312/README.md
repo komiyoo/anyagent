@@ -1,9 +1,8 @@
 # anyagent Python 3.12 CI Image
 
-This image was the runner for the retired Yunxiao `anyagent build` pipeline.
-SDK release builds now run on GitHub-hosted runners in `.github/workflows/ci.yml`.
-The image remains available when a job needs the baked-in Rust toolchain for
-`tests/contract/test_second_runtime_poc.py`:
+This image was the runner for the retired Yunxiao `anyagent build` pipeline
+(`.yunxiao/flow.anyagent.yml`). SDK release builds now run on GitHub-hosted
+runners in `.github/workflows/ci.yml`.
 
 ```text
 registry.cn-beijing.aliyuncs.com/lyriktrip/python:anyagent-ci-py312-amd64
@@ -19,6 +18,5 @@ docker build --platform linux/amd64 \
 docker push registry.cn-beijing.aliyuncs.com/lyriktrip/python:anyagent-ci-py312-amd64
 ```
 
-The image intentionally includes `rustc` and `cargo` because
-`tests/contract/test_second_runtime_poc.py` gates the Rust reference runtime
-PoC in CI.
+The Rust toolchain was removed together with the Rust second-runtime PoC
+(2026-10-07); the published tag still contains it until the image is rebuilt.

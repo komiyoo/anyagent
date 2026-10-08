@@ -4,10 +4,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
     PIP_TRUSTED_HOST=mirrors.aliyun.com \
     PIP_CACHE_DIR=/root/.cache/pip \
-    UV_CACHE_DIR=/root/.cache/uv \
-    CARGO_HOME=/usr/local/cargo \
-    RUSTUP_HOME=/usr/local/rustup \
-    PATH=/usr/local/cargo/bin:$PATH
+    UV_CACHE_DIR=/root/.cache/uv
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -20,16 +17,10 @@ RUN apt-get update \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --profile minimal --default-toolchain stable \
-    && chmod -R a+w "$RUSTUP_HOME" "$CARGO_HOME"
-
 RUN python -m pip install --upgrade build hatchling pytest twine uv \
     && mkdir -p "$PIP_CACHE_DIR" "$UV_CACHE_DIR"
 
 RUN python -c "import ctypes" \
-    && cargo --version \
-    && rustc --version \
     && python - <<'PY'
 import importlib.util
 

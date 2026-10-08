@@ -44,6 +44,3 @@ packages/anyagent/src/anyagent/studio_static/
 # Generated docs indexes
 docs/_manifest.txt
 docs/.generated/
-
-# Rust build artifacts (second-runtime PoC)
-runtimes/**/target/

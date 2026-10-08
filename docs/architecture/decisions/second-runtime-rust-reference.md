@@ -1,19 +1,27 @@
 <!--
 ---
 doc_kind: architecture
-status: stable
+status: deprecated
 tags: ["multi-runtime", "rust", "conformance", "adr"]
-summary: 第二 server runtime 候选选定 Rust reference runtime PoC，以 conformance target 接入 reference suite。
+summary: 已撤回。曾选定 Rust reference runtime PoC 作为第二 server runtime 候选；PoC 只返回写死的 JSON，2026-10-07 删除。
 req: ["requirements.md#req-5", "requirements.md#req-7"]
 ---
 -->
 
 # ADR: Second Runtime Candidate
 
-Status: Accepted  
-Date: 2026-05-30  
+Status: Withdrawn（2026-10-07；原 Accepted 2026-05-30）  
 Req: `requirements.md#req-5`, `requirements.md#req-7`  
 Scope: Server Runtime / Reference Conformance Suite
+
+## 撤回说明
+
+`runtimes/rust-reference` 与其 contract test 已于 2026-10-07 删除，原因：
+
+- PoC 的三个接口都返回写死的 JSON 字符串，没有消费 `protocol-schema.json` 或 conformance fixtures，也不与 Python 实现做任何比对，验证不了协议等价性。下文“风险与缓解”中要求的缓解措施并未落实。
+- 它的 contract test 在缺少 `cargo` 时直接失败，使每个开发环境的 push 门禁都依赖 Rust 工具链。
+
+跨实现一致性的基线仍是 `tests/fixtures/sdk_conformance/` 与 `tests/contract/`。真正需要第二 runtime 时，再以这套基线为验收标准重新立项。以下为原决策内容，仅作历史记录。
 
 ## 决策结论
 
@@ -41,7 +49,7 @@ Go 仍适合运维生态和云原生团队，但本轮第二 runtime 的优先�
 第二 runtime PoC 的最低门槛：
 
 - `cargo test --manifest-path runtimes/rust-reference/Cargo.toml` 通过。
-- `tests/contract/test_second_runtime_poc.py` 能发现 conformance target，并确认其声明覆盖 admin/internal/storage-replay 缺口的接入状态。
+- 第二 runtime 的 contract test 能发现 conformance target，并确认其声明覆盖 admin/internal/storage-replay 缺口的接入状态（该测试已随撤回删除）。
 - 新增 public wire contract 时，先扩展 Python reference contract，再由 Rust target 标注 unsupported / partial / supported。
 
 ## 风险与缓解

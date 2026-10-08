@@ -26,16 +26,12 @@
 - 已实现能力的长期口径见架构文档:
   - reference conformance suite 入口、覆盖范围与已知缺口:`docs/architecture/testing/testing-strategy.md`、`tests/contract/README.md`
   - conformance suite 随 protocol/schema bundle 留在本仓的决策:`docs/architecture/decisions/protocol-versioning.md`、`docs/architecture/decisions/`
-- M1 已补齐 Responses API / Stage Events / internal-admin API / Tool Runtime / storage+multi-agent replay 的 reference contract 入口；第二 runtime 候选已选 Rust reference runtime PoC。
+- M1 已补齐 Responses API / Stage Events / internal-admin API / Tool Runtime / storage+multi-agent replay 的 reference contract 入口。
+- M2 曾选定 Rust reference runtime PoC，2026-10-07 撤回并删除（PoC 只返回写死的 JSON，无法验证协议等价性），原因见 `docs/architecture/decisions/second-runtime-rust-reference.md`。M2 / M3 回到未开始，等真实需求出现再立项。
 
 ## 待处理
 
-- [x] P2 评估第二 server runtime 候选(Go / Rust),落 ADR(前置:M1 完成)(Req: `requirements.md#req-5`；Module: `server-runtime`；Impl: `docs/architecture/decisions/second-runtime-rust-reference.md:18`、`docs/architecture/testing/testing-strategy.md:110`)
-- [x] P3 [Phase 4] 第二 runtime PoC 接入 reference conformance suite(Req: `requirements.md#req-5`；Module: `server-runtime`；Impl: `runtimes/rust-reference/conformance.json:1`、`tests/contract/test_second_runtime_poc.py:13`)
-
-## 决策 & 争议点
-
-- [x] 第二 runtime 的优先目标:性能 vs 部署 footprint vs 生态语言：优先部署 footprint 与协议/状态机可验证性，选 Rust；Go 作为后续 SDK 或第三 runtime 重新评估。（Module: `server-runtime`；Impl: `docs/architecture/decisions/second-runtime-rust-reference.md:29`）
+- 暂无。
 
 ## 参考
 
