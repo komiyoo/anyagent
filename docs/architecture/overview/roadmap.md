@@ -38,7 +38,7 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 | -------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | 协议           | `packages/anyagent/src/anyagent/protocol/`、`schema_export.py`               | 导出 JSON Schema bundle、endpoint manifest、semantic rules 与 OpenAPI 3.1 document。                   |
 | Server         | `packages/anyagent/src/anyagent/server/app.py`                               | 提供 `/v1/responses`、`/internal/*`、`/admin/*` typed endpoints。                                      |
-| CLI            | `packages/anyagent/src/anyagent/cli.py`                                      | 提供 `serve`、`init`、`doctor`、config、storage、workspace 等 control-plane 入口。                     |
+| CLI            | `packages/anyagent/src/anyagent/cli/`                                        | 提供 `serve`、`init`、`doctor`、config、storage、workspace 等 control-plane 入口。                     |
 | Python SDK     | `packages/anyagent/src/anyagent/agent_api_client.py`、`anyagent.types`       | OpenAI 兼容 client + events、agents、skills、tools、prompts、observability、admin、health namespaces。 |
 | Agent loop | `packages/anyagent/src/anyagent/agent_runtime/loop/`、`docs/architecture/runtime/agent-loop.md` | pydantic-ai 跑 model→tool→model；`models.yaml` kind 映射为模型字符串；自研 vendor translator 已删除。 |
 | TypeScript SDK | `sdks/typescript/`                                                           | 从 protocol export 生成 schema/types,通过 endpoint manifest 解析 schema-backed paths。                 |

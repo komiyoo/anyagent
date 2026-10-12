@@ -53,7 +53,7 @@ multiagent:
 Rules:
 
 - `exposed: true` allows external `/v1/responses` calls to select this agent.
-- `model.default` names a workspace `models.yaml` alias.
+- `model.default` names an alias in `.anyagent/anyagent.yaml` under `models.aliases`, or a `provider:model` string.
 - `tools.requested_tool_names` is a desired exposure list; Tool Runtime manifest remains authoritative.
 - `tools.cli` declares controlled CLI profiles. Each profile becomes a `kind="command"` tool automatically; do not duplicate it in `requested_tool_names`.
 - CLI profile `allow_command_prefixes` is optional, but interpreter-shell tokens such as `bash`, `sh`, `python`, `node`, `sudo`, `-c`, and `-lc` are rejected by schema validation.
@@ -79,23 +79,24 @@ class QuickPromptProvider(BaseScriptedReplyProvider):
 
 For channel-side pacing (typing indicator, reply floor) see the Chatwoot connector README; it is configured with `CHATWOOT_*` env vars, not in `agent.yaml`.
 
-## models.yaml
+## anyagent.yaml
 
-`anyagent config init` writes model/provider config at workspace root:
+`anyagent init --provider` and `--model` record the model selection. The workspace file is `.anyagent/anyagent.yaml`:
 
 ```yaml
-default_model: fast
 models:
-  fast:
-    provider: openai
-    model: gpt-4o-mini
-providers:
-  openai:
-    kind: openai
-    api_key_env: OPENAI_API_KEY
+  default: fast
+  providers:
+    openai:
+      kind: openai
+      api_key: ${OPENAI_API_KEY}
+  aliases:
+    fast:
+      provider: openai
+      model: gpt-4o-mini
 ```
 
-Keep provider secrets in env vars or managed secrets, not literal YAML.
+Keep provider secrets in env vars or managed secrets, not literal YAML. `anyagent config show` prints the effective document with secrets masked.
 
 ## AGENTS.md
 

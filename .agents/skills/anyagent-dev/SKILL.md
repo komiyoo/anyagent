@@ -24,7 +24,7 @@ Use this skill as the repo-level onboarding and implementation guide for buildin
    ```
    If `anyagent` is not installed, inspect `.anyagent/` directly and state that CLI validation could not run.
 3. For exact framework behavior, follow these source paths in this repo:
-   - Workspace and CLI: `docs/guides/getting-started.md`, `packages/anyagent/src/anyagent/cli.py`
+   - Workspace and CLI: `docs/guides/getting-started.md`, `packages/anyagent/src/anyagent/cli/`
    - Serving, storage, observability, credential backends, plugins: `docs/guides/deployment.md`
    - Agent packs/config merge: `docs/architecture/runtime/agent-packs-and-runtime-config.md`, `packages/anyagent/src/anyagent/config/agents.py`
    - Server and SDK API: `docs/architecture/api/responses-api-sdk-and-server.md`
@@ -43,20 +43,19 @@ Use this skill as the repo-level onboarding and implementation guide for buildin
 
 ## Default Workflow
 
-For a new business repo, prefer `anyagent config init` because it creates model/provider config and an agent pack suitable for application development:
+For a new business repo, use `anyagent init`. `--template` selects the workspace shape. `--provider` and `--model` record the model selection:
 
 ```bash
-anyagent config init --workspace . --agent-id main --model-alias fast --model gpt-4o-mini --provider openai
+anyagent init --workspace . --agent-id main --template basic --provider openai --model gpt-4o-mini
 anyagent doctor --workspace .
 anyagent dev --workspace .
 ```
 
-Use `anyagent init` when the user wants a minimal framework demo workspace or template scaffold:
+Templates are `basic`, `coding-agent`, `research-agent`, and `multi-agent-team`. Add a component after init:
 
 ```bash
-anyagent init --workspace . --template basic --with-example-skill
-anyagent doctor --workspace .
-anyagent dev --workspace .
+anyagent add agent researcher --workspace .
+anyagent add skill repo-helper --workspace . --agent-id main
 ```
 
 After initialization, edit the smallest relevant surface:

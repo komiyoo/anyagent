@@ -113,6 +113,18 @@ class EffectiveConfig:
         assert isinstance(redacted, dict)
         return redacted
 
+    def sources_dump(self) -> dict[str, dict[str, str | None]]:
+        """Return per-leaf provenance as JSON-safe objects.
+
+        Keys are dotted paths such as ``models.providers.openai.api_key``.
+        ``env`` is the variable whose value was interpolated, when one was used.
+        """
+
+        return {
+            path: {"layer": source.layer, "env": source.env}
+            for path, source in sorted(self.sources.items())
+        }
+
 
 def load_effective_config(
     workspace_dir: str | Path,

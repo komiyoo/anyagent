@@ -4,28 +4,27 @@ Use this reference when creating a business repository or explaining how an anya
 
 ## Initialize
 
-Prefer business initialization:
+Use `anyagent init`. `--template` selects the workspace shape. `--provider` and `--model` record the model selection. `agent.yaml` `model.default` names an alias such as `fast`.
 
 ```bash
-anyagent config init \
+anyagent init \
   --workspace . \
   --agent-id main \
-  --model-alias fast \
-  --model gpt-4o-mini \
-  --provider openai
+  --template basic \
+  --provider openai \
+  --model gpt-4o-mini
 ```
-
-`--model-alias` is the name written into `models.yaml` and referenced by `agent.yaml`'s `model.default`; the two must match. The CLI default alias is `default` — these examples use `fast` consistently, so override or keep it, but stay consistent across both files.
 
 Useful switches:
 
 ```bash
-anyagent config init --workspace . --agent-id researcher --with-web-fetch
-anyagent config init --workspace . --agent-id coder --with-exec
-anyagent config init --workspace . --agent-id worker --tool core.web_fetch --tool exec --sandbox-mode local-unsafe
+anyagent init --workspace . --template research-agent --with-web-fetch
+anyagent init --workspace . --template coding-agent --with-exec
+anyagent add agent worker --workspace .
+anyagent init --workspace . --tool core.web_fetch --tool exec --sandbox-mode local-unsafe
 ```
 
-Use demo initialization for framework examples:
+Templates:
 
 ```bash
 anyagent init --workspace . --template basic --with-example-skill
@@ -39,8 +38,8 @@ anyagent init --workspace . --template multi-agent-team
 ```text
 <workspace>/
   AGENTS.md
-  models.yaml
   .anyagent/
+    anyagent.yaml
     agents/
       main/
         agent.yaml

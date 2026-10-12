@@ -33,5 +33,5 @@ req: ["requirements.md#req-4", "requirements.md#req-4-5", "requirements.md#req-4
 ## 验证
 
 ```bash
-uv run --project packages/anyagent pytest tests/unit/agent_runtime/model_providers/ tests/unit/agent_runtime/test_pydantic_ai_loop.py tests/unit/test_model_config.py tests/unit/test_cli_workspace_commands.py -q
+uv run --project packages/anyagent pytest tests/unit/agent_runtime/model_providers/ tests/unit/agent_runtime/test_pydantic_ai_loop.py tests/unit/test_model_config.py tests/unit/cli/ -q
 ```

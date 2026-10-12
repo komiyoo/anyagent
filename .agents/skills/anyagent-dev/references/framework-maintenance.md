@@ -20,7 +20,7 @@ Whenever a framework change touches any item below, inspect and update `.agents/
 
 1. Locate truth:
    ```bash
-   rg -n "init|config init|doctor|agent list|tool-runtime serve|agent-api serve|sandbox|skills|mcp|credential" README.md docs packages/anyagent/src/anyagent
+   rg -n "init|config show|doctor|agent list|tool-runtime serve|agent-api serve|sandbox|skills|mcp|credential" README.md docs packages/anyagent/src/anyagent
    ```
 2. Update the smallest skill surface:
    - `SKILL.md` for high-level workflow or trigger changes.
@@ -35,7 +35,7 @@ Whenever a framework change touches any item below, inspect and update `.agents/
    python3 scripts/docs/check.py --root .
    anyagent doctor --workspace .
    ```
-5. If this repo's generated demo workspace behavior changed, also check `docs/guides/getting-started.md` and `packages/anyagent/src/anyagent/cli.py` examples.
+5. If this repo's generated demo workspace behavior changed, also check `docs/guides/getting-started.md` and `packages/anyagent/src/anyagent/cli/` examples.
 
 ## Style
 
