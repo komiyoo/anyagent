@@ -1,187 +1,95 @@
 # Configuration
 
-Use this reference when changing `.anyagent/`, agent behavior, tools, skills, MCP, sandbox, models, or credentials.
+One config document: `.anyagent/anyagent.yaml`, validated by `WorkspaceConfig` in `packages/anyagent/src/anyagent/config/schema.py`. Agent packs live under `.anyagent/agents/<agent_id>/`. There is no `models.yaml`, no `secrets.yaml`, and no `*_env` field. A secret is an interpolated string or a `credential_id`. Older guides that still name those files or fields are stale for this subject.
 
-## Agent Pack Files
+## Files
 
-Minimal agent pack:
+| Path | Role |
+| --- | --- |
+| `.anyagent/anyagent.yaml` | Workspace models, server, storage, credentials, sandbox, plugins, observability |
+| `.anyagent/schema/anyagent.schema.json` | JSON Schema for the workspace file |
+| `.anyagent/agents/<agent_id>/agent.yaml` | Exposed flag, model, tools, skills, sandbox, spawn |
+| `.anyagent/agents/<agent_id>/AGENTS.md` | Agent instructions. Required once the agent directory exists |
+| `.anyagent/agents/<agent_id>/mcp.json` | That agent's MCP servers. Omit the file when there are none |
+| `.anyagent/skills/<name>/SKILL.md` | Skill package. YAML frontmatter requires `name` and `description` |
+| `.env.example` | Variable names for the chosen provider. Copy to `.env`; do not commit `.env` |
 
-```text
-.anyagent/agents/<agent_id>/
-  agent.yaml
-  AGENTS.md
-  mcp.json
-```
+The first line of each YAML file is a yaml-language-server schema comment pointing at `.anyagent/schema/`. `mcp.json` may set `$schema` to the same directory.
 
-`agent_id` must match `[a-zA-Z0-9_.-]{1,64}`.
-
-## agent.yaml
-
-Common fields:
+Write a field only when it differs from the built-in default. The built-in model is the alias `fast` (provider `openai`, model `gpt-4o-mini`). A model value is either an alias or `provider:model` (for example `anthropic:claude-sonnet-4-5`). A provider that is not one of `openai`, `openai_chat`, `anthropic`, or `gemini` must be declared under `models.providers` with a `kind`.
 
 ```yaml
-exposed: true
+# yaml-language-server: $schema=./schema/anyagent.schema.json
+models:
+  default: anthropic:claude-sonnet-4-5
+plugins:
+  roots:
+    - plugins
+```
+
+```yaml
+# yaml-language-server: $schema=../../schema/agent.schema.json
 model:
   default: fast
 tools:
   requested_tool_names:
-    - core.web_fetch
-  cli:
-    - name: app.demo
-      description: Run the repo's controlled CLI entrypoint.
-      cwd: repo
-      allow_command_prefixes:
-        - npm run
-      env:
-        inherit: none
-        set:
-          NODE_ENV: development
-      credentials:
-        - credential_id: cred_demo_cli
-          ref_kind: api_key
-          injection_target: env:API_TOKEN
+    - exec
+sandbox:
+  mode: local-unsafe
 skills:
   default_selected:
-    - repo-helper
-  disabled_paths: []
-sandbox:
-  mode: "disabled"
-multiagent:
-  spawn_allow_agent_ids: []
+    - review
 ```
 
-Rules:
+`model: fast` on the agent is optional while the workspace default is already `fast`. `agent.yaml` `sandbox.mode` is the per-agent exec sandbox. It is separate from the workspace `sandbox` section.
 
-- `exposed: true` allows external `/v1/responses` calls to select this agent.
-- `model.default` names a workspace `models.yaml` alias.
-- `tools.requested_tool_names` is a desired exposure list; Tool Runtime manifest remains authoritative.
-- `tools.cli` declares controlled CLI profiles. Each profile becomes a `kind="command"` tool automatically; do not duplicate it in `requested_tool_names`.
-- CLI profile `allow_command_prefixes` is optional, but interpreter-shell tokens such as `bash`, `sh`, `python`, `node`, `sudo`, `-c`, and `-lc` are rejected by schema validation.
-- CLI profile `env.set` must not contain secret-looking keys; inject secrets through Credential Vault targets like `env:NAME` or `file:relative/path` instead.
-- `skills.default_selected` may contain skill names or stable skill paths.
-- `sandbox.mode` is cold-start-sensitive. Restart the server after changing it.
-- `multiagent.spawn_allow_agent_ids` is empty by default, meaning no child agents may be spawned.
-- `runtime.context_providers` / `runtime.scripted_reply_providers` are classpath lists (`module.path:ClassName`) resolved from the workspace `src/` import path. Context providers inject `ContextFragment`s before the model call; scripted reply providers answer a known input with deterministic text **instead of** calling the model (text only, no tools/handoff). Both are deployer-trusted server-side code; failures degrade to "continue into the loop". Contract and hit semantics: `docs/architecture/runtime/agent-packs-and-runtime-config.md#runtimescripted_reply_providers`.
-- Since 0.4.29, `runtime.middlewares` classpaths may construct native pydantic-ai `Hooks` / `AbstractCapability` classes. Use native `before_model_request` / `after_model_request` for model-call policies; do not add a new legacy four-hook interface. Read per-run metadata/state from `ctx.deps.middleware_context`, not instance fields. Explicit lists replace defaults, so retain `loop_detection` and `context_compaction` when needed. Both nonstream and SSE deliver the checked final response. See `docs/architecture/runtime/agent-loop.md`.
+## Interpolation
 
-Minimal scripted reply provider (`src/my_workspace/scripted.py`):
+`packages/anyagent/src/anyagent/config/env.py` expands `${VAR}` and `${VAR:-default}` after the layers merge. A missing variable with no default becomes an empty string, and empty strings are removed. List-shaped fields that are still a comma-separated string (`plugins.roots`, `tool_runtime.plugin_roots`, `server.cors_origins`) are split on commas.
 
-```python
-from anyagent.agent_runtime import BaseScriptedReplyProvider, ScriptedReplyRequest
+The server reads `.env` and `.env.local` from the workspace before interpolation. Do not add a second dotenv loader.
 
+## Layers
 
-class QuickPromptProvider(BaseScriptedReplyProvider):
-    async def resolve(self, request: ScriptedReplyRequest):
-        if request.is_first_turn and request.body.get("input") == "hi":
-            return {"text": "Hi! How can I help?", "variant_id": "greeting"}
-        return None
-```
+`load_effective_config` merges in this order. Later layers replace lists and scalars; dicts merge.
 
-For channel-side pacing (typing indicator, reply floor) see the Chatwoot connector README; it is configured with `CHATWOOT_*` env vars, not in `agent.yaml`.
+1. Built-in defaults (`packages/anyagent/src/anyagent/config/defaults.py`)
+2. System `/etc/anyagent/anyagent.yaml`, or `$SYSTEM_CONFIG_DIR/anyagent.yaml`
+3. User `~/.anyagent/anyagent.yaml`, or `$USER_CONFIG_DIR/anyagent.yaml`
+4. Workspace `.anyagent/anyagent.yaml`
+5. CLI overrides
 
-## models.yaml
+`anyagent config show --sources` prints the winning layer for each leaf. A workspace file cannot override `sandbox.mode` or `storage` when the system or user layer already set that path. CLI overrides can. Built-in defaults do not count as that higher-trust layer, so a workspace may set `storage` when no system or user file has.
 
-`anyagent config init` writes model/provider config at workspace root:
+Agent packs merge the same way: system, user, then workspace `.anyagent/agents/<agent_id>/`.
 
-```yaml
-default_model: fast
-models:
-  fast:
-    provider: openai
-    model: gpt-4o-mini
-providers:
-  openai:
-    kind: openai
-    api_key_env: OPENAI_API_KEY
-```
+## Credentials
 
-Keep provider secrets in env vars or managed secrets, not literal YAML.
+`credentials` in `.anyagent/anyagent.yaml`:
 
-## AGENTS.md
+- `backend`: `none`, `env`, `file`, `db`, `vault`, or `infisical`
+- `writable`: whether the Admin Credential API may create or update credentials
+- `runtime_env`: list of `{name, credential_id, kind}` entries injected into the process for a run
 
-Use workspace `AGENTS.md` for repo-wide behavior. Use agent-level `AGENTS.md` for persona, tool discipline, output style, and domain workflow. These files guide model behavior only; they are not authorization policy.
-
-## Skills
-
-Repo skill path:
-
-```text
-.anyagent/skills/<skill-name>/SKILL.md
-```
-
-Agent-local skill path:
-
-```text
-.anyagent/agents/<agent_id>/skills/<skill-name>/SKILL.md
-```
-
-Every skill needs frontmatter:
-
-```markdown
----
-name: repo-helper
-description: Use when ...
----
-```
-
-Optional UI metadata lives at `agents/openai.yaml`. Use `dependencies.tools[]` when the skill needs Tool Runtime tools to become visible when selected.
-
-## MCP
-
-`mcp.json` should use credential references, not plaintext tokens:
+MCP servers do not store the secret. Set `auth.credential_id` and let the server resolve it:
 
 ```json
 {
   "mcpServers": {
-    "bocha-mcp": {
-      "url": "https://mcp.bochaai.com/mcp",
-      "transport": "streamable_http",
-      "auth": {
-        "credential_id": "cred_bocha_mcp",
-        "ref_kind": "bearer_token",
-        "injection": "header:Authorization",
-        "format": "Bearer {value}"
-      }
+    "docs": {
+      "url": "https://example.com/mcp",
+      "auth": {"credential_id": "cred_docs"}
     }
   }
 }
 ```
 
-For stdio MCP servers, prefer explicit `command`, `args`, and `cwd`.
+A stdio server uses `command` and `args` instead of `url`, not both. Create credentials with `anyagent credential set` against a running server, or point `credentials.backend` at env, file, db, vault, or infisical.
 
-The `credential_id` must match a reference created via the Admin API, and `ref_kind` must match that reference's `kind` (see Credentials below).
+## Tools, skills, plugins
 
-## Tools And Plugins
-
-Use built-in tools by adding names to `requested_tool_names`, for example `core.web_fetch` or `exec`.
-
-For command execution that should stay within a narrow repo workflow, prefer `tools.cli` over raw `exec`. CLI profiles support:
-
-- per-profile `cwd` and timeout
-- constrained environment inheritance (`core` / `none` / `all`)
-- Credential Vault injection to `env:*` or `file:*`
-- the same command-stage events as other `kind="command"` tools
-
-Custom business tools belong in Tool Runtime plugins and should normally use the `app.*` namespace. A generated demo plugin under `plugins/demo/` is inactive until the Tool Runtime loads it and the target agent requests its tool name.
-
-## Credentials
-
-The vault holds secrets server-side; agents and config files only ever reference a `credential_id`. Set a reference with the Admin API and read the secret from an env var so it never lands in shell history or repo files:
-
-```bash
-ADMIN_API_KEY=admin-key anyagent credential set \
-  --admin-url http://127.0.0.1:8787 \
-  --admin-key admin-key \
-  --id cred_bocha_mcp \
-  --kind bearer_token \
-  --scope agent \
-  --agent-id main \
-  --value-from-env BOCHA_MCP_TOKEN \
-  --provider bocha
-```
-
-`anyagent credential list` / `delete` manage references without exposing plaintext; `anyagent credential import` loads several from a YAML file. The `--id` here must equal the `credential_id` used in `mcp.json` (or a plugin manifest), and `--kind` must match `ref_kind`. Use `--scope global|agent|session` to bound where the reference resolves. Use separate `AGENT_API_KEY`, `ADMIN_API_KEY`, and internal Tool Runtime key in deployed setups.
-
-## Config Reload
-
-Hot fields such as model/tools/skills can apply to later requests after hot reload. Cold fields such as `sandbox` and `storage` require process restart because they bind runtime resources.
+- Built-in tool names (`exec`, `core.web_fetch`, and the other reserved names) go in `tools.requested_tool_names`. They are not generated as plugins.
+- `anyagent add tool <name>` writes `plugins/<name>/` (`plugin.json` plus `plugin.py`), appends `plugins` to `plugins.roots`, and requests the public tool name. A bare name such as `echo` becomes `app.echo`.
+- `anyagent add plugin <name>` writes a skeleton and registers the plugin root. It does not request a tool.
+- `anyagent add skill <name>` writes `.anyagent/skills/<name>/SKILL.md` and appends `<name>` to the agent's `skills.default_selected`.
+- `anyagent add agent <name>` writes an agent pack. Pass `exposed=false` when the agent should be hidden from the default route and used only as a spawn target.

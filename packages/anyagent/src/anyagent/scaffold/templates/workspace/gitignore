@@ -1,0 +1,9 @@
+.venv/
+.env
+.env.local
+.env.*.local
+.run/
+.runs/
+.pip/
+__pycache__/
+*.py[cod]
