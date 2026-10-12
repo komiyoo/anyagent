@@ -14344,7 +14344,7 @@
           "type": "array"
         },
         "environment_variable": {
-          "default": "MCP_CREDENTIAL_STORE_BACKEND",
+          "default": "CREDENTIAL_BACKEND",
           "title": "Environment Variable",
           "type": "string"
         },
