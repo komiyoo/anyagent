@@ -1,12 +1,12 @@
 # anyagent
 
-anyagent 是一个**配置即服务**的 AI Agent Server 内核加 SDK。在 workspace 里写好 `AGENTS.md`、`agent.yaml`、`mcp.json` 和 skills，`anyagent serve` 一条命令就能启动一个兼容 OpenAI Responses API 的 Agent Server，不需要写服务端代码。
+anyagent 是一个**配置即服务**的 AI Agent Server 内核加 SDK。`pip install anyagent` 之后，在任意目录执行 `OPENAI_API_KEY=... anyagent serve` 就能启动兼容 OpenAI Responses API 的 Agent Server，不需要写服务端代码，也不需要先准备配置文件。需要自己的 agent、工具或 MCP 时，再写 `.anyagent/anyagent.yaml` 和 Agent Pack。
 
 - PyPI distribution 与 Python import 包名：`anyagent`
 
 ## 设计理念
 
-- **配置即服务**：agent 的行为、工具、技能、MCP server、沙箱和多 agent 边界都由 `.anyagent/` 下的配置文件描述，服务端代码由框架提供。
+- **配置即服务**：工作区设置集中在 `.anyagent/anyagent.yaml`。agent 的行为、工具、技能、MCP server、沙箱和多 agent 边界由 `.anyagent/` 下的配置描述，服务端代码由框架提供。省略的字段使用内置默认，默认值通过 `${VAR}` 读取约定环境变量。
 - **OpenAI 兼容优先，SDK 提供超集**：对外第一接口是 `POST /v1/responses` + SSE，任何 OpenAI SDK 都能直接接入；`AnyAgent` SDK 在此之上提供 tool/command 粒度的阶段事件（Stage Events）和查询、调试、管理接口。
 - **协议先行**：`anyagent.protocol.*` 是所有 wire contract 的唯一真源。server、Python/TypeScript SDK 和 Studio 都从它派生，并导出 JSON Schema bundle 供其他语言和 runtime 使用。
 - **资源可见，但不能直接操作**：agent 能看到可用的工具、技能和凭据引用，但密钥、凭据和工具策略由 server 代理。agent 只拿到 `credential_id`，由 server 解析并注入。
@@ -23,49 +23,61 @@ Python 包 `packages/anyagent/src/anyagent/`：
 |---|---|
 | `protocol` | Responses、Stage Events、Tool Runtime、Sandbox、Multi-Agent 等协议模型；导出 JSON Schema bundle 与 OpenAPI |
 | `agent_runtime` | 基于 pydantic-ai 的 agent loop、prompt 组装与注入、模型 provider、多 agent 协作、scripted reply |
-| `config` | 加载 `.anyagent/anyagent.yaml` 与 Agent Pack，处理配置分层合并和模型选择 |
+| `config` | 加载 `.anyagent/anyagent.yaml`（内置默认 → system → user → workspace → CLI）、`${VAR}` 插值与 Agent Pack |
 | `skills` | 技能发现、加载、选择、依赖与权限，按需披露给 agent |
 | `mcp` | MCP server 连接、鉴权、工具发现与 stdio 会话池 |
 | `tool_runtime` | 工具注册、manifest/execute 契约、内置工具、CLI profile、独立 Tool Runtime 服务 |
-| `plugins` | 插件 API 与 loader，内置 Chatwoot connector |
+| `plugins` | 插件 API 与 loader。随包的 Chatwoot 与 lifecycle echo 经 `plugins.builtin` 启用 |
 | `gateway` | 平台会话映射、agent 路由、connector 契约 |
 | `storage` / `persistence` | Session / Run / Event / 幂等 / 锁存储；支持 in-memory、SQLite、PostgreSQL、MySQL、Redis |
 | `server` | 内置 FastAPI Agent Server（`/v1/responses`、`/internal/*`、`/admin/*`）、分布式 runtime、沙箱后端、Credential Vault、Tool Policy |
 | `AnyAgent` SDK（`agent_api_client` / `types`） | OpenAI 兼容面，以及 events、agents、tools、skills、prompts、observability、admin 命名空间 |
-| `cli` | `anyagent` 命令行：workspace 初始化与检查、启动服务、存储迁移、凭据与插件管理；子命令见 `anyagent --help` |
+| `cli` | `anyagent` 命令行：`init`、`add`、`doctor`、`config show`、`serve` / `dev`、存储、凭据与插件；子命令见 `anyagent --help` |
 
 仓库内其他部分：
 
 | 路径 | 内容 |
 |---|---|
-| `packages/anyagent/studio/` | Studio 控制面（React/Vite），构建产物随 Python 包分发，由 `anyagent serve` 挂载 |
+| `packages/anyagent/studio/` | Studio 控制面（React/Vite），构建产物随 Python 包分发。`anyagent dev` 在未配置目录时挂载；`serve` 只在 `server.studio_dir` 有值时挂载 |
 | `sdks/typescript/` | 从协议 schema 生成类型的 TypeScript client，供 Studio 使用，暂不发布 |
 | `tools/anyagent-dev-cli/` | 本仓研发工具 CLI（版本提升、文档检查等） |
 
-本仓不提供示例应用项目。业务方在自己的仓库里用 `anyagent init` / `anyagent config init` 生成骨架并自行部署，框架与业务仓库的分工见 [framework-boundary.md](docs/architecture/overview/framework-boundary.md)。
+本仓不提供示例应用项目。业务方在自己的仓库里用 `anyagent init` 生成骨架并自行部署，框架与业务仓库的分工见 [framework-boundary.md](docs/architecture/overview/framework-boundary.md)。
 
 ## 快速开始
 
 ```bash
 pip install anyagent
-anyagent init --workspace ./my-workspace
-OPENAI_API_KEY=sk-... anyagent dev --workspace ./my-workspace
-# API:    http://127.0.0.1:8787/v1
-# Studio: http://127.0.0.1:8787/studio/
+
+# 任意目录。未写配置时使用内置 main agent，监听 127.0.0.1:8787
+OPENAI_API_KEY=sk-... anyagent serve
+
+# 需要自己的模型、工具或 MCP 时
+anyagent init --provider openai --model gpt-4o-mini
+anyagent add tool echo
+anyagent add skill review
+anyagent add mcp docs
+anyagent add agent reviewer
+anyagent add plugin billing
+anyagent config show --sources
+anyagent doctor
+anyagent dev
 ```
+
+`anyagent dev` 与 `serve` 使用同一组参数。key 为空时它填入 `anyagent-dev-key`，并挂载 Studio（`http://127.0.0.1:8787/studio/`）。未配置 `API_KEY` 的 `serve` 不校验调用方 token；绑定非 loopback 地址时必须配置 API key。
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(base_url="http://127.0.0.1:8787/v1", api_key="anyagent-dev-key")
 response = client.responses.create(
-    model="gpt-4o",
+    model="gpt-4o-mini",
     input="hello",
     metadata={"agent_id": "main", "session_key": "demo"},
 )
 ```
 
-完整流程（模板、`agent.yaml` 配置、SDK、凭据与 MCP）见 [docs/guides/getting-started.md](docs/guides/getting-started.md)。
+配置文件、环境变量和迁移见 [docs/guides/getting-started.md](docs/guides/getting-started.md)。
 
 ## 文档
 

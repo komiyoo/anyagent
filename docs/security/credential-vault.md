@@ -99,8 +99,8 @@ Credential Vault 解决的是 tool handler 执行期的凭证解析与注入；�
 
 ```mermaid
 flowchart LR
-  secrets[".anyagent/secrets.yaml"] -- "启动时读取" --> svc["Agent API / Tool Runtime"]
-  svc -- "按 runtime_env 白名单 resolve" --> vault["Credential Vault"]
+  cfg[".anyagent/anyagent.yaml<br/>credentials.runtime_env"] -- "启动时读取" --> svc["Agent API / Tool Runtime"]
+  svc -- "按白名单 resolve" --> vault["Credential Vault"]
   svc -- "写入" --> env["服务进程 os.environ"]
   env --> consumers["MCP stdio 子进程 / CLI /<br/>模型 provider / 业务脚本"]
 ```
@@ -108,31 +108,35 @@ flowchart LR
 示例：
 
 ```yaml
-credential_vault:
+credentials:
   backend: infisical
-  infisical_host: https://app.infisical.com
-  infisical_universal_auth_client_id_env: INFISICAL_UNIVERSAL_AUTH_CLIENT_ID
-  infisical_universal_auth_client_secret_env: INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
-  infisical_project_id_env: INFISICAL_PROJECT_ID
-  infisical_environment_env: INFISICAL_ENVIRONMENT
-  infisical_credential_root_path: /anyagent/credentials
-
-runtime_env:
-  - name: OPENAI_API_KEY
-    credential_id: openai_api_key
-    kind: api_key
-  - name: AMAP_MAPS_API_KEY
-    credential_id: amap_maps_api_key
-    kind: api_key
+  writable: false
+  infisical:
+    host: ${INFISICAL_HOST:-https://app.infisical.com}
+    client_id: ${INFISICAL_UNIVERSAL_AUTH_CLIENT_ID}
+    client_secret: ${INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET}
+    project_id: ${INFISICAL_PROJECT_ID}
+    environment: ${INFISICAL_ENVIRONMENT}
+    credential_root_path: /anyagent/credentials
+  runtime_env:
+    - name: OPENAI_API_KEY
+      credential_id: openai_api_key
+      kind: api_key
+    - name: AMAP_MAPS_API_KEY
+      credential_id: amap_maps_api_key
+      kind: api_key
 ```
 
 约束：
 
-- 只投影 `runtime_env` 明确列出的 Credential Vault 引用，不全量倾倒 provider 下所有 secret。
-- `.anyagent/secrets.yaml` 只应保存 Credential Vault 后端、项目、环境、路径和变量白名单，不保存明文 secret。
-- 默认不覆盖进程里已存在的环境变量；需要覆盖时在条目上显式设置 `overwrite: true`。
-- 该机制适用于 MCP stdio `env`、CLI、模型 provider 和业务脚本；tool handler 内部凭证注入仍优先使用 Credential Vault / `ToolDefinition.credentials`。
-- Agent sandbox 不应挂载宿主凭证环境；需要让 agent 执行 CLI 时，应通过受控 sandbox/runner 提供最小必要环境和网络出口。
+- 只投影 `credentials.runtime_env` 明确列出的引用，不全量倾倒 provider 下所有 secret。
+- 后端、项目、环境和路径写在 `.anyagent/anyagent.yaml` 的 `credentials`。取值用 `${VAR}`。文件里不保存明文 secret。
+- 默认不覆盖进程里已存在的环境变量；需要覆盖时在条目上设置 `overwrite: true`。
+- 该机制适用于 MCP stdio `env`、CLI、模型 provider 和业务脚本。tool handler 内部凭证注入仍使用 Credential Vault / `ToolDefinition.credentials`。
+- Agent sandbox 不挂载宿主凭证环境。
+- `anyagent config show` 列出这些绑定：环境变量名和 `credential:<credential_id>`，不打印明文。
+
+投影入口是 `packages/anyagent/src/anyagent/server/runtime/workspace_env.py` 的 `load_workspace_runtime_environment`。
 
 ### 2.2 凭证流转路径
 
@@ -252,9 +256,9 @@ class CredentialStore(ABC):
 
 ### 3.3 存储后端
 
-#### EnvBackend（v1 默认，向后兼容）
+#### EnvBackend
 
-向后兼容现有的环境变量方式。凭证映射规则：
+显式设置 `credentials.backend: env` 时使用。默认后端是 `none`：`open_process_credential_store` 落到进程内内存库，重启后丢失。映射规则：
 
 - 默认按 `CREDENTIAL__` 前缀加大写 `credential_id` 取环境变量，例如 `cred_openai_default` 对应 `CREDENTIAL__CRED_OPENAI_DEFAULT`。
 - 也可以通过 `metadata.env_var_name`（例如 `OPENAI_API_KEY`）直接映射到已有的环境变量。
@@ -282,12 +286,13 @@ class CredentialStore(ABC):
 
 #### DatabaseBackend（preview）
 
-使用 PostgreSQL `pgcrypto` 加密列存储，表结构由 Alembic 管理（`anyagent db migrate` 或兼容入口 `anyagent storage migrate`）。配置：
+使用 PostgreSQL `pgcrypto` 加密列存储。凭据表由 Alembic 管理，入口是 `anyagent db migrate`。`anyagent storage migrate` 只迁移存储 SQL，不是这条入口。配置：
 
 ```bash
-MCP_CREDENTIAL_STORE_BACKEND=db-write
-POSTGRES_DSN=postgresql://...
-POSTGRES_SCHEMA=public
+CREDENTIAL_BACKEND=db
+CREDENTIAL_WRITABLE=true
+CREDENTIAL_POSTGRES_DSN=postgresql://...
+CREDENTIAL_POSTGRES_SCHEMA=public
 CREDENTIAL_ENCRYPTION_KEY=...
 ```
 
@@ -298,7 +303,8 @@ CREDENTIAL_ENCRYPTION_KEY=...
 对接 HashiCorp Vault KV v2：
 
 ```bash
-MCP_CREDENTIAL_STORE_BACKEND=vault-write
+CREDENTIAL_BACKEND=vault
+CREDENTIAL_WRITABLE=true
 VAULT_ADDR=https://vault.example.com
 VAULT_TOKEN=...
 VAULT_MOUNT=secret
@@ -307,11 +313,18 @@ VAULT_CREDENTIAL_ROOT_PATH=anyagent/credentials
 
 ### 3.4 运行时后端选择与能力查询
 
-后端由 `MCP_CREDENTIAL_STORE_BACKEND` 选择。Core server 与独立 Tool Runtime 共用 `packages/anyagent/src/anyagent/server/security/credential_runtime.py` 中的 `CredentialRuntimeConfig`、`build_credential_resolver_from_config` 和 `build_credential_store_from_config` 组装 resolver 与 admin store，可选取值和每个后端需要的环境变量以这里为准。语义约定：
+后端由 `credentials.backend` 选择，对应环境变量 `CREDENTIAL_BACKEND`。取值是 `none`、`env`、`file`、`db`、`vault`、`infisical`。可写性是 `credentials.writable`（`CREDENTIAL_WRITABLE`）。后端名不带 `-write`。
 
-- 未设置时，`anyagent serve` 使用 Admin API 的 write-only 内存凭据库，重启后丢失。
-- 不带 `-write` 后缀的取值只提供 resolver；带 `-write` 后缀的取值让同一后端同时作为 admin store，支持 `/admin/credentials` 写入。外部系统托管的后端（如 Infisical）即使带 `-write` 也保持只读，凭据在外部系统中维护。
-- 独立 Tool Runtime 读取同一组环境变量（解析入口 `ToolRuntimeSettings`），用 `--admin-key` 或 `ADMIN_API_KEY` 启用 `/admin/credentials`。
+Core server 与独立 Tool Runtime 共用 `packages/anyagent/src/anyagent/server/security/credential_runtime.py` 的 `build_credential_store` 与 `open_process_credential_store`。输入是 `anyagent.config.schema.CredentialsConfig`。`backend` 为 `none` 时 `build_credential_store` 返回空；`open_process_credential_store` 再落到内存库。`writable` 为 false 时包装成只读 store。Infisical 的写入始终失败。
+
+数据库后端需要 `CREDENTIAL_POSTGRES_DSN` 与 `CREDENTIAL_ENCRYPTION_KEY`，不使用存储用的 `POSTGRES_DSN`。file 根目录是 `credentials.file.root`，环境变量 `CREDENTIAL_FILE_ROOT`，相对路径相对工作区解析。
+
+语义约定：
+
+- 未设置后端时，`anyagent serve` 使用内存凭据库，重启后丢失。
+- `writable: true` 时同一后端同时作为 admin store，支持 `/admin/credentials` 写入。
+- 不启动服务时，`anyagent credential set|list|delete|import --local` 直接操作当前工作区的 file、db、vault 或 infisical 后端。省略 `--local` 时走 Admin API。
+- 独立 Tool Runtime 使用同一份 `CredentialsConfig`，用 `--admin-key` 或 `ADMIN_API_KEY` 启用 `/admin/credentials`。
 
 运行时以 `GET /admin/credentials/capabilities` 为准：Core server 与独立 Tool Runtime 都提供该接口，返回当前 resolver/admin store、是否只读、缺少的 extras/env 以及规划中的后端，不返回任何凭证明文。
 
@@ -426,7 +439,15 @@ anyagent credential list
 
 # 删除
 anyagent credential delete --id cred_openai_default
+
+# 不启动服务，直接写当前工作区的后端
+anyagent credential set --local --workspace . \
+    --id cred_openai_default \
+    --kind api_key \
+    --value-from-env OPENAI_API_KEY
 ```
+
+省略 `--local` 时走 Admin API（`--admin-url` / `--admin-key`）。`list`、`delete`、`import` 同样接受 `--local`。
 
 ## 5. 自动化部署时的凭证注入
 
@@ -450,7 +471,7 @@ anyagent credential import --admin-url <url> --admin-key "$ADMIN_API_KEY" --file
 
 Docker Compose、K8s Secret 等编排由业务仓库负责，分工见 [framework-boundary.md](../architecture/overview/framework-boundary.md)。无论用哪种平台：
 
-- 用 `MCP_CREDENTIAL_STORE_BACKEND` 选择凭据后端（见 3.4）：env 后端从进程环境变量读取，file 后端从只读挂载的目录读取。
+- 用 `CREDENTIAL_BACKEND` 选择凭据后端（见 3.4）：env 后端从进程环境变量读取，file 后端从 `CREDENTIAL_FILE_ROOT` 读取。`CREDENTIAL_WRITABLE=true` 才允许写入。Infisical 始终只读。
 - 凭证只注入 Agent API / Tool Runtime 进程，不注入沙箱。
 - `ADMIN_API_KEY`、`AGENT_API_KEY`、`TOOL_RUNTIME_INTERNAL_KEY` 等内部密钥与业务凭证一样通过平台的 secret 机制管理。
 

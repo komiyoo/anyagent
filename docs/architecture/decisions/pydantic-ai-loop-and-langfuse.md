@@ -76,7 +76,7 @@ flowchart TB
 | `.anyagent/agents/<id>/agent.yaml` | 工具披露、skill 选择、sandbox、context_providers | 是。策略，不是散文 |
 | `.anyagent/agents/<id>/mcp.json` | MCP 连接与凭证引用 | 是。能力接线 |
 | `.anyagent/skills/**/SKILL.md` | **按需**流程与长手册 | 仅当不是每轮都要的程序 |
-| workspace `models.yaml` | 模型/provider 目录 | 运行目录，根目录保留 |
+| `.anyagent/anyagent.yaml` 的 `models` | 模型/provider 目录 | 运行配置，与其他段在同一个文件 |
 | `plugins/` + context provider 代码 | 业务工具与受信任上下文 | 代码，不进 markdown |
 
 框架仓只规定 pack schema、注入顺序、来源 hash 审计。不在 `anyagent` 里写某个业务 agent 的 instructions。
@@ -123,9 +123,9 @@ Studio 时间线不是本轮目标。Unified Observability Sink 仍可给 alert 
 - Tool Runtime `manifest` / `execute` 仍是工具真源。pydantic-ai tools 是对 execute 的包装，不是第二套 handler。
 - MCP 第一期继续经现有 MCP manager + Tool Runtime；不平行再拉一套 pydantic-ai MCP 进程。
 - prompt envelope（`AGENTS.md`、context providers、skill catalog）在进入 pydantic-ai 之前组好，带 source path/hash。
-- `models.yaml` 的模型名映射为 pydantic-ai model 字符串；自研 Anthropic/Gemini HTTP translator 已删除。
+- `.anyagent/anyagent.yaml` 的 `models` 映射为 pydantic-ai model 字符串；自研 Anthropic/Gemini HTTP translator 已删除。
 
-MCP 第一期仍经现有 MCP manager + Tool Runtime。`tool_loop.py` 保留 `run_tool_loop_*` 入口；execute/manifest 在 `tool_execution.py`；适配器在 `agent_runtime/loop/`。`model_providers/` 只留协议和 OpenAI Responses 默认工厂；kind 目录在 `anyagent.model_catalog`。
+MCP 第一期仍经现有 MCP manager + Tool Runtime。`tool_loop.py` 保留 `run_tool_loop_*` 入口；execute/manifest 在 `tool_execution.py`；适配器在 `agent_runtime/loop/`。`model_providers/` 只留协议和 OpenAI Responses 默认工厂；kind 目录在 `anyagent.config.models`。
 
 ## 明确不做
 

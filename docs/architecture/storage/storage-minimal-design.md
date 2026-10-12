@@ -297,7 +297,7 @@ v0 推荐默认值（可配置）：
 Core 提供一个 Postgres 清理命令（默认 **plan-only**，不会写库；需要显式 `--apply` 才会执行）：
 
 - `packages/anyagent/src/anyagent/storage/retention.py`
-- CLI：`anyagent storage retention`（兼容平铺入口：`anyagent storage-retention`）
+- CLI：`anyagent storage retention`
 
 执行示例：
 

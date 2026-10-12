@@ -303,7 +303,7 @@ Core 侧组件：
 | `anyagent.server.sandbox.workspace_service` | `WorkspaceService`：restore / hibernate / delete / health 编排 |
 | `anyagent.server.sandbox.workspace_runtime` | `build_workspace_runtime`：组装 metadata / lease / snapshot / event / backend / service |
 
-组装链路：`ToolRuntimeSettings`（`packages/anyagent/src/anyagent/tool_runtime/settings.py`，环境变量以此为准）把沙箱与 workspace 相关配置解析为 `WorkspaceRuntimeConfig`；`create_tool_runtime_app_async` 和 `anyagent tool-runtime serve` 据此构造 `WorkspaceRuntimeAssembly`，让 `exec` 与上述管理接口共用同一个 `WorkspaceService`。Postgres / Redis 后端依赖对应 extras，并保持 lazy import。
+组装链路：生效配置的 `sandbox` 与 `tool_runtime`（`packages/anyagent/src/anyagent/config/schema.py` 的 `SandboxConfig` / `ToolRuntimeConfig`）经 `packages/anyagent/src/anyagent/tool_runtime/settings.py` 的 `ToolRuntimeSettings` 解析为 `WorkspaceRuntimeConfig`；`create_tool_runtime_app_async` 和 `anyagent tool-runtime serve` 据此构造 `WorkspaceRuntimeAssembly`，让 `exec` 与上述管理接口共用同一个 `WorkspaceService`。Postgres / Redis 后端依赖对应 extras，并保持 lazy import。
 
 ## 7. 一次请求的端到端时序
 

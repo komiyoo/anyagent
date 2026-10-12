@@ -20,6 +20,7 @@
 10. [storage-idempotency-and-cursor-semantics.md](storage-idempotency-and-cursor-semantics.md)：Run Store 负责 idempotency，Event Store 负责 seq cursor/replay，明确 retention 后允许 seq gaps 且不得重排事件。
 11. [second-runtime-rust-reference.md](second-runtime-rust-reference.md)：（已撤回）第二 server runtime 的 Rust PoC；PoC 只返回写死的 JSON，2026-10-07 删除。
 12. [pydantic-ai-loop-and-langfuse.md](pydantic-ai-loop-and-langfuse.md)：托管面保持 AnyAgent Server；执行面 loop 换成 pydantic-ai；SDK 跟踪仍走 Event Store；Langfuse OTLP 为可选附加渠道。
+13. [single-workspace-config.md](single-workspace-config.md)：工作区只保留 `.anyagent/anyagent.yaml`，取值只使用 `${VAR}` / `${VAR:-default}`，只设环境变量的部署继续可用。
 
 维护约定：
 

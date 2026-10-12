@@ -1,6 +1,6 @@
 # Server Runtime TODO
 
-对应需求:`requirements.md#req-5`、`requirements.md#req-4-3`、`requirements.md#req-4-7`
+对应需求:`requirements.md#req-5`、`requirements.md#req-4-3`、`requirements.md#req-4-7`、`requirements.md#req-0-2`
 
 ## 目标
 
@@ -63,9 +63,22 @@
 - [x] P1 Chatwoot 已分配真人坐席时跳过 bot 回复：webhook 快照 + 发信前 live GET，不把 `status=open` 当 handoff 信号（Req: `requirements.md#req-6`; Impl: `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/chatwoot.py`, `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/plugin.py`; Module: `anyagent.plugins.builtin.chatwoot_connector`）
 - [x] P1 Chatwoot bot 回复后保持 open：不限 pending，resolved/snoozed/缺 status 也打开；从不 resolve/snooze（Req: `requirements.md#req-6`; Impl: `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/plugin.py`; Module: `anyagent.plugins.builtin.chatwoot_connector`）
 
+## 已完成任务（0.5 单一配置文件与 CLI）
+
+口径：`docs/architecture/decisions/single-workspace-config.md`。
+
+- [x] 工作区配置收成 `.anyagent/anyagent.yaml`。`load_effective_config` 按 system、user、workspace、CLI 合并，并用 `${VAR}` 插值。（Req: `requirements.md#req-0-2`；Impl: `packages/anyagent/src/anyagent/config/loader.py:129`、`packages/anyagent/src/anyagent/config/schema.py:227`、`packages/anyagent/src/anyagent/config/env.py:84`、`packages/anyagent/src/anyagent/config/defaults.py:13`、`packages/anyagent/src/anyagent/config/merge.py:10`；Module: `anyagent.config`）
+- [x] `.env` 与 `.env.local` 只由 `load_dotenv` 读一次，不覆盖进程里已有的变量。（Req: `requirements.md#req-0-2`；Impl: `packages/anyagent/src/anyagent/config/env.py:57`；Module: `anyagent.config.env`）
+- [x] 没有 agent 目录时使用内置 `main`。agent 目录可以只有 `AGENTS.md`，`agent.yaml` 可选。（Req: `requirements.md#req-0-2`、`requirements.md#req-2-1`；Impl: `packages/anyagent/src/anyagent/config/agents.py:271`、`packages/anyagent/src/anyagent/config/agents.py:337`；Module: `anyagent.config.agents`）
+- [x] CLI 拆成 `anyagent.cli`。`serve` 与 `dev` 共用参数。`storage` 与 `db` 是子命令。（Req: `requirements.md#req-0-2`；Impl: `packages/anyagent/src/anyagent/cli/main.py:33`、`packages/anyagent/src/anyagent/cli/serve.py:87`、`packages/anyagent/src/anyagent/cli/storage.py:18`；Module: `anyagent.cli`）
+- [x] `anyagent init` 与 `anyagent add agent|skill|tool|mcp|plugin` 生成工作区骨架，并写出 JSON Schema。（Req: `requirements.md#req-0-2`；Impl: `packages/anyagent/src/anyagent/scaffold/init_workspace.py:45`、`packages/anyagent/src/anyagent/scaffold/add_component.py:34`、`packages/anyagent/src/anyagent/scaffold/schema_export.py:21`、`packages/anyagent/src/anyagent/cli/workspace.py:38`；Module: `anyagent.scaffold`）
+- [x] `config show` 打印脱敏后的生效配置。`--sources` 给出层和插值用到的环境变量。`credentials.runtime_env` 显示环境变量名和 `credential:<id>`。（Req: `requirements.md#req-0-2`；Impl: `packages/anyagent/src/anyagent/cli/workspace.py:155`；Module: `anyagent.cli.workspace`）
+- [x] `anyagent dev` 在 API key 为空时填入 `anyagent-dev-key`。`anyagent serve` 在 host 不是 loopback 且 API key 为空时拒绝启动。（Req: `requirements.md#req-0-2`；Impl: `packages/anyagent/src/anyagent/cli/serve.py:154`、`packages/anyagent/src/anyagent/cli/serve.py:181`；Module: `anyagent.cli.serve`）
+
 ## 参考
 
 - `docs/architecture/overview/roadmap.md` Phase 2 / Phase 4
+- `docs/architecture/decisions/single-workspace-config.md`
 - `docs/architecture/runtime/stateless-agent-service-architecture.md`
 - `docs/architecture/runtime/agent-server-runtime-entities.md`
 - `docs/architecture/control-plane/studio-control-plane-and-observability.md`

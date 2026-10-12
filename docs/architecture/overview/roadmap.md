@@ -38,14 +38,14 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 | -------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | 协议           | `packages/anyagent/src/anyagent/protocol/`、`schema_export.py`               | 导出 JSON Schema bundle、endpoint manifest、semantic rules 与 OpenAPI 3.1 document。                   |
 | Server         | `packages/anyagent/src/anyagent/server/app.py`                               | 提供 `/v1/responses`、`/internal/*`、`/admin/*` typed endpoints。                                      |
-| CLI            | `packages/anyagent/src/anyagent/cli/`                                        | 提供 `serve`、`init`、`doctor`、config、storage、workspace 等 control-plane 入口。                     |
+| CLI            | `packages/anyagent/src/anyagent/cli/`                                        | 提供 `serve`、`dev`、`init`、`add`、`doctor`、`config show`、`credential`、`storage`、`db`。          |
 | Python SDK     | `packages/anyagent/src/anyagent/agent_api_client.py`、`anyagent.types`       | OpenAI 兼容 client + events、agents、skills、tools、prompts、observability、admin、health namespaces。 |
-| Agent loop | `packages/anyagent/src/anyagent/agent_runtime/loop/`、`docs/architecture/runtime/agent-loop.md` | pydantic-ai 跑 model→tool→model；`models.yaml` kind 映射为模型字符串；自研 vendor translator 已删除。 |
+| Agent loop | `packages/anyagent/src/anyagent/agent_runtime/loop/`、`docs/architecture/runtime/agent-loop.md` | pydantic-ai 跑 model→tool→model；`.anyagent/anyagent.yaml` 的 `models` 段把 kind 映射为模型字符串；自研 vendor translator 已删除。 |
 | TypeScript SDK | `sdks/typescript/`                                                           | 从 protocol export 生成 schema/types,通过 endpoint manifest 解析 schema-backed paths。                 |
 | Stage Events   | `anyagent.protocol.events`                                                   | 覆盖 prompt context、model stream、tool planned/result、command planned/result 与 done 主路径。        |
 | Storage        | `anyagent.storage`、server storage adapters                                  | 支持 in-memory、SQLite、PostgreSQL、Redis hot path 与 typed external SQL backend config。              |
 | Tool Runtime   | `anyagent.tool_runtime`、server tool endpoints                               | manifest/execute contract、credential resolver/admin-store assembly、standalone Tool Runtime 管理面。  |
-| Credential     | `anyagent.server.security.credential_*`                                      | Env/File/Infisical read-only backend、admin credential CRUD、capability matrix。                       |
+| Credential     | `anyagent.server.security.credential_*`                                      | `none` / `env` / `file` / `db` / `vault` / `infisical`；可写性是 `credentials.writable`；`runtime_env` 投影；Admin API 与 `credential --local`。 |
 | Sandbox        | `anyagent.protocol.sandbox`、sandbox backend modules                         | `SandboxPolicy`、`NetworkSandboxPolicy`、`ResourceLimits` 与 backend adapter 分层。                    |
 | Studio         | `packages/anyagent/studio/`、`packages/anyagent/src/anyagent/studio_static/` | 源码位于 package workspace,构建产物随 Python package 打包,消费 typed API。                             |
 
@@ -102,7 +102,7 @@ anyagent 的目标是成为 **配置化、服务化的 AI Agent 基础设施**:
 | Client SDK     | Python SDK facade + TypeScript SDK scaffold      | 多语言 SDK 必须从 protocol/spec 派生并通过 contract fixtures。                  |
 | 存储           | in-memory / SQLite / PostgreSQL / Redis adapters | 跨 runtime storage/replay contract 必须保持 session/run/event 语义一致。        |
 | Tool Runtime   | 进程内与 standalone Tool Runtime contract        | manifest/execute、credential injection、policy enforcement 不绑定单一 runtime。 |
-| Credential     | Env/File/Infisical backend + admin store         | Agent 只见 credential ref;secret 不通过 read API 回显。                         |
+| Credential     | `CredentialsConfig` + admin store                | Agent 只见 credential ref;secret 不通过 read API 回显。可写性是 `credentials.writable`。 |
 | Sandbox        | policy/backend adapter 分层                      | backend 可替换,agent loop 只消费 `exec` tool 与 sandbox policy。                |
 | Multi-Agent    | runtime primitives 与 stage events               | parent/child/root run、quota 与 event replay 语义必须可验收。                   |
 
@@ -151,6 +151,8 @@ Phase 1 ~ Phase 2 的主路径任务已全部完成。逐条任务历史见 Git 
 > **决策记录（2026-05-29 技术调研）**：基于工作区仓库（Codex/DeerFlow/Pi-mono/OpenClaw/HiClaw）技术调研，Phase 1.8 新增 Middleware 接口（#14）作为框架扩展基础，循环检测和上下文压缩均作为内置 middleware 实现。Plugin Manifest v1（#9）扩展为含 middlewares/hooks 字段。详见 `docs/_notes/third-party/workspace-repos-tech-survey.md`。
 >
 > **决策记录（2026-09-06）**：托管面（Gateway、Session/Run/Event、Credential、Tool Runtime、`.anyagent` pack）保持不变。执行面 agent loop 改为 pydantic-ai。SDK 跟踪仍走 Event Store / Stage Events（写库）；Langfuse（OTLP）是附加渠道。不把业务提示迁入 SDK，不平行引入 pydantic-ai YAML spec。Rust 第二 runtime 不作为本轮 loop 替代。口径见 `docs/architecture/decisions/pydantic-ai-loop-and-langfuse.md`，任务入口 `todo/server-runtime.md`。
+>
+> **决策记录（2026-10-12）**：工作区设置收成 `.anyagent/anyagent.yaml`，取值只使用 `${VAR}` / `${VAR:-default}`。没有 agent 目录时使用内置 `main`。凭据可写性是 `credentials.writable`。随包插件经 `plugins.builtin` 显式启用。口径见 `docs/architecture/decisions/single-workspace-config.md`。任务入口 `todo/server-runtime.md`、`todo/security-compliance.md`、`todo/tool-runtime.md`。需求 `requirements.md#req-0-2`。
 
 ---
 

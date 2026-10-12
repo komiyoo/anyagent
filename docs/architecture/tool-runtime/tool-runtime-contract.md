@@ -91,9 +91,10 @@ v0 启动时加载：
 
 插件以包含 `plugin.json` 的目录形式提供，由 `anyagent.plugins` loader 通过 `ToolRuntimePluginAPI` 注册到 registry。约定：
 
-- 插件根目录默认取 `<workspace>/plugins`，可由 CLI 参数或环境变量覆盖。解析逻辑在 `packages/anyagent/src/anyagent/server/app_builders.py` 与 `packages/anyagent/src/anyagent/tool_runtime/server.py` 的 `_resolve_plugin_roots`。
-- 加载失败默认 fail-closed，启动报错；显式开启 fail-open 后记录错误并继续启动。
-- 插件被加载不等于对 agent 可见：工具仍需出现在目标 agent 的 `tools.requested_tool_names` 中。`anyagent init` 生成的 `plugins/demo/` 会被加载，但其工具默认不在任何 agent 的工具清单里。
+- 插件根目录来自 `plugins.roots`（环境变量 `PLUGIN_ROOTS`，或 `--plugin-root`）。未设置时，存在 `<workspace>/plugins` 就会扫描它。解析逻辑在 `packages/anyagent/src/anyagent/server/app_builders.py` 与 `packages/anyagent/src/anyagent/tool_runtime/server.py` 的 `_resolve_plugin_roots`。
+- 随包插件 `chatwoot` 与 `lifecycle_echo` 默认不加载，在 `.anyagent/anyagent.yaml` 的 `plugins.builtin` 里按名启用。
+- 加载失败默认 fail-closed，启动报错；`plugins.fail_open: true` 后记录错误并继续启动。
+- 插件被加载不等于对 agent 可见：工具仍需出现在目标 agent 的 `tools.requested_tool_names` 中。`anyagent init` 不生成示例插件。
 - 来源追溯：`GET /admin/plugins/catalog`（SDK `client.admin.plugin_catalog()`，CLI `anyagent plugin catalog`）返回 plugin roots、已加载插件、注册的工具、manifest/entrypoint 与 docs/schemas/tests 引用以及加载错误。契约见 [plugin-connector-contract-v1.md](../decisions/plugin-connector-contract-v1.md)。
 
 ## Tool Exposure 分级与按需发现
