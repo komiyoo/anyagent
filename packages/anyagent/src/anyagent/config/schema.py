@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from anyagent.config.models_kinds import ModelProviderKind
 
@@ -152,6 +152,18 @@ class CredentialsConfig(_Forbid):
     infisical: CredentialsInfisicalConfig = Field(default_factory=CredentialsInfisicalConfig)
     runtime_env: list[RuntimeEnvEntry] = Field(default_factory=list)
 
+    @field_validator("backend", mode="before")
+    @classmethod
+    def _reject_write_suffix(cls, value: object) -> object:
+        if isinstance(value, str):
+            raw = value.strip().lower()
+            if raw.endswith("-write") or raw.endswith("_write"):
+                raise ValueError(
+                    f"credential backend {value!r} is not a backend name; "
+                    "drop the -write suffix and set credentials.writable: true"
+                )
+        return value
+
 
 class OpenSandboxConfig(_Forbid):
     base_url: str | None = None
@@ -190,9 +202,35 @@ class SandboxConfig(_Forbid):
     snapshot_s3_region: str | None = None
 
 
+class ChatwootPluginConfig(_Forbid):
+    """Chatwoot connector settings. Defaults interpolate ``CHATWOOT_*``."""
+
+    url: str = "https://app.chatwoot.com"
+    account_id: str = "1"
+    access_token: str | None = None
+    webhook_secret: str | None = None
+    credential_kind: str = "secret"
+    credential_id: str | None = None
+    async_processing: bool = True
+    status_changes: bool = True
+    skip_when_assigned_to_human: bool = True
+    typing_indicator: bool = False
+    reply_pacing_min_s: float | None = None
+    reply_pacing_max_s: float | None = None
+
+    @field_validator("account_id", mode="before")
+    @classmethod
+    def _account_id_text(cls, value: object) -> object:
+        if value is None:
+            return "1"
+        return str(value)
+
+
 class PluginsConfig(_Forbid):
     roots: list[str] = Field(default_factory=list)
+    builtin: list[str] = Field(default_factory=list)
     fail_open: bool = False
+    chatwoot: ChatwootPluginConfig = Field(default_factory=ChatwootPluginConfig)
 
 
 class ObservabilityConfig(_Forbid):

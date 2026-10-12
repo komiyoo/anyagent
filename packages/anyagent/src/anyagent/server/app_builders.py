@@ -116,6 +116,69 @@ def _parse_cors_origins(value: str | list[str] | tuple[str, ...] | None) -> list
     return [str(item).strip() for item in value if str(item).strip()]
 
 
+_BUILTIN_PLUGIN_DIRS = {
+    "chatwoot": "chatwoot_connector",
+    "chatwoot-connector": "chatwoot_connector",
+    "chatwoot_connector": "chatwoot_connector",
+    "lifecycle_echo": "lifecycle_echo",
+    "lifecycle-echo": "lifecycle_echo",
+    "anyagent.lifecycle_echo": "lifecycle_echo",
+}
+
+
+def resolve_builtin_plugin_roots(names: list[str] | None, *, fail_open: bool) -> list[Path]:
+    """Resolve opt-in built-in plugin names to their package directories.
+
+    The default list is empty. ``plugins.roots`` that point at the builtin
+    package directory still scan every plugin under that directory.
+    """
+
+    if not names:
+        return []
+    try:
+        import anyagent.plugins.builtin as builtin_pkg
+    except ImportError:
+        message = "built-in plugins package is not importable"
+        if fail_open:
+            _LOGGER.error(message)
+            return []
+        raise RuntimeError(message) from None
+    package_paths = getattr(builtin_pkg, "__path__", None)
+    if not package_paths:
+        message = "built-in plugins package is not importable"
+        if fail_open:
+            _LOGGER.error(message)
+            return []
+        raise RuntimeError(message)
+    root = Path(next(iter(package_paths))).resolve()
+    resolved: list[Path] = []
+    seen: set[str] = set()
+    for raw in names:
+        name = str(raw).strip()
+        if not name:
+            continue
+        folder = _BUILTIN_PLUGIN_DIRS.get(name)
+        if folder is None:
+            message = f"unknown built-in plugin {name!r}; expected one of: chatwoot, lifecycle_echo"
+            if fail_open:
+                _LOGGER.error(message)
+                continue
+            raise RuntimeError(message)
+        path = (root / folder).resolve()
+        if not (path / "plugin.json").is_file():
+            message = f"built-in plugin {name!r} is missing plugin.json at {path}"
+            if fail_open:
+                _LOGGER.error(message)
+                continue
+            raise RuntimeError(message)
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        resolved.append(path)
+    return resolved
+
+
 def _resolve_plugin_roots(plugin_roots: list[str | Path] | tuple[str | Path, ...] | None, *, workspace: Path) -> list[Path]:
     raw_items: list[str | Path] = []
     if plugin_roots:
@@ -137,17 +200,6 @@ def _resolve_plugin_roots(plugin_roots: list[str | Path] | tuple[str | Path, ...
             continue
         seen.add(key)
         roots.append(resolved)
-
-    # Auto-discover builtin plugins shipped with the anyagent package.
-    try:
-        import anyagent.plugins.builtin as _builtin_pkg  # noqa: F811
-    except ImportError:
-        _builtin_pkg = None
-    if _builtin_pkg is not None and hasattr(_builtin_pkg, "__path__") and _builtin_pkg.__path__:
-        builtin_dir = Path(_builtin_pkg.__path__[0]).resolve()
-        key = str(builtin_dir)
-        if key not in seen:
-            roots.append(builtin_dir)
     return roots
 
 
@@ -157,22 +209,29 @@ def _load_gateway_plugins(
     roots: list[Path],
     fail_open: bool,
     gateway_registry: GatewayRegistry | None = None,
+    config_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[LoadedPlugin], list[dict[str, str]], list[dict[str, Any]]]:
     if not roots:
         return [], [], []
 
     tools_by_plugin: dict[str, list[Any]] = {}
     gateway_registry = gateway_registry or GatewayRegistry()
-    loaded, errors = load_plugins_from_roots(
-        roots,
-        api_factory=lambda manifest, plugin_dir, config: _build_dual_host_plugin_api(
+    overrides = config_overrides or {}
+
+    def api_factory(manifest: PluginManifest, plugin_dir: Path, config: dict[str, Any]) -> _DualHostPluginAPI:
+        merged = dict(config or {})
+        override = overrides.get(manifest.plugin_id)
+        if override:
+            merged.update(override)
+        return _build_dual_host_plugin_api(
             runtime=runtime,
             manifest=manifest,
-            config=config,
+            config=merged,
             tools_by_plugin=tools_by_plugin,
             gateway_registry=gateway_registry,
-        ),
-    )
+        )
+
+    loaded, errors = load_plugins_from_roots(roots, api_factory=api_factory)
     error_payload = [{"plugin_dir": plugin_dir, "reason": reason} for plugin_dir, reason in errors]
     for item in error_payload:
         _LOGGER.error("plugin load error: %s: %s", item["plugin_dir"], item["reason"])

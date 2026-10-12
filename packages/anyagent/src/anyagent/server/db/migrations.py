@@ -27,10 +27,10 @@ def apply_storage_migrations(
     postgres_schema: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, list[str] | str]:
-    """Compatibility wrapper for the old storage-migrate command.
+    """Apply Alembic revisions for the PostgreSQL storage schema.
 
-    PostgreSQL schema changes are owned by Alembic. This function keeps the
-    historical CLI/API surface while routing to the Alembic revision graph.
+    PostgreSQL schema changes are owned by Alembic. This function routes the
+    storage migration helper onto that revision graph.
     """
 
     settings = active_storage_settings()

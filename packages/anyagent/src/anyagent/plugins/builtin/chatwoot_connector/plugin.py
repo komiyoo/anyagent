@@ -21,7 +21,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
-from anyagent.config.env import getenv
+from anyagent.config.schema import ChatwootPluginConfig
 from anyagent.gateway.plugins import WebhookRoute
 from anyagent.observability import emit_observability_event
 from anyagent.plugins.hooks import HookContext
@@ -38,6 +38,66 @@ from anyagent.plugins.builtin.chatwoot_connector.chatwoot import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class _ChatwootSettings:
+    """Process snapshot of ``plugins.chatwoot``. Helpers read this, not the environment."""
+
+    def __init__(
+        self,
+        *,
+        url: str = "https://app.chatwoot.com",
+        account_id: str = "1",
+        access_token: str = "",
+        webhook_secret: str = "",
+        credential_kind: str = "secret",
+        credential_id: str = "",
+        async_processing: bool = True,
+        status_changes: bool = True,
+        skip_when_assigned_to_human: bool = True,
+        typing_indicator: bool = False,
+        reply_pacing_min_s: float | None = None,
+        reply_pacing_max_s: float | None = None,
+    ) -> None:
+        self.url = url
+        self.account_id = account_id
+        self.access_token = access_token
+        self.webhook_secret = webhook_secret
+        self.credential_kind = credential_kind
+        self.credential_id = credential_id
+        self.async_processing = async_processing
+        self.status_changes = status_changes
+        self.skip_when_assigned_to_human = skip_when_assigned_to_human
+        self.typing_indicator = typing_indicator
+        self.reply_pacing_min_s = reply_pacing_min_s
+        self.reply_pacing_max_s = reply_pacing_max_s
+
+
+_SETTINGS = _ChatwootSettings()
+
+
+def apply_chatwoot_config(config: dict[str, Any] | None = None) -> _ChatwootSettings:
+    """Replace the process snapshot from a ``plugins.chatwoot`` mapping."""
+
+    global _SETTINGS
+    raw = dict(config or {})
+    allowed = set(ChatwootPluginConfig.model_fields)
+    model = ChatwootPluginConfig.model_validate({key: value for key, value in raw.items() if key in allowed})
+    _SETTINGS = _ChatwootSettings(
+        url=(model.url or "https://app.chatwoot.com").strip() or "https://app.chatwoot.com",
+        account_id=str(model.account_id or "1").strip() or "1",
+        access_token=(model.access_token or "").strip(),
+        webhook_secret=(model.webhook_secret or "").strip(),
+        credential_kind=(model.credential_kind or "secret").strip() or "secret",
+        credential_id=(model.credential_id or "").strip(),
+        async_processing=bool(model.async_processing),
+        status_changes=bool(model.status_changes),
+        skip_when_assigned_to_human=bool(model.skip_when_assigned_to_human),
+        typing_indicator=bool(model.typing_indicator),
+        reply_pacing_min_s=model.reply_pacing_min_s,
+        reply_pacing_max_s=model.reply_pacing_max_s,
+    )
+    return _SETTINGS
 
 
 # ── 插件生命周期 hooks ───────────────────────────────────────────
@@ -194,14 +254,12 @@ async def _handle_chatwoot_webhook(
 
 
 def _chatwoot_process_incoming_async() -> bool:
-    raw = (getenv("CHATWOOT_ASYNC_PROCESSING", "true") or "true").strip().lower()
-    return raw not in {"0", "false", "no", "off"}
+    return _SETTINGS.async_processing
 
 
 def _chatwoot_status_changes_enabled() -> bool:
-    """默认开启；显式设 CHATWOOT_STATUS_CHANGES=false 时 connector 不修改 Chatwoot 会话状态。"""
-    raw = (getenv("CHATWOOT_STATUS_CHANGES", "true") or "true").strip().lower()
-    return raw not in {"0", "false", "no", "off"}
+    """默认开启；plugins.chatwoot.status_changes 为 false 时 connector 不修改 Chatwoot 会话状态。"""
+    return _SETTINGS.status_changes
 
 
 def _chatwoot_conversation_status(body: dict[str, Any]) -> str:
@@ -215,36 +273,30 @@ def _chatwoot_conversation_status(body: dict[str, Any]) -> str:
 
 def _chatwoot_skip_when_assigned_to_human() -> bool:
     """默认开启：会话已分配给真人坐席时不再调用 agent、不写回客户消息。"""
-    raw = (getenv("CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", "true") or "true").strip().lower()
-    return raw not in {"0", "false", "no", "off"}
+    return _SETTINGS.skip_when_assigned_to_human
 
 
 def _chatwoot_typing_indicator_enabled() -> bool:
-    """默认关闭；CHATWOOT_TYPING_INDICATOR=true 时在调用 agent 期间挂起 typing 指示。"""
-    raw = (getenv("CHATWOOT_TYPING_INDICATOR", "false") or "false").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    """默认关闭；plugins.chatwoot.typing_indicator 为 true 时在调用 agent 期间挂起 typing 指示。"""
+    return _SETTINGS.typing_indicator
 
 
 def _chatwoot_reply_pacing_window() -> tuple[float, float] | None:
-    """回复节奏下限 ``[min, max]`` 秒；缺省或配置非法时关闭（返回 None）。
+    """回复节奏下限 ``[min, max]`` 秒；缺省或区间非法时关闭（返回 None）。
 
-    环境变量：CHATWOOT_REPLY_PACING_MIN_S / CHATWOOT_REPLY_PACING_MAX_S。
-    只配 MIN 时 MAX=MIN。这是 floor 不是 delay：耗时已超过区间上限时不再等待。
+    配置来自 plugins.chatwoot.reply_pacing_min_s / reply_pacing_max_s。
+    只配 min 时 max=min。这是 floor 不是 delay：耗时已超过区间上限时不再等待。
     """
-    raw_min = (getenv("CHATWOOT_REPLY_PACING_MIN_S") or "").strip()
-    raw_max = (getenv("CHATWOOT_REPLY_PACING_MAX_S") or "").strip()
-    if not raw_min and not raw_max:
+    min_s = _SETTINGS.reply_pacing_min_s
+    max_s = _SETTINGS.reply_pacing_max_s
+    if min_s is None and max_s is None:
         return None
-    try:
-        min_s = float(raw_min) if raw_min else 0.0
-        max_s = float(raw_max) if raw_max else min_s
-    except ValueError:
-        _LOGGER.warning("ignoring invalid CHATWOOT_REPLY_PACING_*: min=%r max=%r", raw_min, raw_max)
-        return None
-    if min_s < 0 or max_s < min_s:
-        _LOGGER.warning("ignoring invalid CHATWOOT_REPLY_PACING_*: min=%r max=%r", raw_min, raw_max)
-        return None
-    if max_s <= 0:
+    if min_s is None:
+        min_s = 0.0
+    if max_s is None:
+        max_s = min_s
+    if min_s < 0 or max_s < min_s or max_s <= 0:
+        _LOGGER.warning("ignoring invalid chatwoot reply pacing: min=%r max=%r", min_s, max_s)
         return None
     return (min_s, max_s)
 
@@ -377,7 +429,7 @@ async def _process_incoming_message(
     处理入站消息：调用 Agent API 生成回复，通过 Chatwoot API 写回。
 
     回复节奏（可选）：typing 指示在调用 Agent API 前打开、发送前关闭；
-    ``CHATWOOT_REPLY_PACING_*`` 配置的下限在 Agent API 返回后、二次人工接管
+    ``plugins.chatwoot`` 回复节奏下限在 Agent API 返回后、二次人工接管
     检查之前补足，因此等待期间被人工接管的会话不会被 bot 插话。
     """
     from anyagent.gateway.connector_contracts import HandoffOutputItem, chatwoot_session_key
@@ -750,29 +802,24 @@ def register(api: Any) -> None:
     - Webhook 路由（POST /gateway/chatwoot/webhook）
     - 工具（app.chatwoot.send_message / app.chatwoot.handoff）
 
-    环境变量配置（推荐走 Credential Vault，以下为开发环境 fallback）：
-    - CHATWOOT_URL: Chatwoot 实例 URL
-    - CHATWOOT_ACCOUNT_ID: Chatwoot account ID
-    - CHATWOOT_ACCESS_TOKEN: Agent Bot access_token
-    - CHATWOOT_WEBHOOK_SECRET: webhook HMAC secret（或 credential_id 引用）
-    - CHATWOOT_STATUS_CHANGES: 默认 true——handoff → open，且 bot 回复后
-      将会话保持为 open（从不 resolve/snooze）；显式设为 false 时 connector 不修改
-      Chatwoot 会话状态（handoff 不调用 toggle_status，仅保留 assignment/摘要 note）
-    - CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN: 默认 true——会话已分配给真人
-      坐席时跳过 agent 回复；设为 false 时即使已分配仍由 bot 回复
-    - CHATWOOT_TYPING_INDICATOR: 默认 false——true 时调用 Agent API 前打开
-      typing 指示、发送回复前关闭（toggle_typing_status，同一 access token）
-    - CHATWOOT_REPLY_PACING_MIN_S / CHATWOOT_REPLY_PACING_MAX_S: 默认关闭——
-      回复节奏下限（秒）：本轮耗时不足 [min, max] 内随机值时补足再发；已超过则
-      立即发。scripted reply 等瞬时回复因此不会暴露"预设"，模型回复不受影响
+    配置来自 plugins.chatwoot（anyagent.yaml）。缺省值在 defaults.py 里插值
+    CHATWOOT_*。推荐把 access token 和 webhook secret 放进 Credential Vault，
+    再用 credential_id 引用。
+    - status_changes 默认 true：handoff → open，且 bot 回复后将会话保持为 open。
+      false 时 connector 不修改 Chatwoot 会话状态。
+    - skip_when_assigned_to_human 默认 true：会话已分配给真人坐席时跳过 agent 回复。
+    - typing_indicator 默认 false：true 时调用 Agent API 前打开 typing 指示。
+    - reply_pacing_min_s / reply_pacing_max_s 默认关闭：本轮耗时不足区间内随机值时补足再发。
     """
 
-    chatwoot_url = getenv("CHATWOOT_URL", "https://app.chatwoot.com") or "https://app.chatwoot.com"
-    account_id = getenv("CHATWOOT_ACCOUNT_ID", "1") or "1"
-    access_token = getenv("CHATWOOT_ACCESS_TOKEN") or ""
-    webhook_secret = getenv("CHATWOOT_WEBHOOK_SECRET") or ""
-    webhook_secret_kind_value = getenv("CHATWOOT_CREDENTIAL_KIND", "secret") or "secret"
-    status_changes_enabled = _chatwoot_status_changes_enabled()
+    raw_config = getattr(api, "config", None)
+    settings = apply_chatwoot_config(raw_config if isinstance(raw_config, dict) else {})
+    chatwoot_url = settings.url
+    account_id = settings.account_id
+    access_token = settings.access_token
+    webhook_secret = settings.webhook_secret
+    webhook_secret_kind_value = settings.credential_kind
+    status_changes_enabled = settings.status_changes
 
     # 构建 connector 实例
     _auth = ChatwootWebhookAuth()
@@ -796,7 +843,7 @@ def register(api: Any) -> None:
         webhook_auth = _auth
         outbound = _outbound
         handoff = _handoff
-        webhook_secret_credential_id = getenv("CHATWOOT_CREDENTIAL_ID") or ""
+        webhook_secret_credential_id = settings.credential_id
         webhook_secret = _chatwoot_webhook_secret
 
     connector_instance = _ChatwootConnector()

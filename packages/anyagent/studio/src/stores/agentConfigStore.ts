@@ -5,8 +5,6 @@ type AgentConfigStore = {
   agentConfigStatus: string;
   agentCreateStatus: string;
   agentExposed: boolean;
-  agentModelApiKeyEnv: string;
-  agentModelBaseUrlEnv: string;
   agentModelDefault: string;
   agentModelProvider: string;
   agentSandboxMode: string;
@@ -18,8 +16,6 @@ type AgentConfigStore = {
   setAgentConfigStatus: (value: string) => void;
   setAgentCreateStatus: (value: string) => void;
   setAgentExposed: (value: boolean) => void;
-  setAgentModelApiKeyEnv: (value: string) => void;
-  setAgentModelBaseUrlEnv: (value: string) => void;
   setAgentModelDefault: (value: string) => void;
   setAgentModelProvider: (value: string) => void;
   setAgentSandboxMode: (value: string) => void;
@@ -35,8 +31,6 @@ export const useAgentConfigStore = create<AgentConfigStore>((set) => ({
   agentConfigStatus: "Ready",
   agentCreateStatus: "Ready",
   agentExposed: true,
-  agentModelApiKeyEnv: "OPENAI_API_KEY",
-  agentModelBaseUrlEnv: "OPENAI_BASE_URL",
   agentModelDefault: "",
   agentModelProvider: "openai",
   agentSandboxMode: "disabled",
@@ -48,8 +42,6 @@ export const useAgentConfigStore = create<AgentConfigStore>((set) => ({
   setAgentConfigStatus: (value) => set({ agentConfigStatus: value }),
   setAgentCreateStatus: (value) => set({ agentCreateStatus: value }),
   setAgentExposed: (value) => set({ agentExposed: value }),
-  setAgentModelApiKeyEnv: (value) => set({ agentModelApiKeyEnv: value }),
-  setAgentModelBaseUrlEnv: (value) => set({ agentModelBaseUrlEnv: value }),
   setAgentModelDefault: (value) => set({ agentModelDefault: value }),
   setAgentModelProvider: (value) => set({ agentModelProvider: value }),
   setAgentSandboxMode: (value) => set({ agentSandboxMode: value }),

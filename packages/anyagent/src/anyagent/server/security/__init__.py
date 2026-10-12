@@ -24,7 +24,6 @@ from .local_admin import (
     local_list_credentials,
     local_set_credential,
 )
-from .mcp_credentials import InfisicalCredentialResolver, InfisicalResolverConfig, build_mcp_credential_resolver
 
 __all__ = [
     "AuditedCredentialStore",
@@ -36,8 +35,6 @@ __all__ = [
     "FileBackend",
     "InfisicalBackend",
     "InfisicalBackendConfig",
-    "InfisicalCredentialResolver",
-    "InfisicalResolverConfig",
     "InMemoryCredentialStore",
     "ReadOnlyCredentialStore",
     "ReadOnlyCredentialStoreError",
@@ -45,7 +42,6 @@ __all__ = [
     "VaultBackendConfig",
     "build_credential_backend_capability_matrix",
     "build_credential_store",
-    "build_mcp_credential_resolver",
     "emit_credential_audit_for_store",
     "local_delete_credential",
     "local_list_credentials",

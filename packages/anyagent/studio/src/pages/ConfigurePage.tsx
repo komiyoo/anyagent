@@ -44,8 +44,6 @@ export type ConfigurePageData = {
   agentExposed: boolean;
   agentFiles: AgentWorkspaceFile[];
   agentId: string;
-  agentModelApiKeyEnv: string;
-  agentModelBaseUrlEnv: string;
   agentModelDefault: string;
   agentModelProvider: string;
   agentSandboxMode: string;
@@ -99,8 +97,6 @@ export type ConfigurePageActions = {
   onAddMcpDraft: () => void;
   onAgentExposedChange: (value: boolean) => void;
   onAgentIdChange: (value: string) => void;
-  onAgentModelApiKeyEnvChange: (value: string) => void;
-  onAgentModelBaseUrlEnvChange: (value: string) => void;
   onAgentModelDefaultChange: (value: string) => void;
   onAgentModelProviderChange: (value: string) => void;
   onAgentSandboxModeChange: (value: string) => void;
@@ -172,8 +168,6 @@ export function ConfigurePage({ actions, data, refs }: ConfigurePageProps) {
   agentExposed,
   agentFiles,
   agentId,
-  agentModelApiKeyEnv,
-  agentModelBaseUrlEnv,
   agentModelDefault,
   agentModelProvider,
   agentSandboxMode,
@@ -226,8 +220,6 @@ export function ConfigurePage({ actions, data, refs }: ConfigurePageProps) {
   onAddMcpDraft,
   onAgentExposedChange,
   onAgentIdChange,
-  onAgentModelApiKeyEnvChange,
-  onAgentModelBaseUrlEnvChange,
   onAgentModelDefaultChange,
   onAgentModelProviderChange,
   onAgentSandboxModeChange,
@@ -290,8 +282,6 @@ export function ConfigurePage({ actions, data, refs }: ConfigurePageProps) {
       disabledSkillPaths,
       exposed: agentExposed,
       mcpJson,
-      modelApiKeyEnv: agentModelApiKeyEnv,
-      modelBaseUrlEnv: agentModelBaseUrlEnv,
       modelDefault: agentModelDefault,
       modelProvider: agentModelProvider,
       sandboxMode: agentSandboxMode,
@@ -301,8 +291,6 @@ export function ConfigurePage({ actions, data, refs }: ConfigurePageProps) {
     [
       agentId,
       agentExposed,
-      agentModelApiKeyEnv,
-      agentModelBaseUrlEnv,
       agentModelDefault,
       agentModelProvider,
       agentSandboxMode,
@@ -334,8 +322,6 @@ export function ConfigurePage({ actions, data, refs }: ConfigurePageProps) {
     onAgentModelDefaultChange(snapshot.modelDefault);
     onModelChange(snapshot.modelDefault);
     onAgentModelProviderChange(snapshot.modelProvider);
-    onAgentModelApiKeyEnvChange(snapshot.modelApiKeyEnv);
-    onAgentModelBaseUrlEnvChange(snapshot.modelBaseUrlEnv);
     onAgentSandboxModeChange(snapshot.sandboxMode);
     onAgentToolsTextChange(snapshot.toolsText);
     onAgentSpawnTextChange(snapshot.spawnText);
@@ -395,8 +381,6 @@ export function ConfigurePage({ actions, data, refs }: ConfigurePageProps) {
         agentExposed={agentExposed}
         agentModelDefault={agentModelDefault}
         agentModelProvider={agentModelProvider}
-        agentModelApiKeyEnv={agentModelApiKeyEnv}
-        agentModelBaseUrlEnv={agentModelBaseUrlEnv}
         agentSandboxMode={agentSandboxMode}
         agentToolsText={agentToolsText}
         agentSpawnText={agentSpawnText}
@@ -413,8 +397,6 @@ export function ConfigurePage({ actions, data, refs }: ConfigurePageProps) {
           onModelChange(value);
         }}
         onAgentModelProviderChange={onAgentModelProviderChange}
-        onAgentModelApiKeyEnvChange={onAgentModelApiKeyEnvChange}
-        onAgentModelBaseUrlEnvChange={onAgentModelBaseUrlEnvChange}
         onAgentSandboxModeChange={onAgentSandboxModeChange}
         onAgentToolsTextChange={onAgentToolsTextChange}
         onAgentSpawnTextChange={onAgentSpawnTextChange}

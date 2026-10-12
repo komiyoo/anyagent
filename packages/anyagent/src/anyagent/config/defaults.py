@@ -1,8 +1,7 @@
 """Built-in anyagent.yaml defaults.
 
-Values reference the historical environment variable names. Deployments that
-only set those variables keep working. Interpolation runs after the layer
-merge, so a workspace file can replace a placeholder with a literal.
+Placeholders use ``${VAR}`` and ``${VAR:-default}``. Interpolation runs after
+the layer merge, so a workspace file can replace a placeholder with a literal.
 """
 
 from __future__ import annotations
@@ -77,8 +76,9 @@ def builtin_defaults() -> dict[str, Any]:
             "rollout_rotate_keep_files": "${ROLLOUT_ROTATE_KEEP_FILES:-16}",
         },
         "credentials": {
-            "backend": "${MCP_CREDENTIAL_STORE_BACKEND:-none}",
-            "file": {"root": "${MCP_CREDENTIAL_STORE_FILE_ROOT:-.anyagent/credentials}"},
+            "backend": "${CREDENTIAL_BACKEND:-none}",
+            "writable": "${CREDENTIAL_WRITABLE:-false}",
+            "file": {"root": "${CREDENTIAL_FILE_ROOT:-.anyagent/credentials}"},
             "db": {
                 "dsn": "${CREDENTIAL_POSTGRES_DSN}",
                 "schema": "${CREDENTIAL_POSTGRES_SCHEMA:-public}",
@@ -139,7 +139,22 @@ def builtin_defaults() -> dict[str, Any]:
         },
         "plugins": {
             "roots": "${PLUGIN_ROOTS}",
+            "builtin": "${PLUGINS_BUILTIN}",
             "fail_open": False,
+            "chatwoot": {
+                "url": "${CHATWOOT_URL:-https://app.chatwoot.com}",
+                "account_id": "${CHATWOOT_ACCOUNT_ID:-1}",
+                "access_token": "${CHATWOOT_ACCESS_TOKEN}",
+                "webhook_secret": "${CHATWOOT_WEBHOOK_SECRET}",
+                "credential_kind": "${CHATWOOT_CREDENTIAL_KIND:-secret}",
+                "credential_id": "${CHATWOOT_CREDENTIAL_ID}",
+                "async_processing": "${CHATWOOT_ASYNC_PROCESSING:-true}",
+                "status_changes": "${CHATWOOT_STATUS_CHANGES:-true}",
+                "skip_when_assigned_to_human": "${CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN:-true}",
+                "typing_indicator": "${CHATWOOT_TYPING_INDICATOR:-false}",
+                "reply_pacing_min_s": "${CHATWOOT_REPLY_PACING_MIN_S}",
+                "reply_pacing_max_s": "${CHATWOOT_REPLY_PACING_MAX_S}",
+            },
         },
         "observability": {
             "log_format": "${LOG_FORMAT:-text}",

@@ -41,6 +41,7 @@ from anyagent.plugins.builtin.chatwoot_connector.plugin import (
     _chatwoot_status_changes_enabled,
     _extract_reply_and_handoff,
     _reply_delivery_attributes,
+    apply_chatwoot_config,
     register as chatwoot_register,
 )
 
@@ -549,16 +550,16 @@ def test_chatwoot_open_conversation_swallows_api_errors():
     assert len(requests) == 1
 
 
-def test_chatwoot_status_changes_env_flag_parsing(monkeypatch):
-    monkeypatch.delenv("CHATWOOT_STATUS_CHANGES", raising=False)
+def test_chatwoot_status_changes_flag_parsing():
+    apply_chatwoot_config({})
     assert _chatwoot_status_changes_enabled() is True
 
     for raw in ("false", "0", "no", "off", "False"):
-        monkeypatch.setenv("CHATWOOT_STATUS_CHANGES", raw)
+        apply_chatwoot_config({"status_changes": raw})
         assert _chatwoot_status_changes_enabled() is False
 
-    for raw in ("true", "1", "yes", "on", "True", ""):
-        monkeypatch.setenv("CHATWOOT_STATUS_CHANGES", raw)
+    for raw in ("true", "1", "yes", "on", "True"):
+        apply_chatwoot_config({"status_changes": raw})
         assert _chatwoot_status_changes_enabled() is True
 
 
@@ -571,16 +572,16 @@ def test_chatwoot_conversation_status_reads_nested_or_missing() -> None:
     assert _chatwoot_conversation_status({"conversation": {}, "status": "resolved"}) == ""
 
 
-def test_chatwoot_skip_when_assigned_to_human_env_flag_parsing(monkeypatch):
-    monkeypatch.delenv("CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raising=False)
+def test_chatwoot_skip_when_assigned_to_human_flag_parsing():
+    apply_chatwoot_config({})
     assert _chatwoot_skip_when_assigned_to_human() is True
 
     for raw in ("false", "0", "no", "off", "False"):
-        monkeypatch.setenv("CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raw)
+        apply_chatwoot_config({"skip_when_assigned_to_human": raw})
         assert _chatwoot_skip_when_assigned_to_human() is False
 
-    for raw in ("true", "1", "yes", "on", "True", ""):
-        monkeypatch.setenv("CHATWOOT_SKIP_WHEN_ASSIGNED_TO_HUMAN", raw)
+    for raw in ("true", "1", "yes", "on", "True"):
+        apply_chatwoot_config({"skip_when_assigned_to_human": raw})
         assert _chatwoot_skip_when_assigned_to_human() is True
 
 
@@ -710,10 +711,9 @@ class _RecorderAPI:
         pass
 
 
-def test_register_enables_status_changes_by_default(monkeypatch):
-    monkeypatch.delenv("CHATWOOT_STATUS_CHANGES", raising=False)
-
+def test_register_enables_status_changes_by_default():
     api = _RecorderAPI()
+    api.config = {}
     chatwoot_register(api)
 
     assert api.connectors
@@ -723,10 +723,9 @@ def test_register_enables_status_changes_by_default(monkeypatch):
     assert "不改变会话状态" not in handoff_tools[0].description
 
 
-def test_register_disables_status_changes_when_opted_out(monkeypatch):
-    monkeypatch.setenv("CHATWOOT_STATUS_CHANGES", "false")
-
+def test_register_disables_status_changes_when_opted_out():
     api = _RecorderAPI()
+    api.config = {"status_changes": False}
     chatwoot_register(api)
 
     assert api.connectors
@@ -736,10 +735,9 @@ def test_register_disables_status_changes_when_opted_out(monkeypatch):
     assert "不改变会话状态" in handoff_tools[0].description
 
 
-def test_register_enables_status_changes_when_opted_in(monkeypatch):
-    monkeypatch.setenv("CHATWOOT_STATUS_CHANGES", "true")
-
+def test_register_enables_status_changes_when_opted_in():
     api = _RecorderAPI()
+    api.config = {"status_changes": True}
     chatwoot_register(api)
 
     assert api.connectors

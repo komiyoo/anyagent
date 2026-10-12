@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from anyagent.config.agents import AgentCatalog, AgentPackError, load_agent_catalog
+from anyagent.config.schema import CredentialsConfig
 from anyagent.agent_runtime.model_providers import get_default_model_provider
 from anyagent.agent_runtime.multiagent import MultiAgentManager
 from anyagent.gateway.sequencer import KeyedSequencer
@@ -19,7 +20,7 @@ from anyagent.skills.models import SkillPackage
 from anyagent.tool_runtime import create_tool_runtime_client
 
 from anyagent.server.persistence.manifest_cache import ManifestCache
-from anyagent.server.security.mcp_credentials import build_mcp_credential_resolver
+from anyagent.server.security.credential_runtime import build_credential_store
 
 logger = logging.getLogger("anyagent.server.runtime.distributed_runtime")
 
@@ -33,17 +34,7 @@ class DistributedAgentRuntimeConfig:
     tool_runtime_base_url: str
     tool_runtime_internal_key: str
     manifest_cache_ttl_seconds: float = 5.0
-    mcp_credential_store_backend: str = "none"
-    mcp_credential_store_file_root: str = "/data/credentials"
-    infisical_host: str | None = None
-    infisical_universal_auth_client_id: str | None = None
-    infisical_universal_auth_client_secret: str | None = None
-    infisical_project_id: str | None = None
-    infisical_environment: str | None = None
-    infisical_cache_ttl_seconds: int = 60
-    infisical_credential_root_path: str = "/anyagent/credentials"
-    infisical_path_layout: str = "scoped"
-    infisical_token: str | None = None
+    credentials: CredentialsConfig | None = None
 
 
 @dataclass(slots=True)
@@ -102,18 +93,9 @@ async def create_distributed_agent_runtime(
                 internal_key=config.tool_runtime_internal_key,
                 http=http,
             ),
-            mcp_credential_store=build_mcp_credential_resolver(
-                backend=config.mcp_credential_store_backend,
-                file_root=config.mcp_credential_store_file_root,
-                infisical_host=config.infisical_host,
-                infisical_universal_auth_client_id=config.infisical_universal_auth_client_id,
-                infisical_universal_auth_client_secret=config.infisical_universal_auth_client_secret,
-                infisical_project_id=config.infisical_project_id,
-                infisical_environment=config.infisical_environment,
-                infisical_cache_ttl_seconds=config.infisical_cache_ttl_seconds,
-                infisical_credential_root_path=config.infisical_credential_root_path,
-                infisical_path_layout=config.infisical_path_layout,
-                infisical_token=config.infisical_token,
+            mcp_credential_store=build_credential_store(
+                config.credentials or CredentialsConfig(),
+                workspace_dir=workspace_dir,
             ),
             multiagent=MultiAgentManager(),
             storage=storage,

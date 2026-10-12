@@ -7,38 +7,39 @@ import pytest
 
 from anyagent.gateway.connector_contracts import ConnectorOutboundDelivery, OutboundMessageResult
 from anyagent.plugins.builtin.chatwoot_connector.chatwoot import ChatwootOutboundDelivery
+from pydantic import ValidationError
+
 from anyagent.plugins.builtin.chatwoot_connector.plugin import (
     _apply_reply_pacing_floor,
     _chatwoot_reply_pacing_window,
     _chatwoot_typing_indicator_enabled,
     _reply_pacing_delay_s,
     _set_typing_indicator,
+    apply_chatwoot_config,
 )
 
 
-def test_pacing_window_defaults_off_and_parses_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key in ("CHATWOOT_REPLY_PACING_MIN_S", "CHATWOOT_REPLY_PACING_MAX_S"):
-        monkeypatch.delenv(key, raising=False)
+def test_pacing_window_defaults_off_and_parses_config() -> None:
+    apply_chatwoot_config({})
     assert _chatwoot_reply_pacing_window() is None
 
-    monkeypatch.setenv("CHATWOOT_REPLY_PACING_MIN_S", "2")
-    monkeypatch.setenv("CHATWOOT_REPLY_PACING_MAX_S", "4")
+    apply_chatwoot_config({"reply_pacing_min_s": "2", "reply_pacing_max_s": "4"})
     assert _chatwoot_reply_pacing_window() == (2.0, 4.0)
 
-    monkeypatch.delenv("CHATWOOT_REPLY_PACING_MAX_S")
+    apply_chatwoot_config({"reply_pacing_min_s": "2"})
     assert _chatwoot_reply_pacing_window() == (2.0, 2.0)
 
-    monkeypatch.setenv("CHATWOOT_REPLY_PACING_MAX_S", "1")  # max < min → off
+    apply_chatwoot_config({"reply_pacing_min_s": "2", "reply_pacing_max_s": "1"})
     assert _chatwoot_reply_pacing_window() is None
 
-    monkeypatch.setenv("CHATWOOT_REPLY_PACING_MAX_S", "abc")
-    assert _chatwoot_reply_pacing_window() is None
+    with pytest.raises(ValidationError):
+        apply_chatwoot_config({"reply_pacing_max_s": "abc"})
 
 
-def test_typing_indicator_defaults_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("CHATWOOT_TYPING_INDICATOR", raising=False)
+def test_typing_indicator_defaults_off() -> None:
+    apply_chatwoot_config({})
     assert _chatwoot_typing_indicator_enabled() is False
-    monkeypatch.setenv("CHATWOOT_TYPING_INDICATOR", "true")
+    apply_chatwoot_config({"typing_indicator": "true"})
     assert _chatwoot_typing_indicator_enabled() is True
 
 

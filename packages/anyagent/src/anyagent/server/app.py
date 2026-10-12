@@ -26,6 +26,7 @@ from anyagent.server.app_builders import (
     _parse_cors_origins,
     _resolve_plugin_roots,
     _safe_error_message,
+    resolve_builtin_plugin_roots,
 )
 from anyagent.server.app_state import AnyAgentServerApp
 from anyagent.server.config.settings import resolve_server_storage
@@ -125,11 +126,23 @@ def create_app(
     )
     gateway_registry = GatewayRegistry()
     resolved_plugin_roots = _resolve_plugin_roots(effective.plugins.roots or None, workspace=workspace)
+    seen_roots = {str(path) for path in resolved_plugin_roots}
+    for builtin_root in resolve_builtin_plugin_roots(
+        list(effective.plugins.builtin),
+        fail_open=bool(effective.plugins.fail_open),
+    ):
+        key = str(builtin_root)
+        if key not in seen_roots:
+            seen_roots.add(key)
+            resolved_plugin_roots.append(builtin_root)
     loaded_plugins, plugin_errors, loaded_plugin_catalog = _load_gateway_plugins(
         runtime=runtime,
         roots=resolved_plugin_roots,
         fail_open=effective.plugins.fail_open,
         gateway_registry=gateway_registry,
+        config_overrides={
+            "chatwoot-connector": effective.plugins.chatwoot.model_dump(mode="json"),
+        },
     )
     state = AnyAgentServerApp(
         workspace_dir=workspace,

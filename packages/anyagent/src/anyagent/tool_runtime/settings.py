@@ -95,9 +95,9 @@ class ToolRuntimeSettings(BaseModel):
     sql_backend_dialect: Literal["auto", "postgresql", "mysql"] = Field(default="auto", alias="SQL_BACKEND_DIALECT")
     postgres_schema: str = Field(default="public", alias="POSTGRES_SCHEMA")
 
-    credential_backend: str = Field(default="none", alias="MCP_CREDENTIAL_STORE_BACKEND")
-    credential_writable: bool = False
-    credential_file_root: str = Field(default=DEFAULT_CREDENTIAL_FILE_ROOT, alias="MCP_CREDENTIAL_STORE_FILE_ROOT")
+    credential_backend: str = Field(default="none", alias="CREDENTIAL_BACKEND")
+    credential_writable: bool = Field(default=False, alias="CREDENTIAL_WRITABLE")
+    credential_file_root: str = Field(default=DEFAULT_CREDENTIAL_FILE_ROOT, alias="CREDENTIAL_FILE_ROOT")
     infisical_host: str = Field(default="https://app.infisical.com", alias="INFISICAL_HOST")
     infisical_universal_auth_client_id: str | None = Field(default=None, alias="INFISICAL_UNIVERSAL_AUTH_CLIENT_ID")
     infisical_universal_auth_client_secret: str | None = Field(

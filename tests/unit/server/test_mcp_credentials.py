@@ -67,7 +67,7 @@ def test_mcp_credentials_default_to_admin_store(tmp_path: Path) -> None:
 def test_mcp_credentials_file_backend_uses_workspace_relative_root(tmp_path: Path, monkeypatch) -> None:
     async def _run() -> None:
         _write_main_agent(tmp_path)
-        monkeypatch.setenv("MCP_CREDENTIAL_STORE_BACKEND", "file")
+        monkeypatch.setenv("CREDENTIAL_BACKEND", "file")
         credential_dir = tmp_path / ".anyagent" / "credentials" / "agents" / "main"
         credential_dir.mkdir(parents=True, exist_ok=True)
         (credential_dir / "cred_api.json").write_text(

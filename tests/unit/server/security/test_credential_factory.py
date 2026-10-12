@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from anyagent.config.schema import (
     CredentialsConfig,
@@ -105,14 +105,5 @@ def test_writable_false_rejects_set_and_still_resolves() -> None:
 
 
 def test_file_write_suffix_is_not_a_backend() -> None:
-    config = CredentialsConfig.model_construct(
-        backend="file-write",
-        writable=True,
-        file=CredentialsFileConfig(),
-        db=CredentialsConfig().db,
-        vault=CredentialsConfig().vault,
-        infisical=CredentialsConfig().infisical,
-        runtime_env=[],
-    )
-    with pytest.raises(RuntimeError, match="unsupported credential store backend"):
-        build_credential_store(config)
+    with pytest.raises(ValidationError, match="credentials.writable: true"):
+        CredentialsConfig(backend="file-write")

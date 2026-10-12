@@ -10,8 +10,6 @@ type EffectiveConfigPanelProps = {
   agentExposed: boolean;
   agentModelDefault: string;
   agentModelProvider: string;
-  agentModelApiKeyEnv: string;
-  agentModelBaseUrlEnv: string;
   agentSandboxMode: string;
   agentToolsText: string;
   agentSpawnText: string;
@@ -25,8 +23,6 @@ type EffectiveConfigPanelProps = {
   onAgentExposedChange: (value: boolean) => void;
   onAgentModelDefaultChange: (value: string) => void;
   onAgentModelProviderChange: (value: string) => void;
-  onAgentModelApiKeyEnvChange: (value: string) => void;
-  onAgentModelBaseUrlEnvChange: (value: string) => void;
   onAgentSandboxModeChange: (value: string) => void;
   onAgentToolsTextChange: (value: string) => void;
   onAgentSpawnTextChange: (value: string) => void;
@@ -42,8 +38,6 @@ export function EffectiveConfigPanel({
   agentExposed,
   agentModelDefault,
   agentModelProvider,
-  agentModelApiKeyEnv,
-  agentModelBaseUrlEnv,
   agentSandboxMode,
   agentToolsText,
   agentSpawnText,
@@ -57,8 +51,6 @@ export function EffectiveConfigPanel({
   onAgentExposedChange,
   onAgentModelDefaultChange,
   onAgentModelProviderChange,
-  onAgentModelApiKeyEnvChange,
-  onAgentModelBaseUrlEnvChange,
   onAgentSandboxModeChange,
   onAgentToolsTextChange,
   onAgentSpawnTextChange,
@@ -88,7 +80,7 @@ export function EffectiveConfigPanel({
             <span>Expose this agent to clients</span>
           </label>
           <label className="control-label">
-            <span>Default model</span>
+            <span>Model (alias or provider:model)</span>
             <Input aria-label="Default model" value={agentModelDefault} onChange={(event) => onAgentModelDefaultChange(event.target.value)} />
           </label>
           <label className="control-label">
@@ -101,14 +93,6 @@ export function EffectiveConfigPanel({
             >
               <option value="openai">openai</option>
             </select>
-          </label>
-          <label className="control-label">
-            <span>API key env</span>
-            <Input aria-label="Model API key env" value={agentModelApiKeyEnv} onChange={(event) => onAgentModelApiKeyEnvChange(event.target.value)} />
-          </label>
-          <label className="control-label">
-            <span>Base URL env</span>
-            <Input aria-label="Model base URL env" value={agentModelBaseUrlEnv} onChange={(event) => onAgentModelBaseUrlEnvChange(event.target.value)} />
           </label>
           <label className="control-label">
             <span>Sandbox mode</span>
