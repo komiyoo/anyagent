@@ -44,11 +44,15 @@ async def _main() -> None:
         root = Path(tmp)
         _write_workspace(root)
         app = create_app(
-            workspace_dir=root,
-            api_key="user-key",
-            admin_api_key="admin-key",
-            sandbox_root_dir=root / ".sandbox",
-        )
+                  workspace_dir=root,
+                  cli_overrides={
+                      "server": {
+                          "api_key": "user-key",
+                          "admin_api_key": "admin-key",
+                          "sandbox_root": root / ".sandbox",
+                      },
+                  },
+              )
 
         logger = logging.getLogger("anyagent.credentials")
         stream = io.StringIO()

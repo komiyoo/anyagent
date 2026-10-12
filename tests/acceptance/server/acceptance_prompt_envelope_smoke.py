@@ -75,7 +75,15 @@ async def _run_builtin_server_applies_prompt_envelope_to_provider_request(*, tmp
     original = app_mod.get_default_model_provider
     app_mod.get_default_model_provider = lambda: provider
     try:
-        app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+        app = create_app(
+                  workspace_dir=tmp_path,
+                  cli_overrides={
+                      "server": {
+                          "api_key": "user-key",
+                          "admin_api_key": "admin-key",
+                      },
+                  },
+              )
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
             preview = await client.post(

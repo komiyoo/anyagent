@@ -32,7 +32,15 @@ def test_request_reloads_hot_agent_config_change(tmp_path: Path) -> None:
           mode: disabled
         """,
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     state = app.state.anyagent
 
     agent_yaml.write_text(
@@ -69,7 +77,15 @@ def test_request_warns_and_keeps_current_catalog_for_cold_change(tmp_path: Path,
           mode: disabled
         """,
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     state = app.state.anyagent
 
     agent_yaml.write_text(

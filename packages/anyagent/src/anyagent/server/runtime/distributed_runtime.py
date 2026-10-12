@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from anyagent.agent_packs import AgentCatalog, AgentPackError, load_agent_catalog
+from anyagent.config.agents import AgentCatalog, AgentPackError, load_agent_catalog
 from anyagent.agent_runtime.model_providers import get_default_model_provider
 from anyagent.agent_runtime.multiagent import MultiAgentManager
 from anyagent.gateway.sequencer import KeyedSequencer

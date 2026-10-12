@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from anyagent.agent_packs import AgentPack, AgentSpec
+from anyagent.config.agents import AgentPack, AgentSpec
 from anyagent.agent_runtime.scripted_reply import (
     BaseScriptedReplyProvider,
     ScriptedReplyLoadError,

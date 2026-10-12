@@ -23,7 +23,7 @@ Python 包 `packages/anyagent/src/anyagent/`：
 |---|---|
 | `protocol` | Responses、Stage Events、Tool Runtime、Sandbox、Multi-Agent 等协议模型；导出 JSON Schema bundle 与 OpenAPI |
 | `agent_runtime` | 基于 pydantic-ai 的 agent loop、prompt 组装与注入、模型 provider、多 agent 协作、scripted reply |
-| `agent_packs` / `config_merge` / `model_catalog` | 加载 `.anyagent/` Agent Pack 与 `models.yaml`，处理配置分层合并 |
+| `config` | 加载 `.anyagent/anyagent.yaml` 与 Agent Pack，处理配置分层合并和模型选择 |
 | `skills` | 技能发现、加载、选择、依赖与权限，按需披露给 agent |
 | `mcp` | MCP server 连接、鉴权、工具发现与 stdio 会话池 |
 | `tool_runtime` | 工具注册、manifest/execute 契约、内置工具、CLI profile、独立 Tool Runtime 服务 |

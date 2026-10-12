@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from anyagent.agent_packs import AgentCatalog, AgentPack
+from anyagent.config.agents import AgentCatalog, AgentPack
 from anyagent.agent_runtime.multiagent import stable_root_thread_id
 from anyagent.gateway.session import SessionBindingError
 from anyagent.gateway.session import session_partition_key as build_session_partition_key

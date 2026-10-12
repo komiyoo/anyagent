@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from anyagent.agent_packs import AgentPack
+from anyagent.config.agents import AgentPack
 from anyagent.agent_runtime.context_providers import (
     ContextProvider,
     ContextProviderLoadError,

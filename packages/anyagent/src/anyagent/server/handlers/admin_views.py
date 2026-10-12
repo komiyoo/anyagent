@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from anyagent.agent_packs import AgentPack
+from anyagent.config.agents import AgentPack
 from anyagent.mcp.models import MCPServerConfig
 from anyagent.protocol.admin_storage import AdminSandboxWorkspaceRef
 from anyagent.protocol.agent_api_internal import AdminMcpServerItem, AdminMcpServersResponse

@@ -51,12 +51,12 @@ flowchart LR
 
 ## 3. 装载与配置
 
-middleware chain 由 `_build_agent_middleware_chain`(`packages/anyagent/src/anyagent/server/app.py:148`)按 agent pack 构建。配置入口是 `agent.yaml` 的 `runtime.middlewares`(`RuntimeSpec.middlewares: list[str]`,`packages/anyagent/src/anyagent/agent_packs.py:110`):
+middleware chain 由 `_build_agent_middleware_chain`(`packages/anyagent/src/anyagent/server/app.py:148`)按 agent pack 构建。配置入口是 `agent.yaml` 的 `runtime.middlewares`(`RuntimeSpec.middlewares: list[str]`,`packages/anyagent/src/anyagent/config/agents.py:171`):
 
 - **显式顺序**:`runtime.middlewares` 列出的字符串按声明顺序装载。内置 middleware 用别名 `loop_detection` / `context_compaction`(别名表 `app.py:141`);其余字符串当作 **classpath**(如 `my_plugin.middleware:AuditMiddleware`)由 `load_middleware_from_classpath`(`middleware.py` 同模块)动态导入。装载名做归一化:取 classpath 末段、小写、`-`→`_`(`app.py:155`)。plugin middleware 加载失败只 warning 跳过,不影响该 agent 运行(`app.py:184`)。
 - **默认开启**:当 `runtime.middlewares` **未显式配置**时,默认装载 `["loop_detection", "context_compaction"]`(`app.py:150`),且各自受其 `enabled` 开关控制(`app.py:189`、`:196`)。即"开箱即用就有循环检测与压缩",但一旦用户显式声明 middlewares,则完全以声明为准(不再隐式追加)。
 
-内置 middleware 的参数来自 `RuntimeSpec` 的子配置(`agent_packs.py:106`):`runtime.loop_detection`(window_size / warn_threshold / hard_limit / enabled)与 `runtime.context_compaction`(enabled / max_context_tokens / trigger_ratio / keep_recent_tokens)。
+内置 middleware 的参数来自 `RuntimeSpec` 的子配置(`packages/anyagent/src/anyagent/config/agents.py:175`):`runtime.loop_detection`(window_size / warn_threshold / hard_limit / enabled)与 `runtime.context_compaction`(enabled / max_context_tokens / trigger_ratio / keep_recent_tokens)。
 
 ## 4. 内置 middleware:上下文压缩
 
@@ -100,7 +100,7 @@ provider classpath 同样来自部署者控制的 `agent.yaml`，不是 agent/mo
 - Scripted reply 契约:`packages/anyagent/src/anyagent/protocol/scripted_reply.py`、`packages/anyagent/src/anyagent/agent_runtime/scripted_reply.py`
 - Scripted reply 装载与命中:`packages/anyagent/src/anyagent/server/handlers/scripted_reply.py`、`packages/anyagent/src/anyagent/server/routes/responses.py`
 - 接入点:`packages/anyagent/src/anyagent/agent_runtime/loop/run.py` 的 `build_text_response_payload` / `iter_text_response_sse`（scripted reply 与模型回合共用同一响应形状）
-- 装载与配置:`packages/anyagent/src/anyagent/server/handlers/scripted_reply.py` 的 `_build_scripted_reply_resolver`、`packages/anyagent/src/anyagent/agent_packs.py` 的 `RuntimeSpec.scripted_reply_providers`
+- 装载与配置:`packages/anyagent/src/anyagent/server/handlers/scripted_reply.py` 的 `_build_scripted_reply_resolver`、`packages/anyagent/src/anyagent/config/agents.py` 的 `RuntimeSpec.scripted_reply_providers`
 - 内置压缩:`packages/anyagent/src/anyagent/agent_runtime/middlewares/context_compaction.py`
 - 内置循环检测:`packages/anyagent/src/anyagent/agent_runtime/middlewares/loop_detection.py`
 - Stage Events:`packages/anyagent/src/anyagent/protocol/stage_events.py:358`(compacted)、`:371`(loop warning)、`:380`(loop terminated)

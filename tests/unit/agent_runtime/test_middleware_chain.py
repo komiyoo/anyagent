@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from anyagent.agent_packs import AgentPack, AgentSpec
+from anyagent.config.agents import AgentPack, AgentSpec
 from anyagent.agent_runtime.middleware import (
     AfterModelResult,
     AfterToolResult,

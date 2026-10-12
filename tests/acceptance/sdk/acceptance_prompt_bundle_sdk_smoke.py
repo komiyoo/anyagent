@@ -102,7 +102,15 @@ async def _run(tmp_path: Path) -> None:
     app_mod.resolve_manifest_with_mcp = _fake_manifest
     internal_prompt_mod.resolve_manifest_with_mcp = _fake_manifest
     try:
-        app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+        app = create_app(
+                  workspace_dir=tmp_path,
+                  cli_overrides={
+                      "server": {
+                          "api_key": "user-key",
+                          "admin_api_key": "admin-key",
+                      },
+                  },
+              )
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
             client = AnyAgent(api_key="user-key", base_url="http://testserver", http=http)

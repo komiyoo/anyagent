@@ -5,7 +5,7 @@ import logging
 from collections import OrderedDict
 from collections.abc import Callable
 
-from anyagent.env import getenv
+from anyagent.config.env import getenv
 
 from .server import MCPServer
 

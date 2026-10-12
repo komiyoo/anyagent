@@ -10,7 +10,7 @@ from typing import Any
 from .contracts import EventStore, LeaseLock, RunStore, SessionStore, SessionWorkspaceStore
 from .inmemory import InMemoryEventStore, InMemoryLeaseLock, InMemoryRunStore, InMemorySessionStore
 from .rollout import RolloutFileWriter
-from .settings import StorageSettings
+from .settings import StorageSettings, active_storage_settings
 
 
 logger = logging.getLogger("anyagent.storage.runtime")
@@ -88,7 +88,7 @@ async def create_storage_runtime(
     *,
     workspace_dir: str | Path = ".",
 ) -> StorageRuntime:
-    storage_settings = settings or StorageSettings()
+    storage_settings = settings or active_storage_settings()
     resolved = resolve_storage_runtime_mode(storage_settings)
 
     if resolved == "none":

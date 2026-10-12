@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from anyagent.agent_packs import load_agent_catalog
+from anyagent.config.agents import load_agent_catalog
 from anyagent.mcp.auth import CredentialResolver
 from anyagent.protocol.tool_runtime import AuthRef, ExecuteRequest, ManifestRequest, PolicyHint, ToolContext
 from anyagent.server.runtime.in_process import InProcessToolRuntimeService

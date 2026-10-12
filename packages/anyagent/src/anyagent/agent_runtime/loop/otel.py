@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from anyagent.env import getenv
+from anyagent.config.env import getenv
 
 _LOGGER = logging.getLogger(__name__)
 

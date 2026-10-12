@@ -11,7 +11,7 @@ import yaml
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from anyagent.agent_packs import AgentPack, AgentSpec, preferred_agents_root
+from anyagent.config.agents import AgentPack, AgentSpec, preferred_agents_root
 from anyagent.mcp import MCPConfig
 from anyagent.protocol.agent_api_internal import (
     AdminAgentConfigUpdateRequest,
@@ -102,15 +102,12 @@ def _create_agent_pack(*, state: AnyAgentServerApp, request: AdminAgentCreateReq
     agent_dir = preferred_agents_root(state.workspace_dir) / agent_id
     if agent_dir.exists():
         raise HTTPException(status_code=409, detail="agent already exists")
+    aliases = set(state.config.models.aliases)
+    stored_model = _compose_model_default(request.model_default, request.model_provider, aliases=aliases)
     spec = AgentSpec.model_validate(
         {
             "exposed": request.exposed,
-            "model": {
-                "default": request.model_default,
-                "provider": request.model_provider,
-                "base_url_env": request.model_base_url_env,
-                "api_key_env": request.model_api_key_env,
-            },
+            "model": {"default": stored_model} if stored_model else {},
             "tools": {"requested_tool_names": request.requested_tool_names},
             "skills": {"default_selected": request.default_selected_skills},
             "sandbox": {"mode": request.sandbox_mode},
@@ -161,7 +158,31 @@ def _update_agent_default_skills(*, state: AnyAgentServerApp, pack: AgentPack, d
     agent_yaml_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def _update_agent_config(*, pack: AgentPack, request: AdminAgentConfigUpdateRequest) -> None:
+def _compose_model_default(
+    model_default: str | None,
+    model_provider: str | None,
+    *,
+    aliases: set[str],
+) -> str | None:
+    """Store an alias as-is. A bare model name keeps a non-openai provider in the string."""
+
+    default = model_default.strip() if isinstance(model_default, str) else None
+    default = default or None
+    provider = model_provider.strip() if isinstance(model_provider, str) else None
+    provider = provider or None
+    if default is None:
+        return None
+    if default in aliases or provider in {None, "", "openai"} or ":" in default:
+        return default
+    return f"{provider}:{default}"
+
+
+def _update_agent_config(
+    *,
+    pack: AgentPack,
+    request: AdminAgentConfigUpdateRequest,
+    aliases: set[str] | None = None,
+) -> None:
     """Update common Studio-facing controls while preserving unknown agent.yaml keys."""
 
     agent_yaml_path = pack.root_dir / "agent.yaml"
@@ -170,22 +191,24 @@ def _update_agent_config(*, pack: AgentPack, request: AdminAgentConfigUpdateRequ
         raise HTTPException(status_code=400, detail="agent.yaml must be an object")
     if request.exposed is not None:
         payload["exposed"] = request.exposed
-    if any(
-        value is not None
-        for value in (request.model_default, request.model_provider, request.model_base_url_env, request.model_api_key_env)
-    ):
-        model_payload = payload.get("model")
-        if not isinstance(model_payload, dict):
-            model_payload = {}
-            payload["model"] = model_payload
-        if request.model_default is not None:
-            model_payload["default"] = request.model_default.strip() or None
-        if request.model_provider is not None:
-            model_payload["provider"] = request.model_provider.strip() or "openai"
-        if request.model_base_url_env is not None:
-            model_payload["base_url_env"] = request.model_base_url_env.strip() or None
-        if request.model_api_key_env is not None:
-            model_payload["api_key_env"] = request.model_api_key_env.strip() or None
+    if request.model_default is not None or request.model_provider is not None:
+        current = payload.get("model")
+        if isinstance(current, dict):
+            current_default = current.get("default")
+        elif isinstance(current, str):
+            current_default = current
+        else:
+            current_default = None
+        default_value = request.model_default if request.model_default is not None else current_default
+        stored = _compose_model_default(
+            default_value if isinstance(default_value, str) else None,
+            request.model_provider,
+            aliases=aliases or set(),
+        )
+        if stored:
+            payload["model"] = {"default": stored}
+        else:
+            payload.pop("model", None)
     if request.requested_tool_names is not None:
         tools_payload = payload.get("tools")
         if not isinstance(tools_payload, dict):

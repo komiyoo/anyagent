@@ -43,11 +43,15 @@ async def _main() -> None:
         root = Path(tmp)
         _write_workspace(root)
         app = create_app(
-            workspace_dir=root,
-            api_key="user-key",
-            admin_api_key="admin-key",
-            sandbox_root_dir=root / ".sandbox",
-        )
+                  workspace_dir=root,
+                  cli_overrides={
+                      "server": {
+                          "api_key": "user-key",
+                          "admin_api_key": "admin-key",
+                          "sandbox_root": root / ".sandbox",
+                      },
+                  },
+              )
 
         async def _handler(arguments: dict, context: dict) -> str:
             _ = arguments

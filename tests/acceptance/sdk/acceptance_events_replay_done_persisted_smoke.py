@@ -120,11 +120,15 @@ async def _main() -> None:
         server_app.get_default_model_provider = lambda: _FakeProvider()
         try:
             app = create_app(
-                workspace_dir=root,
-                api_key="user-key",
-                admin_api_key="admin-key",
-                sandbox_root_dir=root / ".sandbox",
-            )
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                              "sandbox_root": root / ".sandbox",
+                          },
+                      },
+                  )
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as http:
                 async with http.stream(

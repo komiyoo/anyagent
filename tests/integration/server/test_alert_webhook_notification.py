@@ -62,7 +62,15 @@ async def _run_alert_webhook_feishu_payload_on_error_event(tmp_path: Path, monke
         json.dumps({"Authorization": "Bearer tok"}),
     )
 
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     state = app.state.anyagent
 
     # The webhook channel must be attached to the built-in error rule.
@@ -125,7 +133,15 @@ async def _run_no_alert_webhook_url_is_backward_compatible(tmp_path: Path, monke
     _write_main_agent(tmp_path)
     monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
 
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     state = app.state.anyagent
 
     # No webhook configured -> error rule has no channels (no-op fan-out).
@@ -167,7 +183,15 @@ async def _run_quota_exhausted_feishu_payload_includes_project_and_channel(
     monkeypatch.setenv("ALERT_WEBHOOK_FORMAT", "feishu")
     monkeypatch.setenv("PROJECT", "lt-anyagent-wks")
 
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     state = app.state.anyagent
     rules = {rule.rule_id: rule for rule in await state.alert_store.list_rules()}
     assert len(rules["builtin.quota_exhausted"].channels) == 1
@@ -208,7 +232,15 @@ async def _run_quota_exhausted_feishu_payload_includes_project_and_channel(
 
 def test_global_exception_handler_emits_unhandled_event(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     state = app.state.anyagent
 
     @app.get("/_test/raise")

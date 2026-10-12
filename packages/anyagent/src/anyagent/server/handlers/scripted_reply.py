@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from anyagent.agent_packs import AgentPack
+from anyagent.config.agents import AgentPack
 from anyagent.agent_runtime.scripted_reply import (
     ScriptedReplyLoadError,
     ScriptedReplyMatch,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from anyagent.agent_packs import AgentPack
+from anyagent.config.agents import AgentPack
 from anyagent.agent_runtime.middleware import MiddlewareChain, MiddlewareLoadError, load_middleware_from_classpath
 from anyagent.agent_runtime.middlewares import ContextCompactionMiddleware, LoopDetectionMiddleware
 

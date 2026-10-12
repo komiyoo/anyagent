@@ -137,7 +137,7 @@ flowchart TB
 
 ## 配置层级与 merge
 
-`agent.yaml` 与 `mcp.json` 并非只有 workspace 单层，而是按固定优先级跨四层 deep-merge 后再交给运行时消费。层级在 `resolve_config_layers` 中冻结为 system → user → workspace → session（`packages/anyagent/src/anyagent/agent_packs.py:172`）：
+`agent.yaml` 与 `mcp.json` 并非只有 workspace 单层，而是按固定优先级跨四层 deep-merge 后再交给运行时消费。层级在 `resolve_config_layers` 中冻结为 system → user → workspace → session（`packages/anyagent/src/anyagent/config/agents.py:234`）：
 
 1. **system**：`SYSTEM_CONFIG_DIR`，默认 `/etc/anyagent`，承载平台运维下发的基线管控。
 2. **user**：`USER_CONFIG_DIR`，默认 `~/.anyagent`，承载部署者个人默认值。
@@ -146,12 +146,12 @@ flowchart TB
 
 merge 语义：
 
-- 同名字段后层覆盖前层，dict 递归合并、标量/列表整体替换，由纯函数 `deep_merge` 实现（`packages/anyagent/src/anyagent/config_merge.py:18`）；`agent.yaml` 走 `_merged_agent_yaml`、`mcp.json` 走 `_merged_mcp_config`（`packages/anyagent/src/anyagent/agent_packs.py:299`、`packages/anyagent/src/anyagent/agent_packs.py:324`）。
-- agent 发现是各层并集：任一层在 `agents/<agent_id>/` 下出现目录、或 session override 声明该 `agent_id`，即纳入 catalog（`_discover_layered_agent_ids`，`packages/anyagent/src/anyagent/agent_packs.py:263`），因此上层可定义基线 agent，workspace 仅做增量裁剪。
+- 同名字段后层覆盖前层，dict 递归合并、标量/列表整体替换，由纯函数 `deep_merge` 实现（`packages/anyagent/src/anyagent/config/merge.py:20`）；`agent.yaml` 走 `_merged_agent_yaml`、`mcp.json` 走 `_merged_mcp_config`（`packages/anyagent/src/anyagent/config/agents.py:452`、`packages/anyagent/src/anyagent/config/agents.py:477`）。
+- agent 发现是各层并集：任一层在 `agents/<agent_id>/` 下出现目录、或 session override 声明该 `agent_id`，即纳入 catalog（`_discover_layered_agent_ids`，`packages/anyagent/src/anyagent/config/agents.py:416`），因此上层可定义基线 agent，workspace 仅做增量裁剪。
 
 ### workspace override denylist
 
-为防止业务工作区把上层运维管控的安全敏感值改低，merge 在写入 workspace 层前先过 denylist 校验。受管路径定义为 `SENSITIVE_WORKSPACE_OVERRIDE_PATHS = {sandbox.mode, storage}`（`packages/anyagent/src/anyagent/config_merge.py:8`），校验逻辑在 `validate_workspace_override_denylist`（`packages/anyagent/src/anyagent/config_merge.py:30`），并只在 `_merged_agent_yaml` 处理 `name == "workspace"` 这一层时触发（`packages/anyagent/src/anyagent/agent_packs.py:315`）。
+为防止业务工作区把上层运维管控的安全敏感值改低，merge 在写入 workspace 层前先过 denylist 校验。受管路径定义为 `SENSITIVE_WORKSPACE_OVERRIDE_PATHS = {sandbox.mode, storage}`（`packages/anyagent/src/anyagent/config/merge.py:10`），校验逻辑在 `validate_workspace_override_denylist`（`packages/anyagent/src/anyagent/config/merge.py:36`），并只在 `_merged_agent_yaml` 处理 `name == "workspace"` 这一层时触发（`packages/anyagent/src/anyagent/config/agents.py:468`）。
 
 关键语义是“**拦截覆盖，而非禁止设置**”：仅当 base（已合并的 system+user 结果）与 workspace payload **同时**包含该路径时才 fail-fast。
 
@@ -224,7 +224,7 @@ run 完成后写回新的恢复游标，保证下一次请求可继续承接。
 
 检测与重载流程（`AnyAgentServerApp.refresh_config_if_needed`，`packages/anyagent/src/anyagent/server/app_state.py:98`）：
 
-1. `stat_config_mtimes` 跨四层 stat 每个 `agent.yaml`/`mcp.json` 的 `st_mtime_ns`，得到指纹（`packages/anyagent/src/anyagent/agent_packs.py:190`）。
+1. `stat_config_mtimes` 跨四层 stat 每个 `agent.yaml`/`mcp.json` 的 `st_mtime_ns`，得到指纹（`packages/anyagent/src/anyagent/config/agents.py:252`）。
 2. 指纹与缓存 `config_mtimes` 相等：直接返回，零额外开销。
 3. 指纹变化：取 `config_reload_lock` 后**双检**（再 stat 一次比对），避免并发请求重复重载。
 4. 重载 catalog 后校验“至少一个 exposed agent”，否则报错拒绝该次重载。

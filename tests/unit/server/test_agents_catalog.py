@@ -136,7 +136,15 @@ def test_studio_is_mounted_via_env_and_disabled_by_flag(tmp_path: Path) -> None:
 
 def test_create_app_allows_exposed_workspace_without_main_agent(tmp_path: Path) -> None:
     _write_agent(tmp_path, "delivery-agent", exposed=True, prompt="Delivery agent\n")
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     assert sorted(app.state.anyagent.catalog.packs) == ["delivery-agent"]
 
 
@@ -162,17 +170,17 @@ def test_workspace_model_alias_applies_to_non_main_agent_request(tmp_path: Path,
 
 async def _run_workspace_model_alias_applies_to_non_main_agent_request(tmp_path: Path, monkeypatch) -> None:
     _write_agent(tmp_path, "delivery-agent", exposed=True, prompt="Delivery agent\n")
-    (tmp_path / "models.yaml").write_text(
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    (tmp_path / ".anyagent").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".anyagent" / "anyagent.yaml").write_text(
         "\n".join(
             [
-                "default_model: travel-default",
-                "providers:",
-                "  openai:",
-                "    kind: openai",
                 "models:",
-                "  travel-default:",
-                "    provider: openai",
-                "    model: gpt-5.5",
+                "  default: travel-default",
+                "  aliases:",
+                "    travel-default:",
+                "      provider: openai",
+                "      model: gpt-5.5",
                 "",
             ]
         ),
@@ -185,7 +193,15 @@ async def _run_workspace_model_alias_applies_to_non_main_agent_request(tmp_path:
     )
     provider = _RecordingProvider()
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: provider)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
         resp = await client.post(
             "/v1/responses",
@@ -201,7 +217,16 @@ async def _run_workspace_model_alias_applies_to_non_main_agent_request(tmp_path:
 
 async def _run_admin_sandbox_workspace_operations(tmp_path: Path) -> None:
     _write_agent(tmp_path, "main", exposed=True, prompt="Main agent\n", sandbox_mode="local-unsafe")
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key", sandbox_root_dir=tmp_path / ".sandbox")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     state = app.state.anyagent
     policy = SandboxPolicy(
         mode="local-unsafe",
@@ -251,7 +276,15 @@ async def _run_admin_sandbox_workspace_operations(tmp_path: Path) -> None:
 
 async def _run_internal_observability_alerts_from_loop_events(tmp_path: Path) -> None:
     _write_agent(tmp_path, "main", exposed=True, prompt="Main agent\n")
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     await app.state.anyagent.telemetry_store.ingest(
         NormalizedTelemetryEvent(
             source="stage",
@@ -297,7 +330,15 @@ async def _run_internal_evaluations_dataset_and_run(tmp_path: Path, monkeypatch)
     _write_agent(tmp_path, "main", exposed=True, prompt="Main agent\n")
     provider = _RecordingProvider()
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: provider)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
         dataset_resp = await client.post(
             "/internal/evaluations/datasets",
@@ -334,7 +375,15 @@ async def _run_internal_evaluations_dataset_and_run(tmp_path: Path, monkeypatch)
 async def _run_internal_prompt_versions_and_diff(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("Workspace v1\n", encoding="utf-8")
     agent_md = _write_agent(tmp_path, "main", exposed=True, prompt="Main v1\n")
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
         sdk = AnyAgent(api_key="user-key", base_url="http://testserver", http=client)
         first = await sdk.prompts.create_version({"agent_id": "main", "label": "before"})
@@ -364,7 +413,15 @@ async def _run_studio_is_mounted_via_env_and_disabled_by_flag(tmp_path: Path) ->
     monkeypatch_del = "STUDIO_DIR"
     saved = os.environ.pop(monkeypatch_del, None)
     try:
-        default_app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+        default_app = create_app(
+                          workspace_dir=tmp_path,
+                          cli_overrides={
+                              "server": {
+                                  "api_key": "user-key",
+                                  "admin_api_key": "admin-key",
+                              },
+                          },
+                      )
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=default_app), base_url="http://testserver") as client:
             root_resp = await client.get("/", follow_redirects=False)
             assert root_resp.status_code == 404
@@ -380,7 +437,15 @@ async def _run_studio_is_mounted_via_env_and_disabled_by_flag(tmp_path: Path) ->
             encoding="utf-8",
         )
         os.environ[monkeypatch_del] = str(studio_dir)
-        mounted = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+        mounted = create_app(
+                      workspace_dir=tmp_path,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                          },
+                      },
+                  )
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=mounted), base_url="http://testserver") as client:
             root_resp = await client.get("/", follow_redirects=False)
             assert root_resp.status_code == 307
@@ -402,11 +467,15 @@ async def _run_studio_is_mounted_via_env_and_disabled_by_flag(tmp_path: Path) ->
             encoding="utf-8",
         )
         param_mounted = create_app(
-            workspace_dir=tmp_path,
-            api_key="user-key",
-            admin_api_key="admin-key",
-            studio_dir=alt_studio_dir,
-        )
+                            workspace_dir=tmp_path,
+                            cli_overrides={
+                                "server": {
+                                    "api_key": "user-key",
+                                    "admin_api_key": "admin-key",
+                                    "studio_dir": alt_studio_dir,
+                                },
+                            },
+                        )
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=param_mounted), base_url="http://testserver") as client:
             resp = await client.get("/studio/")
             assert resp.status_code == 200
@@ -414,11 +483,15 @@ async def _run_studio_is_mounted_via_env_and_disabled_by_flag(tmp_path: Path) ->
 
         # enable_studio=False 强制不挂载，即使设了环境变量。
         disabled = create_app(
-            workspace_dir=tmp_path,
-            api_key="user-key",
-            admin_api_key="admin-key",
-            enable_studio=False,
-        )
+                       workspace_dir=tmp_path,
+                       cli_overrides={
+                           "server": {
+                               "api_key": "user-key",
+                               "admin_api_key": "admin-key",
+                               "enable_studio": False,
+                           },
+                       },
+                   )
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=disabled), base_url="http://testserver") as client:
             root_resp = await client.get("/", follow_redirects=False)
             assert root_resp.status_code == 404
@@ -447,7 +520,15 @@ async def _run_internal_agents_catalog_lists_allowed_agents_and_details(tmp_path
     )
     _write_agent(tmp_path, "hidden", exposed=False, prompt=hidden_prompt)
 
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -572,11 +653,15 @@ async def _run_server_cors_origin_for_studio(tmp_path: Path) -> None:
     )
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        cors_origins=["http://127.0.0.1:5177"],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "cors_origins": ["http://127.0.0.1:5177"],
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
@@ -601,7 +686,15 @@ async def _run_admin_import_agent_skill(tmp_path: Path) -> None:
         sandbox_mode="disabled",
         requested_tool_names=[],
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     skill_md = """---
@@ -690,7 +783,15 @@ Use this skill for registry install tests.
         return subprocess.CompletedProcess(cmd, 0, stdout="installed")
 
     monkeypatch.setattr("anyagent.server.handlers.skill_install.subprocess.run", fake_run)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
@@ -769,7 +870,15 @@ Use this skill for github install tests.
         return subprocess.CompletedProcess(cmd, 0, stdout="cloned")
 
     monkeypatch.setattr("anyagent.server.handlers.skill_install.subprocess.run", fake_run)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
@@ -808,7 +917,15 @@ async def _run_admin_create_agent_pack(tmp_path: Path) -> None:
         sandbox_mode="disabled",
         requested_tool_names=[],
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
@@ -872,7 +989,15 @@ Use this skill for selection tests.
 """,
         encoding="utf-8",
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
@@ -913,7 +1038,15 @@ async def _run_admin_update_agent_config(tmp_path: Path) -> None:
         sandbox_mode="disabled",
         requested_tool_names=[],
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
@@ -977,7 +1110,15 @@ async def _run_admin_workspace_agent_files_update_and_reload(tmp_path: Path) -> 
         requested_tool_names=[],
     )
 
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
@@ -1090,7 +1231,15 @@ async def _run_internal_tools_catalog(tmp_path: Path) -> None:
         sandbox_mode="local-unsafe",
         requested_tool_names=["exec"],
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
@@ -1132,7 +1281,15 @@ async def _run_internal_observability_summary(tmp_path: Path) -> None:
         sandbox_mode="disabled",
         requested_tool_names=[],
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     response_id = "resp_summary"
     await app.state.anyagent.events.mark_started(response_id=response_id)
@@ -1259,7 +1416,15 @@ async def _run_internal_observability_runs(tmp_path: Path) -> None:
         sandbox_mode="disabled",
         requested_tool_names=[],
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     await app.state.anyagent.run_store.create_started(
         response_id="resp_keep",
@@ -1324,7 +1489,15 @@ async def _run_internal_sessions_query_surface(tmp_path: Path) -> None:
         sandbox_mode="disabled",
         requested_tool_names=[],
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     partition_key = "main::sess-a"
@@ -1410,7 +1583,15 @@ async def _run_internal_observability_query_surfaces(tmp_path: Path) -> None:
         sandbox_mode="disabled",
         requested_tool_names=[],
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     response_id = "resp_observe"
     trace_id = "trace-observe"
@@ -1648,15 +1829,21 @@ async def _run_postgres_telemetry_store_is_selected_for_external_storage(tmp_pat
     monkeypatch.setattr("anyagent.server.app.PostgresTelemetryEventStore", FakePostgresTelemetryEventStore)
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        storage_mode="external",
-        event_store_backend="inmemory",
-        run_store_backend="inmemory",
-        session_store_backend="inmemory",
-        session_lock_backend="inmemory",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "storage": {
+                      "mode": "external",
+                      "event_store_backend": "inmemory",
+                      "run_store_backend": "inmemory",
+                      "session_store_backend": "inmemory",
+                      "session_lock_backend": "inmemory",
+                  },
+              },
+          )
     store = app.state.anyagent.telemetry_event_store
     assert isinstance(store, FakePostgresTelemetryEventStore)
     assert store.postgres_dsn == "postgresql://user:pass@localhost:5432/anyagent"
@@ -1682,7 +1869,15 @@ async def _run_admin_tools_catalog(tmp_path: Path) -> None:
         sandbox_mode="disabled",
         requested_tool_names=[],
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:

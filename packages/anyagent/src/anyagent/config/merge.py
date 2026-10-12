@@ -1,3 +1,5 @@
+"""Deep merge and the workspace sensitive-field denylist."""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -16,7 +18,11 @@ class ConfigMergeError(ValueError):
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merges two JSON-like objects, returning a new dict."""
+    """Recursively merge two JSON-like objects and return a new dict.
+
+    Dict values merge. Lists and scalars from ``override`` replace the base.
+    """
+
     merged = deepcopy(base)
     for key, value in override.items():
         current = merged.get(key)
@@ -28,7 +34,13 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
 
 
 def validate_workspace_override_denylist(*, base: dict[str, Any], override: dict[str, Any], source: Path) -> None:
-    """Rejects workspace overrides for fields that must be controlled above workspace scope."""
+    """Reject workspace overrides for fields that must stay above workspace scope.
+
+    ``base`` is the higher-trust document (system and user). Built-in defaults
+    are not part of that document, so a workspace can still set storage when
+    no higher layer did.
+    """
+
     for path in SENSITIVE_WORKSPACE_OVERRIDE_PATHS:
         if _contains_path(base, path) and _contains_path(override, path):
             dotted = ".".join(path)

@@ -82,7 +82,7 @@ Connector contract 见 [Platform Connectors](../../../architecture/integrations/
 - `packages/anyagent/src/anyagent/agent_runtime/loop/run.py` — `_response_payload` / `_iter_completed_sse` 提为公共 helper（合成 Response 与 SSE 的唯一形状来源）
 - `packages/anyagent/src/anyagent/server/handlers/scripted_reply.py` — 新增。装载器（复用 `_workspace_import_paths`）
 - `packages/anyagent/src/anyagent/server/routes/responses.py` — `run_nonstream_worker` / `run_stream_worker` 在 loop 入口前插入命中判定
-- `packages/anyagent/src/anyagent/agent_packs.py` — `RuntimeSpec` 增加 `scripted_reply_providers`
+- `packages/anyagent/src/anyagent/config/agents.py` — `RuntimeSpec` 增加 `scripted_reply_providers`
 - `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/plugin.py` — 回复节奏下限与 typing indicator 接线
 - `packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/chatwoot.py` — `ChatwootOutboundDelivery.set_typing`
 - `packages/anyagent/src/anyagent/gateway/connector_contracts.py` — `ConnectorOutboundDelivery` 增加可选 typing indicator 能力

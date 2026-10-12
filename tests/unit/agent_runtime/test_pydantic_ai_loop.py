@@ -13,7 +13,7 @@ from pydantic_ai.settings import ModelSettings
 from anyagent.agent_runtime.loop import pydantic_ai_model_id
 from anyagent.agent_runtime.middleware import BaseMiddleware, MiddlewareChain, load_middleware_from_classpath
 from anyagent.agent_runtime.tool_loop import run_tool_loop_nonstream, run_tool_loop_stream_live
-from anyagent.model_config import ModelConfigError
+from anyagent.config.models import ModelConfigError
 from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
 from anyagent.protocol.sse import parse_sse_events
 from anyagent.protocol.tool_runtime import ExecuteMeta, ExecuteResponseCompleted, ManifestResponse, ToolContext
@@ -337,7 +337,7 @@ def test_run_tool_loop_nonstream_unmapped_handle_fails_fast() -> None:
 
 async def _run_tool_loop_nonstream_unmapped_handle_fails_fast() -> None:
     from anyagent.agent_runtime.loop import PydanticAIModelHandle
-    from anyagent.model_config import EffectiveModelSelection
+    from anyagent.config.models import EffectiveModelSelection
 
     handle = PydanticAIModelHandle(
         selection=EffectiveModelSelection(provider_name="missing", provider_kind="openai", model=None),

@@ -15,8 +15,7 @@ export type AgentSummary = {
   exposed?: boolean;
   model_default?: string | null;
   model_provider?: string | null;
-  model_base_url_env?: string | null;
-  model_api_key_env?: string | null;
+  model?: string | null;
   sandbox_mode?: string | null;
   requested_tool_names?: string[];
   default_selected_skills?: string[];
@@ -37,8 +36,7 @@ export type AgentDetail = AgentSummary & {
   model?: {
     default?: string | null;
     provider?: string | null;
-    base_url_env?: string | null;
-    api_key_env?: string | null;
+    model?: string | null;
   };
   sandbox?: {
     mode?: string;
@@ -556,8 +554,6 @@ export type AgentConfigUpdate = {
   exposed?: boolean;
   model_default?: string | null;
   model_provider?: string | null;
-  model_base_url_env?: string | null;
-  model_api_key_env?: string | null;
   requested_tool_names?: string[];
   sandbox_mode?: string;
   spawn_allow_agent_ids?: string[];

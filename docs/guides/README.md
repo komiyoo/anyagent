@@ -12,7 +12,7 @@
 | 要查的信息 | 真源 |
 |---|---|
 | CLI 子命令与参数 | `anyagent <command> --help`，定义在 `packages/anyagent/src/anyagent/cli.py` |
-| `agent.yaml` 字段 | `packages/anyagent/src/anyagent/agent_packs.py` 的 `AgentSpec` |
+| `agent.yaml` 字段 | `packages/anyagent/src/anyagent/config/agents.py` 的 `AgentSpec` |
 | Agent Server 环境变量 | `packages/anyagent/src/anyagent/server/config/settings.py` 的 `ServerSettings`；存储相关见 `packages/anyagent/src/anyagent/storage/settings.py` 的 `StorageSettings` |
 | 独立 Tool Runtime 环境变量 | `packages/anyagent/src/anyagent/tool_runtime/settings.py` 的 `ToolRuntimeSettings` |
 | 日志与观测环境变量 | `packages/anyagent/src/anyagent/observability.py` |

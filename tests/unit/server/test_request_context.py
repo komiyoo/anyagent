@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from anyagent.agent_packs import AgentCatalog, AgentPack, AgentSpec
+from anyagent.config.agents import AgentCatalog, AgentPack, AgentSpec
 from anyagent.server.config.request_context import ResponsesRequestContextError, prepare_responses_request_context
 
 

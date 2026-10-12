@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from anyagent.agent_packs import AgentPack
+from anyagent.config.agents import AgentPack
 from anyagent.agent_runtime import (
     SkillInjector,
     build_default_environment_context_values,

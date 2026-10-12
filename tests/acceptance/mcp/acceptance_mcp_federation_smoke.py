@@ -36,7 +36,7 @@ def _bootstrap_repo_imports() -> None:
 
 _bootstrap_repo_imports()
 
-from anyagent.agent_packs import load_agent_catalog
+from anyagent.config.agents import load_agent_catalog
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp
 from anyagent.mcp.manager import MCPServerManager
 from anyagent.mcp.models import MCPConfig

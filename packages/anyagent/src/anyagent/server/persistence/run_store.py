@@ -8,7 +8,7 @@ from typing import Any
 
 from anyagent.gateway.session import session_partition_key as build_session_partition_key
 from anyagent.server.db.postgres_schema import PostgresSchemaPolicy
-from anyagent.storage.settings import StorageSettings
+from anyagent.storage.settings import StorageSettings, active_storage_settings
 
 
 @dataclass(slots=True)
@@ -464,7 +464,7 @@ def _loads_json(value: str | None) -> dict[str, Any] | None:
 
 
 def build_redis_run_store(*, namespace: str | None = None, redis_dsn: str | None = None) -> RedisRunStore:
-    settings = StorageSettings()
+    settings = active_storage_settings()
     effective_dsn = redis_dsn or (str(settings.redis_dsn) if settings.redis_dsn is not None else None)
     if effective_dsn is None:
         raise RuntimeError("redis run store requires REDIS_DSN")
@@ -652,7 +652,7 @@ class PostgresRunStore:
 
 
 def build_postgres_run_store(*, postgres_dsn: str | None = None, postgres_schema: str | None = None) -> PostgresRunStore:
-    settings = StorageSettings()
+    settings = active_storage_settings()
     effective_dsn = postgres_dsn or (str(settings.effective_postgres_dsn) if settings.effective_postgres_dsn is not None else None)
     if effective_dsn is None:
         raise RuntimeError("postgres run store requires POSTGRES_DSN or DATABASE_URL")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from anyagent.config.loader import load_effective_config
 from anyagent.server.app_builders import _resolve_plugin_roots
 
 
@@ -30,7 +31,8 @@ def test_resolve_plugin_roots_env_overrides_default(tmp_path: Path, monkeypatch)
     extra.mkdir()
     monkeypatch.setenv("PLUGIN_ROOTS", "extra-plugins")
 
-    roots = _resolve_plugin_roots(None, workspace=tmp_path)
+    loaded = load_effective_config(tmp_path)
+    roots = _resolve_plugin_roots(loaded.plugins.roots or None, workspace=tmp_path)
 
     assert extra.resolve() in roots
     assert (tmp_path / "plugins").resolve() not in roots

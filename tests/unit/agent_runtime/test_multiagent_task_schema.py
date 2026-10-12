@@ -11,7 +11,7 @@ from openai.types.responses.response_function_tool_call import ResponseFunctionT
 from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_output_text import ResponseOutputText
 
-from anyagent.agent_packs import AgentCatalog, AgentPack, AgentSpec
+from anyagent.config.agents import AgentCatalog, AgentPack, AgentSpec
 from anyagent.agent_runtime import SubAgentExecutor
 from anyagent.agent_runtime import task_tool_schema
 from anyagent.agent_runtime.tool_loop import run_tool_loop_nonstream

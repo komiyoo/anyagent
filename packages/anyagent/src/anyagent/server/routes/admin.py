@@ -262,7 +262,7 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=400, detail=f"workspace reload failed: {e}") from e
         pack = state.require_pack(create_req.agent_id, external=False)
         resp = AdminAgentCreateResponse(
-            agent=_agent_detail_response(pack, include_prompt=True),
+            agent=_agent_detail_response(pack, include_prompt=True, config=state.config),
             reloaded_agent_ids=sorted(state.catalog.packs.keys()),
         )
         return JSONResponse(resp.model_dump(exclude_none=True))
@@ -301,7 +301,7 @@ def create_admin_router() -> APIRouter:
         state = req.app.state.anyagent
         _require_admin_auth(state, authorization)
         pack = state.require_pack(agent_id, external=False)
-        return JSONResponse(_agent_detail_response(pack, include_prompt=include_prompt).model_dump(exclude_none=True))
+        return JSONResponse(_agent_detail_response(pack, include_prompt=include_prompt, config=state.config).model_dump(exclude_none=True))
 
     @router.get("/admin/workspace/agents/{agent_id}/files")
     async def admin_workspace_agent_files(
@@ -482,7 +482,7 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=400, detail=f"workspace reload failed: {e}") from e
         reloaded_pack = state.require_pack(agent_id, external=False)
         resp = AdminAgentCreateResponse(
-            agent=_agent_detail_response(reloaded_pack, include_prompt=False),
+            agent=_agent_detail_response(reloaded_pack, include_prompt=False, config=state.config),
             reloaded_agent_ids=sorted(state.catalog.packs.keys()),
         )
         return JSONResponse(resp.model_dump(exclude_none=True))
@@ -499,7 +499,7 @@ def create_admin_router() -> APIRouter:
         update = AdminAgentConfigUpdateRequest.model_validate(await req.json())
         agent_yaml_path = pack.root_dir / "agent.yaml"
         previous_text = agent_yaml_path.read_text(encoding="utf-8")
-        _update_agent_config(pack=pack, request=update)
+        _update_agent_config(pack=pack, request=update, aliases=set(state.config.models.aliases))
         try:
             state.reload_catalog()
         except Exception as e:  # noqa: BLE001
@@ -507,7 +507,7 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=400, detail=f"workspace reload failed: {e}") from e
         reloaded_pack = state.require_pack(agent_id, external=False)
         resp = AdminAgentCreateResponse(
-            agent=_agent_detail_response(reloaded_pack, include_prompt=False),
+            agent=_agent_detail_response(reloaded_pack, include_prompt=False, config=state.config),
             reloaded_agent_ids=sorted(state.catalog.packs.keys()),
         )
         return JSONResponse(resp.model_dump(exclude_none=True))

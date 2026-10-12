@@ -16,7 +16,8 @@ from anyagent.server.sandbox import WorkspaceRuntimeConfig, build_workspace_runt
 from anyagent.server.security.credential_backends import FileBackend, InfisicalBackend, InfisicalBackendConfig
 from anyagent.server.security.credential_backends import EnvBackend
 from anyagent.tool_runtime import ToolRuntimeClient, create_tool_runtime_app, create_tool_runtime_app_async
-from anyagent.tool_runtime.settings import ToolRuntimeSettings, build_tool_runtime_server_config
+from anyagent.config.loader import load_effective_config
+from anyagent.tool_runtime.settings import build_tool_runtime_server_config, tool_runtime_settings_from_config
 
 
 def _write_workspace(root: Path) -> None:
@@ -153,7 +154,8 @@ def test_tool_runtime_settings_build_server_config(tmp_path: Path, monkeypatch) 
     monkeypatch.setenv("WORKSPACE_SNAPSHOT_BACKEND", "local_file")
     monkeypatch.setenv("WORKSPACE_SNAPSHOT_ROOT_DIR", "snapshots")
 
-    config = build_tool_runtime_server_config(ToolRuntimeSettings(), workspace_dir=tmp_path)
+    effective = load_effective_config(tmp_path)
+    config = build_tool_runtime_server_config(tool_runtime_settings_from_config(effective), workspace_dir=tmp_path)
 
     assert config.workspace_dir == tmp_path
     assert config.internal_key == "internal-key"

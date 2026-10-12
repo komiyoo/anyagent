@@ -1,5 +1,4 @@
 import asyncio
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -9,17 +8,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from anyagent.agent_packs import (
+from anyagent.config.agents import (
     ANYAGENT_CONFIG_DIR,
     load_agent_catalog,
     stat_config_mtimes,
 )
-from anyagent.model_config import load_workspace_models_config
+from anyagent.config.loader import EffectiveConfig, load_effective_config
 from anyagent.gateway.plugins import GatewayRegistry
 from anyagent.gateway.sequencer import KeyedSequencer
 from anyagent.gateway.tooling import register_gateway_tools
 from anyagent.mcp.manager import MCPManagerRegistry
-from anyagent.env import getenv
 from anyagent.observability import _parse_header_env, emit_observability_event, get_observability_emitter
 from anyagent.protocol.alerts import AlertChannel
 from anyagent.server.app_builders import (
@@ -30,7 +28,7 @@ from anyagent.server.app_builders import (
     _safe_error_message,
 )
 from anyagent.server.app_state import AnyAgentServerApp
-from anyagent.server.config.settings import ServerSettings
+from anyagent.server.config.settings import server_settings_from_config
 from anyagent.server.persistence.alerts import AlertEvaluator, InMemoryAlertStore, default_alert_rules
 from anyagent.server.persistence.evaluations import JsonEvaluationStore
 from anyagent.server.persistence.manifest_cache import ManifestCache
@@ -58,93 +56,38 @@ from anyagent.server.routes.responses import create_responses_router
 from anyagent.server.routes.system import create_system_router
 from anyagent.server.runtime.in_process import InProcessToolRuntimeService
 from anyagent.server.runtime.lock_service import build_session_lock_service
-from anyagent.server.runtime.workspace_env import load_workspace_runtime_environment
+from anyagent.server.runtime.workspace_env import hydrate_workspace_runtime_environment
 from anyagent.server.sandbox import SandboxManager
-from anyagent.server.security import (
-    CredentialRuntimeConfig,
-    CredentialStore,
-    InMemoryCredentialStore,
-    build_credential_resolver_from_config,
-)
-from anyagent.storage.settings import StorageSettings
+from anyagent.server.security.credential_runtime import open_server_credential_stores
+from anyagent.storage.settings import storage_settings_from_config
 
 
 def create_app(
     *,
     workspace_dir: str | Path,
-    api_key: str | None = None,
-    admin_api_key: str | None = None,
-    storage_mode: str | None = None,
-    storage_profile: str | None = None,
-    event_store_backend: str | None = None,
-    run_store_backend: str | None = None,
-    session_store_backend: str | None = None,
-    sandbox_root_dir: str | Path | None = None,
-    session_lock_backend: str | None = None,
-    session_lease_ttl_s: float | None = None,
-    cors_origins: str | list[str] | tuple[str, ...] | None = None,
-    enable_studio: bool = True,
-    studio_dir: str | Path | None = None,
+    config: EffectiveConfig | None = None,
+    cli_overrides: dict[str, Any] | None = None,
     session_config_overrides: dict[str, Any] | None = None,
-    plugin_roots: list[str | Path] | None = None,
-    plugins_fail_open: bool = False,
 ) -> FastAPI:
     workspace = Path(workspace_dir).expanduser().resolve()
-    load_workspace_runtime_environment(workspace)
-    server_settings = ServerSettings()
-    resolved_storage = server_settings.resolve(
-        storage_mode=storage_mode if isinstance(storage_mode, str) else None,
-        storage_profile=storage_profile if isinstance(storage_profile, str) else None,
-        event_store_backend=event_store_backend if isinstance(event_store_backend, str) else None,
-        run_store_backend=run_store_backend if isinstance(run_store_backend, str) else None,
-        session_store_backend=session_store_backend if isinstance(session_store_backend, str) else None,
-        session_lock_backend=session_lock_backend if isinstance(session_lock_backend, str) else None,
-        session_lease_ttl_s=session_lease_ttl_s,
-    )
+    effective = config or load_effective_config(workspace, cli_overrides=cli_overrides)
+    if hydrate_workspace_runtime_environment(effective):
+        effective = load_effective_config(workspace, cli_overrides=effective.cli_overrides)
+    storage_settings = storage_settings_from_config(effective.storage)
+    server_settings = server_settings_from_config(effective.storage)
+    resolved_storage = server_settings.resolve(storage_settings=storage_settings)
     catalog = load_agent_catalog(workspace_dir=workspace, session_config_overrides=session_config_overrides)
-    models_config = load_workspace_models_config(workspace)
     if not any(pack.spec.exposed for pack in catalog.packs.values()):
         raise RuntimeError("workspace must define at least one exposed agent")
-    opensandbox_backend = _build_opensandbox_backend_if_needed(catalog)
-    sandbox_manager = SandboxManager(root_dir=sandbox_root_dir, opensandbox_backend=opensandbox_backend)
-    credential_runtime_config = CredentialRuntimeConfig(
-        backend=server_settings.mcp_credential_store_backend,
-        file_root=server_settings.mcp_credential_store_file_root,
-        workspace_dir=workspace,
-        infisical_host=server_settings.infisical_host,
-        infisical_universal_auth_client_id=server_settings.infisical_universal_auth_client_id,
-        infisical_universal_auth_client_secret=server_settings.infisical_universal_auth_client_secret,
-        infisical_token=server_settings.infisical_token,
-        infisical_project_id=server_settings.infisical_project_id,
-        infisical_environment=server_settings.infisical_environment,
-        infisical_cache_ttl_seconds=server_settings.infisical_cache_ttl_seconds,
-        infisical_credential_root_path=server_settings.infisical_credential_root_path,
-        infisical_path_layout=server_settings.infisical_path_layout,
-        credential_postgres_dsn=server_settings.credential_postgres_dsn,
-        credential_postgres_schema=server_settings.credential_postgres_schema,
-        credential_encryption_key=server_settings.credential_encryption_key,
-        credential_db_create_schema=server_settings.credential_db_create_schema,
-        vault_addr=server_settings.vault_addr,
-        vault_token=server_settings.vault_token,
-        vault_mount=server_settings.vault_mount,
-        vault_credential_root_path=server_settings.vault_credential_root_path,
-    )
-    mcp_credential_store = build_credential_resolver_from_config(
-        credential_runtime_config,
-        fallback_to_memory=False,
-    )
-    credential_store = (
-        mcp_credential_store
-        if isinstance(mcp_credential_store, CredentialStore)
-        and (server_settings.mcp_credential_store_backend or "").strip().lower() in {"env-write", "env_write", "file-write", "file_write", "db-write", "db_write", "vault-write", "vault_write"}
-        else InMemoryCredentialStore()
-    )
+    opensandbox_backend = _build_opensandbox_backend_if_needed(catalog, effective.sandbox)
+    sandbox_manager = SandboxManager(root_dir=effective.server.sandbox_root, opensandbox_backend=opensandbox_backend)
+    credential_store, mcp_credential_store = open_server_credential_stores(effective)
     storage_bundle: ServerStorageBundle = build_server_storage_bundle(
         event_store_backend=resolved_storage.event_store_backend,
         run_store_backend=resolved_storage.run_store_backend,
         session_store_backend=resolved_storage.session_store_backend,
+        storage_settings=storage_settings,
     )
-    storage_settings = StorageSettings()
     observability_event_sink = InMemoryObservabilityEventSink()
     if resolved_storage.storage_profile in {"postgres", "postgres-redis"} and storage_settings.effective_postgres_dsn is not None:
         telemetry_event_store: Any = PostgresTelemetryEventStore(
@@ -163,7 +106,7 @@ def create_app(
         include_observability_sink_events=False,
     )
     alert_rules = default_alert_rules()
-    alert_webhook_channel = _build_alert_webhook_channel()
+    alert_webhook_channel = _build_alert_webhook_channel(effective)
     if alert_webhook_channel is not None:
         webhook_rule_ids = {"builtin.server_error", "builtin.quota_exhausted"}
         alert_rules = [
@@ -183,17 +126,17 @@ def create_app(
         credential_store=credential_store,
     )
     gateway_registry = GatewayRegistry()
-    resolved_plugin_roots = _resolve_plugin_roots(plugin_roots, workspace=workspace)
+    resolved_plugin_roots = _resolve_plugin_roots(effective.plugins.roots or None, workspace=workspace)
     loaded_plugins, plugin_errors, loaded_plugin_catalog = _load_gateway_plugins(
         runtime=runtime,
         roots=resolved_plugin_roots,
-        fail_open=plugins_fail_open,
+        fail_open=effective.plugins.fail_open,
         gateway_registry=gateway_registry,
     )
     state = AnyAgentServerApp(
         workspace_dir=workspace,
         catalog=catalog,
-        models_config=models_config,
+        config=effective,
         resolved_storage=resolved_storage,
         storage_settings=storage_settings,
         events=storage_bundle.event_store,
@@ -225,8 +168,8 @@ def create_app(
         loaded_plugin_catalog=loaded_plugin_catalog,
         plugin_errors=plugin_errors,
         gateway_registry=gateway_registry,
-        api_key=api_key.strip() if isinstance(api_key, str) and api_key.strip() else None,
-        admin_api_key=admin_api_key.strip() if isinstance(admin_api_key, str) and admin_api_key.strip() else None,
+        api_key=_non_empty(effective.server.api_key),
+        admin_api_key=_non_empty(effective.server.admin_api_key),
         session_config_overrides=session_config_overrides,
         config_mtimes=stat_config_mtimes(workspace, session_config_overrides),
     )
@@ -257,18 +200,10 @@ def create_app(
                         await result
 
     app = FastAPI(title="anyagent", version="0.4.30", lifespan=_lifespan)
-    if enable_studio:
-        # Studio 前端独立部署（方案 B）：server 不再内嵌前端产物。
-        # 通过 studio_dir 参数或 STUDIO_DIR 环境变量指向外部 build
-        # 产物可挂载到 /studio，便于本地开发或自托管场景；均未设置时不挂载。
-        # CLI 参数优先于环境变量。
+    if effective.server.enable_studio:
         resolved_studio_dir: Path | None = None
-        if studio_dir is not None:
-            resolved_studio_dir = Path(studio_dir)
-        else:
-            env_studio_dir = (getenv("STUDIO_DIR") or "").strip()
-            if env_studio_dir:
-                resolved_studio_dir = Path(env_studio_dir)
+        if effective.server.studio_dir:
+            resolved_studio_dir = Path(effective.server.studio_dir)
         if resolved_studio_dir is not None:
             if not resolved_studio_dir.is_dir():
                 raise RuntimeError(f"Studio directory does not exist: {resolved_studio_dir}")
@@ -281,7 +216,7 @@ def create_app(
                 return FileResponse(resolved_studio_dir / "index.html")
 
             app.mount("/studio", StaticFiles(directory=str(resolved_studio_dir), html=True), name="studio")
-    parsed_cors_origins = _parse_cors_origins(cors_origins)
+    parsed_cors_origins = _parse_cors_origins(effective.server.cors_origins)
     if parsed_cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -341,18 +276,21 @@ def create_app(
     return app
 
 
-def _build_alert_webhook_channel() -> AlertChannel | None:
-    """Build the alert webhook channel from ``ALERT_WEBHOOK_*`` env.
+def _non_empty(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
 
-    Returns ``None`` when no URL is configured so the alert evaluator keeps
-    running with no-op fan-out (backward compatible with prior behavior).
-    """
 
-    url = (getenv("ALERT_WEBHOOK_URL") or "").strip()
+def _build_alert_webhook_channel(config: EffectiveConfig) -> AlertChannel | None:
+    """Build the alert webhook channel from config. Returns None when no URL is set."""
+
+    url = (config.alerts.webhook_url or "").strip()
     if not url:
         return None
-    fmt = (getenv("ALERT_WEBHOOK_FORMAT", "json") or "json").strip().lower() or "json"
+    fmt = (config.alerts.webhook_format or "json").strip().lower() or "json"
     if fmt not in {"json", "feishu"}:
         fmt = "json"
-    headers = _parse_header_env(getenv("ALERT_WEBHOOK_HEADERS") or "")
+    headers = _parse_header_env(config.alerts.webhook_headers or "")
     return AlertChannel(kind="webhook", url=url, headers=headers, format=fmt)

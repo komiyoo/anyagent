@@ -45,7 +45,7 @@ __all__ = [
 def get_default_model_provider() -> ModelProvider:
     """Default OpenAI Responses provider. Tests patch this as the offline model seam.
 
-    Anthropic / Gemini / Chat Completions are selected via models.yaml kind and
+    Anthropic / Gemini / Chat Completions are selected via anyagent.yaml provider kind and
     run through pydantic-ai, not in-repo HTTP translators.
     """
 

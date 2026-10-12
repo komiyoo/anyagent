@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from anyagent.agent_packs import AgentCatalog, AgentPack
+from anyagent.config.agents import AgentCatalog, AgentPack
 from anyagent.protocol.multi_agent import (
     AgentState,
     CloseAgentArgs,

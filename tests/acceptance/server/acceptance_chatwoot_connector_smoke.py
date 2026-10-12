@@ -122,11 +122,17 @@ async def _run_chatwoot_connector_acceptance_smoke(*, tmp_path: Path, monkeypatc
     )
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     state = app.state.anyagent
     connector = state.gateway_registry.channel_connectors["chatwoot"]
 

@@ -21,7 +21,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models import Model, ModelRequestParameters
 from pydantic_ai.settings import ModelSettings
 
-from anyagent.model_config import EffectiveModelSelection, ModelConfigError
+from anyagent.config.models import EffectiveModelSelection, ModelConfigError
 from anyagent.protocol.tool_manifest_extensions import model_tool_name_for_name
 
 from ..model_providers import (
@@ -33,7 +33,7 @@ from ..model_providers import (
 from ..model_providers.openai_responses import OpenAIResponsesModelProvider
 from ..tool_loop_payloads import build_tool_loop_followup_body
 
-# models.yaml provider.kind → pydantic-ai model-string prefix (v2: openai: is Responses).
+# Provider kind → pydantic-ai model-string prefix (v2: openai: is Responses).
 _PYDANTIC_AI_KIND_PREFIX: dict[str, str] = {
     "openai": "openai",
     "openai_chat": "openai-chat",
@@ -59,7 +59,7 @@ def pydantic_ai_model_id(*, provider_kind: str, model: str | None) -> str:
     prefix = _PYDANTIC_AI_KIND_PREFIX.get(kind)
     if prefix is None:
         raise ModelConfigError(
-            f"unmapped models.yaml provider kind {provider_kind!r}; "
+            f"unmapped provider kind {provider_kind!r}; "
             f"supported kinds: {sorted(_PYDANTIC_AI_KIND_PREFIX)}"
         )
     name = (model or "").strip()
@@ -117,8 +117,8 @@ def _request_model(body: dict[str, Any]) -> str | None:
 def _model_from_selection(selection: EffectiveModelSelection, *, request_model: str | None) -> Model:
     model_name = request_model or selection.model
     model_id = pydantic_ai_model_id(provider_kind=selection.provider_kind, model=model_name)
-    api_key = _env_value(selection.api_key_env)
-    base_url = selection.base_url or _env_value(selection.base_url_env)
+    api_key = _clean_secret(selection.api_key)
+    base_url = _clean_secret(selection.base_url)
     if selection.provider_kind in {"openai", "openai_chat"} and (api_key or base_url):
         from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
         from pydantic_ai.providers.openai import OpenAIProvider
@@ -157,11 +157,11 @@ def _infer_native(model_id: str) -> Model:
     return infer_model(model_id)
 
 
-def _env_value(name: str | None) -> str | None:
-    if not name:
+def _clean_secret(value: str | None) -> str | None:
+    if not isinstance(value, str):
         return None
-    value = os.getenv(name)
-    return value.strip() if isinstance(value, str) and value.strip() else None
+    stripped = value.strip()
+    return stripped or None
 
 
 def _is_previous_response_not_found(error: ModelProviderUpstreamError) -> bool:

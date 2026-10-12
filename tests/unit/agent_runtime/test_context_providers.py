@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from anyagent.agent_packs import AgentPack, AgentSpec
+from anyagent.config.agents import AgentPack, AgentSpec
 from anyagent.agent_runtime.context_providers import (
     BaseContextProvider,
     ContextProviderLoadError,

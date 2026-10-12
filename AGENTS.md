@@ -93,7 +93,7 @@ packages/anyagent/src/anyagent/
     plugins/         # server 侧插件 capability matrix
     sandbox/         # Sandbox 后端（SandboxManager + OpenSandbox/External/LocalUnsafe）
     security/        # Credential Vault / Tool Policy
-  agent_packs.py     # Agent Packs 配置加载
+  config/            # anyagent.yaml、Agent Pack、模型选择与配置合并
   agent_api_client.py # Client SDK
   cli.py             # CLI 入口
 ```

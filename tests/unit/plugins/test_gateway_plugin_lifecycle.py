@@ -80,11 +80,17 @@ async def _run_gateway_loads_reference_plugin_catalog_tool_and_hooks(tmp_path: P
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
         catalog = await http.get("/admin/plugins/catalog", headers={"Authorization": "Bearer admin-key"})

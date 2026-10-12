@@ -153,11 +153,15 @@ async def _run_cli_profile_acceptance_smoke(*, tmp_path: Path, monkeypatch) -> N
     provider = _CliProfileProvider()
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: provider)
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:

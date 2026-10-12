@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from anyagent.agent_packs import AgentPack
+from anyagent.config.agents import AgentPack
 from anyagent.agent_runtime.classpath import load_instance_from_classpath
 from anyagent.protocol.scripted_reply import ScriptedReply
 from anyagent.protocol.tool_runtime import ToolContext

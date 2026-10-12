@@ -160,11 +160,17 @@ async def _run_chatwoot_connector_webhook_bridges_response_reply_and_handoff(tmp
     )
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     state = app.state.anyagent
     connector = state.gateway_registry.channel_connectors["chatwoot"]
 
@@ -331,11 +337,17 @@ async def _run_chatwoot_connector_opens_pending_conversation_after_reply(tmp_pat
     )
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     connector = app.state.anyagent.gateway_registry.channel_connectors["chatwoot"]
 
     sent_messages: list[str] = []
@@ -402,11 +414,17 @@ async def _run_chatwoot_reply_open_capture(
         lambda: provider,
     )
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     connector = app.state.anyagent.gateway_registry.channel_connectors["chatwoot"]
     opened: list[str] = []
 
@@ -496,11 +514,17 @@ async def _run_chatwoot_connector_webhook_acknowledges_before_background_process
     )
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     connector = app.state.anyagent.gateway_registry.channel_connectors["chatwoot"]
 
     sent_messages: list[dict] = []
@@ -594,11 +618,17 @@ async def _run_chatwoot_connector_applies_pacing_floor_and_typing_indicator(tmp_
     )
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     connector = app.state.anyagent.gateway_registry.channel_connectors["chatwoot"]
     timeline: list[tuple[str, float]] = []
 
@@ -666,11 +696,17 @@ async def _run_chatwoot_connector_skips_reply_when_assigned_to_human(tmp_path: P
     )
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     connector = app.state.anyagent.gateway_registry.channel_connectors["chatwoot"]
     sent_messages: list[str] = []
 
@@ -729,11 +765,17 @@ async def _run_chatwoot_connector_skips_reply_when_live_assignee_is_human(tmp_pa
     )
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     connector = app.state.anyagent.gateway_registry.channel_connectors["chatwoot"]
     sent_messages: list[str] = []
 
@@ -799,11 +841,17 @@ async def _run_chatwoot_connector_replies_when_assigned_skip_disabled(tmp_path: 
     )
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     connector = app.state.anyagent.gateway_registry.channel_connectors["chatwoot"]
     sent_messages: list[str] = []
 
@@ -864,11 +912,17 @@ async def _run_chatwoot_connector_drops_reply_if_assigned_during_agent_run(tmp_p
     )
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     connector = app.state.anyagent.gateway_registry.channel_connectors["chatwoot"]
     sent_messages: list[str] = []
     lookups = {"count": 0}

@@ -61,7 +61,15 @@ dependencies:
 
 def test_internal_skills_list_returns_catalog_fields(tmp_path: Path) -> None:
     skill_md = _write_workspace_with_skill(tmp_path)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
 
     transport = httpx.ASGITransport(app=app)
 

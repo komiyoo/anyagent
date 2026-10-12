@@ -14,20 +14,20 @@ def test_workspace_runtime_env_projects_only_listed_credentials(tmp_path: Path, 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("UNLISTED_SECRET", raising=False)
 
-    secrets_path = tmp_path / ".anyagent" / "secrets.yaml"
-    secrets_path.parent.mkdir(parents=True)
-    secrets_path.write_text(
+    config_path = tmp_path / ".anyagent" / "anyagent.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
         "\n".join(
             [
-                "credential_vault:",
+                "credentials:",
                 "  backend: env",
-                "runtime_env:",
-                "  - name: AMAP_MAPS_API_KEY",
-                "    credential_id: amap_maps_api_key",
-                "    kind: api_key",
-                "  - name: OPENAI_API_KEY",
-                "    credential_id: openai_api_key",
-                "    kind: api_key",
+                "  runtime_env:",
+                "    - name: AMAP_MAPS_API_KEY",
+                "      credential_id: amap_maps_api_key",
+                "      kind: api_key",
+                "    - name: OPENAI_API_KEY",
+                "      credential_id: openai_api_key",
+                "      kind: api_key",
                 "",
             ]
         ),
@@ -45,17 +45,17 @@ def test_workspace_runtime_env_keeps_existing_env_without_overwrite(tmp_path: Pa
     monkeypatch.setenv("CREDENTIAL__AMAP_MAPS_API_KEY", "vault-secret")
     monkeypatch.setenv("AMAP_MAPS_API_KEY", "existing")
 
-    secrets_path = tmp_path / ".anyagent" / "secrets.yaml"
-    secrets_path.parent.mkdir(parents=True)
-    secrets_path.write_text(
+    config_path = tmp_path / ".anyagent" / "anyagent.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
         "\n".join(
             [
-                "credential_vault:",
+                "credentials:",
                 "  backend: env",
-                "runtime_env:",
-                "  - name: AMAP_MAPS_API_KEY",
-                "    credential_id: amap_maps_api_key",
-                "    kind: api_key",
+                "  runtime_env:",
+                "    - name: AMAP_MAPS_API_KEY",
+                "      credential_id: amap_maps_api_key",
+                "      kind: api_key",
                 "",
             ]
         ),

@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from anyagent.agent_packs import ANYAGENT_CONFIG_DIR, ANYAGENT_SKILLS_SUBDIR, AgentPack
+from anyagent.config.agents import ANYAGENT_CONFIG_DIR, ANYAGENT_SKILLS_SUBDIR, AgentPack
 from anyagent.protocol.agent_api_internal import (
     AdminSkillImportRequest,
     AdminSkillRegistryInstallRequest,

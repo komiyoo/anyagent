@@ -51,7 +51,15 @@ async def _run_429_nonstream_emits_failed_event_and_finalizes_run(tmp_path: Path
         lambda: _RateLimitProvider(),
     )
 
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     state = app.state.anyagent
 
     emitter = get_observability_emitter()

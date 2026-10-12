@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from anyagent.agent_packs import ANYAGENT_CONFIG_DIR, ANYAGENT_SKILLS_SUBDIR
+from anyagent.config.agents import ANYAGENT_CONFIG_DIR, ANYAGENT_SKILLS_SUBDIR
 
 from .loader import SkillLoadError, load_skill_package
 from .models import SkillPackage, SkillScope

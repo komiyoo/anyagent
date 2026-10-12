@@ -12,7 +12,7 @@ req: ["requirements.md#req-4", "requirements.md#req-4-5", "requirements.md#req-4
 
 本文是 **历史** 记录。自研 Anthropic Messages / Google Gemini / OpenAI Chat Completions HTTP translator 已从仓库删除。
 
-当前执行面见 [agent-loop.md](../runtime/agent-loop.md)。`models.yaml` 的 `providers.*.kind` 由 `packages/anyagent/src/anyagent/model_catalog.py` 解析，再在 `packages/anyagent/src/anyagent/agent_runtime/loop/models.py` 转成 pydantic-ai 模型字符串。
+当前执行面见 [agent-loop.md](../runtime/agent-loop.md)。`.anyagent/anyagent.yaml` 的 `models.providers.*.kind` 由 `packages/anyagent/src/anyagent/config/models.py` 解析，再在 `packages/anyagent/src/anyagent/agent_runtime/loop/models.py` 转成 pydantic-ai 模型字符串。
 
 离线 smoke 仍可 patch `get_default_model_provider()`（OpenAI Responses 协议缝）。
 
@@ -24,7 +24,7 @@ req: ["requirements.md#req-4", "requirements.md#req-4-5", "requirements.md#req-4
 
 - `ModelProvider` 协议与错误类型：`packages/anyagent/src/anyagent/agent_runtime/model_providers/base.py`
 - OpenAI Responses 默认工厂（测试注入缝）：`packages/anyagent/src/anyagent/agent_runtime/model_providers/openai_responses.py`
-- kind 目录：`packages/anyagent/src/anyagent/model_catalog.py`
+- kind 目录：`packages/anyagent/src/anyagent/config/models.py`
 
 ## 工具名
 

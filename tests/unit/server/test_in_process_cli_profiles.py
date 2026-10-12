@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from anyagent.agent_packs import load_agent_catalog
+from anyagent.config.agents import load_agent_catalog
 from anyagent.protocol.tool_runtime import ExecuteMeta, ExecuteRequest, ToolContext
 from anyagent.server.runtime.in_process import InProcessToolRuntimeService
 from anyagent.server.sandbox import SandboxManager

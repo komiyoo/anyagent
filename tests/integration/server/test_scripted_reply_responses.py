@@ -139,7 +139,15 @@ def test_scripted_response_preserves_delivery_attributes(tmp_path: Path, monkeyp
 async def _run_scripted_response_preserves_delivery_attributes(tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path, provider_classpaths=[f"{_PROVIDER_MODULE}:StructuredProvider"])
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as http:
         response = await http.post("/v1/responses", headers={"Authorization": "Bearer user-key"},
                                    json={"input": "hi", "metadata": {"session_key": "s-structured"}})
@@ -154,7 +162,15 @@ async def _run_scripted_hit_skips_model_and_enters_next_turn_context(tmp_path: P
     provider = _RecordingProvider()
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: provider)
 
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     state = app.state.anyagent
     headers = {"Authorization": "Bearer user-key"}
 
@@ -216,7 +232,15 @@ def test_structured_scripted_hit_streams_attributes(tmp_path: Path, monkeypatch)
 async def _run_structured_scripted_hit_streams_attributes(tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path, provider_classpaths=[f"{_PROVIDER_MODULE}:StructuredProvider"])
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as http:
         async with http.stream("POST", "/v1/responses", headers={"Authorization": "Bearer user-key"},
                                json={"input": "hi", "stream": True, "metadata": {"session_key": "s-options"}}) as response:
@@ -233,7 +257,15 @@ async def _run_scripted_hit_streams_delta_completed_done(tmp_path: Path, monkeyp
     provider = _RecordingProvider()
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: provider)
 
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     state = app.state.anyagent
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver", timeout=5.0) as http:
@@ -276,7 +308,15 @@ async def _run_scripted_miss_and_broken_provider_fall_through_to_model(tmp_path:
     provider = _RecordingProvider()
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: provider)
 
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     state = app.state.anyagent
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver", timeout=5.0) as http:
@@ -305,7 +345,15 @@ async def _run_first_turn_only_provider_sees_previous_transcript(tmp_path: Path,
     provider = _RecordingProvider()
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: provider)
 
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     headers = {"Authorization": "Bearer user-key"}
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver", timeout=5.0) as http:

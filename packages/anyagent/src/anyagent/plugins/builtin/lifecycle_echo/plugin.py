@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from anyagent.env import getenv
+from anyagent.config.env import getenv
 from anyagent.plugins.hooks import HookContext
 from anyagent.tool_runtime.models import ToolDefinition
 

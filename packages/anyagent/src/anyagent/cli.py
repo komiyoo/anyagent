@@ -14,11 +14,11 @@ import httpx
 import uvicorn
 import yaml
 
-from anyagent.agent_packs import AgentPackError, load_agent_catalog, preferred_agents_root, preferred_config_root, resolve_agents_root
-from anyagent.env import getenv
-from anyagent.model_catalog import get_provider_spec, resolve_provider_kind
-from anyagent.model_config import WorkspaceModelsConfig, workspace_models_config_path
-from anyagent.observability import configure_observability_from_env
+from anyagent.config.agents import AgentPackError, load_agent_catalog, preferred_agents_root, preferred_config_root
+from anyagent.config.env import getenv
+from anyagent.config.loader import load_effective_config
+from anyagent.config.models import get_provider_spec, resolve_provider_kind
+from anyagent.observability import configure_observability
 from anyagent.protocol.admin_storage import StorageHealthResponse
 from anyagent.protocol.credential_vault import (
     AdminCredentialDeleteResponse,
@@ -33,7 +33,7 @@ from anyagent.server import DistributedAgentRuntimeConfig, create_app, create_di
 from anyagent.server.db.migrations import apply_storage_migrations
 from anyagent.skills import SkillRoot, default_skill_roots, discover_skills, resolve_disabled_skill_stable_ids
 from anyagent.storage.runtime import create_storage_runtime
-from anyagent.storage.settings import StorageSettings
+from anyagent.storage.settings import active_storage_settings, storage_settings_from_config
 from anyagent.storage.retention import run_retention_from_args
 from anyagent.storage.rollout_replay import ReplayFilters, replay_rollout_records, resolve_rollout_root_dir
 from anyagent.tool_runtime import create_tool_runtime_app_async
@@ -129,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     config_init = config_sub.add_parser("init", help="Initialize workspace model/provider config and an agent pack.")
     config_init.add_argument("--workspace", default=".", help="Business workspace root to initialize.")
     config_init.add_argument("--agent-id", default="main", help="Agent id to create/update (default: main).")
-    config_init.add_argument("--model-alias", default="default", help="Model alias stored in workspace-root `models.yaml`.")
+    config_init.add_argument("--model-alias", default="default", help="Model alias stored in `.anyagent/anyagent.yaml`.")
     config_init.add_argument("--model", default="gpt-4o-mini", help="Upstream provider model name.")
     config_init.add_argument(
         "--provider",
@@ -138,9 +138,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Provider kind for the model alias.",
     )
     config_init.add_argument("--provider-name", default=None, help="Provider config key (default: --provider).")
-    config_init.add_argument("--api-key-env", default=None, help="Environment variable containing the provider API key.")
+    config_init.add_argument("--api-key-env", dest="provider_key_var", default=None, help="Environment variable containing the provider API key.")
     config_init.add_argument("--base-url", default=None, help="Provider base URL literal.")
-    config_init.add_argument("--base-url-env", default=None, help="Environment variable containing provider base URL.")
+    config_init.add_argument("--base-url-env", dest="provider_url_var", default=None, help="Environment variable containing the provider base URL.")
     config_init.add_argument(
         "--tool",
         action="append",
@@ -640,7 +640,7 @@ def _cmd_db(args: argparse.Namespace) -> int:
         print("alembic is required: pip install anyagent[postgres]", file=sys.stderr)
         return 1
 
-    settings = StorageSettings()
+    settings = active_storage_settings()
     dsn = settings.effective_postgres_dsn
     if dsn is None:
         print("DATABASE_URL or POSTGRES_DSN must be set", file=sys.stderr)
@@ -705,66 +705,66 @@ def _cmd_storage_replay(args: argparse.Namespace) -> int:
     return 0
 
 
-def _load_workspace_dotenv(workspace: Path) -> None:
-    """Load ``.env`` and ``.env.local`` from *workspace* into ``os.environ``.
+def _serve_cli_overrides(args: argparse.Namespace) -> dict[str, Any]:
+    """Map serve flags the user set onto the effective-config override document."""
 
-    Keys already present in the environment are **not** overwritten, so
-    CLI flags and exported shell vars always take precedence.
-    """
-    for name in (".env", ".env.local"):
-        env_path = workspace / name
-        if not env_path.is_file():
-            continue
-        with open(env_path, "r", encoding="utf-8") as fh:
-            for raw in fh:
-                line = raw.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, val = line.partition("=")
-                key = key.strip()
-                val = val.strip().strip('"').strip("'")
-                if key and key not in os.environ:
-                    os.environ[key] = val
+    server: dict[str, Any] = {"host": str(args.host), "port": int(args.port)}
+    if args.api_key:
+        server["api_key"] = str(args.api_key)
+    if args.admin_key:
+        server["admin_api_key"] = str(args.admin_key)
+    if args.cors_origin:
+        server["cors_origins"] = list(args.cors_origin)
+    if args.sandbox_root:
+        server["sandbox_root"] = str(args.sandbox_root)
+    if getattr(args, "studio_dir", None):
+        server["studio_dir"] = str(args.studio_dir)
+    if getattr(args, "no_studio", False):
+        server["enable_studio"] = False
+    storage: dict[str, Any] = {}
+    if args.storage_profile:
+        storage["profile"] = args.storage_profile
+    if args.storage_mode:
+        storage["mode"] = args.storage_mode
+    if args.event_store_backend:
+        storage["event_store_backend"] = args.event_store_backend
+    if args.run_store_backend:
+        storage["run_store_backend"] = args.run_store_backend
+    if args.session_store_backend:
+        storage["session_store_backend"] = args.session_store_backend
+    if args.session_lock_backend:
+        storage["session_lock_backend"] = args.session_lock_backend
+    if args.session_lease_ttl_s is not None:
+        storage["session_lease_ttl_s"] = args.session_lease_ttl_s
+    plugins: dict[str, Any] = {}
+    if args.plugin_root:
+        plugins["roots"] = [str(item) for item in args.plugin_root]
+    if args.plugins_fail_open:
+        plugins["fail_open"] = True
+    overrides: dict[str, Any] = {"server": server}
+    if storage:
+        overrides["storage"] = storage
+    if plugins:
+        overrides["plugins"] = plugins
+    return overrides
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
-    configure_observability_from_env()
     workspace = Path(args.workspace).expanduser().resolve()
-    _load_workspace_dotenv(workspace)
-    api_key = args.api_key or getenv("API_KEY")
-    admin_key = args.admin_key or os.getenv("ADMIN_API_KEY")
-    enable_studio = not bool(args.no_studio)
-    studio_dir = args.studio_dir or getenv("STUDIO_DIR") or None
-    app = create_app(
-        workspace_dir=str(workspace),
-        api_key=api_key,
-        admin_api_key=admin_key,
-        sandbox_root_dir=args.sandbox_root,
-        storage_mode=args.storage_mode,
-        storage_profile=args.storage_profile,
-        event_store_backend=args.event_store_backend,
-        run_store_backend=args.run_store_backend,
-        session_store_backend=args.session_store_backend,
-        session_lock_backend=args.session_lock_backend,
-        session_lease_ttl_s=args.session_lease_ttl_s,
-        cors_origins=args.cors_origin,
-        enable_studio=enable_studio,
-        studio_dir=studio_dir,
-        session_config_overrides={},
-        plugin_roots=args.plugin_root,
-        plugins_fail_open=args.plugins_fail_open,
-    )
+    effective = load_effective_config(workspace, cli_overrides=_serve_cli_overrides(args))
+    configure_observability(effective.observability)
+    app = create_app(workspace_dir=str(workspace), config=effective)
     _print_serve_banner(
         workspace=workspace,
-        host=str(args.host),
-        port=int(args.port),
-        api_key=api_key,
-        admin_key=admin_key,
-        enable_studio=enable_studio and studio_dir is not None,
+        host=effective.server.host,
+        port=int(effective.server.port),
+        api_key=effective.server.api_key,
+        admin_key=effective.server.admin_api_key,
+        enable_studio=bool(effective.server.enable_studio and effective.server.studio_dir),
         quiet=getattr(args, "quiet", False),
         app=app,
     )
-    uvicorn.run(app, host=args.host, port=int(args.port), log_level="info")
+    uvicorn.run(app, host=effective.server.host, port=int(effective.server.port), log_level="info")
     return 0
 
 
@@ -878,7 +878,8 @@ def _agent_catalog_rows(catalog: Any) -> list[dict[str, Any]]:
 
 
 def _cmd_tool_runtime_serve(args: argparse.Namespace) -> int:
-    configure_observability_from_env()
+    workspace = Path(args.workspace).expanduser().resolve()
+    configure_observability(load_effective_config(workspace).observability)
     app = asyncio.run(create_tool_runtime_app_async(
         workspace_dir=args.workspace,
         internal_key=args.internal_key,
@@ -892,40 +893,43 @@ def _cmd_tool_runtime_serve(args: argparse.Namespace) -> int:
 
 
 def _cmd_agent_api_serve(args: argparse.Namespace) -> int:
-    configure_observability_from_env()
-    workspace_dir = str(args.workspace)
-    api_key = args.api_key or os.getenv("AGENT_API_KEY")
+    workspace = Path(args.workspace).expanduser().resolve()
+    effective = load_effective_config(workspace)
+    configure_observability(effective.observability)
+    workspace_dir = str(workspace)
+    api_key = args.api_key or effective.server.agent_api_key
     if not api_key:
         raise RuntimeError("agent-api serve requires --api-key or AGENT_API_KEY")
-    tool_runtime_internal_key = args.tool_runtime_internal_key or os.getenv("TOOL_RUNTIME_INTERNAL_KEY")
+    tool_runtime_internal_key = args.tool_runtime_internal_key or effective.tool_runtime.internal_key
     if not tool_runtime_internal_key:
         raise RuntimeError("agent-api serve requires --tool-runtime-internal-key or TOOL_RUNTIME_INTERNAL_KEY")
-
-    storage_settings = StorageSettings()
+    credentials = effective.credentials
+    manifest_ttl = (
+        args.manifest_cache_ttl_seconds
+        if isinstance(args.manifest_cache_ttl_seconds, (int, float))
+        else effective.tool_runtime.manifest_cache_ttl_seconds
+    )
+    storage_settings = storage_settings_from_config(effective.storage)
     app = create_distributed_agent_app(
         api_key=api_key,
         runtime_config=DistributedAgentRuntimeConfig(
             workspace_dir=workspace_dir,
             tool_runtime_base_url=args.tool_runtime_url
-            or os.getenv("TOOL_RUNTIME_BASE_URL")
+            or effective.tool_runtime.base_url
             or "http://127.0.0.1:8788",
             tool_runtime_internal_key=tool_runtime_internal_key,
-            manifest_cache_ttl_seconds=float(
-                args.manifest_cache_ttl_seconds
-                if isinstance(args.manifest_cache_ttl_seconds, (int, float))
-                else os.getenv("MANIFEST_CACHE_TTL_SECONDS", "5")
-            ),
-            mcp_credential_store_backend=os.getenv("MCP_CREDENTIAL_STORE_BACKEND", "none"),
-            mcp_credential_store_file_root=os.getenv("MCP_CREDENTIAL_STORE_FILE_ROOT", "/data/credentials"),
-            infisical_host=os.getenv("INFISICAL_HOST", "https://app.infisical.com"),
-            infisical_universal_auth_client_id=os.getenv("INFISICAL_UNIVERSAL_AUTH_CLIENT_ID"),
-            infisical_universal_auth_client_secret=os.getenv("INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET"),
-            infisical_token=os.getenv("INFISICAL_TOKEN"),
-            infisical_project_id=os.getenv("INFISICAL_PROJECT_ID"),
-            infisical_environment=os.getenv("INFISICAL_ENVIRONMENT"),
-            infisical_cache_ttl_seconds=int(os.getenv("INFISICAL_CACHE_TTL_SECONDS", "60")),
-            infisical_credential_root_path=os.getenv("INFISICAL_CREDENTIAL_ROOT_PATH", "/anyagent/credentials"),
-            infisical_path_layout=os.getenv("INFISICAL_PATH_LAYOUT", "scoped"),
+            manifest_cache_ttl_seconds=float(manifest_ttl),
+            mcp_credential_store_backend=credentials.backend,
+            mcp_credential_store_file_root=credentials.file.root,
+            infisical_host=credentials.infisical.host,
+            infisical_universal_auth_client_id=credentials.infisical.client_id,
+            infisical_universal_auth_client_secret=credentials.infisical.client_secret,
+            infisical_token=credentials.infisical.token,
+            infisical_project_id=credentials.infisical.project_id,
+            infisical_environment=credentials.infisical.environment,
+            infisical_cache_ttl_seconds=int(credentials.infisical.cache_ttl_seconds),
+            infisical_credential_root_path=credentials.infisical.credential_root_path,
+            infisical_path_layout=credentials.infisical.path_layout,
         ),
         storage_factory=lambda: create_storage_runtime(storage_settings, workspace_dir=workspace_dir),
         settings=storage_settings,
@@ -1050,18 +1054,19 @@ def _cmd_config_init(args: argparse.Namespace) -> int:
     skipped: list[str] = []
     requested_tool_names = _resolve_requested_tool_names(args)
     sandbox_mode = str(args.sandbox_mode or ("local-unsafe" if bool(args.with_exec) else "disabled"))
-    models_yaml = _render_models_yaml(
+    anyagent_yaml = _render_anyagent_yaml(
         model_alias=model_alias,
         provider_name=provider_name,
         provider_kind=provider_kind,
         model=model_name,
-        api_key_env=str(args.api_key_env).strip() if args.api_key_env else None,
+        key_var=str(args.provider_key_var).strip() if args.provider_key_var else None,
         base_url=str(args.base_url).strip() if args.base_url else None,
-        base_url_env=str(args.base_url_env).strip() if args.base_url_env else None,
+        url_var=str(args.provider_url_var).strip() if args.provider_url_var else None,
     )
+    config_path = preferred_config_root(workspace) / "anyagent.yaml"
     _write_file(
-        workspace_models_config_path(workspace),
-        models_yaml,
+        config_path,
+        anyagent_yaml,
         force=force,
         created=created,
         skipped=skipped,
@@ -1117,13 +1122,13 @@ def _cmd_config_init(args: argparse.Namespace) -> int:
     _write_file(preferred_config_root(workspace) / "skills" / ".gitkeep", "", force=force, created=created, skipped=skipped)
     _write_demo_plugin_files(workspace=workspace, force=force, created=created, skipped=skipped)
 
-    config = WorkspaceModelsConfig.model_validate(yaml.safe_load(models_yaml))
+    loaded = load_effective_config(workspace)
     payload = {
         "ok": True,
         "workspace": str(workspace),
         "agent_id": agent_id,
-        "models_config": str(workspace_models_config_path(workspace)),
-        "default_model": config.default_model,
+        "config_path": str(config_path),
+        "default_model": loaded.models.default,
         "created": created,
         "skipped": skipped,
         "next": f"anyagent doctor --workspace {workspace}",
@@ -1153,11 +1158,6 @@ def _doctor_workspace(workspace: Path) -> list[WorkspaceDoctorFinding]:
     def add(level: str, code: str, message: str) -> None:
         findings.append(WorkspaceDoctorFinding.model_validate({"level": level, "code": code, "message": message}))
 
-    root = resolve_agents_root(workspace)
-    if not root.is_dir():
-        add("error", "missing_agent_root", f"missing agent packs root: {root}")
-        return findings
-
     try:
         catalog = load_agent_catalog(workspace_dir=workspace)
     except AgentPackError as e:
@@ -1167,8 +1167,11 @@ def _doctor_workspace(workspace: Path) -> list[WorkspaceDoctorFinding]:
         add("error", "agent_catalog_error", str(e))
         return findings
 
+    if any(pack.builtin for pack in catalog.packs.values()):
+        add("info", "builtin_main_agent", "no agent pack directory found; using the built-in main agent")
+
     if not catalog.packs:
-        add("error", "no_agents", f"no agent packs found under: {root}")
+        add("error", "no_agents", f"no agent packs found under: {workspace / '.anyagent' / 'agents'}")
         return findings
 
     main = catalog.get("main")
@@ -1341,7 +1344,7 @@ def _render_agent_yaml(
     model_block = (
         ""
         if not model_default
-        else "# Model alias from workspace-root models.yaml. Request body `model` can still override it.\n"
+        else "# Model alias from `.anyagent/anyagent.yaml`. Request body `model` can still override it.\n"
         f"model:\n  default: {model_default}\n"
     )
     return (
@@ -1371,72 +1374,47 @@ def _render_agent_yaml(
     )
 
 
-def _render_models_yaml(
+def _render_anyagent_yaml(
     *,
     model_alias: str,
     provider_name: str,
     provider_kind: str,
     model: str,
-    api_key_env: str | None,
+    key_var: str | None,
     base_url: str | None,
-    base_url_env: str | None,
+    url_var: str | None,
 ) -> str:
     spec = get_provider_spec(resolve_provider_kind(provider_kind))
-    provider: dict[str, str] = {"kind": spec.kind}
-    if api_key_env:
-        provider["api_key_env"] = api_key_env
-    else:
-        provider["api_key_env"] = spec.default_api_key_envs[0]
-    if base_url:
-        provider["base_url"] = base_url
-    if base_url_env:
-        provider["base_url_env"] = base_url_env
-    provider_lines = [
-        "# Workspace model/provider catalog.",
-        "# Agent packs reference models by alias through `.anyagent/agents/<agent_id>/agent.yaml`:",
-        f"#   model.default: {model_alias}",
-        "# Keep credentials in environment variables or a secret manager; do not commit plaintext keys.",
-        f"default_model: {_yaml_scalar(model_alias)}",
-        "",
-        "providers:",
-        f"  {provider_name}:",
-        f"    # kind maps to pydantic-ai: openai | openai_chat | anthropic | gemini.",
-        f"    kind: {_yaml_scalar(provider['kind'])}",
+    key_name = key_var or spec.default_api_key_envs[0]
+    lines = [
+        "# Workspace configuration. Secrets stay in environment variables.",
+        "# Agent packs reference models by alias through `.anyagent/agents/<agent_id>/agent.yaml`.",
+        "models:",
+        f"  default: {_yaml_scalar(model_alias)}",
+        "  providers:",
+        f"    {provider_name}:",
+        "      # kind maps to pydantic-ai: openai | openai_chat | anthropic | gemini.",
+        f"      kind: {_yaml_scalar(spec.kind)}",
+        f"      api_key: ${_yaml_placeholder(key_name)}",
     ]
-    if "api_key_env" in provider:
-        provider_lines.extend(
-            [
-                "    # api_key_env names the environment variable read at runtime.",
-                f"    api_key_env: {_yaml_scalar(provider['api_key_env'])}",
-            ]
-        )
-    if "base_url" in provider:
-        provider_lines.extend(
-            [
-                "    # Optional literal provider base URL. Prefer base_url_env for per-environment overrides.",
-                f"    base_url: {_yaml_scalar(provider['base_url'])}",
-            ]
-        )
-    if "base_url_env" in provider:
-        provider_lines.extend(
-            [
-                "    # Optional env var for OpenAI-compatible or proxy base URL.",
-                f"    base_url_env: {_yaml_scalar(provider['base_url_env'])}",
-            ]
-        )
-    provider_lines.extend(
+    if base_url:
+        lines.append(f"      base_url: {_yaml_scalar(base_url)}")
+    elif url_var:
+        lines.append(f"      base_url: ${_yaml_placeholder(url_var)}")
+    lines.extend(
         [
-            "",
-            "models:",
-            f"  {model_alias}:",
-            "    # provider points to one entry under providers.",
-            f"    provider: {_yaml_scalar(provider_name)}",
-            "    # model is the upstream provider model name sent to the model API.",
-            f"    model: {_yaml_scalar(model)}",
+            "  aliases:",
+            f"    {model_alias}:",
+            f"      provider: {_yaml_scalar(provider_name)}",
+            f"      model: {_yaml_scalar(model)}",
             "",
         ]
     )
-    return "\n".join(provider_lines)
+    return "\n".join(lines)
+
+
+def _yaml_placeholder(name: str) -> str:
+    return "{" + name + "}"
 
 
 def _yaml_scalar(value: str) -> str:

@@ -33,7 +33,15 @@ def _write_main_agent(root: Path) -> None:
 def test_mcp_credentials_default_to_admin_store(tmp_path: Path) -> None:
     async def _run() -> None:
         _write_main_agent(tmp_path)
-        app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+        app = create_app(
+                  workspace_dir=tmp_path,
+                  cli_overrides={
+                      "server": {
+                          "api_key": "user-key",
+                          "admin_api_key": "admin-key",
+                      },
+                  },
+              )
         state = app.state.anyagent
         await state.credentials.set(
             AdminCredentialSetRequest(
@@ -67,7 +75,15 @@ def test_mcp_credentials_file_backend_uses_workspace_relative_root(tmp_path: Pat
             encoding="utf-8",
         )
 
-        app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+        app = create_app(
+                  workspace_dir=tmp_path,
+                  cli_overrides={
+                      "server": {
+                          "api_key": "user-key",
+                          "admin_api_key": "admin-key",
+                      },
+                  },
+              )
         resolved = await app.state.anyagent.mcp_credentials.resolve(
             AuthRef(kind="bearer_token", ref="cred_api"),
             scope_context={"agent_id": "main"},

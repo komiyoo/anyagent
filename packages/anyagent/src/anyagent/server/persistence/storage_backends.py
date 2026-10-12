@@ -18,7 +18,7 @@ from anyagent.server.persistence.session_store import (
     build_postgres_session_store,
     build_redis_session_store,
 )
-from anyagent.storage.settings import StorageSettings
+from anyagent.storage.settings import StorageSettings, active_storage_settings
 
 
 class EventStore(Protocol):
@@ -346,7 +346,7 @@ class _ExternalSqlEventStoreAdapter:
             self._initialized = True
 
 
-def build_event_store(*, backend: str) -> EventStore:
+def build_event_store(*, backend: str, storage_settings: StorageSettings | None = None) -> EventStore:
     if backend == "inmemory":
         return InMemoryEventStore()
     if backend in {"postgres", "postgres-only"}:
@@ -354,7 +354,7 @@ def build_event_store(*, backend: str) -> EventStore:
     if backend == "postgres-redis":
         return build_cached_event_store()
     if backend in {"external", "redis"}:
-        settings = StorageSettings()
+        settings = storage_settings or active_storage_settings()
         if backend == "external" and settings.effective_postgres_dsn is not None:
             if settings.redis_dsn is not None:
                 return build_cached_event_store()
@@ -363,7 +363,7 @@ def build_event_store(*, backend: str) -> EventStore:
     raise RuntimeError(f"event store backend not implemented: {backend}")
 
 
-def build_run_store(*, backend: str) -> RunStore:
+def build_run_store(*, backend: str, storage_settings: StorageSettings | None = None) -> RunStore:
     if backend == "inmemory":
         return InMemoryRunStore()
     if backend in {"postgres", "postgres-only"}:
@@ -371,7 +371,7 @@ def build_run_store(*, backend: str) -> RunStore:
     if backend == "postgres-redis":
         return build_cached_run_store()
     if backend in {"external", "redis"}:
-        settings = StorageSettings()
+        settings = storage_settings or active_storage_settings()
         if backend == "external" and settings.effective_postgres_dsn is not None:
             if settings.redis_dsn is not None:
                 return build_cached_run_store()
@@ -380,7 +380,7 @@ def build_run_store(*, backend: str) -> RunStore:
     raise RuntimeError(f"run store backend not implemented: {backend}")
 
 
-def build_session_store(*, backend: str) -> SessionStore:
+def build_session_store(*, backend: str, storage_settings: StorageSettings | None = None) -> SessionStore:
     if backend == "inmemory":
         return InMemorySessionStore()
     if backend in {"postgres", "postgres-only"}:
@@ -388,7 +388,7 @@ def build_session_store(*, backend: str) -> SessionStore:
     if backend == "postgres-redis":
         return build_cached_session_store()
     if backend in {"external", "redis"}:
-        settings = StorageSettings()
+        settings = storage_settings or active_storage_settings()
         if backend == "external" and settings.effective_postgres_dsn is not None:
             if settings.redis_dsn is not None:
                 return build_cached_session_store()
@@ -402,8 +402,9 @@ def build_server_storage_bundle(
     event_store_backend: str,
     run_store_backend: str,
     session_store_backend: str,
+    storage_settings: StorageSettings | None = None,
 ) -> ServerStorageBundle:
-    settings = StorageSettings()
+    settings = storage_settings or active_storage_settings()
     sql_backend = _select_sql_backend(settings)
     if sql_backend in {"mysql", "postgresql"} and any(
         backend in {"external", "postgres", "postgres-redis"} for backend in (event_store_backend, run_store_backend, session_store_backend)

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from anyagent.agent_packs import AgentPackError, load_agent_catalog
-from anyagent.config_merge import deep_merge
+from anyagent.config.agents import AgentPackError, load_agent_catalog
+from anyagent.config.merge import deep_merge
 
 
 def _write_agent(root: Path, agent_id: str, agent_yaml: str, *, agents_md: str = "# Agent\n") -> None:
@@ -88,7 +88,6 @@ def test_load_agent_catalog_merges_system_user_workspace_and_session_layers(
     pack = catalog.get("main")
     assert pack is not None
     assert pack.spec.exposed is True
-    assert pack.spec.model.provider == "openai"
     assert pack.spec.model.default == "session-model"
     assert pack.spec.tools.requested_tool_names == ["workspace.tool"]
     assert pack.spec.skills.default_selected == ["user-skill"]

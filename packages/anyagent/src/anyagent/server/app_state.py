@@ -8,12 +8,12 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from anyagent.agent_packs import AgentCatalog, AgentPack, load_agent_catalog, stat_config_mtimes
+from anyagent.config.agents import AgentCatalog, AgentPack, load_agent_catalog, stat_config_mtimes
+from anyagent.config.loader import EffectiveConfig, load_effective_config
 from anyagent.gateway.plugins import GatewayRegistry
 from anyagent.gateway.sequencer import KeyedSequencer
 from anyagent.mcp.auth import CredentialResolver
 from anyagent.mcp.manager import MCPManagerRegistry
-from anyagent.model_config import WorkspaceModelsConfig, load_workspace_models_config
 from anyagent.plugins import LoadedPlugin
 from anyagent.server.app_builders import _catalog_has_cold_restart_change
 from anyagent.server.config.settings import ResolvedServerStorageSettings
@@ -42,7 +42,7 @@ _LOGGER = logging.getLogger(__name__)
 class AnyAgentServerApp:
     workspace_dir: Path
     catalog: AgentCatalog
-    models_config: WorkspaceModelsConfig
+    config: EffectiveConfig
     resolved_storage: ResolvedServerStorageSettings
     storage_settings: StorageSettings
     events: EventStore
@@ -88,11 +88,11 @@ class AnyAgentServerApp:
 
     def reload_catalog(self) -> None:
         catalog = load_agent_catalog(workspace_dir=self.workspace_dir, session_config_overrides=self.session_config_overrides)
-        models_config = load_workspace_models_config(self.workspace_dir)
+        config = load_effective_config(self.workspace_dir, cli_overrides=self.config.cli_overrides)
         if not any(pack.spec.exposed for pack in catalog.packs.values()):
             raise RuntimeError("workspace must define at least one exposed agent")
         self.catalog = catalog
-        self.models_config = models_config
+        self.config = config
         self.runtime.set_catalog(catalog)
         self.manifest_cache = ManifestCache(ttl_seconds=2.0)
         self.config_mtimes = stat_config_mtimes(self.workspace_dir, self.session_config_overrides)
@@ -113,7 +113,7 @@ class AnyAgentServerApp:
                 self.config_mtimes = latest
                 return
             self.catalog = catalog
-            self.models_config = load_workspace_models_config(self.workspace_dir)
+            self.config = load_effective_config(self.workspace_dir, cli_overrides=self.config.cli_overrides)
             self.runtime.set_catalog(catalog)
             self.manifest_cache = ManifestCache(ttl_seconds=2.0)
             self.config_mtimes = latest

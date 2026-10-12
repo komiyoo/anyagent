@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from anyagent.server.db.postgres_schema import PostgresSchemaPolicy
-from anyagent.storage.settings import StorageSettings
+from anyagent.storage.settings import StorageSettings, active_storage_settings
 
 
 @dataclass(slots=True)
@@ -356,7 +356,7 @@ def _clone_json(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_redis_session_store(*, namespace: str | None = None, redis_dsn: str | None = None) -> RedisSessionStore:
-    settings = StorageSettings()
+    settings = active_storage_settings()
     effective_dsn = redis_dsn or (str(settings.redis_dsn) if settings.redis_dsn is not None else None)
     if effective_dsn is None:
         raise RuntimeError("redis session store requires REDIS_DSN")
@@ -369,7 +369,7 @@ def build_redis_session_store(*, namespace: str | None = None, redis_dsn: str | 
 
 
 def build_postgres_session_store(*, postgres_dsn: str | None = None, postgres_schema: str | None = None) -> PostgresSessionStore:
-    settings = StorageSettings()
+    settings = active_storage_settings()
     effective_dsn = postgres_dsn or (str(settings.effective_postgres_dsn) if settings.effective_postgres_dsn is not None else None)
     if effective_dsn is None:
         raise RuntimeError("postgres session store requires POSTGRES_DSN or DATABASE_URL")

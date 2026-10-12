@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from anyagent.model_catalog import PROVIDER_REGISTRY, get_provider_spec, resolve_provider_kind
+from anyagent.config.models import PROVIDER_REGISTRY, get_provider_spec, resolve_provider_kind
 
 
 def test_provider_registry_aliases_defaults_and_keys():

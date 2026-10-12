@@ -10,7 +10,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from anyagent.agent_packs import load_agent_catalog
+from anyagent.config.agents import load_agent_catalog
 from anyagent.mcp.auth import CredentialResolver
 from anyagent.plugins import load_plugins_from_roots
 from anyagent.protocol.admin_storage import (
@@ -50,7 +50,11 @@ from anyagent.server.security import (
 from anyagent.server.plugins.capabilities import build_plugin_capability_matrix
 from anyagent.server.runtime.workspace_env import load_workspace_runtime_environment
 from anyagent.tool_runtime.plugins import ToolRuntimePluginAPI
-from anyagent.tool_runtime.settings import ToolRuntimeServerConfig, build_tool_runtime_server_config
+from anyagent.tool_runtime.settings import (
+    ToolRuntimeServerConfig,
+    build_tool_runtime_server_config,
+    tool_runtime_settings_from_config,
+)
 
 
 logger = logging.getLogger("anyagent.tool_runtime")
@@ -70,8 +74,9 @@ def create_tool_runtime_app(
     config: ToolRuntimeServerConfig | None = None,
 ) -> FastAPI:
     if config is None:
-        load_workspace_runtime_environment(Path(workspace_dir).expanduser().resolve())
+        effective = load_workspace_runtime_environment(Path(workspace_dir).expanduser().resolve())
         server_config = build_tool_runtime_server_config(
+            tool_runtime_settings_from_config(effective),
             workspace_dir=workspace_dir,
             internal_key=internal_key,
             admin_api_key=admin_api_key,
@@ -391,8 +396,9 @@ async def create_tool_runtime_app_async(
     config: ToolRuntimeServerConfig | None = None,
 ) -> FastAPI:
     if config is None:
-        load_workspace_runtime_environment(Path(workspace_dir).expanduser().resolve())
+        effective = load_workspace_runtime_environment(Path(workspace_dir).expanduser().resolve())
         server_config = build_tool_runtime_server_config(
+            tool_runtime_settings_from_config(effective),
             workspace_dir=workspace_dir,
             internal_key=internal_key,
             admin_api_key=admin_api_key,

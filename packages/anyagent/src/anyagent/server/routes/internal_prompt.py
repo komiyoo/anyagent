@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from anyagent.agent_runtime import build_prompt_envelope
 from anyagent.agent_runtime.tool_loop import resolve_manifest_with_mcp
 from anyagent.gateway.session import session_partition_key
-from anyagent.model_config import apply_effective_model_to_body, resolve_effective_model_selection
+from anyagent.config.models import apply_effective_model_to_body, resolve_effective_model_selection
 from anyagent.protocol.agent_api_internal import InternalPromptBundlePreviewResponse
 from anyagent.protocol.openai_responses import AnyAgentFunctionToolParam
 from anyagent.protocol.prompt_versions import (
@@ -74,8 +74,8 @@ def create_internal_prompt_router() -> APIRouter:
             model=body.get("model"),
         )
         pack = state.require_pack(agent_id, external=True)
-        model_selection = resolve_effective_model_selection(workspace_config=state.models_config, pack=pack)
-        apply_effective_model_to_body(body=body, selection=model_selection, workspace_config=state.models_config)
+        model_selection = resolve_effective_model_selection(config=state.config, pack=pack)
+        apply_effective_model_to_body(body=body, selection=model_selection)
         session_key = resolve_session_key(
             metadata=metadata if isinstance(metadata, dict) else None,
             user=body.get("user"),

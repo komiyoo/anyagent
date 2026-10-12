@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from anyagent.agent_packs import AgentPack, AgentSkillsSpec, AgentSpec, AgentToolsSpec, MultiAgentSpec
+from anyagent.config.agents import AgentPack, AgentSkillsSpec, AgentSpec, AgentToolsSpec, MultiAgentSpec
 from anyagent.agent_runtime import build_default_environment_context_values, build_prompt_envelope
 from anyagent.agent_runtime.prompt_injection import build_agents_md_injection_text
 from anyagent.agent_runtime.tool_loop_payloads import build_tool_loop_followup_body

@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from anyagent.agent_packs import load_agent_catalog
+from anyagent.config.agents import load_agent_catalog
 from anyagent.server.app import create_app
 from anyagent.server.routes.internal_skills import create_internal_skills_router
 from anyagent.skills import load_skills_from_root
@@ -80,7 +80,15 @@ def test_default_skill_roots_use_anyagent_directory_only(tmp_path: Path) -> None
 
 async def _run_runtime_skills_list_includes_catalog_fields(tmp_path: Path) -> None:
     skill_md = _write_workspace_with_skill(tmp_path)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     runtime = app.state.anyagent.runtime
 
     response = await runtime.list_skills(agent_id="main")

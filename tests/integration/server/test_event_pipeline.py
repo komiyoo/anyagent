@@ -123,7 +123,15 @@ def test_external_response_stream_completed_event_marks_final_and_appends_done()
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_workspace(root)
-            app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+            app = create_app(
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                          },
+                      },
+                  )
             state = app.state.anyagent
 
             await state.events.mark_started(response_id="resp_integration_1")
@@ -168,7 +176,15 @@ def test_external_response_stream_filters_internal_events() -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_workspace(root)
-            app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+            app = create_app(
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                          },
+                      },
+                  )
             state = app.state.anyagent
 
             await state.events.append(
@@ -224,7 +240,15 @@ def test_update_session_snapshot_roundtrip_applies_resume_state() -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_workspace(root)
-            app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+            app = create_app(
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                          },
+                      },
+                  )
             state = app.state.anyagent
             session_partition_key = "main::sess-roundtrip"
 
@@ -292,7 +316,15 @@ def test_external_response_stream_includes_error_events() -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_workspace(root)
-            app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+            app = create_app(
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                          },
+                      },
+                  )
             state = app.state.anyagent
 
             await state.events.append(
@@ -345,7 +377,15 @@ def test_create_response_reuses_manifest_cache_within_app_boundary() -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_workspace(root)
-            app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+            app = create_app(
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                          },
+                      },
+                  )
             runtime = app.state.anyagent.runtime
             original_manifest = runtime.manifest
             calls = {"manifest": 0}
@@ -391,7 +431,15 @@ def test_create_response_emits_server_observability_lifecycle() -> None:
             original_provider_factory = server_app_module.get_default_model_provider
             server_app_module.get_default_model_provider = lambda: _NoToolProvider()
             try:
-                app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+                app = create_app(
+                          workspace_dir=root,
+                          cli_overrides={
+                              "server": {
+                                  "api_key": "user-key",
+                                  "admin_api_key": "admin-key",
+                              },
+                          },
+                      )
                 transport = httpx.ASGITransport(app=app)
                 async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
                     resp = await client.post(
@@ -428,7 +476,15 @@ def test_invalid_request_short_circuits_before_manifest_resolution() -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_workspace(root)
-            app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+            app = create_app(
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                          },
+                      },
+                  )
             runtime = app.state.anyagent.runtime
             calls = {"manifest": 0}
             original_manifest = runtime.manifest
@@ -460,7 +516,15 @@ def test_internal_events_list_and_stream_respect_last_seq_limit_and_done_status(
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_workspace(root)
-            app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+            app = create_app(
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                          },
+                      },
+                  )
             state = app.state.anyagent
             response_id = "resp_list_stream_1"
 
@@ -546,7 +610,15 @@ def test_retrieve_and_cancel_response_follow_optional_payload_semantics() -> Non
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_workspace(root)
-            app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+            app = create_app(
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                          },
+                      },
+                  )
             state = app.state.anyagent
 
             final_response_id = "resp_retrieve_final_1"
@@ -641,7 +713,15 @@ def test_create_response_reuses_session_snapshot_across_app_boundary() -> None:
             original_provider_factory = server_app_module.get_default_model_provider
             server_app_module.get_default_model_provider = lambda: provider
             try:
-                app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+                app = create_app(
+                          workspace_dir=root,
+                          cli_overrides={
+                              "server": {
+                                  "api_key": "user-key",
+                                  "admin_api_key": "admin-key",
+                              },
+                          },
+                      )
                 transport = httpx.ASGITransport(app=app)
                 async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
                     resp1 = await client.post(
@@ -686,7 +766,15 @@ def test_create_response_does_not_expose_unauthorized_exec_tool_to_provider() ->
             original_provider_factory = server_app_module.get_default_model_provider
             server_app_module.get_default_model_provider = lambda: provider
             try:
-                app = create_app(workspace_dir=root, api_key="user-key", admin_api_key="admin-key")
+                app = create_app(
+                          workspace_dir=root,
+                          cli_overrides={
+                              "server": {
+                                  "api_key": "user-key",
+                                  "admin_api_key": "admin-key",
+                              },
+                          },
+                      )
                 transport = httpx.ASGITransport(app=app)
                 async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
                     resp = await client.post(
@@ -728,11 +816,15 @@ def test_internal_tool_execute_rejects_malformed_arguments() -> None:
             root = Path(tmp)
             _write_workspace(root, requested_tool_names=["exec"], sandbox_mode="local-unsafe")
             app = create_app(
-                workspace_dir=root,
-                api_key="user-key",
-                admin_api_key="admin-key",
-                sandbox_root_dir=root / ".sandbox",
-            )
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                              "sandbox_root": root / ".sandbox",
+                          },
+                      },
+                  )
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
                 invalid_arguments = await client.post(
@@ -803,11 +895,15 @@ def test_configured_tool_policy_deny_blocks_manifest_and_execute() -> None:
                 tool_policy_lines=["  policy:", "    deny_tools: [exec]"],
             )
             app = create_app(
-                workspace_dir=root,
-                api_key="user-key",
-                admin_api_key="admin-key",
-                sandbox_root_dir=root / ".sandbox",
-            )
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                              "sandbox_root": root / ".sandbox",
+                          },
+                      },
+                  )
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
                 manifest = await client.post(
@@ -850,11 +946,15 @@ def test_agent_scoped_credential_does_not_cross_agent_boundary() -> None:
             root = Path(tmp)
             _write_workspace(root, requested_tool_names=["core.auth_echo"])
             app = create_app(
-                workspace_dir=root,
-                api_key="user-key",
-                admin_api_key="admin-key",
-                sandbox_root_dir=root / ".sandbox",
-            )
+                      workspace_dir=root,
+                      cli_overrides={
+                          "server": {
+                              "api_key": "user-key",
+                              "admin_api_key": "admin-key",
+                              "sandbox_root": root / ".sandbox",
+                          },
+                      },
+                  )
 
             async def _handler(arguments: dict, context: dict) -> str:
                 _ = arguments

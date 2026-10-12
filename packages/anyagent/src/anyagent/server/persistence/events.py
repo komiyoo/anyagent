@@ -12,7 +12,7 @@ from anyagent.observability import REPLAY_EVENT_TYPES
 from anyagent.protocol.agent_api_internal import InternalEventItem, InternalEventsListResponse
 from anyagent.protocol.responses_optional import AnyAgentResponseError
 from anyagent.server.db.postgres_schema import PostgresSchemaPolicy, ensure_postgres_schema_objects
-from anyagent.storage.settings import StorageSettings
+from anyagent.storage.settings import StorageSettings, active_storage_settings
 
 
 @dataclass(slots=True)
@@ -421,7 +421,7 @@ return 1
 
 
 def build_redis_event_store(*, namespace: str | None = None, redis_dsn: str | None = None) -> RedisEventStore:
-    settings = StorageSettings()
+    settings = active_storage_settings()
     effective_dsn = redis_dsn or (str(settings.redis_dsn) if settings.redis_dsn is not None else None)
     if effective_dsn is None:
         raise RuntimeError("redis event store requires REDIS_DSN")
@@ -794,7 +794,7 @@ class PostgresEventStore:
 
 
 def build_postgres_event_store(*, postgres_dsn: str | None = None, postgres_schema: str | None = None) -> PostgresEventStore:
-    settings = StorageSettings()
+    settings = active_storage_settings()
     effective_dsn = postgres_dsn or (str(settings.effective_postgres_dsn) if settings.effective_postgres_dsn is not None else None)
     if effective_dsn is None:
         raise RuntimeError("postgres event store requires POSTGRES_DSN or DATABASE_URL")
@@ -829,7 +829,7 @@ async def prune_expired_replay_events(
     settings: StorageSettings | None = None,
     now_ms: int | None = None,
 ) -> int:
-    retention_s = max(0, int((settings or StorageSettings()).replay_event_store_retention_s))
+    retention_s = max(0, int((settings or active_storage_settings()).replay_event_store_retention_s))
     cutoff_ms = (now_ms if now_ms is not None else _now_ms()) - (retention_s * 1000)
     prune = getattr(event_store, "prune_replay_events", None)
     if not callable(prune):

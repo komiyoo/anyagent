@@ -78,7 +78,15 @@ def test_sdk_public_types_entrypoint_exports_boundary_models() -> None:
 
 async def _run_sdk_health_and_admin_credentials_match_server(tmp_path: Path) -> None:
     _write_workspace(tmp_path)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="user-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "user-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
@@ -116,7 +124,15 @@ async def _run_sdk_health_and_admin_credentials_match_server(tmp_path: Path) -> 
 
 async def _run_sdk_observability_namespace_matches_server(tmp_path: Path) -> None:
     _write_workspace(tmp_path)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     response_id = "resp_sdk_observe"
     trace_id = "trace-sdk"
     await app.state.anyagent.run_store.create_started(
@@ -165,7 +181,15 @@ async def _run_sdk_observability_namespace_matches_server(tmp_path: Path) -> Non
 
 async def _run_sdk_response_replay_helpers_match_server(tmp_path: Path) -> None:
     _write_workspace(tmp_path)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     response_id = "resp_sdk_replay"
     await app.state.anyagent.events.mark_started(response_id=response_id)
     await app.state.anyagent.events.append(
@@ -371,7 +395,15 @@ dependencies:
         + "\n",
         encoding="utf-8",
     )
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
@@ -423,7 +455,15 @@ async def _run_sdk_admin_skill_update_helpers_match_server(tmp_path: Path, monke
         return Completed()
 
     monkeypatch.setattr("anyagent.server.handlers.skill_install.subprocess.run", fake_run)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:

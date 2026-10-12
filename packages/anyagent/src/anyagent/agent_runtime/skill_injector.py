@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from anyagent.env import getenv
+from anyagent.config.env import getenv
 from anyagent.protocol.context_fragments import render_context_fragment
 from anyagent.skills import SkillEnablement
 from anyagent.skills.models import SkillPackage

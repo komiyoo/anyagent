@@ -4,11 +4,14 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from anyagent.agent_packs import AgentPack
+from anyagent.config.agents import AgentPack
+from anyagent.config.loader import EffectiveConfig
+from anyagent.config.models import resolve_effective_model_selection
 from anyagent.protocol.agent_api_internal import (
     InternalAgentDetailResponse,
     InternalAgentListItem,
     InternalAgentMCPConfig,
+    InternalAgentModelConfig,
     InternalAgentPromptRef,
     InternalAgentSkillsConfig,
     InternalAgentToolsConfig,
@@ -45,7 +48,12 @@ def _mcp_server_labels(pack: AgentPack) -> list[str]:
     return sorted(label for label, cfg in pack.mcp_config.mcpServers.items() if cfg.enabled)
 
 
-def _agent_list_item(pack: AgentPack) -> InternalAgentListItem:
+def _resolved_model(pack: AgentPack, config: EffectiveConfig):
+    return resolve_effective_model_selection(pack=pack, config=config)
+
+
+def _agent_list_item(pack: AgentPack, config: EffectiveConfig) -> InternalAgentListItem:
+    selection = _resolved_model(pack, config)
     return InternalAgentListItem(
         agent_id=pack.agent_id,
         name=pack.agent_id,
@@ -55,9 +63,8 @@ def _agent_list_item(pack: AgentPack) -> InternalAgentListItem:
         workspace_prompt_sha256=pack.workspace_agents_md_sha256,
         sandbox_mode=pack.spec.sandbox.mode,
         model_default=pack.spec.model.default,
-        model_provider=pack.spec.model.provider,
-        model_base_url_env=pack.spec.model.base_url_env,
-        model_api_key_env=pack.spec.model.api_key_env,
+        model_provider=selection.provider_name,
+        model=selection.model,
         requested_tool_names=list(pack.spec.tools.requested_tool_names),
         default_selected_skill_ids=list(pack.spec.skills.default_selected or []),
         spawn_allow_agent_ids=list(pack.spec.multiagent.spawn_allow_agent_ids or []),
@@ -66,7 +73,7 @@ def _agent_list_item(pack: AgentPack) -> InternalAgentListItem:
     )
 
 
-def _agent_detail_response(pack: AgentPack, *, include_prompt: bool) -> InternalAgentDetailResponse:
+def _agent_detail_response(pack: AgentPack, *, include_prompt: bool, config: EffectiveConfig) -> InternalAgentDetailResponse:
     agents_md = _prompt_ref(
         path=pack.agents_md_path,
         sha256=pack.agents_md_sha256,
@@ -75,6 +82,7 @@ def _agent_detail_response(pack: AgentPack, *, include_prompt: bool) -> Internal
     )
     if agents_md is None:
         raise HTTPException(status_code=500, detail=f"agent prompt metadata missing: {pack.agent_id}")
+    selection = _resolved_model(pack, config)
     return InternalAgentDetailResponse(
         agent_id=pack.agent_id,
         name=pack.agent_id,
@@ -87,7 +95,11 @@ def _agent_detail_response(pack: AgentPack, *, include_prompt: bool) -> Internal
             text=pack.workspace_agents_md_text,
             include_prompt=include_prompt,
         ),
-        model=pack.spec.model.model_dump(exclude_none=True),
+        model=InternalAgentModelConfig(
+            default=pack.spec.model.default,
+            provider=selection.provider_name,
+            model=selection.model,
+        ),
         tools=InternalAgentToolsConfig(
             requested_tool_names=list(pack.spec.tools.requested_tool_names),
             allow_tools=list(pack.spec.tools.policy.allow_tools) if pack.spec.tools.policy and pack.spec.tools.policy.allow_tools else None,

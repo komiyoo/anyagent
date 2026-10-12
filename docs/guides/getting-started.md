@@ -68,7 +68,7 @@ multiagent:
   spawn_allow_agent_ids: [main]
 ```
 
-- 字段定义以 `packages/anyagent/src/anyagent/agent_packs.py` 的 `AgentSpec` 为准，配置分层与 merge 规则见 [agent-packs-and-runtime-config.md](../architecture/runtime/agent-packs-and-runtime-config.md)。
+- 字段定义以 `packages/anyagent/src/anyagent/config/agents.py` 的 `AgentSpec` 为准，配置分层与 merge 规则见 [agent-packs-and-runtime-config.md](../architecture/runtime/agent-packs-and-runtime-config.md)。
 - 只有 `exec` 这类命令执行工具需要开启沙箱，见 [sandbox-security.md](../security/sandbox-security.md)。
 - 要给 agent 受控的命令行能力而不是裸 `exec`，用 `tools.cli` 定义 CLI profile，见 [tool-runtime-contract.md](../architecture/tool-runtime/tool-runtime-contract.md#cli-profile-工具)。
 

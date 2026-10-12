@@ -150,8 +150,7 @@ export function EffectiveConfigPanel({
               model: agentDetail?.model ?? {
                 provider: agentDetail?.model_provider,
                 default: agentDetail?.model_default,
-                api_key_env: agentDetail?.model_api_key_env,
-                base_url_env: agentDetail?.model_base_url_env,
+                model: agentDetail?.model,
               },
               sandbox_mode: agentDetail?.sandbox?.mode ?? agentDetail?.sandbox_mode,
               requested_tool_names: agentDetail?.tools?.requested_tool_names ?? agentDetail?.requested_tool_names,

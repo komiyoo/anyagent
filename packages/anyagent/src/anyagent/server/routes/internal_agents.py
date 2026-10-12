@@ -20,7 +20,7 @@ def create_internal_agents_router() -> APIRouter:
         state = req.app.state.anyagent
         _require_user_auth(state, authorization)
         agents = [
-            _agent_list_item(pack)
+            _agent_list_item(pack, state.config)
             for pack in sorted(state.catalog.packs.values(), key=lambda item: item.agent_id)
             if include_unexposed or pack.spec.exposed
         ]
@@ -36,7 +36,7 @@ def create_internal_agents_router() -> APIRouter:
         state = req.app.state.anyagent
         _require_user_auth(state, authorization)
         pack = state.require_pack(agent_id, external=True)
-        resp = _agent_detail_response(pack, include_prompt=include_prompt)
+        resp = _agent_detail_response(pack, include_prompt=include_prompt, config=state.config)
         return JSONResponse(resp.model_dump(exclude_none=True))
 
     return router

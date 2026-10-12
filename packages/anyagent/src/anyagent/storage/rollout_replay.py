@@ -36,8 +36,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def resolve_rollout_root_dir(*, root_dir: str | None, workspace_dir: str | None) -> Path:
-    """Resolve rollout root directory using args/env defaults."""
-    rd = (root_dir or "").strip() or (os.getenv("ROLLOUT_ROOT_DIR") or "").strip()
+    """Resolve rollout root directory using args, then the effective config."""
+    rd = (root_dir or "").strip()
+    if not rd:
+        from anyagent.config.loader import load_effective_config
+
+        configured = load_effective_config(_resolve_workspace_dir(workspace_dir)).storage.rollout_root_dir
+        rd = (configured or "").strip()
     if rd:
         p = Path(rd).expanduser()
         if p.is_absolute():

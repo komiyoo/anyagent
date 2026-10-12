@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Literal, Protocol
 
-from anyagent.storage.settings import StorageSettings
+from anyagent.storage.settings import StorageSettings, active_storage_settings
 
 
 @dataclass(slots=True, frozen=True)
@@ -385,7 +385,7 @@ def build_session_lock_service(
     if backend == "redis":
         if client is not None:
             return ExternalSessionLockService(client=client)
-        settings = StorageSettings()
+        settings = active_storage_settings()
         if settings.redis_dsn is None:
             raise RuntimeError("redis lock backend requires REDIS_DSN")
         redis_client = RedisSessionLockClient(

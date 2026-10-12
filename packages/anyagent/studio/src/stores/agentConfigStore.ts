@@ -63,8 +63,6 @@ export const useAgentConfigStore = create<AgentConfigStore>((set) => ({
       agentExposed: agentDetail?.exposed ?? true,
       agentModelDefault: agentDetail?.model?.default ?? agentDetail?.model_default ?? fallbackModel,
       agentModelProvider: agentDetail?.model?.provider ?? agentDetail?.model_provider ?? "openai",
-      agentModelBaseUrlEnv: agentDetail?.model?.base_url_env ?? agentDetail?.model_base_url_env ?? "OPENAI_BASE_URL",
-      agentModelApiKeyEnv: agentDetail?.model?.api_key_env ?? agentDetail?.model_api_key_env ?? "OPENAI_API_KEY",
       agentSandboxMode: agentDetail?.sandbox?.mode ?? agentDetail?.sandbox_mode ?? "disabled",
       agentToolsText: (agentDetail?.tools?.requested_tool_names ?? agentDetail?.requested_tool_names ?? []).join(", "),
       agentSpawnText: (agentDetail?.multiagent?.spawn_allow_agent_ids ?? []).join(", "),

@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from anyagent.agent_packs import AgentPack
+from anyagent.config.agents import AgentPack
 from anyagent.agent_runtime import (
     SkillInjector,
     build_prompt_envelope,

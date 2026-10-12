@@ -26,7 +26,7 @@ Use this skill as the repo-level onboarding and implementation guide for buildin
 3. For exact framework behavior, follow these source paths in this repo:
    - Workspace and CLI: `docs/guides/getting-started.md`, `packages/anyagent/src/anyagent/cli.py`
    - Serving, storage, observability, credential backends, plugins: `docs/guides/deployment.md`
-   - Agent packs/config merge: `docs/architecture/runtime/agent-packs-and-runtime-config.md`, `packages/anyagent/src/anyagent/agent_packs.py`
+   - Agent packs/config merge: `docs/architecture/runtime/agent-packs-and-runtime-config.md`, `packages/anyagent/src/anyagent/config/agents.py`
    - Server and SDK API: `docs/architecture/api/responses-api-sdk-and-server.md`
    - Agent loop / models.yaml: `docs/architecture/runtime/agent-loop.md`
    - Skills: `docs/architecture/skills/skills-dynamic-disclosure.md`

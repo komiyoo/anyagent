@@ -1,5 +1,5 @@
 {
-  "schema_version": "2026-10-07",
+  "schema_version": "2026-10-12",
   "description": "Minimum SDK conformance surface for the single-repo multi-package boundary.",
   "operations": [
     {

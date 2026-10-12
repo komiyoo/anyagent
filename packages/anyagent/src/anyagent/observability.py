@@ -11,7 +11,6 @@ from urllib import request
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from anyagent.env import getenv
 from anyagent.protocol.observability import ObservabilityCategory, ObservabilityEvent, ObservabilityLevel
 
 
@@ -244,11 +243,11 @@ def redact_replay_payload(value: Any) -> Any:
     return _redact_replay_payload(value)
 
 
-def configure_observability_from_env() -> None:
-    """Configure logging and optional third-party HTTP sink from environment."""
+def configure_observability(settings: Any) -> None:
+    """Configure logging and optional sinks from the observability config section."""
 
-    log_format = (getenv("LOG_FORMAT", "text") or "text").strip().lower()
-    log_level = (getenv("LOG_LEVEL", "INFO") or "INFO").strip().upper() or "INFO"
+    log_format = (getattr(settings, "log_format", None) or "text").strip().lower()
+    log_level = (getattr(settings, "log_level", None) or "INFO").strip().upper() or "INFO"
     level = getattr(logging, log_level, logging.INFO)
     root = logging.getLogger("anyagent")
     root.setLevel(level)
@@ -261,20 +260,28 @@ def configure_observability_from_env() -> None:
         root.addHandler(handler)
 
     sinks: list[ObservabilitySink] = [LoggingSink()]
-    url = (getenv("OBSERVABILITY_HTTP_URL") or "").strip()
+    url = (getattr(settings, "http_url", None) or "").strip()
     if url:
-        headers = _parse_header_env(getenv("OBSERVABILITY_HTTP_HEADERS") or "")
+        headers = _parse_header_env(getattr(settings, "http_headers", None) or "")
         sinks.append(HttpJsonSink(url=url, headers=headers))
     _EMITTER.configure(sinks)
 
     replay_sinks: list[ReplayObservabilitySink] = []
-    replay_stdout = (getenv("REPLAY_OBSERVABILITY_STDOUT") or "").strip().lower()
+    replay_stdout = (getattr(settings, "replay_stdout", None) or "").strip().lower()
     if replay_stdout in {"1", "true", "yes", "on"}:
         replay_sinks.append(StdoutJsonReplaySink())
-    replay_file = (getenv("REPLAY_OBSERVABILITY_FILE") or "").strip()
+    replay_file = (getattr(settings, "replay_file", None) or "").strip()
     if replay_file:
         replay_sinks.append(FileJsonlReplaySink(replay_file))
     _REPLAY_EMITTER.configure(replay_sinks)
+
+
+def configure_observability_from_env() -> None:
+    """Load the effective config and configure observability from it."""
+
+    from anyagent.config.loader import load_effective_config
+
+    configure_observability(load_effective_config(".").observability)
 
 
 class _JsonFormatter(logging.Formatter):

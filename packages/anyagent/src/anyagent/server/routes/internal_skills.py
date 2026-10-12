@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse, Response
 
-from anyagent.agent_packs import AgentCatalog
+from anyagent.config.agents import AgentCatalog
 from anyagent.protocol.agent_api_internal import (
     InternalSkillListItem,
     InternalSkillLoadError,

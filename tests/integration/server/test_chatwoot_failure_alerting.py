@@ -50,11 +50,17 @@ async def _run_chatwoot_platform_event_persist_failure_emits_warning(tmp_path: P
     monkeypatch.setenv("CHATWOOT_CREDENTIAL_KIND", "webhook_secret")
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     state = app.state.anyagent
 
     # Force the platform-event append to fail so the warning path is exercised.
@@ -150,11 +156,17 @@ async def _run_chatwoot_empty_agent_response_emits_background_failed(tmp_path: P
     )
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        plugin_roots=[REFERENCE_PLUGIN_ROOT],
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+                  "plugins": {
+                      "roots": [REFERENCE_PLUGIN_ROOT],
+                  },
+              },
+          )
     state = app.state.anyagent
 
     emitter = get_observability_emitter()

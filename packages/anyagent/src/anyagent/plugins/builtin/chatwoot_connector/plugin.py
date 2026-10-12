@@ -21,7 +21,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
-from anyagent.env import getenv
+from anyagent.config.env import getenv
 from anyagent.gateway.plugins import WebhookRoute
 from anyagent.observability import emit_observability_event
 from anyagent.plugins.hooks import HookContext

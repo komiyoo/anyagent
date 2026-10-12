@@ -70,7 +70,15 @@ async def _run_core_server_admin_credentials_capabilities_endpoint(tmp_path: Pat
     _write_main_agent(tmp_path)
     monkeypatch.setenv("MCP_CREDENTIAL_STORE_BACKEND", "file-write")
     monkeypatch.setenv("MCP_CREDENTIAL_STORE_FILE_ROOT", ".anyagent/credentials")
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     assert isinstance(app.state.anyagent.mcp_credentials, FileBackend)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:

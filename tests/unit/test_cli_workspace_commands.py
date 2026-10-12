@@ -6,9 +6,9 @@ import json
 import pytest
 import yaml
 
-from anyagent.agent_packs import AgentPackError, load_agent_catalog
+from anyagent.config.agents import load_agent_catalog
 from anyagent.cli import main
-from anyagent.model_config import WorkspaceModelsConfig
+from anyagent.config.schema import WorkspaceConfig
 from anyagent.protocol.admin_storage import StorageHealthResponse
 from anyagent.protocol.plugins import PluginCatalogResponse
 from anyagent.protocol.workspace import WorkspaceDoctorReport, WorkspaceInitResult
@@ -121,10 +121,11 @@ def test_dev_serve_uses_local_defaults_and_prints_urls(monkeypatch, tmp_path, ca
     app_kwargs = calls["app_kwargs"]
     assert isinstance(app_kwargs, dict)
     assert app_kwargs["workspace_dir"] == str(tmp_path)
-    assert app_kwargs["api_key"] == "anyagent-dev-key"
-    assert app_kwargs["admin_api_key"] == "anyagent-dev-key"
-    assert app_kwargs["storage_profile"] == "postgres"
-    assert app_kwargs["enable_studio"] is True
+    config = app_kwargs["config"]
+    assert config.server.api_key == "anyagent-dev-key"
+    assert config.server.admin_api_key == "anyagent-dev-key"
+    assert config.storage.profile == "postgres"
+    assert config.server.enable_studio is True
     uvicorn_call = calls["uvicorn"]
     assert isinstance(uvicorn_call, dict)
     assert uvicorn_call["host"] == "127.0.0.1"
@@ -158,11 +159,11 @@ def test_config_init_creates_models_config_and_agent_selection(tmp_path, capsys)
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is True
-    models = WorkspaceModelsConfig.model_validate(
-        yaml.safe_load((tmp_path / "models.yaml").read_text(encoding="utf-8"))
+    document = WorkspaceConfig.model_validate(
+        yaml.safe_load((tmp_path / ".anyagent" / "anyagent.yaml").read_text(encoding="utf-8"))
     )
-    assert models.default_model == "fast"
-    assert models.models["fast"].model == "gpt-4.1-mini"
+    assert document.models.default == "fast"
+    assert document.models.aliases["fast"].model == "gpt-4.1-mini"
     agent_yaml = (tmp_path / ".anyagent" / "agents" / "delivery-agent" / "agent.yaml").read_text(encoding="utf-8")
     assert "model:\n  default: fast\n" in agent_yaml
     assert "    - core.web_fetch\n" in agent_yaml
@@ -191,13 +192,13 @@ def test_init_non_main_agent_creates_default_main_entrypoint(tmp_path, capsys) -
     assert "reddit-collector" in main_instructions
 
 
-def test_doctor_rejects_missing_workspace(tmp_path, capsys) -> None:
+def test_doctor_accepts_empty_workspace_with_builtin_main(tmp_path, capsys) -> None:
     rc = main(["doctor", "--workspace", str(tmp_path), "--json"])
 
-    assert rc == 1
+    assert rc == 0
     payload = WorkspaceDoctorReport.model_validate_json(capsys.readouterr().out)
-    assert payload.ok is False
-    assert payload.findings[0].code == "missing_agent_root"
+    assert payload.ok is True
+    assert any(item.code == "builtin_main_agent" for item in payload.findings)
 
 
 def test_doctor_reports_cli_profile_warnings_and_conflicts(tmp_path, capsys) -> None:
@@ -301,8 +302,12 @@ def test_agent_catalog_ignores_legacy_agents_directory(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(AgentPackError, match=r"missing agent packs root: .*\.anyagent/agents"):
-        load_agent_catalog(workspace_dir=tmp_path)
+    catalog = load_agent_catalog(workspace_dir=tmp_path)
+
+    pack = catalog.get("main")
+    assert pack is not None
+    assert pack.builtin is True
+    assert pack.agents_md_text != "legacy prompt\n"
 
 
 def test_plugin_catalog_cli_reads_admin_api(monkeypatch, capsys) -> None:

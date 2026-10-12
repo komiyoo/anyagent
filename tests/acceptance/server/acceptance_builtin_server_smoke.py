@@ -207,11 +207,15 @@ async def _run_builtin_server_exec_and_events_smoke(*, tmp_path: Path, monkeypat
     _write_workspace(tmp_path)
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -323,11 +327,15 @@ async def _run_builtin_server_ignores_caller_policy_for_exec(*, tmp_path: Path, 
 
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _ObserveProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -364,7 +372,15 @@ def test_builtin_server_opensandbox_requires_base_url(tmp_path: Path, monkeypatc
     _write_workspace_opensandbox(tmp_path)
     monkeypatch.delenv("OPENSANDBOX_BASE_URL", raising=False)
     try:
-        create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+        create_app(
+            workspace_dir=tmp_path,
+            cli_overrides={
+                "server": {
+                    "api_key": "user-key",
+                    "admin_api_key": "admin-key",
+                },
+            },
+        )
     except RuntimeError as e:
         assert "opensandbox backend requires OPENSANDBOX_BASE_URL" in str(e)
         return
@@ -398,11 +414,15 @@ async def _run_builtin_server_nonstream_best_effort_cancel(*, tmp_path: Path, mo
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _BlockingProvider())
     monkeypatch.setattr("anyagent.server.routes.responses.uuid.uuid4", lambda: type("_U", (), {"hex": "canceltest"})())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
@@ -442,11 +462,15 @@ async def _run_internal_events_stream_replays_and_tails(*, tmp_path: Path, monke
     _write_workspace(tmp_path)
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     response_id = "resp_event_stream"
     await app.state.anyagent.events.mark_started(response_id=response_id)
     await app.state.anyagent.run_store.create_started(
@@ -504,11 +528,15 @@ async def _run_internal_tool_cancel_cancels_active_exec(*, tmp_path: Path, monke
     _write_workspace(tmp_path)
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
@@ -554,11 +582,15 @@ async def _run_internal_tool_execute_idempotent_after_completion(*, tmp_path: Pa
     _write_workspace(tmp_path)
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     req_json = {
         "agent_id": "main",
@@ -590,11 +622,15 @@ async def _run_internal_tool_execute_idempotent_while_running(*, tmp_path: Path,
     _write_workspace(tmp_path)
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     req_json = {
         "agent_id": "main",
@@ -635,11 +671,15 @@ async def _run_internal_tools_execute_returns_409_on_toolset_version_mismatch(*,
     _write_workspace(tmp_path)
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
         resp = await client.post(
@@ -671,11 +711,15 @@ async def _run_agent_loop_retries_once_on_toolset_version_mismatch(*, tmp_path: 
     _write_workspace(tmp_path)
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
 
     runtime = app.state.anyagent.runtime
     original_manifest = runtime.manifest
@@ -719,11 +763,15 @@ async def _run_manifest_cache_hits_within_ttl(*, tmp_path: Path, monkeypatch) ->
     _write_workspace(tmp_path)
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     runtime = app.state.anyagent.runtime
     original_manifest = runtime.manifest
     calls = {"manifest": 0}
@@ -793,11 +841,15 @@ async def _run_nonstream_idempotency_returns_cached_final_response(*, tmp_path: 
     provider = _SimpleFinalProvider()
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: provider)
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     req_json = {"model": "gpt-4o-mini", "input": "hello", "metadata": {"session_key": "sess-idem-api"}}
     headers = {"Authorization": "Bearer user-key", "Idempotency-Key": "idem-1"}
@@ -818,11 +870,15 @@ async def _run_stream_idempotency_replays_persisted_events(*, tmp_path: Path, mo
     _write_workspace(tmp_path)
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _FakeProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     headers = {"Authorization": "Bearer user-key", "Idempotency-Key": "idem-stream-1"}
     req_json = {
@@ -886,11 +942,15 @@ async def _run_session_runtime_config_reused_across_requests(*, tmp_path: Path, 
 
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
         resp1 = await client.post(
@@ -922,11 +982,15 @@ async def _run_admin_storage_health_reports_backends(*, tmp_path: Path, monkeypa
     monkeypatch.setattr("anyagent.server.handlers.storage_health._check_postgres_connection", lambda *_args, **_kwargs: asyncio.sleep(0, result=True))
     monkeypatch.setattr("anyagent.server.handlers.storage_health._check_redis_connection", lambda *_args, **_kwargs: asyncio.sleep(0, result=True))
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
         resp = await client.get("/admin/storage/health", headers={"Authorization": "Bearer admin-key"})
@@ -987,14 +1051,20 @@ def test_postgres_store_requires_migration_first_live(tmp_path: Path, monkeypatc
     monkeypatch.setenv("POSTGRES_SCHEMA_POLICY", "migrate")
     monkeypatch.setenv("REDIS_DSN", redis_dsn.strip())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="inmemory",
-        run_store_backend="inmemory",
-        session_store_backend="external",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+                  "storage": {
+                      "event_store_backend": "inmemory",
+                      "run_store_backend": "inmemory",
+                      "session_store_backend": "external",
+                  },
+              },
+          )
 
     async def _check() -> None:
         with pytest.raises(RuntimeError, match="storage migrate"):
@@ -1045,11 +1115,15 @@ async def _run_session_previous_response_id_injected_from_snapshot(*, tmp_path: 
 
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
         resp1 = await client.post(
@@ -1580,14 +1654,20 @@ def test_create_app_storage_mode_external_with_store_overrides_uses_redis_lock(t
     monkeypatch.setenv("STORAGE_MODE", "external")
     monkeypatch.setenv("REDIS_DSN", "redis://127.0.0.1:6379/0")
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="inmemory",
-        run_store_backend="inmemory",
-        session_store_backend="inmemory",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+                  "storage": {
+                      "event_store_backend": "inmemory",
+                      "run_store_backend": "inmemory",
+                      "session_store_backend": "inmemory",
+                  },
+              },
+          )
     assert isinstance(app.state.anyagent.events, InMemoryEventStore)
     assert isinstance(app.state.anyagent.run_store, InMemoryRunStore)
     assert isinstance(app.state.anyagent.session_store, InMemorySessionStore)
@@ -1598,14 +1678,20 @@ def test_create_app_uses_redis_event_store_backend_from_env(tmp_path: Path, monk
     _write_workspace(tmp_path)
     monkeypatch.setenv("REDIS_DSN", "redis://127.0.0.1:6379/0")
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="external",
-        run_store_backend="inmemory",
-        session_store_backend="inmemory",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+                  "storage": {
+                      "event_store_backend": "external",
+                      "run_store_backend": "inmemory",
+                      "session_store_backend": "inmemory",
+                  },
+              },
+          )
     assert isinstance(app.state.anyagent.events, RedisEventStore)
 
 
@@ -1614,14 +1700,20 @@ def test_create_app_uses_cached_run_store_when_postgres_available(tmp_path: Path
     monkeypatch.setenv("REDIS_DSN", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("POSTGRES_DSN", "postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent")
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="inmemory",
-        run_store_backend="external",
-        session_store_backend="inmemory",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+                  "storage": {
+                      "event_store_backend": "inmemory",
+                      "run_store_backend": "external",
+                      "session_store_backend": "inmemory",
+                  },
+              },
+          )
     assert isinstance(app.state.anyagent.run_store, CachedRunStore)
 
 
@@ -1630,14 +1722,20 @@ def test_create_app_uses_cached_event_store_when_postgres_available(tmp_path: Pa
     monkeypatch.setenv("REDIS_DSN", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("POSTGRES_DSN", "postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent")
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="external",
-        run_store_backend="inmemory",
-        session_store_backend="inmemory",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+                  "storage": {
+                      "event_store_backend": "external",
+                      "run_store_backend": "inmemory",
+                      "session_store_backend": "inmemory",
+                  },
+              },
+          )
     assert isinstance(app.state.anyagent.events, CachedEventStore)
 
 
@@ -1645,14 +1743,20 @@ def test_create_app_uses_redis_session_store_backend_from_env(tmp_path: Path, mo
     _write_workspace(tmp_path)
     monkeypatch.setenv("REDIS_DSN", "redis://127.0.0.1:6379/0")
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="inmemory",
-        run_store_backend="inmemory",
-        session_store_backend="external",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+                  "storage": {
+                      "event_store_backend": "inmemory",
+                      "run_store_backend": "inmemory",
+                      "session_store_backend": "external",
+                  },
+              },
+          )
     assert isinstance(app.state.anyagent.session_store, RedisSessionStore)
 
 
@@ -1661,14 +1765,20 @@ def test_create_app_uses_cached_session_store_when_postgres_available(tmp_path: 
     monkeypatch.setenv("REDIS_DSN", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("POSTGRES_DSN", "postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent")
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="inmemory",
-        run_store_backend="inmemory",
-        session_store_backend="external",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+                  "storage": {
+                      "event_store_backend": "inmemory",
+                      "run_store_backend": "inmemory",
+                      "session_store_backend": "external",
+                  },
+              },
+          )
     assert isinstance(app.state.anyagent.session_store, CachedSessionStore)
 
 
@@ -1676,14 +1786,20 @@ def test_create_app_uses_redis_run_store_backend_from_env(tmp_path: Path, monkey
     _write_workspace(tmp_path)
     monkeypatch.setenv("REDIS_DSN", "redis://127.0.0.1:6379/0")
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="inmemory",
-        run_store_backend="external",
-        session_store_backend="inmemory",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+                  "storage": {
+                      "event_store_backend": "inmemory",
+                      "run_store_backend": "external",
+                      "session_store_backend": "inmemory",
+                  },
+              },
+          )
     assert isinstance(app.state.anyagent.run_store, RedisRunStore)
 
 
@@ -1693,11 +1809,15 @@ def test_create_app_storage_mode_external_without_store_overrides_uses_redis_bac
     monkeypatch.setenv("REDIS_DSN", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("POSTGRES_DSN", "postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent")
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     assert isinstance(app.state.anyagent.events, CachedEventStore)
     assert isinstance(app.state.anyagent.run_store, CachedRunStore)
     assert isinstance(app.state.anyagent.session_store, CachedSessionStore)
@@ -1710,11 +1830,15 @@ def test_create_app_storage_mode_external_postgres_only_uses_postgres_stores_and
     monkeypatch.setenv("POSTGRES_DSN", "postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent")
     monkeypatch.delenv("REDIS_DSN", raising=False)
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     assert isinstance(app.state.anyagent.events, PostgresEventStore)
     assert isinstance(app.state.anyagent.run_store, PostgresRunStore)
     assert isinstance(app.state.anyagent.session_store, PostgresSessionStore)
@@ -1805,11 +1929,15 @@ def test_create_app_uses_redis_session_lock_backend_from_env(tmp_path: Path, mon
     monkeypatch.setenv("REDIS_DSN", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("REDIS_NAMESPACE", "demo")
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     service = app.state.anyagent.session_lock_service
     assert isinstance(service, ExternalSessionLockService)
     client = service._client
@@ -1880,11 +2008,15 @@ async def _run_session_redis_lease_active_during_inflight_request_live(
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     session_key = "sess-session-redis-live"
     spk = f"main::{session_key}"
@@ -1969,15 +2101,21 @@ async def _run_session_redis_session_store_roundtrip_live(
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="inmemory",
-        run_store_backend="inmemory",
-        session_store_backend="external",
-        session_lock_backend="redis",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+                  "storage": {
+                      "event_store_backend": "inmemory",
+                      "run_store_backend": "inmemory",
+                      "session_store_backend": "external",
+                      "session_lock_backend": "redis",
+                  },
+              },
+          )
     assert isinstance(app.state.anyagent.session_store, RedisSessionStore)
     transport = httpx.ASGITransport(app=app)
     session_key = "sess-session-redis-store-live"
@@ -2066,15 +2204,21 @@ async def _run_session_cached_store_pg_primary_redis_hot_roundtrip_live(
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app1 = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="inmemory",
-        run_store_backend="inmemory",
-        session_store_backend="external",
-        session_lock_backend="redis",
-    )
+               workspace_dir=tmp_path,
+               cli_overrides={
+                   "server": {
+                       "api_key": "user-key",
+                       "admin_api_key": "admin-key",
+                       "sandbox_root": tmp_path / ".sandbox",
+                   },
+                   "storage": {
+                       "event_store_backend": "inmemory",
+                       "run_store_backend": "inmemory",
+                       "session_store_backend": "external",
+                       "session_lock_backend": "redis",
+                   },
+               },
+           )
     assert isinstance(app1.state.anyagent.session_store, CachedSessionStore)
     transport1 = httpx.ASGITransport(app=app1)
     session_key = "sess-pg-primary-live"
@@ -2099,15 +2243,21 @@ async def _run_session_cached_store_pg_primary_redis_hot_roundtrip_live(
         await redis.aclose()
 
     app2 = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="inmemory",
-        run_store_backend="inmemory",
-        session_store_backend="external",
-        session_lock_backend="redis",
-    )
+               workspace_dir=tmp_path,
+               cli_overrides={
+                   "server": {
+                       "api_key": "user-key",
+                       "admin_api_key": "admin-key",
+                       "sandbox_root": tmp_path / ".sandbox",
+                   },
+                   "storage": {
+                       "event_store_backend": "inmemory",
+                       "run_store_backend": "inmemory",
+                       "session_store_backend": "external",
+                       "session_lock_backend": "redis",
+                   },
+               },
+           )
     transport2 = httpx.ASGITransport(app=app2)
     async with httpx.AsyncClient(transport=transport2, base_url="http://testserver", timeout=5.0) as client:
         resp2 = await client.post(
@@ -2191,15 +2341,21 @@ async def _run_pg_redis_session_run_event_replay_contract_live(
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app1 = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="external",
-        run_store_backend="external",
-        session_store_backend="external",
-        session_lock_backend="redis",
-    )
+               workspace_dir=tmp_path,
+               cli_overrides={
+                   "server": {
+                       "api_key": "user-key",
+                       "admin_api_key": "admin-key",
+                       "sandbox_root": tmp_path / ".sandbox",
+                   },
+                   "storage": {
+                       "event_store_backend": "external",
+                       "run_store_backend": "external",
+                       "session_store_backend": "external",
+                       "session_lock_backend": "redis",
+                   },
+               },
+           )
     assert isinstance(app1.state.anyagent.events, CachedEventStore)
     assert isinstance(app1.state.anyagent.run_store, CachedRunStore)
     assert isinstance(app1.state.anyagent.session_store, CachedSessionStore)
@@ -2217,15 +2373,21 @@ async def _run_pg_redis_session_run_event_replay_contract_live(
         response_id = resp1.json()["id"]
 
     app2 = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="external",
-        run_store_backend="external",
-        session_store_backend="external",
-        session_lock_backend="redis",
-    )
+               workspace_dir=tmp_path,
+               cli_overrides={
+                   "server": {
+                       "api_key": "user-key",
+                       "admin_api_key": "admin-key",
+                       "sandbox_root": tmp_path / ".sandbox",
+                   },
+                   "storage": {
+                       "event_store_backend": "external",
+                       "run_store_backend": "external",
+                       "session_store_backend": "external",
+                       "session_lock_backend": "redis",
+                   },
+               },
+           )
     assert isinstance(app2.state.anyagent.events, CachedEventStore)
     assert isinstance(app2.state.anyagent.run_store, CachedRunStore)
     assert isinstance(app2.state.anyagent.session_store, CachedSessionStore)
@@ -2321,15 +2483,21 @@ async def _run_event_store_redis_roundtrip_live(
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app1 = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="external",
-        run_store_backend="inmemory",
-        session_store_backend="inmemory",
-        session_lock_backend="redis",
-    )
+               workspace_dir=tmp_path,
+               cli_overrides={
+                   "server": {
+                       "api_key": "user-key",
+                       "admin_api_key": "admin-key",
+                       "sandbox_root": tmp_path / ".sandbox",
+                   },
+                   "storage": {
+                       "event_store_backend": "external",
+                       "run_store_backend": "inmemory",
+                       "session_store_backend": "inmemory",
+                       "session_lock_backend": "redis",
+                   },
+               },
+           )
     if postgres_dsn and postgres_dsn.strip():
         assert isinstance(app1.state.anyagent.events, CachedEventStore)
     transport1 = httpx.ASGITransport(app=app1)
@@ -2343,14 +2511,20 @@ async def _run_event_store_redis_roundtrip_live(
         response_id = resp.json()["id"]
 
     app2 = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="external",
-        run_store_backend="inmemory",
-        session_store_backend="inmemory",
-    )
+               workspace_dir=tmp_path,
+               cli_overrides={
+                   "server": {
+                       "api_key": "user-key",
+                       "admin_api_key": "admin-key",
+                       "sandbox_root": tmp_path / ".sandbox",
+                   },
+                   "storage": {
+                       "event_store_backend": "external",
+                       "run_store_backend": "inmemory",
+                       "session_store_backend": "inmemory",
+                   },
+               },
+           )
     if postgres_dsn and postgres_dsn.strip():
         assert isinstance(app2.state.anyagent.events, CachedEventStore)
     listed = await app2.state.anyagent.events.list_events(response_id=response_id, last_seq=0, limit=50)
@@ -2418,12 +2592,18 @@ async def _run_redis_store_ttl_policy_live(
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        storage_mode="external",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+                  "storage": {
+                      "mode": "external",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     headers = {"Authorization": "Bearer user-key", "Idempotency-Key": "idem-ttl-live-1"}
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
@@ -2522,15 +2702,21 @@ async def _run_run_store_redis_idempotency_roundtrip_live(
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
 
     app1 = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="inmemory",
-        run_store_backend="external",
-        session_store_backend="inmemory",
-        session_lock_backend="redis",
-    )
+               workspace_dir=tmp_path,
+               cli_overrides={
+                   "server": {
+                       "api_key": "user-key",
+                       "admin_api_key": "admin-key",
+                       "sandbox_root": tmp_path / ".sandbox",
+                   },
+                   "storage": {
+                       "event_store_backend": "inmemory",
+                       "run_store_backend": "external",
+                       "session_store_backend": "inmemory",
+                       "session_lock_backend": "redis",
+                   },
+               },
+           )
     if postgres_dsn and postgres_dsn.strip():
         assert isinstance(app1.state.anyagent.run_store, CachedRunStore)
     transport1 = httpx.ASGITransport(app=app1)
@@ -2545,15 +2731,21 @@ async def _run_run_store_redis_idempotency_roundtrip_live(
     assert call_count["n"] == 1
 
     app2 = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-        event_store_backend="inmemory",
-        run_store_backend="external",
-        session_store_backend="inmemory",
-        session_lock_backend="redis",
-    )
+               workspace_dir=tmp_path,
+               cli_overrides={
+                   "server": {
+                       "api_key": "user-key",
+                       "admin_api_key": "admin-key",
+                       "sandbox_root": tmp_path / ".sandbox",
+                   },
+                   "storage": {
+                       "event_store_backend": "inmemory",
+                       "run_store_backend": "external",
+                       "session_store_backend": "inmemory",
+                       "session_lock_backend": "redis",
+                   },
+               },
+           )
     if postgres_dsn and postgres_dsn.strip():
         assert isinstance(app2.state.anyagent.run_store, CachedRunStore)
     transport2 = httpx.ASGITransport(app=app2)
@@ -2610,11 +2802,15 @@ async def _run_session_fallback_transcript_items_used_when_last_response_id_miss
 
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
         resp1 = await client.post(
@@ -2711,11 +2907,15 @@ async def _run_session_lease_active_during_inflight_request(*, tmp_path: Path, m
 
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
         task = asyncio.create_task(
@@ -2783,11 +2983,15 @@ async def _run_session_concurrent_requests_are_serialized(*, tmp_path: Path, mon
 
     monkeypatch.setattr("anyagent.server.routes.responses.get_default_model_provider", lambda: _RecordingProvider())
     app = create_app(
-        workspace_dir=tmp_path,
-        api_key="user-key",
-        admin_api_key="admin-key",
-        sandbox_root_dir=tmp_path / ".sandbox",
-    )
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                      "sandbox_root": tmp_path / ".sandbox",
+                  },
+              },
+          )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
         first_task = asyncio.create_task(

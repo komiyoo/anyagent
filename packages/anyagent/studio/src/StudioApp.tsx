@@ -675,8 +675,6 @@ export function StudioApp() {
         exposed: agentExposed,
         model_default: agentModelDefault,
         model_provider: agentModelProvider,
-        model_base_url_env: agentModelBaseUrlEnv,
-        model_api_key_env: agentModelApiKeyEnv,
         requested_tool_names: csvToList(agentToolsText),
         sandbox_mode: agentSandboxMode,
         spawn_allow_agent_ids: csvToList(agentSpawnText),

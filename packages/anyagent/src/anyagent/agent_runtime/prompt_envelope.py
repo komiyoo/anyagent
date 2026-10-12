@@ -7,7 +7,7 @@ from datetime import datetime
 import os
 from pathlib import Path
 
-from anyagent.agent_packs import AgentPack
+from anyagent.config.agents import AgentPack
 from anyagent.protocol.context_fragments import ContextFragment, ContextFragmentRole
 from anyagent.protocol.mcp import MCPServerConfig
 from anyagent.protocol.prompt_context import (

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from anyagent.storage.settings import StorageSettings
+from anyagent.storage.settings import StorageSettings, active_storage_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +33,7 @@ def apply_storage_migrations(
     historical CLI/API surface while routing to the Alembic revision graph.
     """
 
-    settings = StorageSettings()
+    settings = active_storage_settings()
     effective_schema = postgres_schema or settings.postgres_schema
     planned = [migration.version for migration in list_storage_migrations()]
     if dry_run:

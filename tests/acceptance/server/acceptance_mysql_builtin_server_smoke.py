@@ -75,11 +75,15 @@ async def _run_mysql_builtin_smoke(*, mysql_dsn: str, redis_dsn: str) -> None:
         os.environ["REDIS_DSN"] = redis_dsn
 
         app = create_app(
-            workspace_dir=root,
-            api_key="user-key",
-            admin_api_key="admin-key",
-            sandbox_root_dir=root / ".sandbox",
-        )
+                  workspace_dir=root,
+                  cli_overrides={
+                      "server": {
+                          "api_key": "user-key",
+                          "admin_api_key": "admin-key",
+                          "sandbox_root": root / ".sandbox",
+                      },
+                  },
+              )
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=10.0) as client:
             resp = await client.post(

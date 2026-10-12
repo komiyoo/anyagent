@@ -21,7 +21,7 @@ from pydantic import BaseModel, TypeAdapter
 import anyagent.protocol as protocol_pkg
 
 
-SCHEMA_BUNDLE_VERSION = "2026-10-07"
+SCHEMA_BUNDLE_VERSION = "2026-10-12"
 PROTOCOL_VERSION = "0.2.0"
 OPENAPI_VERSION = "3.1.0"
 
@@ -30,6 +30,17 @@ PROTOCOL_CHANGELOG: list[dict[str, Any]] = [
     {
         "protocol_version": PROTOCOL_VERSION,
         "schema_version": SCHEMA_BUNDLE_VERSION,
+        "date": "2026-10-12",
+        "summary": "Breaking: agent model resources expose the resolved provider and model, not env var names.",
+        "changes": [
+            "Remove model_api_key_env and model_base_url_env from internal agent list items, agent model config, and admin agent create/update requests.",
+            "Add resolved model on internal agent list items and InternalAgentModelConfig. model_provider remains the resolved provider name. Secrets are not part of these models.",
+            "Migration: clients that sent or read the removed env fields must send model_default and model_provider, and read model for the resolved model name.",
+        ],
+    },
+    {
+        "protocol_version": PROTOCOL_VERSION,
+        "schema_version": "2026-10-07",
         "date": "2026-10-07",
         "summary": "Breaking: remove StorageComponentCapabilities.long_term_owner.",
         "changes": [

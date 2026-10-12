@@ -296,9 +296,9 @@ def run_retention_from_args(ns: argparse.Namespace) -> int:
         print(f"invalid arguments: {e}", file=sys.stderr)
         return 2
 
-    from anyagent.storage.settings import StorageSettings
+    from anyagent.storage.settings import StorageSettings, active_storage_settings
 
-    storage_settings = StorageSettings()
+    storage_settings = active_storage_settings()
     dsn = str(ns.dsn or storage_settings.postgres_dsn or "")
     schema = str(ns.schema or storage_settings.postgres_schema or "public")
     if not dsn.strip():

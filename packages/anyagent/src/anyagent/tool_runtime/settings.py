@@ -4,10 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import AnyUrl, Field, PostgresDsn, RedisDsn, UrlConstraints
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PostgresDsn, RedisDsn, UrlConstraints
 
-from anyagent.agent_packs import DEFAULT_CREDENTIAL_FILE_ROOT
+from anyagent.config.agents import DEFAULT_CREDENTIAL_FILE_ROOT
 
 
 MySQLDsn = Annotated[AnyUrl, UrlConstraints(allowed_schemes=["mysql", "mysql+asyncmy", "mysql+aiomysql", "mysql+pymysql"])]
@@ -30,8 +29,8 @@ class ToolRuntimeServerConfig:
     workspace_runtime: Any = None
 
 
-class ToolRuntimeSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=None, extra="ignore")
+class ToolRuntimeSettings(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     workspace_dir: str = Field(default=".", alias="WORKSPACE_DIR")
     host: str = Field(default="127.0.0.1", alias="HOST")
@@ -107,6 +106,88 @@ class ToolRuntimeSettings(BaseSettings):
     vault_token: str | None = Field(default=None, alias="VAULT_TOKEN")
     vault_mount: str = Field(default="secret", alias="VAULT_MOUNT")
     vault_credential_root_path: str = Field(default="anyagent/credentials", alias="VAULT_CREDENTIAL_ROOT_PATH")
+
+
+def tool_runtime_settings_from_config(config: Any) -> ToolRuntimeSettings:
+    """Build tool-runtime settings from the effective config.
+
+    A writable credential backend keeps the historical ``-write`` suffix so
+    the tool-runtime resolver returns the writable store.
+    """
+
+    tool_runtime = config.tool_runtime
+    credentials = config.credentials
+    sandbox = config.sandbox
+    storage = config.storage
+    backend = credentials.backend or "none"
+    if credentials.writable and backend not in {"", "none"}:
+        backend = f"{backend}-write"
+    return ToolRuntimeSettings(
+        workspace_dir=str(config.workspace_dir),
+        host=tool_runtime.host,
+        port=int(tool_runtime.port),
+        internal_key=tool_runtime.internal_key,
+        admin_api_key=config.server.admin_api_key,
+        sandbox_root_dir=tool_runtime.sandbox_root_dir,
+        plugin_roots=",".join(tool_runtime.plugin_roots),
+        plugins_fail_open=bool(tool_runtime.plugins_fail_open),
+        allow_sandbox=bool(sandbox.allow),
+        sandbox_backend=sandbox.backend,
+        sandbox_isolation_mode=sandbox.isolation_mode,
+        opensandbox_base_url=sandbox.opensandbox.base_url,
+        opensandbox_api_key=sandbox.opensandbox.api_key,
+        opensandbox_image=sandbox.opensandbox.image,
+        opensandbox_timeout_s=int(sandbox.opensandbox.timeout_s),
+        opensandbox_cpu_limit=sandbox.opensandbox.cpu_limit,
+        opensandbox_memory_limit=sandbox.opensandbox.memory_limit,
+        opensandbox_proxy_port=int(sandbox.opensandbox.proxy_port),
+        sandbox_filesystem_persistence_mode=sandbox.filesystem_persistence_mode,
+        sandbox_workspace_root=sandbox.workspace_root,
+        sandbox_hot_idle_ttl_s=int(sandbox.hot_idle_ttl_s),
+        sandbox_cold_retention_s=int(sandbox.cold_retention_s),
+        sandbox_max_snapshot_bytes=int(sandbox.max_snapshot_bytes),
+        workspace_metadata_backend=sandbox.metadata_backend,
+        workspace_metadata_root_dir=sandbox.metadata_root_dir,
+        workspace_lease_backend=sandbox.lease_backend,
+        workspace_lease_namespace=sandbox.lease_namespace,
+        workspace_lease_ttl_ms=int(sandbox.lease_ttl_ms),
+        workspace_lease_wait_timeout_ms=int(sandbox.lease_wait_timeout_ms),
+        workspace_snapshot_backend=sandbox.snapshot_backend,
+        workspace_snapshot_root_dir=sandbox.snapshot_root_dir,
+        workspace_snapshot_s3_endpoint=sandbox.snapshot_s3_endpoint,
+        workspace_snapshot_s3_access_key=sandbox.snapshot_s3_access_key,
+        workspace_snapshot_s3_secret_key=sandbox.snapshot_s3_secret_key,
+        workspace_snapshot_s3_bucket=sandbox.snapshot_s3_bucket,
+        workspace_snapshot_s3_secure=bool(sandbox.snapshot_s3_secure),
+        workspace_snapshot_s3_region=sandbox.snapshot_s3_region,
+        workspace_event_backend=tool_runtime.workspace_event_backend,
+        workspace_event_root_dir=tool_runtime.workspace_event_root_dir,
+        workspace_event_max_buffer=int(tool_runtime.workspace_event_max_buffer),
+        postgres_dsn=storage.postgres_dsn,
+        mysql_dsn=storage.mysql_dsn,
+        redis_dsn=storage.redis_dsn,
+        sql_backend_dialect=storage.sql_backend_dialect,
+        postgres_schema=storage.postgres_schema,
+        credential_backend=backend,
+        credential_file_root=credentials.file.root,
+        infisical_host=credentials.infisical.host,
+        infisical_universal_auth_client_id=credentials.infisical.client_id,
+        infisical_universal_auth_client_secret=credentials.infisical.client_secret,
+        infisical_token=credentials.infisical.token,
+        infisical_project_id=credentials.infisical.project_id,
+        infisical_environment=credentials.infisical.environment,
+        infisical_cache_ttl_seconds=int(credentials.infisical.cache_ttl_seconds),
+        infisical_credential_root_path=credentials.infisical.credential_root_path,
+        infisical_path_layout=credentials.infisical.path_layout,
+        credential_postgres_dsn=credentials.db.dsn,
+        credential_postgres_schema=credentials.db.schema_name,
+        credential_encryption_key=credentials.db.encryption_key,
+        credential_db_create_schema=bool(credentials.db.create_schema),
+        vault_addr=credentials.vault.addr,
+        vault_token=credentials.vault.token,
+        vault_mount=credentials.vault.mount,
+        vault_credential_root_path=credentials.vault.credential_root_path,
+    )
 
 
 def build_tool_runtime_server_config(

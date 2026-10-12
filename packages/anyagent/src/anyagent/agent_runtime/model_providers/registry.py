@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from anyagent.model_catalog import (
+from anyagent.config.models import (
     PROVIDER_REGISTRY,
     ModelProviderKind,
     ProviderSpec,

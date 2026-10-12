@@ -559,8 +559,7 @@ class InternalAgentListItem(BaseModel):
     sandbox_mode: SandboxMode
     model_default: str | None = None
     model_provider: str = "openai"
-    model_base_url_env: str | None = None
-    model_api_key_env: str | None = None
+    model: str | None = None
     requested_tool_names: list[str] = Field(default_factory=list)
     default_selected_skill_ids: list[str] = Field(default_factory=list)
     spawn_allow_agent_ids: list[str] = Field(default_factory=list)
@@ -611,8 +610,7 @@ class InternalAgentModelConfig(BaseModel):
 
     default: str | None = None
     provider: str = "openai"
-    base_url_env: str | None = None
-    api_key_env: str | None = None
+    model: str | None = None
 
 
 class InternalAgentDetailResponse(BaseModel):
@@ -762,8 +760,6 @@ class AdminAgentCreateRequest(BaseModel):
     sandbox_mode: SandboxMode = "disabled"
     model_default: str | None = None
     model_provider: str = "openai"
-    model_base_url_env: str | None = None
-    model_api_key_env: str | None = None
     requested_tool_names: list[str] = Field(default_factory=list)
     default_selected_skills: list[str] = Field(default_factory=list)
     spawn_allow_agent_ids: list[str] = Field(default_factory=list)
@@ -785,8 +781,6 @@ class AdminAgentConfigUpdateRequest(BaseModel):
     exposed: bool | None = None
     model_default: str | None = None
     model_provider: str | None = None
-    model_base_url_env: str | None = None
-    model_api_key_env: str | None = None
     requested_tool_names: list[str] | None = None
     sandbox_mode: SandboxMode | None = None
     spawn_allow_agent_ids: list[str] | None = None

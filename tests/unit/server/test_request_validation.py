@@ -81,7 +81,15 @@ def test_builtin_server_request_validation_path() -> None:
     with tempfile.TemporaryDirectory(prefix="anyagent-request-validation-") as td:
         workspace_dir = Path(td)
         _write_workspace(workspace_dir)
-        app = create_app(workspace_dir=workspace_dir, api_key="user-key", sandbox_root_dir=workspace_dir / ".sandbox")
+        app = create_app(
+                  workspace_dir=workspace_dir,
+                  cli_overrides={
+                      "server": {
+                          "api_key": "user-key",
+                          "sandbox_root": workspace_dir / ".sandbox",
+                      },
+                  },
+              )
 
         headers = {"Authorization": "Bearer user-key", "Content-Type": "application/json"}
         with TestClient(app) as client:

@@ -6,7 +6,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
-from anyagent.agent_packs import AgentCatalog
+from anyagent.config.agents import AgentCatalog
 from anyagent.agent_runtime import run_tool_loop_nonstream, run_tool_loop_stream_live
 from anyagent.protocol.stage_events import AnyAgentModelRequestEvent
 from anyagent.tool_runtime import fetch_manifest_tools

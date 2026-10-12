@@ -1,5 +1,5 @@
 {
-  "schema_version": "2026-10-07",
+  "schema_version": "2026-10-12",
   "openai_response_cases": [
     {
       "name": "responses.create.completed",
@@ -138,8 +138,7 @@
             "sandbox_mode": "disabled",
             "model_default": "test-model",
             "model_provider": "openai",
-            "model_base_url_env": null,
-            "model_api_key_env": null,
+            "model": "test-model",
             "requested_tool_names": [
               "exec"
             ],

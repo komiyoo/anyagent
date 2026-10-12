@@ -13,7 +13,7 @@ from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior, Usag
 from pydantic_ai.usage import UsageLimits
 
 from anyagent.mcp.manager import MCPServerManager
-from anyagent.model_config import ModelConfigError
+from anyagent.config.models import ModelConfigError
 from anyagent.protocol.openai_responses import build_minimal_openai_response_json, validate_tool_choice
 from anyagent.protocol.sse import encode_sse_event, normalize_response_id
 from anyagent.protocol.tool_manifest_extensions import strip_internal_tool_fields

@@ -2,6 +2,17 @@
   "changelog": [
     {
       "changes": [
+        "Remove model_api_key_env and model_base_url_env from internal agent list items, agent model config, and admin agent create/update requests.",
+        "Add resolved model on internal agent list items and InternalAgentModelConfig. model_provider remains the resolved provider name. Secrets are not part of these models.",
+        "Migration: clients that sent or read the removed env fields must send model_default and model_provider, and read model for the resolved model name."
+      ],
+      "date": "2026-10-12",
+      "protocol_version": "0.2.0",
+      "schema_version": "2026-10-12",
+      "summary": "Breaking: agent model resources expose the resolved provider and model, not env var names."
+    },
+    {
+      "changes": [
         "Remove `long_term_owner` from StorageComponentCapabilities in `/admin/storage/health` capabilities. Its `anyagent-apps` value named a project that no longer exists; use `tier` to tell reference from external backends.",
         "Migration: the model forbids extra fields, so upgrade the server and the Python/TypeScript SDK together; an older SDK fails to parse a newer server's storage health payload and vice versa."
       ],
@@ -2085,30 +2096,6 @@
           "default": null,
           "title": "Exposed"
         },
-        "model_api_key_env": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Model Api Key Env"
-        },
-        "model_base_url_env": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Model Base Url Env"
-        },
         "model_default": {
           "anyOf": [
             {
@@ -2212,30 +2199,6 @@
           "minLength": 1,
           "title": "Instructions",
           "type": "string"
-        },
-        "model_api_key_env": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Model Api Key Env"
-        },
-        "model_base_url_env": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Model Base Url Env"
         },
         "model_default": {
           "anyOf": [
@@ -2382,30 +2345,6 @@
           "additionalProperties": false,
           "description": "Agent model resource configuration summary.",
           "properties": {
-            "api_key_env": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Api Key Env"
-            },
-            "base_url_env": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Base Url Env"
-            },
             "default": {
               "anyOf": [
                 {
@@ -2417,6 +2356,18 @@
               ],
               "default": null,
               "title": "Default"
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Model"
             },
             "provider": {
               "default": "openai",
@@ -3906,30 +3857,6 @@
           "additionalProperties": false,
           "description": "Agent model resource configuration summary.",
           "properties": {
-            "api_key_env": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Api Key Env"
-            },
-            "base_url_env": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Base Url Env"
-            },
             "default": {
               "anyOf": [
                 {
@@ -3941,6 +3868,18 @@
               ],
               "default": null,
               "title": "Default"
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Model"
             },
             "provider": {
               "default": "openai",
@@ -4178,7 +4117,7 @@
           "title": "Mcp Server Labels",
           "type": "array"
         },
-        "model_api_key_env": {
+        "model": {
           "anyOf": [
             {
               "type": "string"
@@ -4188,19 +4127,7 @@
             }
           ],
           "default": null,
-          "title": "Model Api Key Env"
-        },
-        "model_base_url_env": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Model Base Url Env"
+          "title": "Model"
         },
         "model_default": {
           "anyOf": [
@@ -4303,30 +4230,6 @@
       "additionalProperties": false,
       "description": "Agent model resource configuration summary.",
       "properties": {
-        "api_key_env": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Api Key Env"
-        },
-        "base_url_env": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Base Url Env"
-        },
         "default": {
           "anyOf": [
             {
@@ -4338,6 +4241,18 @@
           ],
           "default": null,
           "title": "Default"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
         },
         "provider": {
           "default": "openai",
@@ -4508,7 +4423,7 @@
               "title": "Mcp Server Labels",
               "type": "array"
             },
-            "model_api_key_env": {
+            "model": {
               "anyOf": [
                 {
                   "type": "string"
@@ -4518,19 +4433,7 @@
                 }
               ],
               "default": null,
-              "title": "Model Api Key Env"
-            },
-            "model_base_url_env": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Model Base Url Env"
+              "title": "Model"
             },
             "model_default": {
               "anyOf": [
@@ -24183,7 +24086,7 @@
   },
   "protocol_package": "anyagent.protocol",
   "protocol_version": "0.2.0",
-  "schema_version": "2026-10-07",
+  "schema_version": "2026-10-12",
   "semantic_rules": {
     "anyagent.protocol.credential_vault.CredentialScope": [
       {

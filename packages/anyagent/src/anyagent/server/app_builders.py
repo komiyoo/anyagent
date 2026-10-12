@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
 from dataclasses import dataclass
 from typing import Callable
 
-from anyagent.agent_packs import AgentCatalog
-from anyagent.env import getenv
+from anyagent.config.agents import AgentCatalog
+from anyagent.config.schema import SandboxConfig
 from anyagent.gateway.plugins import GatewayPluginAPI, GatewayRegistry, WebhookRoute
 from anyagent.plugins import LoadedPlugin, load_plugins_from_roots
 from anyagent.plugins.hooks import HookContext
@@ -72,18 +71,23 @@ class _DualHostPluginAPI(PluginAPIBase):
             self.gateway_api.registerWebhookRoute(webhook_route)
 
 
-def _build_opensandbox_backend_if_needed(catalog: AgentCatalog) -> OpenSandboxWorkspaceBackend | None:
+def _build_opensandbox_backend_if_needed(
+    catalog: AgentCatalog,
+    sandbox: SandboxConfig | None = None,
+) -> OpenSandboxWorkspaceBackend | None:
     if not any(pack.spec.sandbox.mode == "opensandbox" for pack in catalog.packs.values()):
         return None
+    settings = sandbox.opensandbox if sandbox is not None else None
+    root = sandbox.workspace_root if sandbox is not None else "/workspace"
     return OpenSandboxWorkspaceBackend(
-        base_url=(os.getenv("OPENSANDBOX_BASE_URL") or "").strip(),
-        api_key=(os.getenv("OPENSANDBOX_API_KEY") or "").strip() or None,
-        workspace_root=(os.getenv("SANDBOX_WORKSPACE_ROOT") or "/workspace").strip() or "/workspace",
-        image=(os.getenv("OPENSANDBOX_IMAGE") or "ubuntu:24.04").strip() or "ubuntu:24.04",
-        sandbox_timeout_s=int(os.getenv("OPENSANDBOX_TIMEOUT_S") or "3600"),
-        cpu_limit=(os.getenv("OPENSANDBOX_CPU_LIMIT") or "1000m").strip() or "1000m",
-        memory_limit=(os.getenv("OPENSANDBOX_MEMORY_LIMIT") or "1Gi").strip() or "1Gi",
-        proxy_port=int(os.getenv("OPENSANDBOX_PROXY_PORT") or "44772"),
+        base_url=((settings.base_url if settings is not None else None) or "").strip(),
+        api_key=((settings.api_key if settings is not None else None) or "").strip() or None,
+        workspace_root=(root or "/workspace").strip() or "/workspace",
+        image=((settings.image if settings is not None else None) or "ubuntu:24.04").strip() or "ubuntu:24.04",
+        sandbox_timeout_s=int(settings.timeout_s if settings is not None else 3600),
+        cpu_limit=((settings.cpu_limit if settings is not None else None) or "1000m").strip() or "1000m",
+        memory_limit=((settings.memory_limit if settings is not None else None) or "1Gi").strip() or "1Gi",
+        proxy_port=int(settings.proxy_port if settings is not None else 44772),
     )
 
 
@@ -106,7 +110,7 @@ def _safe_error_message(e: Exception) -> str:
 
 def _parse_cors_origins(value: str | list[str] | tuple[str, ...] | None) -> list[str]:
     if value is None:
-        value = getenv("CORS_ORIGINS") or ""
+        return []
     if isinstance(value, str):
         return [item.strip() for item in value.split(",") if item.strip()]
     return [str(item).strip() for item in value if str(item).strip()]
@@ -114,15 +118,12 @@ def _parse_cors_origins(value: str | list[str] | tuple[str, ...] | None) -> list
 
 def _resolve_plugin_roots(plugin_roots: list[str | Path] | tuple[str | Path, ...] | None, *, workspace: Path) -> list[Path]:
     raw_items: list[str | Path] = []
-    if plugin_roots is not None:
+    if plugin_roots:
         raw_items.extend(plugin_roots)
     else:
-        env_value = getenv("PLUGIN_ROOTS") or ""
-        raw_items.extend(item.strip() for item in env_value.split(",") if item.strip())
-        if not raw_items:
-            default_root = workspace / "plugins"
-            if default_root.is_dir():
-                raw_items.append(default_root)
+        default_root = workspace / "plugins"
+        if default_root.is_dir():
+            raw_items.append(default_root)
 
     roots: list[Path] = []
     seen: set[str] = set()

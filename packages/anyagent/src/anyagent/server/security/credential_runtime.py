@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
+from anyagent.config.agents import DEFAULT_CREDENTIAL_FILE_ROOT
+from anyagent.config.loader import EffectiveConfig
 from anyagent.mcp.auth import CredentialResolver
-from anyagent.agent_packs import DEFAULT_CREDENTIAL_FILE_ROOT
 
 from .credential_backends import (
     CredentialStore,
@@ -152,9 +153,9 @@ def _build_database_backend_config(config: CredentialRuntimeConfig) -> DatabaseB
     schema_name = config.credential_postgres_schema or "public"
     if postgres_dsn is None:
         try:
-            from anyagent.storage.settings import StorageSettings
+            from anyagent.storage.settings import active_storage_settings
 
-            settings = StorageSettings()
+            settings = active_storage_settings()
             postgres_dsn = str(settings.effective_postgres_dsn) if settings.effective_postgres_dsn is not None else None
             if schema_name == "public":
                 schema_name = settings.postgres_schema
@@ -170,6 +171,79 @@ def _build_database_backend_config(config: CredentialRuntimeConfig) -> DatabaseB
         schema_name=schema_name,
         create_schema=bool(config.credential_db_create_schema),
     )
+
+
+def credential_runtime_config_from_effective(config: EffectiveConfig) -> CredentialRuntimeConfig:
+    """Map the credentials section onto the runtime backend config."""
+
+    credentials = config.credentials
+    return CredentialRuntimeConfig(
+        backend=credentials.backend,
+        file_root=credentials.file.root or DEFAULT_CREDENTIAL_FILE_ROOT,
+        workspace_dir=config.workspace_dir,
+        infisical_host=credentials.infisical.host,
+        infisical_universal_auth_client_id=credentials.infisical.client_id,
+        infisical_universal_auth_client_secret=credentials.infisical.client_secret,
+        infisical_project_id=credentials.infisical.project_id,
+        infisical_environment=credentials.infisical.environment,
+        infisical_cache_ttl_seconds=credentials.infisical.cache_ttl_seconds,
+        infisical_credential_root_path=credentials.infisical.credential_root_path,
+        infisical_path_layout=credentials.infisical.path_layout,
+        infisical_token=credentials.infisical.token,
+        credential_postgres_dsn=credentials.db.dsn,
+        credential_postgres_schema=credentials.db.schema_name,
+        credential_encryption_key=credentials.db.encryption_key,
+        credential_db_create_schema=credentials.db.create_schema,
+        vault_addr=credentials.vault.addr,
+        vault_token=credentials.vault.token,
+        vault_mount=credentials.vault.mount,
+        vault_credential_root_path=credentials.vault.credential_root_path,
+    )
+
+
+def build_runtime_env_reader(config: EffectiveConfig) -> CredentialResolver | None:
+    """Resolver used to project runtime_env entries. Database and vault use the store."""
+
+    runtime = credential_runtime_config_from_effective(config)
+    if config.credentials.backend in {"db", "vault"}:
+        return build_credential_store_from_config(runtime)
+    return build_credential_resolver_from_config(runtime, fallback_to_memory=False)
+
+
+def open_server_credential_stores(config: EffectiveConfig) -> tuple[CredentialStore, CredentialResolver]:
+    """Return the admin store and the MCP reader.
+
+    ``credentials.writable`` selects one store for both. Otherwise admin writes
+    stay in memory and the configured backend is read-only.
+    """
+
+    runtime = credential_runtime_config_from_effective(config)
+    backend = config.credentials.backend
+    if backend == "none":
+        memory = InMemoryCredentialStore()
+        return memory, memory
+    if backend in {"db", "vault"} or config.credentials.writable:
+        store = build_credential_store_from_config(runtime)
+        if config.credentials.writable:
+            return store, store
+        return InMemoryCredentialStore(), store
+    resolver = build_mcp_credential_resolver(
+        backend=backend,
+        file_root=str(resolve_credential_file_root(runtime)),
+        infisical_host=runtime.infisical_host,
+        infisical_universal_auth_client_id=runtime.infisical_universal_auth_client_id,
+        infisical_universal_auth_client_secret=runtime.infisical_universal_auth_client_secret,
+        infisical_project_id=runtime.infisical_project_id,
+        infisical_environment=runtime.infisical_environment,
+        infisical_cache_ttl_seconds=runtime.infisical_cache_ttl_seconds,
+        infisical_credential_root_path=runtime.infisical_credential_root_path,
+        infisical_path_layout=runtime.infisical_path_layout,
+        infisical_token=runtime.infisical_token,
+    )
+    if resolver is None:
+        memory = InMemoryCredentialStore()
+        return memory, memory
+    return InMemoryCredentialStore(), resolver
 
 
 def _build_vault_backend_config(config: CredentialRuntimeConfig) -> VaultBackendConfig:

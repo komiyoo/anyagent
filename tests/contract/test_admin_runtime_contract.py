@@ -14,7 +14,15 @@ def test_admin_runtime_contract_covers_core_behavior(tmp_path: Path) -> None:
 
 async def _run_admin_runtime_contract_covers_core_behavior(tmp_path: Path) -> None:
     _write_main_agent(tmp_path)
-    app = create_app(workspace_dir=tmp_path, api_key="user-key", admin_api_key="admin-key")
+    app = create_app(
+              workspace_dir=tmp_path,
+              cli_overrides={
+                  "server": {
+                      "api_key": "user-key",
+                      "admin_api_key": "admin-key",
+                  },
+              },
+          )
     auth = {"Authorization": "Bearer admin-key"}
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:

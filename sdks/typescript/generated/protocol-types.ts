@@ -1,6 +1,6 @@
 /* eslint-disable */
 // Generated from anyagent.protocol schema bundle. Do not edit by hand.
-// schema_version: 2026-10-07
+// schema_version: 2026-10-12
 
 export type MCPServerTransport = "streamable_http" | "sse" | "stdio";
 
@@ -146,8 +146,6 @@ export type StorageRetentionConfig = {
 export type AdminAgentConfigUpdateRequest = {
   "disabled_skill_paths"?: Array<string> | null;
   "exposed"?: boolean | null;
-  "model_api_key_env"?: string | null;
-  "model_base_url_env"?: string | null;
   "model_default"?: string | null;
   "model_provider"?: string | null;
   "requested_tool_names"?: Array<string> | null;
@@ -160,8 +158,6 @@ export type AdminAgentCreateRequest = {
   "default_selected_skills"?: Array<string>;
   "exposed"?: boolean;
   "instructions": string;
-  "model_api_key_env"?: string | null;
-  "model_base_url_env"?: string | null;
   "model_default"?: string | null;
   "model_provider"?: string;
   "requested_tool_names"?: Array<string>;
@@ -314,8 +310,7 @@ export type InternalAgentListItem = {
   "exposed": boolean;
   "has_mcp"?: boolean;
   "mcp_server_labels"?: Array<string>;
-  "model_api_key_env"?: string | null;
-  "model_base_url_env"?: string | null;
+  "model"?: string | null;
   "model_default"?: string | null;
   "model_provider"?: string;
   "name": string;
@@ -333,9 +328,8 @@ export type InternalAgentMCPConfig = {
 };
 
 export type InternalAgentModelConfig = {
-  "api_key_env"?: string | null;
-  "base_url_env"?: string | null;
   "default"?: string | null;
+  "model"?: string | null;
   "provider"?: string;
 };
 
