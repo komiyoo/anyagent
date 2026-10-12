@@ -30,7 +30,7 @@ anyagent doctor --workspace ./my-workspace
 anyagent agent list --workspace ./my-workspace
 ```
 
-- `init` 生成一个最小可启动的 workspace；`--template` 可选 `basic`（最小 agent）、`coding-agent`（本地代码修改与验证）、`research-agent`（资料检索与整理）、`multi-agent-team`（一个 coordinator 加两个子 agent）。各模板生成的工具与沙箱配置见 `packages/anyagent/src/anyagent/cli.py` 的 `_init_agent_specs`。
+- `init` 生成一个最小可启动的 workspace；`--template` 可选 `basic`（最小 agent）、`coding-agent`（本地代码修改与验证）、`research-agent`（资料检索与整理）、`multi-agent-team`（一个 coordinator 加两个子 agent）。各模板生成的工具与沙箱配置见 `packages/anyagent/src/anyagent/cli/workspace.py`。
 - `doctor` 在启动前检查 agent pack、skills、MCP 配置和常见安全边界问题；`--json` 输出 typed 报告，可接入 CI。
 - `agent list` 列出 workspace 里的 agent、工具、沙箱和 spawn 边界。
 

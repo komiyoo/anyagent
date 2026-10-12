@@ -20,7 +20,7 @@ req: ["requirements.md#req-4", "requirements.md#req-9"]
 | SDK public models | `packages/anyagent/src/anyagent/types/__init__.py` | 业务侧导入入口，重导出稳定模型 facade |
 | Wire protocol | `packages/anyagent/src/anyagent/protocol/` | OpenAI 兼容、internal/admin API、Stage Events、observability、tool runtime 等协议 SSOT |
 | 内置 server API | `packages/anyagent/src/anyagent/server/app.py` | `/v1/*`、`/internal/*`、`/admin/*` endpoint 实现 |
-| CLI / workspace bootstrap | `packages/anyagent/src/anyagent/cli.py` | `anyagent init`、`doctor`、`serve`、`config init`、storage 命令 |
+| CLI / workspace bootstrap | `packages/anyagent/src/anyagent/cli/` | `anyagent init`、`doctor`、`serve`、`config show`、storage 命令 |
 
 维护规则：
 

@@ -95,7 +95,7 @@ packages/anyagent/src/anyagent/
     security/        # Credential Vault / Tool Policy
   config/            # anyagent.yaml、Agent Pack、模型选择与配置合并
   agent_api_client.py # Client SDK
-  cli.py             # CLI 入口
+  cli/               # CLI 入口
 ```
 
 ### 1.4 渐进式披露

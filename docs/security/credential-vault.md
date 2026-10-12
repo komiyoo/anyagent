@@ -432,7 +432,7 @@ anyagent credential delete --id cred_openai_default
 
 ### 5.1 凭证清单（Credential Manifest）
 
-部署时用一个 YAML 清单声明需要的凭证，再通过 Admin API 批量写入。字段与解析规则以 `packages/anyagent/src/anyagent/cli.py` 的 `_cmd_import` / `_import_resolve_value` 为准，模板见 `scripts/credentials.yaml.template`。约束：
+部署时用一个 YAML 清单声明需要的凭证，再通过 Admin API 批量写入。字段与解析规则以 `packages/anyagent/src/anyagent/cli/credential.py` 的 `cmd_credential_import` / `_import_resolve_value` 为准，模板见 `scripts/credentials.yaml.template`。约束：
 
 - 每条凭证包含 `credential_id`、`kind`、`scope`，可选 `metadata`。
 - 值的来源依次为 `value`、`value_from_env`（环境变量未设置时取 `default_value`）、`default_value`。清单里建议只写 `value_from_env`，不写明文。

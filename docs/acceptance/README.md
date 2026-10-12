@@ -4,7 +4,7 @@
 
 当前可执行的最小验收入口：
 
-- CLI 配置生成与体检单测：`tests/unit/test_cli_workspace_commands.py`
+- CLI 配置生成与体检单测：`tests/unit/cli/`
 - SDK/协议离线 smoke：`tests/acceptance/sdk/`
 - MCP federation 离线 smoke：`tests/acceptance/mcp/`
 - built-in server 主路径与存储/并发 smoke：`tests/acceptance/server/`
