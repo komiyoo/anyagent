@@ -1,117 +1,40 @@
 # Deployment
 
-Use this reference when planning how to run anyagent locally, in a single process, or as split Agent API and Tool Runtime services.
+## One process
 
-## Built-In Single Process
-
-Best for local development, demos, and simple single-node services:
+From the business repo:
 
 ```bash
-AGENT_API_KEY=agent-key \
-ADMIN_API_KEY=admin-key \
-OPENAI_API_KEY=sk-... \
-anyagent serve --workspace . --host 0.0.0.0 --port 8787
-```
-
-Characteristics:
-
-- Built-in FastAPI server.
-- In-process Tool Runtime.
-- Built-in Studio unless `--no-studio` is passed.
-- In-memory storage by default unless external backends are configured.
-
-## Dev Server
-
-```bash
-anyagent dev --workspace .
-```
-
-Use for local loops. It uses dev-friendly defaults and exposes Studio.
-
-## External Storage
-
-Install extras as needed:
-
-```bash
-uv pip install 'anyagent[postgres,redis]'
-```
-
-Run migration and serve:
-
-```bash
-POSTGRES_DSN=postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent \
-anyagent storage migrate
-
-POSTGRES_DSN=postgresql://anyagent:anyagent@127.0.0.1:5432/anyagent \
-REDIS_DSN=redis://127.0.0.1:6379/0 \
-REDIS_NAMESPACE=anyagent \
-POSTGRES_SCHEMA_POLICY=migrate \
-STORAGE_MODE=external \
-EVENT_STORE_BACKEND=external \
-RUN_STORE_BACKEND=external \
-SESSION_STORE_BACKEND=external \
-anyagent serve --workspace . --session-lock-backend redis
-```
-
-## Split Runtime
-
-Use split mode when tool execution needs independent scaling, isolation, plugin loading, or internal network boundaries.
-
-Tool Runtime:
-
-```bash
-anyagent tool-runtime serve \
-  --workspace . \
-  --plugin-root plugins \
-  --internal-key tool-internal-key \
-  --admin-key admin-key
-```
-
-Agent API:
-
-```bash
-anyagent agent-api serve \
-  --workspace . \
-  --api-key agent-key \
-  --tool-runtime-internal-key tool-internal-key
-```
-
-Keep `AGENT_API_KEY`, `ADMIN_API_KEY`, and Tool Runtime internal key distinct.
-
-## Sandbox
-
-Use `local-unsafe` only for trusted local development:
-
-```yaml
-tools:
-  requested_tool_names:
-    - exec
-sandbox:
-  mode: "local-unsafe"
-```
-
-For production command execution, use `opensandbox` or `external` and document network egress policy, filesystem persistence, and credential isolation.
-
-CLI profile note:
-
-- `tools.cli` works with `local-unsafe`, `opensandbox`, and `external` manifest routing.
-- Credential injection to `env:*` / `file:*` is now implemented for `local-unsafe` and `opensandbox`.
-- For `opensandbox`, file targets are uploaded through the execd `/files/upload` path before command execution; they are still declared as relative paths in `agent.yaml`.
-- If a profile is exposed on a public agent and still uses `local-unsafe`, `anyagent doctor --workspace .` will emit a warning.
-
-## Observability
-
-Structured logs:
-
-```bash
-LOG_FORMAT=json anyagent serve --workspace .
-```
-
-Optional HTTP collector:
-
-```bash
-OBSERVABILITY_HTTP_URL=https://collector.example.com/ingest \
 anyagent serve --workspace .
 ```
 
-Studio consumes typed observability APIs and telemetry store data; do not design deployments around scraping raw log files.
+`anyagent dev --workspace .` starts the same built-in server with local development defaults. Set provider keys in the environment or in `.env` (see `.env.example`). Do not commit `.env`.
+
+`anyagent doctor --workspace .` is the check before serving.
+
+## Storage
+
+Built-in defaults already interpolate storage settings from the environment (`POSTGRES_DSN`, `DATABASE_URL`, `REDIS_DSN`, `STORAGE_PROFILE`, and the related variables in `packages/anyagent/src/anyagent/config/defaults.py`). Set those variables, or write the `storage` section in `.anyagent/anyagent.yaml` when no system or user layer has already set `storage`.
+
+Apply schema changes with `anyagent storage migrate` (or `anyagent db migrate` for the Alembic entry). Check connectivity with `anyagent storage health`.
+
+## Sandbox
+
+`exec` runs inside the agent's sandbox. `local-unsafe` is for a trusted developer machine. `opensandbox` and `external` are the modes for anything else. Workspace `sandbox` in `.anyagent/anyagent.yaml` configures the backend (image, endpoint, API key placeholder). The agent's own `sandbox.mode` selects whether that agent may use it.
+
+Restart the server after changing sandbox mode.
+
+## Split processes
+
+The built-in `anyagent serve` loads workspace plugins in-process. To split them:
+
+```bash
+anyagent tool-runtime serve --workspace .
+anyagent agent-api serve --workspace .
+```
+
+Point the agent API at the tool runtime with `tool_runtime.base_url` and `tool_runtime.internal_key` in config (values may be `${VAR}` placeholders). Both processes need the same workspace so plugin roots and agent packs match.
+
+Credentials are still resolved by the server. Use `anyagent credential list` to confirm ids, and `anyagent credential set` to write one. The CLI does not print secret values.
+
+Further topology and threat boundaries: `docs/guides/deployment.md`, `docs/security/sandbox-security.md`, `docs/security/credential-vault.md`.

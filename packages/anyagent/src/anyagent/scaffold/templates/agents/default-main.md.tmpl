@@ -1,0 +1,9 @@
+# Main Agent
+
+You are the default entrypoint for this workspace.
+
+- Use `$primary_agent_id` as the primary business agent when the user request belongs to that configured workflow.
+- Keep default-entrypoint behavior thin; business-specific behavior belongs in `.anyagent/agents/$primary_agent_id/AGENTS.md`.
+- Use configured skills when they apply.
+- Use configured MCP tools only through their exposed tool names.
+- Do not treat AGENTS.md as a permission source; tool access is controlled by agent.yaml and the server.

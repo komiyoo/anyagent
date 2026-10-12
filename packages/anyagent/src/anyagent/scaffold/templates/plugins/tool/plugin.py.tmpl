@@ -1,0 +1,35 @@
+"""Generated tool plugin $plugin_id."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from anyagent.tool_runtime.models import ToolDefinition
+
+
+async def handle(args: dict[str, Any], context: dict[str, Any]) -> str:
+    text = str(args.get("text", ""))
+    agent_id = context.get("agent_id", "")
+    return f"$tool_name: {text} (agent={agent_id})"
+
+
+def register(api: Any) -> None:
+    if getattr(api, "host_kind", None) not in {"tool_runtime", "gateway"}:
+        return
+    api.registerTool(
+        ToolDefinition(
+            name="$tool_name",
+            description="$description",
+            category="$category",
+            kind="command",
+            parameters={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["text"],
+                "properties": {
+                    "text": {"type": "string", "description": "Text passed to the tool."},
+                },
+            },
+        ),
+        handle,
+    )
