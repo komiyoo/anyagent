@@ -18,7 +18,7 @@ AnyAgent 的托管价值在 Gateway、`POST /v1/responses`、Session/Run/Event�
 
 ## Overview
 
-一次对话请求先进托管面（鉴权、pack、envelope、lease），再进 `run_tool_loop_*`。适配器组好 pydantic-ai `Agent`：instructions 来自 envelope，tools 只调 Tool Runtime `execute`，模型来自 `models.yaml` 映射。
+一次对话请求先进托管面（鉴权、pack、envelope、lease），再进 `run_tool_loop_*`。适配器组好 pydantic-ai `Agent`：instructions 来自 envelope，tools 只调 Tool Runtime `execute`，模型来自 `.anyagent/anyagent.yaml` 的 `models` 映射。
 
 跟踪是两条渠道：Stage Events 仍写入 Event Store（库表），本 SDK `client.events` 走这条；Langfuse 经可选 OTLP 看 generation / tool / cost，未配置则关掉，不影响 SDK。
 
@@ -60,7 +60,7 @@ flowchart TB
 | 托管合同 | `run_tool_loop_nonstream` / `run_tool_loop_stream_live` 的签名和 SSE 形态。Gateway / Responses 路由只认这一层。模型返回空 output 或只剩未注册 tool call 时，HTTP 仍是 200，body 是最后一次模型 Response，不因 pydantic-ai 要 typed `str` 而 500。 |
 | prompt envelope | `AGENTS.md`、context providers、skill catalog 在进 pydantic-ai 之前组好，带 source path/hash。 |
 | 工具真源 | Tool Runtime `manifest` / `execute`。pydantic-ai tool 是包装，不是第二套 handler。 |
-| kind 目录 | `models.yaml` 的 `providers.*.kind`，由 `anyagent.model_catalog` 解析，再映射为 pydantic-ai 模型字符串。 |
+| kind 目录 | `models.providers.*.kind`，由 `anyagent.config.models` 解析，再映射为 pydantic-ai 模型字符串。 |
 | 注入缝 | 离线 smoke patch `get_default_model_provider()`；适配器把它桥成 pydantic-ai `Model`。 |
 
 不要平行引入 pydantic-ai YAML spec，也不要把业务 instructions 写进 SDK。pack 磁盘布局见 [Agent Packs](agent-packs-and-runtime-config.md)。
@@ -85,7 +85,7 @@ flowchart LR
 
   subgraph support["配套"]
     EX["tool_execution.py"]
-    CAT["model_catalog"]
+    CAT["anyagent.config.models"]
     MP["model_providers 协议 + OpenAI 工厂"]
   end
 
@@ -108,7 +108,7 @@ flowchart LR
 | `anyagent.agent_runtime.loop.hooks` | `runtime.middlewares` 的压缩 / 循环检测 → pydantic-ai Hooks / ProcessHistory；直接接入原生 AbstractCapability |
 | `anyagent.agent_runtime.loop.otel` | OTLP env；无 endpoint 不导出 |
 | `anyagent.agent_runtime.tool_execution` | manifest 解析与单次 execute（含 Stage Events） |
-| `anyagent.model_catalog` | kind / 别名 / 默认 env |
+| `anyagent.config.models` | kind 注册表与 `resolve_effective_model_selection` |
 | `anyagent.agent_runtime.model_providers` | `ModelProvider` 协议、OpenAI Responses 默认工厂 |
 
 不要再加自研 4-hook 或 vendor HTTP translator。历史口径：[agent-loop-middleware.md](agent-loop-middleware.md)、[model-provider-translators.md](../api/model-provider-translators.md)。
@@ -177,8 +177,8 @@ flowchart TB
   end
 
   subgraph config["workspace 配置"]
-    MC["model_config.EffectiveModelSelection"]
-    CAT["model_catalog.ModelProviderKind"]
+    MC["anyagent.config.models.EffectiveModelSelection"]
+    CAT["anyagent.config.models_kinds.ModelProviderKind"]
   end
 
   subgraph loopTypes["loop 边界"]
@@ -199,14 +199,14 @@ flowchart TB
 | 层 | 位置 | 放什么 |
 | --- | --- | --- |
 | Wire / SDK | `anyagent.protocol.*`，SDK 从 `anyagent.types` 再导出 | Responses body、Stage Events、Tool Runtime DTO |
-| Workspace 模型目录 | `anyagent.model_config` | `WorkspaceModelsConfig`、`EffectiveModelSelection` |
-| Kind 目录 | `anyagent.model_catalog` | `ModelProviderKind`、`ProviderSpec` |
+| Workspace 模型目录 | `anyagent.config.models` | `ModelsConfig`、`EffectiveModelSelection` |
+| Kind 目录 | `anyagent.config.models_kinds` | `ModelProviderKind`。注册表 `PROVIDER_REGISTRY` 在 `anyagent.config.models` |
 | Loop 边界 | `anyagent.agent_runtime.loop` | `PydanticAIModelHandle`、`pydantic_ai_model_id()` |
 | Loop 内部 | `loop.tools.LoopDeps` 等 | 不跨包、不进 protocol |
 
 ## 模型映射
 
-`models.yaml` 的 `providers.*.kind`：
+`.anyagent/anyagent.yaml` 的 `models.providers.*.kind`：
 
 | kind | pydantic-ai 前缀 |
 | --- | --- |
@@ -233,7 +233,7 @@ flowchart TD
 
 ## Configuration
 
-- workspace：`models.yaml`、`.anyagent/agents/<id>/agent.yaml` 的 `runtime.middlewares`（`loop_detection` / `context_compaction` 映射为 hooks，不是新 4-hook API）
+- workspace：`.anyagent/anyagent.yaml` 的 `models`、`.anyagent/agents/<id>/agent.yaml` 的 `runtime.middlewares`（`loop_detection` / `context_compaction` 映射为 hooks，不是新 4-hook API）
 - OTLP：`OTEL_EXPORTER_OTLP_ENDPOINT`；头用 `OTEL_EXPORTER_OTLP_HEADERS`
 - 未设 endpoint：OTLP 渠道关闭，Event Store / SDK events 不受影响
 - 不引入 Langfuse Python SDK；凭证只进消费侧 env / Infisical

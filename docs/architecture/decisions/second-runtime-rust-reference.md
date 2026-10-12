@@ -49,7 +49,7 @@ Go 仍适合运维生态和云原生团队，但本轮第二 runtime 的优先�
 第二 runtime PoC 的最低门槛：
 
 - `cargo test --manifest-path runtimes/rust-reference/Cargo.toml` 通过。
-- 第二 runtime 的 contract test 能发现 conformance target，并确认其声明覆盖 admin/internal/storage-replay 缺口的接入状态（该测试已随撤回删除）。
+- 第二 runtime 的 contract test 能发现 conformance target，并确认其声明覆盖 admin、internal 与 storage replay 缺口的接入状态（该测试已随撤回删除）。
 - 新增 public wire contract 时，先扩展 Python reference contract，再由 Rust target 标注 unsupported / partial / supported。
 
 ## 风险与缓解

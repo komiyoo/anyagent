@@ -73,4 +73,5 @@
 关键 ADR：
 
 - [decisions/single-repo-multi-package-boundary.md](decisions/single-repo-multi-package-boundary.md)：server/client/studio 保持单仓库协作，通过 protocol/server/SDK/Studio 多包边界和同 repo SDK scaffold 维护兼容。
-- [decisions/pydantic-ai-loop-and-langfuse.md](decisions/pydantic-ai-loop-and-langfuse.md)：托管面保持；loop 换 pydantic-ai；SDK 跟踪仍走 Event Store；Langfuse OTLP 可选。完整 ADR 索引见 [decisions/README.md](decisions/README.md)。
+- [decisions/pydantic-ai-loop-and-langfuse.md](decisions/pydantic-ai-loop-and-langfuse.md)：托管面保持；loop 换 pydantic-ai；SDK 跟踪仍走 Event Store；Langfuse OTLP 可选。
+- [decisions/single-workspace-config.md](decisions/single-workspace-config.md)：单一 `.anyagent/anyagent.yaml` 与 `${VAR}` 插值。完整 ADR 索引见 [decisions/README.md](decisions/README.md)。

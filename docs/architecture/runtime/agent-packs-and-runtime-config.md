@@ -4,13 +4,13 @@ doc_kind: architecture
 status: stable
 tags: ["agent-packs", "agents-md", "agent-spec", "session", "runtime-config"]
 summary: Agent Packs、AGENTS.md 注入、AgentSpec、agent_id 路由与 session runtime config 的稳定约束。
-req: ["requirements.md#req-2-1", "requirements.md#req-2-1-1", "requirements.md#req-2-2", "requirements.md#req-4-3-1", "requirements.md#req-4-6", "requirements.md#req-4-7", "requirements.md#req-5", "requirements.md#req-5-13"]
+req: ["requirements.md#req-0-2", "requirements.md#req-2-1", "requirements.md#req-2-1-1", "requirements.md#req-2-2", "requirements.md#req-4-3-1", "requirements.md#req-4-6", "requirements.md#req-4-7", "requirements.md#req-5", "requirements.md#req-5-13"]
 ---
 -->
 
 # Agent Packs 与 Runtime Config
 
-本文承接原 `requirements.md` 中已经稳定的配置即服务设计：业务工作区通过 `.anyagent/` 声明 agent 行为、工具、skills、MCP 与多 agent 策略，Core 在边界处解析并校验，运行时只消费已知形状的数据。
+本文承接 `requirements.md#req-0-2` 与 `requirements.md#req-2-1`：工作区设置在 `.anyagent/anyagent.yaml`，agent 行为、工具、skills、MCP 与多 agent 策略在 `.anyagent/agents/`。Core 在边界处解析并校验，运行时只消费已知形状的数据。配置文件、插值和环境变量见 [getting-started.md](../../guides/getting-started.md) 与 [single-workspace-config.md](../decisions/single-workspace-config.md)。
 
 提示与策略的归属、以及「不要平行引入 pydantic-ai spec」的口径见 [pydantic-ai loop + Langfuse ADR](../decisions/pydantic-ai-loop-and-langfuse.md#配置与提示)。loop 怎么跑见 [agent-loop.md](agent-loop.md)。pack 磁盘布局不随 loop 库迁移。
 
@@ -29,7 +29,8 @@ req: ["requirements.md#req-2-1", "requirements.md#req-2-1-1", "requirements.md#r
 约束：
 
 - `<agent_id>` 必须满足 `[a-zA-Z0-9_.-]{1,64}`。
-- `agent.yaml` 与 `AGENTS.md` 为必需文件；缺失或不可解析时服务启动 fail-fast。
+- 存在 agent 目录时，`AGENTS.md` 必需，缺失或不可解析则启动 fail-fast。`agent.yaml` 可选，`AgentSpec` 的每个字段都有默认值。
+- system、user、workspace 都没有 agent 目录时，catalog 是内置 `main`（`load_agent_catalog`）。指令取工作区根 `AGENTS.md`，没有该文件则用内置默认指令。
 - 同一个 `agent_id` 只能定义一次；重复定义 fail-fast。
 - v0 先冻结为 repo workspace root：`<workspace_dir>/.anyagent/agents/`。更多 roots 可以作为后续增强，但必须记录 root/path 以便审计。
 
@@ -53,6 +54,7 @@ AgentRuntime 在每次 run 初始化 prompt 时，必须把 agent pack 的 `AGEN
 `agent.yaml` 定义该 agent 的配置集合。v0 最小字段：
 
 ```yaml
+model: fast
 exposed: true
 tools:
   requested_tool_names: ["core.web_fetch", "app.*"]
@@ -72,7 +74,8 @@ multiagent:
 
 语义：
 
-- `exposed=true`：允许外部 `POST /v1/responses` 通过 `metadata.agent_id=<agent_id>` 选择。
+- `model` 是别名或 `provider:model` 字符串，也可以写成 `model: {default: ...}`。不再有 `provider`、`api_key_env`、`base_url_env`。
+- `exposed` 默认 `true`：允许外部 `POST /v1/responses` 通过 `metadata.agent_id=<agent_id>` 选择。
 - `exposed=false`：不允许外部直连，只允许被 spawn 或内部受控调用。
 - `tools.requested_tool_names` 是“希望披露”的工具名或 glob 集合，最终仍由 Tool Runtime manifest 收口。
 - `tools.policy` 只能由服务端配置生成，外部请求的 `metadata.context.policy` 必须忽略。

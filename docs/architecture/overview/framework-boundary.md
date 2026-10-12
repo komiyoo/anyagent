@@ -24,14 +24,14 @@ anyagent 只提供框架：Server Core、SDK、Protocol、CLI 和内置 Studio�
 ## 2. 框架不做什么
 
 - 不把默认安装变成重依赖包：PostgreSQL / MySQL / Redis / S3、外部凭据后端等通过 extras、插件或子命令按需启用。
-- 不提供示例应用、业务 workspace 或部署模板。`anyagent init` / `anyagent config init` 只生成最小可启动骨架。
+- 不提供示例应用、业务 workspace 或部署模板。`anyagent init` 只生成最小可启动骨架。不写配置时，`anyagent serve` 使用内置 `main` agent。
 - 不把示例 skill、示例 agent 配置上提为框架默认行为。
 - 不做具体平台的业务接线配置。
 - 不做 K8s / Helm / Docker Compose 等部署编排。
 
 ## 3. 业务仓库负责什么
 
-- agent 配置：`.anyagent/` 下的 Agent Pack、仓库根目录的 `models.yaml`、业务 skills。
+- agent 配置：`.anyagent/anyagent.yaml`、`.anyagent/` 下的 Agent Pack、业务 skills。
 - 业务插件与平台接入：按插件与 connector 契约实现，见 [platform-connectors.md](../integrations/platform-connectors.md)。
 - 部署：进程编排，PostgreSQL / Redis / 对象存储 / OpenSandbox 等外部服务的部署与连接配置，网络策略和运行手册。
 - 业务验收：针对所依赖的 `anyagent` 版本验证自己的 agent 行为。
@@ -48,7 +48,7 @@ flowchart LR
 
 ## 5. 业务仓库如何起步
 
-1. 安装 `anyagent`，在仓库根目录用 `anyagent config init` 或 `anyagent init --template <模板>` 生成骨架，见 [getting-started.md](../../guides/getting-started.md)。
+1. 安装 `anyagent`。空目录可以直接 `anyagent serve`；需要骨架时用 `anyagent init --provider <provider> --model <model>`，见 [getting-started.md](../../guides/getting-started.md)。
 2. 用 `anyagent doctor` 检查配置，用 `anyagent dev` 本地调试。
 3. 生产部署按 [deployment.md](../../guides/deployment.md) 选择部署形态、存储和凭据后端。
 4. 本仓 `.agents/skills/anyagent-dev/` 是面向业务仓库开发的 agent skill，汇总了初始化、配置、调试和部署的工作流。

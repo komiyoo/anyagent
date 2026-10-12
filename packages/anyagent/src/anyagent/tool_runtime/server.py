@@ -128,7 +128,7 @@ def create_tool_runtime_app(
             else:
                 await resolved_workspace_event_store.aclose()
 
-    app = FastAPI(title="anyagent-tool-runtime", version="0.4.30", lifespan=_lifespan)
+    app = FastAPI(title="anyagent-tool-runtime", version="0.5.0", lifespan=_lifespan)
     app.state.anyagent_tool_runtime = runtime
     app.state.anyagent_tool_runtime_workspace = workspace
     app.state.anyagent_tool_runtime_internal_key = resolved_internal_key

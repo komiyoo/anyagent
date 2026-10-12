@@ -1,6 +1,6 @@
 # Tool Runtime TODO
 
-对应需求:`requirements.md#req-6`
+对应需求:`requirements.md#req-6`、`requirements.md#req-0-2`
 
 ## 目标
 
@@ -33,6 +33,10 @@
 - M1:standalone Tool Runtime 与进程内 runtime 通过同一份 manifest/execute contract test ✅
 - M2:Tool Runtime GA(管理面 + 观测 + credential 注入)✅
 - M3:Plugin / Connector 公开 contract 与一组参考实现 ✅
+
+## 已完成任务（0.5 随包插件）
+
+- [x] 随包插件 `chatwoot` 与 `lifecycle_echo` 经 `plugins.builtin` 显式启用。省略或空列表时两者都不加载。（Req: `requirements.md#req-0-2`、`requirements.md#req-6`；Impl: `packages/anyagent/src/anyagent/server/app_builders.py:141`、`packages/anyagent/src/anyagent/plugins/builtin/chatwoot_connector/plugin.json:3`、`packages/anyagent/src/anyagent/plugins/builtin/lifecycle_echo/plugin.json:3`；Module: `anyagent.server.app_builders`）
 
 ## 待处理
 

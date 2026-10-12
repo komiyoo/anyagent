@@ -31,16 +31,32 @@ anyagent 是配置化、无服务化的 Agent Server Core + SDK。业务项目�
 - `anyagent` 是 Server Core、SDK、Protocol、production runtime、ops CLI、storage/tool/runtime/plugin contract 真源。
 - 本仓不提供示例应用项目或部署模板；业务 workspace、业务插件、部署编排与业务验收由各业务仓库自行维护。
 
-### 0.2 交付形态（配置即服务）
+<a id="req-0-2"></a>
 
-主路径是：
+### 0.2 交付形态（配置即服务、开箱即用）
+
+安装后可以在任意目录启动，不先写配置文件：
 
 ```bash
-cd my-workspace && anyagent serve
+OPENAI_API_KEY=... anyagent serve
 ```
 
-工作区配置约定见：
+已有工作区时仍是 `cd my-workspace && anyagent serve`。
 
+约束：
+
+- 没有 `.anyagent/agents/` 时使用内置 `main` agent。有工作区根目录 `AGENTS.md` 时，那段文字是它的指令。
+- 工作区设置只在 `.anyagent/anyagent.yaml`。模型、服务、存储、凭据、沙箱、插件、观测、告警和 Tool Runtime 都在这个文件里。省略的字段用内置默认。
+- 取值只有 `${VAR}` / `${VAR:-default}`。没有 `*_env` 字段。内置默认引用约定环境变量，因此只设环境变量、不写 yaml 仍然可用。
+- 优先级：CLI > workspace `.anyagent/anyagent.yaml` > user `~/.anyagent/anyagent.yaml` > system `/etc/anyagent/anyagent.yaml` > 内置默认。
+- `agent.yaml` 的 `model` 只引用别名或 `provider:model`。所有字段可选。一个 agent 目录可以只有 `AGENTS.md`。
+
+设计记录：[docs/architecture/decisions/single-workspace-config.md](docs/architecture/decisions/single-workspace-config.md)。
+
+操作与 pack 约定：
+
+- [docs/guides/getting-started.md](docs/guides/getting-started.md)
+- [docs/guides/deployment.md](docs/guides/deployment.md)
 - [docs/architecture/runtime/agent-packs-and-runtime-config.md](docs/architecture/runtime/agent-packs-and-runtime-config.md)
 - [docs/architecture/api/responses-api-sdk-and-server.md](docs/architecture/api/responses-api-sdk-and-server.md)
 

@@ -46,7 +46,7 @@ pack 磁盘布局以 [Agent Packs](../../../architecture/runtime/agent-packs-and
 
 ## Scope
 
-- In: pydantic-ai 适配器、OTLP、`models.yaml` → pydantic-ai model 字符串、envelope 注入、loop 单测与 Chatwoot 离线 smoke
+- In: pydantic-ai 适配器、OTLP、工作区 `models` 配置 → pydantic-ai model 字符串、envelope 注入、loop 单测与 Chatwoot 离线 smoke
 - Out: Gateway 改拓扑、用 Langfuse 换 Event Store、Temporal、Rust runtime、业务仓提示迁移、平行 agent spec
 
 ## Files
@@ -91,7 +91,7 @@ flowchart LR
 - [x] 适配器从 pack + envelope + manifest 构造 `pydantic_ai.Agent`，`instructions` 只来自 envelope，不写死业务文案
 - [x] 每个 manifest function tool 包一层 pydantic-ai tool，内部只调 `ToolRuntimeClient.execute`
 - [x] `run_tool_loop_nonstream` / `run_tool_loop_stream_live` 改走适配器，SSE 事件名与 `response.output` 形状与现网兼容
-- [x] `models.yaml` 的模型 id 映射为 pydantic-ai model 字符串；缺映射 fail-fast
+- [x] 工作区 `models` 的模型 id 映射为 pydantic-ai model 字符串；缺映射 fail-fast
 - [x] 单测：无网络情况下 envelope 注入、tool wrap 调用 execute、stream 结束带 `[DONE]`
 - [x] `tests/acceptance/server/` 里现有 built-in server smoke 与 `acceptance_chatwoot_connector_smoke.py` 通过
 

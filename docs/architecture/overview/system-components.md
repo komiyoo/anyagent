@@ -437,10 +437,10 @@ flowchart TB
 
 切换方式（取值以代码为准，查询入口见 [guides/README.md](../../guides/README.md#以代码为准)）：
 
-- Tool Runtime：`anyagent agent-api serve` 通过 `--tool-runtime-url` 或 `TOOL_RUNTIME_BASE_URL` 调用远端 Tool Runtime。
-- 存储：`STORAGE_PROFILE`（`ServerSettings` / `StorageSettings`）。
-- 沙箱：agent 的 `sandbox.mode`；独立 Tool Runtime 另有 `SANDBOX_BACKEND`（`ToolRuntimeSettings`）。
-- 凭据：`MCP_CREDENTIAL_STORE_BACKEND`。
+- Tool Runtime：`anyagent agent-api serve` 通过 `--tool-runtime-url` 或 `tool_runtime.base_url`（环境变量 `TOOL_RUNTIME_BASE_URL`）调用远端 Tool Runtime。
+- 存储：`storage.profile`（环境变量 `STORAGE_PROFILE`）。
+- 沙箱：agent 的 `sandbox.mode`；独立 Tool Runtime 另有 `sandbox.backend`（环境变量 `SANDBOX_BACKEND`）。
+- 凭据：`credentials.backend`（环境变量 `CREDENTIAL_BACKEND`），可写性是 `credentials.writable`。
 
 ---
 

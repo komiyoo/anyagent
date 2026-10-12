@@ -1,6 +1,6 @@
 # 安全与合规 TODO
 
-对应需求：`requirements.md#req-8`
+对应需求：`requirements.md#req-8`、`requirements.md#req-0-2`
 
 ## 当前状态
 
@@ -24,8 +24,15 @@
 
 ## 决策 & 争议点
 
-- [x] DatabaseBackend 与 VaultBackend 是否需要同时支持，还是按部署形态二选一：同时支持，以 `MCP_CREDENTIAL_STORE_BACKEND=db-write|vault-write` 按部署形态选择。（Module: `tool-runtime`；Impl: `packages/anyagent/src/anyagent/server/security/credential_runtime.py:65`、`packages/anyagent/src/anyagent/server/security/credential_capabilities.py:135`）
-- [x] 加密密钥本身的管理：preview 阶段仓内只接收 `CREDENTIAL_ENCRYPTION_KEY` 配置，不托管 KMS；生产密钥生命周期交由部署平台/KMS 管理。（Module: `tool-runtime`；Impl: `packages/anyagent/src/anyagent/server/security/credential_runtime.py:38`、`docs/security/credential-vault.md:294`）
+- [x] DatabaseBackend 与 VaultBackend 同时支持，用 `credentials.backend`（`CREDENTIAL_BACKEND=db|vault`）按部署选择。可写性是 `credentials.writable`（`CREDENTIAL_WRITABLE`），后端名不带 `-write`。（Req: `requirements.md#req-8`；Module: `anyagent.server.security`；Impl: `packages/anyagent/src/anyagent/server/security/credential_runtime.py:32`、`packages/anyagent/src/anyagent/config/schema.py:148`）
+- [x] 加密密钥本身的管理：preview 阶段仓内只接收 `CREDENTIAL_ENCRYPTION_KEY` 配置，不托管 KMS；生产密钥生命周期交由部署平台/KMS 管理。（Module: `anyagent.server.security`；Impl: `packages/anyagent/src/anyagent/server/security/credential_runtime.py:159`）
+
+## 已完成任务（0.5 凭据配置）
+
+- [x] 凭据配置收成 `CredentialsConfig`。`build_credential_store` 与 `open_process_credential_store` 只接收配置对象。`backend=none` 时进程内落到内存库。（Req: `requirements.md#req-0-2`、`requirements.md#req-8`；Impl: `packages/anyagent/src/anyagent/config/schema.py:146`、`packages/anyagent/src/anyagent/server/security/credential_runtime.py:32`、`packages/anyagent/src/anyagent/server/security/credential_runtime.py:55`；Module: `anyagent.server.security.credential_runtime`）
+- [x] 凭据环境变量是 `CREDENTIAL_BACKEND`、`CREDENTIAL_WRITABLE`、`CREDENTIAL_FILE_ROOT`。占位写在内置默认的 `credentials` 段。（Req: `requirements.md#req-0-2`；Impl: `packages/anyagent/src/anyagent/config/defaults.py:79`；Module: `anyagent.config`）
+- [x] `credentials.runtime_env` 在启动时投影到进程环境。`config show` 显示环境变量名和 `credential:<id>`，不打印明文。（Req: `requirements.md#req-0-2`；Impl: `packages/anyagent/src/anyagent/server/runtime/workspace_env.py:44`、`packages/anyagent/src/anyagent/server/runtime/workspace_env.py:32`；Module: `anyagent.server.runtime.workspace_env`）
+- [x] `anyagent credential set|list|delete|import --local` 不启动服务即可管理当前工作区后端。省略 `--local` 走 Admin API。（Req: `requirements.md#req-8`；Impl: `packages/anyagent/src/anyagent/cli/credential.py:19`；Module: `anyagent.cli.credential`）
 
 ## 参考
 
