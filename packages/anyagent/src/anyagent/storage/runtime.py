@@ -10,7 +10,7 @@ from typing import Any
 from .contracts import EventStore, LeaseLock, RunStore, SessionStore, SessionWorkspaceStore
 from .inmemory import InMemoryEventStore, InMemoryLeaseLock, InMemoryRunStore, InMemorySessionStore
 from .rollout import RolloutFileWriter
-from .settings import StorageSettings, active_storage_settings
+from .settings import StorageSettings, active_storage_settings, redact_secret_text
 
 
 logger = logging.getLogger("anyagent.storage.runtime")
@@ -174,7 +174,10 @@ async def create_storage_runtime(
         namespace=storage_settings.redis_namespace,
         dialect=storage_settings.sql_backend_dialect,
     )
-    sql_engine = create_external_sql_engine(sql_config)
+    try:
+        sql_engine = create_external_sql_engine(sql_config)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"failed to create external sql engine: {redact_secret_text(str(exc))}") from None
 
     if sql_config.dialect == "mysql":
         run_store = MySQLRunStore(engine=sql_engine)

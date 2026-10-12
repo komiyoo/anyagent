@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from anyagent.config.schema import CredentialsConfig, StorageConfig
-from anyagent.storage.settings import StorageSettings, active_storage_settings
+from anyagent.storage.settings import StorageSettings, active_storage_settings, storage_settings_from_config
 
 
 StorageProfile = Literal["inmemory", "postgres", "postgres-redis", "redis"]
@@ -120,6 +120,18 @@ class ServerSettings(BaseModel):
             single_instance_only=single_instance_only,
             warnings=tuple(warnings),
         )
+
+
+def resolve_server_storage(storage: StorageConfig) -> tuple[StorageSettings, ResolvedServerStorageSettings]:
+    """Resolve storage from an explicit config section.
+
+    This path does not read the process environment. ``ServerSettings.resolve``
+    still falls back to ``active_storage_settings`` when ``storage_settings``
+    is omitted, so env-only callers keep working.
+    """
+
+    settings = storage_settings_from_config(storage)
+    return settings, server_settings_from_config(storage).resolve(storage_settings=settings)
 
 
 def server_settings_from_config(storage: StorageConfig, _credentials: CredentialsConfig | None = None) -> ServerSettings:

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from anyagent.config.schema import CredentialsConfig, CredentialsFileConfig
 from anyagent.protocol.credential_vault import CredentialScope
 from anyagent.protocol.tool_runtime import AuthRef
 from anyagent.server.security.credential_backends import (
@@ -18,14 +19,14 @@ from anyagent.server.security.credential_backends import (
     FileBackend,
     InfisicalBackend,
     InfisicalBackendConfig,
+    ReadOnlyCredentialStore,
     ReadOnlyCredentialStoreError,
     VaultBackend,
     VaultBackendConfig,
 )
 from anyagent.server.security.credential_runtime import (
-    CredentialRuntimeConfig,
-    build_credential_resolver_from_config,
-    build_credential_store_from_config,
+    build_credential_store,
+    open_process_credential_store,
     resolve_credential_file_root,
 )
 from anyagent.server.security.credential_store import InMemoryCredentialStore
@@ -241,54 +242,59 @@ def test_file_backend_supports_session_scope_and_expiration(tmp_path: Path) -> N
 
 
 def test_credential_store_builder_selects_env_file_and_validates_infisical(tmp_path: Path) -> None:
-    env_store = build_credential_store_from_config(CredentialRuntimeConfig(backend="env"))
-    file_store = build_credential_store_from_config(
-        CredentialRuntimeConfig(
+    env_store = build_credential_store(CredentialsConfig(backend="env", writable=True))
+    file_store = build_credential_store(
+        CredentialsConfig(
             backend="file",
-            file_root=".anyagent/credentials",
-            workspace_dir=tmp_path,
-        )
+            writable=True,
+            file=CredentialsFileConfig(root=".anyagent/credentials"),
+        ),
+        workspace_dir=tmp_path,
     )
 
     assert isinstance(env_store, EnvBackend)
     assert isinstance(file_store, FileBackend)
-    assert resolve_credential_file_root(
-        CredentialRuntimeConfig(
-            backend="file",
-            file_root=".anyagent/credentials",
-            workspace_dir=tmp_path,
-        )
-    ) == tmp_path / ".anyagent" / "credentials"
+    assert resolve_credential_file_root(".anyagent/credentials", workspace_dir=tmp_path) == (
+        tmp_path / ".anyagent" / "credentials"
+    )
     with pytest.raises(RuntimeError, match="INFISICAL_UNIVERSAL_AUTH_CLIENT_ID"):
-        build_credential_store_from_config(CredentialRuntimeConfig(backend="infisical"))
+        build_credential_store(CredentialsConfig(backend="infisical", writable=True))
+    unknown = CredentialsConfig.model_construct(
+        backend="unknown",
+        writable=True,
+        file=CredentialsFileConfig(),
+        db=CredentialsConfig().db,
+        vault=CredentialsConfig().vault,
+        infisical=CredentialsConfig().infisical,
+        runtime_env=[],
+    )
     with pytest.raises(RuntimeError, match="unsupported credential store backend"):
-        build_credential_store_from_config(CredentialRuntimeConfig(backend="unknown"))
+        build_credential_store(unknown)
 
 
-def test_credential_resolver_builder_keeps_core_write_alias_and_memory_fallback(tmp_path: Path) -> None:
-    fallback = build_credential_resolver_from_config(
-        CredentialRuntimeConfig(
-            backend="none",
-            workspace_dir=tmp_path,
-        )
-    )
-    writable = build_credential_resolver_from_config(
-        CredentialRuntimeConfig(
-            backend="file-write",
-            file_root=".anyagent/credentials",
-            workspace_dir=tmp_path,
-        )
-    )
-    disabled = build_credential_resolver_from_config(
-        CredentialRuntimeConfig(
-            backend="none",
-            workspace_dir=tmp_path,
+def test_credential_store_none_falls_back_to_memory_and_writable_selects_file(tmp_path: Path) -> None:
+    fallback = open_process_credential_store(CredentialsConfig(backend="none"), workspace_dir=tmp_path)
+    writable = build_credential_store(
+        CredentialsConfig(
+            backend="file",
+            writable=True,
+            file=CredentialsFileConfig(root=".anyagent/credentials"),
         ),
-        fallback_to_memory=False,
+        workspace_dir=tmp_path,
     )
+    read_only = build_credential_store(
+        CredentialsConfig(
+            backend="file",
+            writable=False,
+            file=CredentialsFileConfig(root=".anyagent/credentials"),
+        ),
+        workspace_dir=tmp_path,
+    )
+    disabled = build_credential_store(CredentialsConfig(backend="none"), workspace_dir=tmp_path)
 
     assert isinstance(fallback, InMemoryCredentialStore)
     assert isinstance(writable, FileBackend)
+    assert isinstance(read_only, ReadOnlyCredentialStore)
     assert disabled is None
 
 

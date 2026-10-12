@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Annotated, Literal
 
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PostgresDsn, RedisDsn, UrlConstraints
 
 from anyagent.config.schema import StorageConfig
+
+
+_URL_PASSWORD_RE = re.compile(r"(://[^:@/\s]*):([^@/\s]+)@")
+
+
+def redact_secret_text(text: str) -> str:
+    """Mask userinfo passwords in URLs. Other text is unchanged."""
+
+    return _URL_PASSWORD_RE.sub(r"\1:***@", text)
 
 
 MySQLDsn = Annotated[AnyUrl, UrlConstraints(allowed_schemes=["mysql", "mysql+asyncmy", "mysql+aiomysql", "mysql+pymysql"])]
@@ -49,6 +59,12 @@ class StorageSettings(BaseModel):
     def effective_postgres_dsn(self) -> PostgresDsn | None:
         """POSTGRES_DSN takes precedence; falls back to DATABASE_URL."""
         return self.postgres_dsn or self.database_url
+
+    def __repr__(self) -> str:
+        return redact_secret_text(super().__repr__())
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
 
 def storage_settings_from_config(storage: StorageConfig) -> StorageSettings:

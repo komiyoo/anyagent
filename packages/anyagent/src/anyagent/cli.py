@@ -17,6 +17,7 @@ import yaml
 from anyagent.config.agents import AgentPackError, load_agent_catalog, preferred_agents_root, preferred_config_root
 from anyagent.config.env import getenv
 from anyagent.config.loader import load_effective_config
+from anyagent.config.schema import plain_secret
 from anyagent.config.models import get_provider_spec, resolve_provider_kind
 from anyagent.observability import configure_observability
 from anyagent.protocol.admin_storage import StorageHealthResponse
@@ -923,8 +924,8 @@ def _cmd_agent_api_serve(args: argparse.Namespace) -> int:
             mcp_credential_store_file_root=credentials.file.root,
             infisical_host=credentials.infisical.host,
             infisical_universal_auth_client_id=credentials.infisical.client_id,
-            infisical_universal_auth_client_secret=credentials.infisical.client_secret,
-            infisical_token=credentials.infisical.token,
+            infisical_universal_auth_client_secret=plain_secret(credentials.infisical.client_secret),
+            infisical_token=plain_secret(credentials.infisical.token),
             infisical_project_id=credentials.infisical.project_id,
             infisical_environment=credentials.infisical.environment,
             infisical_cache_ttl_seconds=int(credentials.infisical.cache_ttl_seconds),

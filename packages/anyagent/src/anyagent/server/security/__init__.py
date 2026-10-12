@@ -6,22 +6,29 @@ from .credential_backends import (
     FileBackend,
     InfisicalBackend,
     InfisicalBackendConfig,
+    ReadOnlyCredentialStore,
     ReadOnlyCredentialStoreError,
     VaultBackend,
     VaultBackendConfig,
 )
 from .credential_capabilities import build_credential_backend_capability_matrix
 from .credential_runtime import (
-    CredentialRuntimeConfig,
-    build_credential_resolver_from_config,
-    build_credential_store_from_config,
+    build_credential_store,
+    open_process_credential_store,
     resolve_credential_file_root,
 )
 from .credential_store import AuditedCredentialStore, InMemoryCredentialStore, emit_credential_audit_for_store
+from .local_admin import (
+    CredentialAdminError,
+    local_delete_credential,
+    local_list_credentials,
+    local_set_credential,
+)
 from .mcp_credentials import InfisicalCredentialResolver, InfisicalResolverConfig, build_mcp_credential_resolver
 
 __all__ = [
-    "CredentialRuntimeConfig",
+    "AuditedCredentialStore",
+    "CredentialAdminError",
     "CredentialStore",
     "DatabaseBackend",
     "DatabaseBackendConfig",
@@ -29,17 +36,20 @@ __all__ = [
     "FileBackend",
     "InfisicalBackend",
     "InfisicalBackendConfig",
-    "AuditedCredentialStore",
-    "InMemoryCredentialStore",
     "InfisicalCredentialResolver",
     "InfisicalResolverConfig",
+    "InMemoryCredentialStore",
+    "ReadOnlyCredentialStore",
     "ReadOnlyCredentialStoreError",
     "VaultBackend",
     "VaultBackendConfig",
     "build_credential_backend_capability_matrix",
-    "build_credential_resolver_from_config",
-    "build_credential_store_from_config",
+    "build_credential_store",
     "build_mcp_credential_resolver",
     "emit_credential_audit_for_store",
+    "local_delete_credential",
+    "local_list_credentials",
+    "local_set_credential",
+    "open_process_credential_store",
     "resolve_credential_file_root",
 ]

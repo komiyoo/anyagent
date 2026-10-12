@@ -7,16 +7,15 @@ from typing import Any, Protocol
 from anyagent.gateway.session import session_partition_key as build_session_partition_key
 from anyagent.protocol.agent_api_internal import InternalEventItem, InternalEventsListResponse
 from anyagent.protocol.responses_optional import AnyAgentResponseError
-from anyagent.server.persistence.events import InMemoryEventStore, build_cached_event_store, build_postgres_event_store, build_redis_event_store
-from anyagent.server.persistence.run_store import InMemoryRunStore, _local_run_record, build_cached_run_store, build_postgres_run_store, build_redis_run_store
+from anyagent.server.persistence.events import CachedEventStore, InMemoryEventStore, PostgresEventStore, RedisEventStore
+from anyagent.server.persistence.run_store import CachedRunStore, InMemoryRunStore, PostgresRunStore, RedisRunStore, _local_run_record
 from anyagent.server.persistence.session_store import (
+    CachedSessionStore,
     InMemorySessionStore,
+    PostgresSessionStore,
     RedisSessionStore,
     SessionSnapshotVersionConflict,
     _local_session_record,
-    build_cached_session_store,
-    build_postgres_session_store,
-    build_redis_session_store,
 )
 from anyagent.storage.settings import StorageSettings, active_storage_settings
 
@@ -346,54 +345,132 @@ class _ExternalSqlEventStoreAdapter:
             self._initialized = True
 
 
+def _require_settings(storage_settings: StorageSettings | None) -> StorageSettings:
+    return storage_settings if storage_settings is not None else active_storage_settings()
+
+
+def _postgres_dsn(settings: StorageSettings, *, store: str) -> str:
+    dsn = settings.effective_postgres_dsn
+    if dsn is None:
+        raise RuntimeError(f"postgres {store} store requires POSTGRES_DSN or DATABASE_URL")
+    return str(dsn)
+
+
+def _redis_dsn(settings: StorageSettings, *, store: str) -> str:
+    dsn = settings.redis_dsn
+    if dsn is None:
+        raise RuntimeError(f"redis {store} store requires REDIS_DSN")
+    return str(dsn)
+
+
+def _postgres_event_store(settings: StorageSettings) -> PostgresEventStore:
+    return PostgresEventStore(
+        postgres_dsn=_postgres_dsn(settings, store="event"),
+        postgres_schema=settings.postgres_schema,
+        schema_policy=settings.postgres_schema_policy,
+    )
+
+
+def _redis_event_store(settings: StorageSettings) -> RedisEventStore:
+    return RedisEventStore(
+        redis_dsn=_redis_dsn(settings, store="event"),
+        namespace=settings.redis_namespace,
+        retention_s=settings.event_store_retention_s,
+    )
+
+
+def _cached_event_store(settings: StorageSettings) -> CachedEventStore:
+    return CachedEventStore(primary=_postgres_event_store(settings), cache=_redis_event_store(settings))
+
+
+def _postgres_run_store(settings: StorageSettings) -> PostgresRunStore:
+    return PostgresRunStore(
+        postgres_dsn=_postgres_dsn(settings, store="run"),
+        postgres_schema=settings.postgres_schema,
+        schema_policy=settings.postgres_schema_policy,
+    )
+
+
+def _redis_run_store(settings: StorageSettings) -> RedisRunStore:
+    return RedisRunStore(
+        redis_dsn=_redis_dsn(settings, store="run"),
+        namespace=settings.redis_namespace,
+        retention_s=settings.run_store_retention_s,
+    )
+
+
+def _cached_run_store(settings: StorageSettings) -> CachedRunStore:
+    return CachedRunStore(primary=_postgres_run_store(settings), cache=_redis_run_store(settings))
+
+
+def _postgres_session_store(settings: StorageSettings) -> PostgresSessionStore:
+    return PostgresSessionStore(
+        postgres_dsn=_postgres_dsn(settings, store="session"),
+        postgres_schema=settings.postgres_schema,
+        schema_policy=settings.postgres_schema_policy,
+    )
+
+
+def _redis_session_store(settings: StorageSettings) -> RedisSessionStore:
+    return RedisSessionStore(
+        redis_dsn=_redis_dsn(settings, store="session"),
+        namespace=settings.redis_namespace,
+        retention_s=settings.session_store_retention_s,
+    )
+
+
+def _cached_session_store(settings: StorageSettings) -> CachedSessionStore:
+    return CachedSessionStore(primary=_postgres_session_store(settings), cache=_redis_session_store(settings))
+
+
 def build_event_store(*, backend: str, storage_settings: StorageSettings | None = None) -> EventStore:
     if backend == "inmemory":
         return InMemoryEventStore()
+    settings = _require_settings(storage_settings)
     if backend in {"postgres", "postgres-only"}:
-        return build_postgres_event_store()
+        return _postgres_event_store(settings)
     if backend == "postgres-redis":
-        return build_cached_event_store()
+        return _cached_event_store(settings)
     if backend in {"external", "redis"}:
-        settings = storage_settings or active_storage_settings()
         if backend == "external" and settings.effective_postgres_dsn is not None:
             if settings.redis_dsn is not None:
-                return build_cached_event_store()
-            return build_postgres_event_store()
-        return build_redis_event_store()
+                return _cached_event_store(settings)
+            return _postgres_event_store(settings)
+        return _redis_event_store(settings)
     raise RuntimeError(f"event store backend not implemented: {backend}")
 
 
 def build_run_store(*, backend: str, storage_settings: StorageSettings | None = None) -> RunStore:
     if backend == "inmemory":
         return InMemoryRunStore()
+    settings = _require_settings(storage_settings)
     if backend in {"postgres", "postgres-only"}:
-        return build_postgres_run_store()
+        return _postgres_run_store(settings)
     if backend == "postgres-redis":
-        return build_cached_run_store()
+        return _cached_run_store(settings)
     if backend in {"external", "redis"}:
-        settings = storage_settings or active_storage_settings()
         if backend == "external" and settings.effective_postgres_dsn is not None:
             if settings.redis_dsn is not None:
-                return build_cached_run_store()
-            return build_postgres_run_store()
-        return build_redis_run_store()
+                return _cached_run_store(settings)
+            return _postgres_run_store(settings)
+        return _redis_run_store(settings)
     raise RuntimeError(f"run store backend not implemented: {backend}")
 
 
 def build_session_store(*, backend: str, storage_settings: StorageSettings | None = None) -> SessionStore:
     if backend == "inmemory":
         return InMemorySessionStore()
+    settings = _require_settings(storage_settings)
     if backend in {"postgres", "postgres-only"}:
-        return build_postgres_session_store()
+        return _postgres_session_store(settings)
     if backend == "postgres-redis":
-        return build_cached_session_store()
+        return _cached_session_store(settings)
     if backend in {"external", "redis"}:
-        settings = storage_settings or active_storage_settings()
         if backend == "external" and settings.effective_postgres_dsn is not None:
             if settings.redis_dsn is not None:
-                return build_cached_session_store()
-            return build_postgres_session_store()
-        return build_redis_session_store()
+                return _cached_session_store(settings)
+            return _postgres_session_store(settings)
+        return _redis_session_store(settings)
     raise RuntimeError(f"session store backend not implemented: {backend}")
 
 
@@ -411,9 +488,9 @@ def build_server_storage_bundle(
     ):
         if sql_backend == "postgresql":
             return ServerStorageBundle(
-                event_store=build_event_store(backend=event_store_backend),
-                run_store=build_run_store(backend=run_store_backend),
-                session_store=build_session_store(backend=session_store_backend),
+                event_store=build_event_store(backend=event_store_backend, storage_settings=settings),
+                run_store=build_run_store(backend=run_store_backend, storage_settings=settings),
+                session_store=build_session_store(backend=session_store_backend, storage_settings=settings),
                 resources=[],
             )
 
@@ -436,21 +513,26 @@ def build_server_storage_bundle(
             namespace=settings.redis_namespace,
             dialect=sql_backend,
         )
-        engine = create_external_sql_engine(config)
+        from anyagent.storage.settings import redact_secret_text
+
+        try:
+            engine = create_external_sql_engine(config)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"failed to create external sql engine: {redact_secret_text(str(exc))}") from None
         event_store = (
             _ExternalSqlEventStoreAdapter(engine=engine, store=MySQLEventStore(engine=engine), dialect="mysql")
             if event_store_backend == "external"
-            else build_event_store(backend=event_store_backend)
+            else build_event_store(backend=event_store_backend, storage_settings=settings)
         )
         run_store = (
             _ExternalSqlRunStoreAdapter(store=MySQLRunStore(engine=engine))
             if run_store_backend == "external"
-            else build_run_store(backend=run_store_backend)
+            else build_run_store(backend=run_store_backend, storage_settings=settings)
         )
         session_store = (
             _ExternalSqlSessionStoreAdapter(store=MySQLSessionStore(engine=engine))
             if session_store_backend == "external"
-            else build_session_store(backend=session_store_backend)
+            else build_session_store(backend=session_store_backend, storage_settings=settings)
         )
         return ServerStorageBundle(
             event_store=event_store,
@@ -460,9 +542,9 @@ def build_server_storage_bundle(
         )
 
     return ServerStorageBundle(
-        event_store=build_event_store(backend=event_store_backend),
-        run_store=build_run_store(backend=run_store_backend),
-        session_store=build_session_store(backend=session_store_backend),
+        event_store=build_event_store(backend=event_store_backend, storage_settings=settings),
+        run_store=build_run_store(backend=run_store_backend, storage_settings=settings),
+        session_store=build_session_store(backend=session_store_backend, storage_settings=settings),
         resources=[],
     )
 

@@ -165,8 +165,8 @@ def test_tool_runtime_settings_build_server_config(tmp_path: Path, monkeypatch) 
     assert config.workspace_event_backend == "jsonl"
     assert config.workspace_event_root_dir == "events"
     assert config.workspace_event_max_buffer == 42
-    assert config.credential.backend == "file-write"
-    assert config.credential.workspace_dir == tmp_path
+    assert config.credential.backend == "file"
+    assert config.credential.writable is True
     assert config.workspace_runtime.allow_sandbox is True
     assert config.workspace_runtime.sandbox_backend == "local_reference"
     assert config.workspace_runtime.sandbox_isolation_mode == "local_unsafe"

@@ -156,14 +156,20 @@ def build_mcp_credential_resolver(
     environ: dict[str, str] | None = None,
 ) -> CredentialResolver | None:
     """Builds one credential resolver instance for MCP auth use."""
+    from anyagent.config.schema import CredentialsConfig, CredentialsFileConfig
+    from anyagent.server.security.credential_runtime import build_credential_store
+
     mode = (backend or "").strip().lower()
     if mode in {"", "none"}:
         return None
-    if mode == "env":
-        return EnvCredentialResolver(environ=environ)
-    if mode == "file":
-        return FileCredentialResolver(root=file_root, environ=environ)
-    raise MCPAuthError(f"unsupported MCP credential backend: {backend}")
+    if mode not in {"env", "file"}:
+        raise MCPAuthError(f"unsupported MCP credential backend: {backend}")
+    config = CredentialsConfig(
+        backend=mode,  # type: ignore[arg-type]
+        writable=False,
+        file=CredentialsFileConfig(root=file_root or ".anyagent/credentials"),
+    )
+    return build_credential_store(config, environ=environ)
 
 
 def _read_credential_value(path: Path, kind: str) -> str | None:

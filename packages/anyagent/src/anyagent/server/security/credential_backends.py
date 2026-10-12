@@ -21,6 +21,13 @@ class ReadOnlyCredentialStoreError(RuntimeError):
     """Raised when a credential backend does not support mutation."""
 
 
+_URL_PASSWORD_RE = re.compile(r"(://[^:@/\s]*):([^@/\s]+)@")
+
+
+def _redact_secret_text(text: str) -> str:
+    return _URL_PASSWORD_RE.sub(r"\1:***@", text)
+
+
 class CredentialStore(ABC):
     """Defines write-only credential storage with internal-only resolve."""
 
@@ -48,6 +55,41 @@ class CredentialStore(ABC):
     @abstractmethod
     async def list_refs(self, scope: CredentialScope | None = None) -> list[dict[str, Any]]:
         """Lists credential references without plaintext values."""
+
+
+class ReadOnlyCredentialStore(CredentialStore):
+    """Delegates reads and rejects set/delete when ``credentials.writable`` is false."""
+
+    def __init__(self, inner: CredentialStore, *, backend: str) -> None:
+        self._inner = inner
+        self._backend = backend
+
+    async def set(
+        self,
+        credential_id: str,
+        kind: str,
+        value: str,
+        scope: CredentialScope,
+        metadata: dict[str, Any] | None = None,
+        expires_at: datetime | None = None,
+        rotate_before: datetime | None = None,
+    ) -> None:
+        _ = credential_id, kind, value, scope, metadata, expires_at, rotate_before
+        raise ReadOnlyCredentialStoreError(
+            f"credential backend '{self._backend}' is not writable; set credentials.writable to true"
+        )
+
+    async def resolve(self, auth_ref: AuthRef, scope_context: dict[str, Any] | None = None) -> str | None:
+        return await self._inner.resolve(auth_ref, scope_context=scope_context)
+
+    async def delete(self, credential_id: str) -> bool:
+        _ = credential_id
+        raise ReadOnlyCredentialStoreError(
+            f"credential backend '{self._backend}' is not writable; set credentials.writable to true"
+        )
+
+    async def list_refs(self, scope: CredentialScope | None = None) -> list[dict[str, Any]]:
+        return await self._inner.list_refs(scope=scope)
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +160,12 @@ class EnvBackend(CredentialStore):
                 if value:
                     return value
 
+        if isinstance(agent_id, str) and agent_id.strip():
+            scoped_var = f"CREDENTIAL__{credential_id.upper()}__AGENT__{agent_id.strip().upper()}__{kind.upper()}"
+            scoped_value = self._environ.get(scoped_var)
+            if scoped_value:
+                return scoped_value
+
         default_var = f"CREDENTIAL__{credential_id.upper()}"
         value = self._environ.get(default_var)
         if value:
@@ -182,9 +230,8 @@ class _FileCredential:
 class FileBackend(CredentialStore):
     """Stores credentials on filesystem with chmod 600 and atomic writes."""
 
-    def __init__(self, *, root: str | Path, environ: dict[str, str] | None = None) -> None:
+    def __init__(self, *, root: str | Path) -> None:
         self._root = Path(root)
-        self._environ = os.environ if environ is None else environ
 
     async def set(
         self,
@@ -246,11 +293,6 @@ class FileBackend(CredentialStore):
         entry = _read_credential_file(global_path)
         if entry is not None and entry.kind == kind and not _is_expired(entry.expires_at):
             return entry.value
-
-        env_var = f"CREDENTIAL__{credential_id.upper()}"
-        value = self._environ.get(env_var)
-        if value:
-            return value
         return None
 
     async def delete(self, credential_id: str) -> bool:
@@ -330,6 +372,14 @@ class DatabaseBackendConfig:
     encryption_key: str
     schema_name: str = "public"
     create_schema: bool = False
+
+    def __repr__(self) -> str:
+        dsn = _redact_secret_text(self.postgres_dsn)
+        return (
+            "DatabaseBackendConfig("
+            f"postgres_dsn={dsn!r}, encryption_key='***', "
+            f"schema_name={self.schema_name!r}, create_schema={self.create_schema!r})"
+        )
 
 
 class DatabaseBackend(CredentialStore):
@@ -548,6 +598,13 @@ class VaultBackendConfig:
     root_path: str = "anyagent/credentials"
     timeout_s: float = 10.0
 
+    def __repr__(self) -> str:
+        return (
+            "VaultBackendConfig("
+            f"base_url={self.base_url!r}, token='***', mount={self.mount!r}, "
+            f"root_path={self.root_path!r}, timeout_s={self.timeout_s!r})"
+        )
+
 
 class VaultBackend(CredentialStore):
     """HashiCorp Vault KV v2 credential store."""
@@ -722,6 +779,16 @@ class InfisicalBackendConfig:
     path_layout: str = "scoped"
     cache_ttl_seconds: int = 60
     token: str | None = None
+
+    def __repr__(self) -> str:
+        token = "None" if self.token is None else "'***'"
+        return (
+            "InfisicalBackendConfig("
+            f"host={self.host!r}, client_id={self.client_id!r}, client_secret='***', "
+            f"project_id={self.project_id!r}, environment={self.environment!r}, "
+            f"credential_root_path={self.credential_root_path!r}, path_layout={self.path_layout!r}, "
+            f"cache_ttl_seconds={self.cache_ttl_seconds!r}, token={token})"
+        )
 
 
 class InfisicalBackend(CredentialStore):
@@ -1002,7 +1069,12 @@ def _create_postgres_engine(postgres_dsn: str) -> Any:
     dsn = postgres_dsn
     if dsn.startswith("postgresql://"):
         dsn = "postgresql+psycopg://" + dsn[len("postgresql://") :]
-    return create_async_engine(dsn, pool_pre_ping=True, future=True)
+    try:
+        return create_async_engine(dsn, pool_pre_ping=True, future=True)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"failed to create credential postgres engine: {_redact_secret_text(str(exc))}"
+        ) from None
 
 
 def _validate_identifier(value: str) -> str:

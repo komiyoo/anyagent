@@ -71,7 +71,14 @@ def test_mcp_credentials_file_backend_uses_workspace_relative_root(tmp_path: Pat
         credential_dir = tmp_path / ".anyagent" / "credentials" / "agents" / "main"
         credential_dir.mkdir(parents=True, exist_ok=True)
         (credential_dir / "cred_api.json").write_text(
-            json.dumps({"kind": "bearer_token", "value": "file-secret"}),
+            json.dumps(
+                {
+                    "credential_id": "cred_api",
+                    "kind": "bearer_token",
+                    "value": "file-secret",
+                    "scope": {"level": "agent", "agent_id": "main"},
+                }
+            ),
             encoding="utf-8",
         )
 
@@ -90,6 +97,6 @@ def test_mcp_credentials_file_backend_uses_workspace_relative_root(tmp_path: Pat
         )
 
         assert resolved == "file-secret"
-        assert app.state.anyagent.mcp_credentials is not app.state.anyagent.credentials
+        assert app.state.anyagent.mcp_credentials is app.state.anyagent.credentials
 
     asyncio.run(_run())

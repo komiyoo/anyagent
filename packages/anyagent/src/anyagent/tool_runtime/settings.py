@@ -4,9 +4,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PostgresDsn, RedisDsn, UrlConstraints
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PostgresDsn, RedisDsn, SecretStr, UrlConstraints
 
 from anyagent.config.agents import DEFAULT_CREDENTIAL_FILE_ROOT
+from anyagent.config.schema import (
+    CredentialsConfig,
+    CredentialsDbConfig,
+    CredentialsFileConfig,
+    CredentialsInfisicalConfig,
+    CredentialsVaultConfig,
+    plain_secret,
+)
 
 
 MySQLDsn = Annotated[AnyUrl, UrlConstraints(allowed_schemes=["mysql", "mysql+asyncmy", "mysql+aiomysql", "mysql+pymysql"])]
@@ -25,7 +33,7 @@ class ToolRuntimeServerConfig:
     workspace_event_backend: str = "memory"
     workspace_event_root_dir: str | None = None
     workspace_event_max_buffer: int = 512
-    credential: Any = None
+    credential: CredentialsConfig | None = None
     workspace_runtime: Any = None
 
 
@@ -81,47 +89,46 @@ class ToolRuntimeSettings(BaseModel):
     workspace_event_backend: str = Field(default="memory", alias="WORKSPACE_EVENT_BACKEND")
     workspace_event_root_dir: str | None = Field(default=None, alias="WORKSPACE_EVENT_ROOT_DIR")
     workspace_event_max_buffer: int = Field(default=512, alias="WORKSPACE_EVENT_MAX_BUFFER")
-    postgres_dsn: PostgresDsn | None = Field(default=None, alias="POSTGRES_DSN")
-    mysql_dsn: MySQLDsn | None = Field(default=None, alias="MYSQL_DSN")
-    redis_dsn: RedisDsn | None = Field(default=None, alias="REDIS_DSN")
+    postgres_dsn: PostgresDsn | None = Field(default=None, alias="POSTGRES_DSN", repr=False)
+    mysql_dsn: MySQLDsn | None = Field(default=None, alias="MYSQL_DSN", repr=False)
+    redis_dsn: RedisDsn | None = Field(default=None, alias="REDIS_DSN", repr=False)
     sql_backend_dialect: Literal["auto", "postgresql", "mysql"] = Field(default="auto", alias="SQL_BACKEND_DIALECT")
     postgres_schema: str = Field(default="public", alias="POSTGRES_SCHEMA")
 
     credential_backend: str = Field(default="none", alias="MCP_CREDENTIAL_STORE_BACKEND")
+    credential_writable: bool = False
     credential_file_root: str = Field(default=DEFAULT_CREDENTIAL_FILE_ROOT, alias="MCP_CREDENTIAL_STORE_FILE_ROOT")
     infisical_host: str = Field(default="https://app.infisical.com", alias="INFISICAL_HOST")
     infisical_universal_auth_client_id: str | None = Field(default=None, alias="INFISICAL_UNIVERSAL_AUTH_CLIENT_ID")
-    infisical_universal_auth_client_secret: str | None = Field(default=None, alias="INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET")
-    infisical_token: str | None = Field(default=None, alias="INFISICAL_TOKEN")
+    infisical_universal_auth_client_secret: str | None = Field(
+        default=None,
+        alias="INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET",
+        repr=False,
+    )
+    infisical_token: str | None = Field(default=None, alias="INFISICAL_TOKEN", repr=False)
     infisical_project_id: str | None = Field(default=None, alias="INFISICAL_PROJECT_ID")
     infisical_environment: str | None = Field(default=None, alias="INFISICAL_ENVIRONMENT")
     infisical_cache_ttl_seconds: int = Field(default=60, alias="INFISICAL_CACHE_TTL_SECONDS")
     infisical_credential_root_path: str = Field(default="/anyagent/credentials", alias="INFISICAL_CREDENTIAL_ROOT_PATH")
     infisical_path_layout: str = Field(default="scoped", alias="INFISICAL_PATH_LAYOUT")
-    credential_postgres_dsn: str | None = Field(default=None, alias="CREDENTIAL_POSTGRES_DSN")
+    credential_postgres_dsn: str | None = Field(default=None, alias="CREDENTIAL_POSTGRES_DSN", repr=False)
     credential_postgres_schema: str = Field(default="public", alias="CREDENTIAL_POSTGRES_SCHEMA")
-    credential_encryption_key: str | None = Field(default=None, alias="CREDENTIAL_ENCRYPTION_KEY")
+    credential_encryption_key: str | None = Field(default=None, alias="CREDENTIAL_ENCRYPTION_KEY", repr=False)
     credential_db_create_schema: bool = Field(default=False, alias="CREDENTIAL_DB_CREATE_SCHEMA")
     vault_addr: str | None = Field(default=None, alias="VAULT_ADDR")
-    vault_token: str | None = Field(default=None, alias="VAULT_TOKEN")
+    vault_token: str | None = Field(default=None, alias="VAULT_TOKEN", repr=False)
     vault_mount: str = Field(default="secret", alias="VAULT_MOUNT")
     vault_credential_root_path: str = Field(default="anyagent/credentials", alias="VAULT_CREDENTIAL_ROOT_PATH")
 
 
 def tool_runtime_settings_from_config(config: Any) -> ToolRuntimeSettings:
-    """Build tool-runtime settings from the effective config.
-
-    A writable credential backend keeps the historical ``-write`` suffix so
-    the tool-runtime resolver returns the writable store.
-    """
+    """Build tool-runtime settings from the effective config."""
 
     tool_runtime = config.tool_runtime
     credentials = config.credentials
     sandbox = config.sandbox
     storage = config.storage
     backend = credentials.backend or "none"
-    if credentials.writable and backend not in {"", "none"}:
-        backend = f"{backend}-write"
     return ToolRuntimeSettings(
         workspace_dir=str(config.workspace_dir),
         host=tool_runtime.host,
@@ -169,22 +176,23 @@ def tool_runtime_settings_from_config(config: Any) -> ToolRuntimeSettings:
         sql_backend_dialect=storage.sql_backend_dialect,
         postgres_schema=storage.postgres_schema,
         credential_backend=backend,
+        credential_writable=bool(credentials.writable) and backend not in {"", "none"},
         credential_file_root=credentials.file.root,
         infisical_host=credentials.infisical.host,
         infisical_universal_auth_client_id=credentials.infisical.client_id,
-        infisical_universal_auth_client_secret=credentials.infisical.client_secret,
-        infisical_token=credentials.infisical.token,
+        infisical_universal_auth_client_secret=plain_secret(credentials.infisical.client_secret),
+        infisical_token=plain_secret(credentials.infisical.token),
         infisical_project_id=credentials.infisical.project_id,
         infisical_environment=credentials.infisical.environment,
         infisical_cache_ttl_seconds=int(credentials.infisical.cache_ttl_seconds),
         infisical_credential_root_path=credentials.infisical.credential_root_path,
         infisical_path_layout=credentials.infisical.path_layout,
-        credential_postgres_dsn=credentials.db.dsn,
+        credential_postgres_dsn=plain_secret(credentials.db.dsn),
         credential_postgres_schema=credentials.db.schema_name,
-        credential_encryption_key=credentials.db.encryption_key,
+        credential_encryption_key=plain_secret(credentials.db.encryption_key),
         credential_db_create_schema=bool(credentials.db.create_schema),
         vault_addr=credentials.vault.addr,
-        vault_token=credentials.vault.token,
+        vault_token=plain_secret(credentials.vault.token),
         vault_mount=credentials.vault.mount,
         vault_credential_root_path=credentials.vault.credential_root_path,
     )
@@ -203,7 +211,6 @@ def build_tool_runtime_server_config(
     plugins_fail_open: bool | None = None,
 ) -> ToolRuntimeServerConfig:
     src = settings or ToolRuntimeSettings()
-    from anyagent.server.security.credential_runtime import CredentialRuntimeConfig
     from anyagent.server.sandbox.workspace_runtime import WorkspaceRuntimeConfig
 
     resolved_workspace_dir = workspace_dir if workspace_dir is not None else src.workspace_dir
@@ -220,28 +227,7 @@ def build_tool_runtime_server_config(
         workspace_event_backend=src.workspace_event_backend,
         workspace_event_root_dir=src.workspace_event_root_dir,
         workspace_event_max_buffer=int(src.workspace_event_max_buffer),
-        credential=CredentialRuntimeConfig(
-            backend=src.credential_backend,
-            file_root=src.credential_file_root,
-            workspace_dir=resolved_workspace_dir,
-            infisical_host=src.infisical_host,
-            infisical_universal_auth_client_id=src.infisical_universal_auth_client_id,
-            infisical_universal_auth_client_secret=src.infisical_universal_auth_client_secret,
-            infisical_token=src.infisical_token,
-            infisical_project_id=src.infisical_project_id,
-            infisical_environment=src.infisical_environment,
-            infisical_cache_ttl_seconds=src.infisical_cache_ttl_seconds,
-            infisical_credential_root_path=src.infisical_credential_root_path,
-            infisical_path_layout=src.infisical_path_layout,
-            credential_postgres_dsn=src.credential_postgres_dsn,
-            credential_postgres_schema=src.credential_postgres_schema,
-            credential_encryption_key=src.credential_encryption_key,
-            credential_db_create_schema=src.credential_db_create_schema,
-            vault_addr=src.vault_addr,
-            vault_token=src.vault_token,
-            vault_mount=src.vault_mount,
-            vault_credential_root_path=src.vault_credential_root_path,
-        ),
+        credential=_credentials_config(src),
         workspace_runtime=WorkspaceRuntimeConfig(
             allow_sandbox=bool(src.allow_sandbox),
             sandbox_backend=src.sandbox_backend,
@@ -281,6 +267,43 @@ def build_tool_runtime_server_config(
             redis_dsn=src.redis_dsn,
             sql_backend_dialect=src.sql_backend_dialect,
             postgres_schema=src.postgres_schema,
+        ),
+    )
+
+
+def _secret(value: str | None) -> SecretStr | None:
+    text = plain_secret(value)
+    return SecretStr(text) if text else None
+
+
+def _credentials_config(src: ToolRuntimeSettings) -> CredentialsConfig:
+    backend = (src.credential_backend or "none").strip().lower() or "none"
+    return CredentialsConfig(
+        backend=backend,  # type: ignore[arg-type]
+        writable=bool(src.credential_writable) and backend not in {"", "none"},
+        file=CredentialsFileConfig(root=src.credential_file_root or DEFAULT_CREDENTIAL_FILE_ROOT),
+        db=CredentialsDbConfig(
+            dsn=_secret(src.credential_postgres_dsn),
+            schema_name=src.credential_postgres_schema or "public",
+            encryption_key=_secret(src.credential_encryption_key),
+            create_schema=bool(src.credential_db_create_schema),
+        ),
+        vault=CredentialsVaultConfig(
+            addr=src.vault_addr,
+            token=_secret(src.vault_token),
+            mount=src.vault_mount,
+            credential_root_path=src.vault_credential_root_path,
+        ),
+        infisical=CredentialsInfisicalConfig(
+            host=src.infisical_host,
+            client_id=src.infisical_universal_auth_client_id,
+            client_secret=_secret(src.infisical_universal_auth_client_secret),
+            token=_secret(src.infisical_token),
+            project_id=src.infisical_project_id,
+            environment=src.infisical_environment,
+            cache_ttl_seconds=int(src.infisical_cache_ttl_seconds),
+            credential_root_path=src.infisical_credential_root_path,
+            path_layout=src.infisical_path_layout,
         ),
     )
 

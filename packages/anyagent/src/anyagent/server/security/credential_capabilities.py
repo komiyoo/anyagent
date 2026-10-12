@@ -35,7 +35,7 @@ def build_credential_backend_capability_matrix() -> CredentialBackendCapabilityM
                 supports_delete=False,
                 supports_list_refs=False,
                 read_only=True,
-                source="anyagent.mcp.auth.EnvCredentialResolver",
+                source="anyagent.server.security.credential_backends.EnvBackend",
             ),
             CredentialBackendCapability(
                 mode="file",
@@ -48,7 +48,7 @@ def build_credential_backend_capability_matrix() -> CredentialBackendCapabilityM
                 supports_list_refs=False,
                 read_only=True,
                 requires_env=["MCP_CREDENTIAL_STORE_FILE_ROOT"],
-                source="anyagent.mcp.auth.FileCredentialResolver",
+                source="anyagent.server.security.credential_backends.FileBackend",
             ),
             CredentialBackendCapability(
                 mode="infisical",
@@ -68,7 +68,7 @@ def build_credential_backend_capability_matrix() -> CredentialBackendCapabilityM
                     "INFISICAL_PROJECT_ID",
                     "INFISICAL_ENVIRONMENT",
                 ],
-                source="anyagent.server.security.mcp_credentials.InfisicalCredentialResolver",
+                source="anyagent.server.security.credential_backends.InfisicalBackend",
             ),
         ],
         admin_store_modes=[
@@ -86,7 +86,7 @@ def build_credential_backend_capability_matrix() -> CredentialBackendCapabilityM
                 source="anyagent.server.security.credential_store.InMemoryCredentialStore",
             ),
             CredentialBackendCapability(
-                mode="env-write",
+                mode="env",
                 display_name="Environment-backed write store",
                 kind="admin_store",
                 description="Stores Admin API writes in process memory and can resolve registered refs through metadata env_var_name or CREDENTIAL__<CREDENTIAL_ID>.",
@@ -98,7 +98,7 @@ def build_credential_backend_capability_matrix() -> CredentialBackendCapabilityM
                 source="anyagent.server.security.credential_backends.EnvBackend",
             ),
             CredentialBackendCapability(
-                mode="file-write",
+                mode="file",
                 display_name="File credential store",
                 kind="admin_store",
                 description="Stores Admin API credential refs as chmod 600 JSON files under MCP_CREDENTIAL_STORE_FILE_ROOT.",
@@ -111,7 +111,7 @@ def build_credential_backend_capability_matrix() -> CredentialBackendCapabilityM
                 source="anyagent.server.security.credential_backends.FileBackend",
             ),
             CredentialBackendCapability(
-                mode="infisical-write",
+                mode="infisical",
                 display_name="Infisical credential store",
                 kind="admin_store",
                 description="Lists and resolves Infisical credential refs; write and delete are intentionally unavailable until a safe mutation contract lands.",

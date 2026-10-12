@@ -40,11 +40,11 @@ def test_credential_capability_matrix_documents_resolver_and_admin_modes() -> No
     assert matrix.environment_variable == "MCP_CREDENTIAL_STORE_BACKEND"
     assert matrix.secret_value_returned is False
     assert {"none", "env", "file", "infisical"} <= set(resolver_modes)
-    assert {"memory", "env-write", "file-write", "infisical-write", "db", "vault"} <= set(admin_modes)
+    assert {"memory", "env", "file", "infisical", "db", "vault"} <= set(admin_modes)
     assert resolver_modes["env"].supports_resolve is True
     assert resolver_modes["env"].supports_set is False
-    assert admin_modes["file-write"].supports_set is True
-    assert admin_modes["infisical-write"].read_only is True
+    assert admin_modes["file"].supports_set is True
+    assert admin_modes["infisical"].read_only is True
     assert admin_modes["db"].status == "preview"
     assert admin_modes["db"].supports_resolve is True
     assert admin_modes["db"].supports_set is True
@@ -89,7 +89,7 @@ async def _run_core_server_admin_credentials_capabilities_endpoint(tmp_path: Pat
         assert resp.status_code == 200, resp.text
         payload = resp.json()
         assert payload["secret_value_returned"] is False
-        assert {item["mode"] for item in payload["admin_store_modes"]} >= {"memory", "file-write", "infisical-write"}
+        assert {item["mode"] for item in payload["admin_store_modes"]} >= {"memory", "file", "infisical"}
 
 
 async def _run_tool_runtime_admin_credentials_capabilities_endpoint(tmp_path: Path) -> None:

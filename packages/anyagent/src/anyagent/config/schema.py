@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from anyagent.config.models_kinds import ModelProviderKind
 
@@ -30,6 +30,16 @@ AlertWebhookFormat = Literal["json", "feishu"]
 
 class _Forbid(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+def plain_secret(value: str | SecretStr | None) -> str | None:
+    """Return a stripped secret, or None when the value is missing or blank."""
+
+    if value is None:
+        return None
+    raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+    text = raw.strip()
+    return text or None
 
 
 class ProviderConfig(_Forbid):
@@ -94,26 +104,30 @@ class CredentialsFileConfig(_Forbid):
 
 
 class CredentialsDbConfig(_Forbid):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, hide_input_in_errors=True)
 
-    dsn: str | None = None
+    dsn: SecretStr | None = None
     schema_name: str = Field(default="public", alias="schema")
-    encryption_key: str | None = None
+    encryption_key: SecretStr | None = None
     create_schema: bool = False
 
 
 class CredentialsVaultConfig(_Forbid):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
     addr: str | None = None
-    token: str | None = None
+    token: SecretStr | None = None
     mount: str = "secret"
     credential_root_path: str = "anyagent/credentials"
 
 
 class CredentialsInfisicalConfig(_Forbid):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
     host: str = "https://app.infisical.com"
     client_id: str | None = None
-    client_secret: str | None = None
-    token: str | None = None
+    client_secret: SecretStr | None = None
+    token: SecretStr | None = None
     project_id: str | None = None
     environment: str | None = None
     cache_ttl_seconds: int = 60

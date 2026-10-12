@@ -28,7 +28,7 @@ from anyagent.server.app_builders import (
     _safe_error_message,
 )
 from anyagent.server.app_state import AnyAgentServerApp
-from anyagent.server.config.settings import server_settings_from_config
+from anyagent.server.config.settings import resolve_server_storage
 from anyagent.server.persistence.alerts import AlertEvaluator, InMemoryAlertStore, default_alert_rules
 from anyagent.server.persistence.evaluations import JsonEvaluationStore
 from anyagent.server.persistence.manifest_cache import ManifestCache
@@ -55,11 +55,10 @@ from anyagent.server.routes.gateway_webhooks import create_gateway_webhook_route
 from anyagent.server.routes.responses import create_responses_router
 from anyagent.server.routes.system import create_system_router
 from anyagent.server.runtime.in_process import InProcessToolRuntimeService
-from anyagent.server.runtime.lock_service import build_session_lock_service
+from anyagent.server.runtime.lock_service import RedisSessionLockClient, build_session_lock_service
 from anyagent.server.runtime.workspace_env import hydrate_workspace_runtime_environment
 from anyagent.server.sandbox import SandboxManager
-from anyagent.server.security.credential_runtime import open_server_credential_stores
-from anyagent.storage.settings import storage_settings_from_config
+from anyagent.server.security.credential_runtime import open_process_credential_store
 
 
 def create_app(
@@ -71,17 +70,16 @@ def create_app(
 ) -> FastAPI:
     workspace = Path(workspace_dir).expanduser().resolve()
     effective = config or load_effective_config(workspace, cli_overrides=cli_overrides)
-    if hydrate_workspace_runtime_environment(effective):
+    hydration = hydrate_workspace_runtime_environment(effective)
+    if any(record.applied for record in hydration):
         effective = load_effective_config(workspace, cli_overrides=effective.cli_overrides)
-    storage_settings = storage_settings_from_config(effective.storage)
-    server_settings = server_settings_from_config(effective.storage)
-    resolved_storage = server_settings.resolve(storage_settings=storage_settings)
+    storage_settings, resolved_storage = resolve_server_storage(effective.storage)
     catalog = load_agent_catalog(workspace_dir=workspace, session_config_overrides=session_config_overrides)
     if not any(pack.spec.exposed for pack in catalog.packs.values()):
         raise RuntimeError("workspace must define at least one exposed agent")
     opensandbox_backend = _build_opensandbox_backend_if_needed(catalog, effective.sandbox)
     sandbox_manager = SandboxManager(root_dir=effective.server.sandbox_root, opensandbox_backend=opensandbox_backend)
-    credential_store, mcp_credential_store = open_server_credential_stores(effective)
+    credential_store = open_process_credential_store(effective.credentials, workspace_dir=workspace)
     storage_bundle: ServerStorageBundle = build_server_storage_bundle(
         event_store_backend=resolved_storage.event_store_backend,
         run_store_backend=resolved_storage.run_store_backend,
@@ -141,7 +139,7 @@ def create_app(
         storage_settings=storage_settings,
         events=storage_bundle.event_store,
         credentials=credential_store,
-        mcp_credentials=mcp_credential_store or credential_store,
+        mcp_credentials=credential_store,
         sandbox_manager=sandbox_manager,
         runtime=runtime,
         mcp_managers=MCPManagerRegistry(),
@@ -158,9 +156,7 @@ def create_app(
         telemetry_event_store=telemetry_event_store,
         telemetry_observability_sink=telemetry_observability_sink,
         session_sequencer=KeyedSequencer(),
-        session_lock_service=build_session_lock_service(
-            backend=resolved_storage.session_lock_backend,
-        ),
+        session_lock_service=_build_session_lock_service(resolved_storage.session_lock_backend, storage_settings),
         session_lease_ttl_s=resolved_storage.session_lease_ttl_s,
         storage_resources=storage_bundle.resources,
         plugin_roots=resolved_plugin_roots,
@@ -226,6 +222,7 @@ def create_app(
             allow_headers=["authorization", "content-type", "idempotency-key", "x-agent-id"],
         )
     app.state.anyagent = state
+    app.state.runtime_env_hydration = hydration
     app.include_router(create_admin_router())
     app.include_router(create_system_router())
     app.include_router(create_internal_agents_router())
@@ -281,6 +278,26 @@ def _non_empty(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _build_session_lock_service(backend: str, storage_settings: Any):
+    """Build the session lock from explicit storage settings.
+
+    A redis backend receives a client built from those settings, so the lock
+    service does not reload the process environment.
+    """
+
+    if backend == "redis":
+        if storage_settings.redis_dsn is None:
+            raise RuntimeError("SESSION_LOCK_BACKEND=redis requires REDIS_DSN")
+        return build_session_lock_service(
+            backend="redis",
+            client=RedisSessionLockClient(
+                redis_dsn=str(storage_settings.redis_dsn),
+                namespace=storage_settings.redis_namespace,
+            ),
+        )
+    return build_session_lock_service(backend=backend)  # type: ignore[arg-type]
 
 
 def _build_alert_webhook_channel(config: EffectiveConfig) -> AlertChannel | None:

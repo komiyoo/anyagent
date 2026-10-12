@@ -41,12 +41,13 @@ from anyagent.server.sandbox import (
     WorkspaceService,
     build_workspace_runtime,
 )
+from anyagent.config.schema import CredentialsConfig
 from anyagent.server.security import (
     CredentialStore,
     ReadOnlyCredentialStoreError,
     build_credential_backend_capability_matrix,
-    build_credential_resolver_from_config,
 )
+from anyagent.server.security.credential_runtime import open_process_credential_store
 from anyagent.server.plugins.capabilities import build_plugin_capability_matrix
 from anyagent.server.runtime.workspace_env import load_workspace_runtime_environment
 from anyagent.tool_runtime.plugins import ToolRuntimePluginAPI
@@ -87,12 +88,7 @@ def create_tool_runtime_app(
     else:
         server_config = config
     workspace = Path(server_config.workspace_dir).expanduser().resolve()
-    load_workspace_runtime_environment(workspace)
-    credential_config = server_config.credential
-    if credential_config is None:
-        from anyagent.server.security.credential_runtime import CredentialRuntimeConfig
-
-        credential_config = CredentialRuntimeConfig(workspace_dir=workspace)
+    credential_config = server_config.credential if isinstance(server_config.credential, CredentialsConfig) else CredentialsConfig()
     catalog = load_agent_catalog(workspace_dir=workspace)
     resolved_workspace_service = workspace_runtime.service if workspace_runtime is not None else None
     sandbox_manager = (
@@ -104,7 +100,8 @@ def create_tool_runtime_app(
         workspace_dir=str(workspace),
         catalog=catalog,
         sandbox_manager=sandbox_manager,
-        credential_store=credential_store or build_credential_resolver_from_config(credential_config),
+        credential_store=credential_store
+        or open_process_credential_store(credential_config, workspace_dir=workspace),
     )
     resolved_plugin_roots = _resolve_plugin_roots(server_config.plugin_roots, workspace=workspace)
     resolved_workspace_event_store = (
