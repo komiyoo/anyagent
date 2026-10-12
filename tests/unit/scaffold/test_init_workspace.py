@@ -126,6 +126,8 @@ def test_basic_init_is_minimal_and_loads(tmp_path: Path, monkeypatch: pytest.Mon
 
     gitignore = (workspace / ".gitignore").read_text(encoding="utf-8")
     assert ".env\n" in gitignore
+    # The file credential backend stores values under .anyagent/credentials/.
+    assert ".anyagent/credentials/\n" in gitignore
     assert ".env.example" not in gitignore
     example = (workspace / ".env.example").read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=" in example

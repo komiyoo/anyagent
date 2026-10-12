@@ -7,3 +7,4 @@
 .pip/
 __pycache__/
 *.py[cod]
+.anyagent/credentials/

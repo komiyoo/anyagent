@@ -58,7 +58,7 @@ def test_init_maps_flags_and_prints_text(scaffold: dict[str, Any], tmp_path: Pat
     assert options.with_example_skill is True
     assert options.force is True
     text = capsys.readouterr().out
-    assert "initialized workspace: ." in text
+    assert f"initialized workspace: {tmp_path.resolve()}" in text
     assert "agent: worker" in text
     assert "created: .anyagent/agents/worker/agent.yaml" in text
     assert "next: anyagent doctor" in text
@@ -292,8 +292,24 @@ def test_doctor_human_output_includes_next_step(tmp_path: Path, capsys: pytest.C
     text = capsys.readouterr().out
     assert "anyagent doctor: ok" in text
     assert "[warning] missing_provider_api_key:" in text
-    assert "workspace: ." in text
-    assert "next: anyagent serve --workspace ." in text
+    # The workspace is outside the current directory, so commands keep the absolute path.
+    assert f"workspace: {tmp_path.resolve()}" in text
+    assert f"next: anyagent serve --workspace {tmp_path.resolve()}" in text
+
+
+def test_doctor_next_step_is_relative_to_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["doctor", "--workspace", str(workspace)])
+
+    assert rc == 0
+    text = capsys.readouterr().out
+    assert "workspace: ws" in text
+    assert "next: anyagent serve --workspace ws" in text
 
 
 def test_doctor_reports_model_provider_origin(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

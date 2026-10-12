@@ -113,7 +113,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if bool(args.json):
         print(result.model_dump_json(exclude_none=True))
     else:
-        print(f"initialized workspace: {_relative_to_workspace(result.workspace, workspace)}")
+        print(f"initialized workspace: {_workspace_arg(Path(result.workspace))}")
         print(f"agent: {result.agent_id}")
         for path in result.created:
             print(f"created: {_relative_to_workspace(path, workspace)}")
@@ -210,7 +210,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if bool(args.json):
         print(payload.model_dump_json(exclude_none=True))
     else:
-        shown = _relative_to_workspace(workspace, workspace)
+        shown = _workspace_arg(workspace)
         print(f"anyagent doctor: {'ok' if ok else 'failed'}")
         print(f"workspace: {shown}")
         for item in payload.findings:
@@ -247,8 +247,23 @@ def _relativize_text(text: str, workspace: Path) -> str:
         return text
     replaced = text.replace(root + "/", "")
     if root in replaced:
-        replaced = replaced.replace(root, ".")
+        replaced = replaced.replace(root, _workspace_arg(workspace))
     return replaced
+
+
+def _workspace_arg(workspace: Path) -> str:
+    """Workspace path as the user can pass it from the current directory.
+
+    File paths in the output are workspace-relative, but a command such as
+    ``anyagent doctor --workspace <path>`` runs from the caller's directory.
+    """
+
+    root = workspace.resolve()
+    try:
+        relative = root.relative_to(Path.cwd().resolve())
+    except ValueError:
+        return str(root)
+    return relative.as_posix() or "."
 
 
 def _runtime_env_report(effective: EffectiveConfig) -> list[dict[str, Any]]:
