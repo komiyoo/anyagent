@@ -3,7 +3,6 @@ from .auth import (
     EnvCredentialResolver,
     FileCredentialResolver,
     MCPAuthError,
-    build_mcp_credential_resolver,
     resolve_mcp_auth_env,
     resolve_mcp_auth_headers,
 )
@@ -42,7 +41,6 @@ __all__ = [
     "MCPServerStreamableHttp",
     "MCPServerTransport",
     "MCPToolFilterConfig",
-    "build_mcp_credential_resolver",
     "create_mcp_server",
     "mcp_call_result_to_output_text",
     "mcp_tool_to_function_param",

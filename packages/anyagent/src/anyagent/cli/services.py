@@ -10,7 +10,6 @@ from typing import Any
 import uvicorn
 
 from anyagent.config.loader import load_effective_config
-from anyagent.config.schema import plain_secret
 from anyagent.observability import configure_observability
 from anyagent.server import DistributedAgentRuntimeConfig, create_distributed_agent_app
 from anyagent.server.runtime.workspace_env import hydrate_workspace_runtime_environment
@@ -111,7 +110,6 @@ def cmd_agent_api_serve(args: argparse.Namespace) -> int:
     tool_runtime_internal_key = effective.tool_runtime.internal_key
     if not tool_runtime_internal_key:
         raise SystemExit("agent-api serve requires --tool-runtime-internal-key or TOOL_RUNTIME_INTERNAL_KEY")
-    credentials = effective.credentials
     storage_settings = storage_settings_from_config(effective.storage)
     workspace_dir = str(workspace)
     app = create_distributed_agent_app(
@@ -121,17 +119,7 @@ def cmd_agent_api_serve(args: argparse.Namespace) -> int:
             tool_runtime_base_url=effective.tool_runtime.base_url or "http://127.0.0.1:8788",
             tool_runtime_internal_key=tool_runtime_internal_key,
             manifest_cache_ttl_seconds=float(effective.tool_runtime.manifest_cache_ttl_seconds),
-            mcp_credential_store_backend=credentials.backend,
-            mcp_credential_store_file_root=credentials.file.root,
-            infisical_host=credentials.infisical.host,
-            infisical_universal_auth_client_id=credentials.infisical.client_id,
-            infisical_universal_auth_client_secret=plain_secret(credentials.infisical.client_secret),
-            infisical_token=plain_secret(credentials.infisical.token),
-            infisical_project_id=credentials.infisical.project_id,
-            infisical_environment=credentials.infisical.environment,
-            infisical_cache_ttl_seconds=int(credentials.infisical.cache_ttl_seconds),
-            infisical_credential_root_path=credentials.infisical.credential_root_path,
-            infisical_path_layout=credentials.infisical.path_layout,
+            credentials=effective.credentials,
         ),
         storage_factory=lambda: create_storage_runtime(storage_settings, workspace_dir=workspace_dir),
         settings=storage_settings,

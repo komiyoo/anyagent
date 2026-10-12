@@ -1,4 +1,4 @@
-"""`anyagent credential` commands against the Admin API."""
+"""`anyagent credential` commands against the Admin API or a local backend."""
 
 from __future__ import annotations
 
@@ -7,24 +7,40 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import yaml
 
 from anyagent.cli.admin_client import AdminClient, admin_client_from_args, add_admin_flags
 from anyagent.config.env import getenv
-from anyagent.protocol.credential_vault import AdminCredentialSetRequest, CredentialScope
+from anyagent.config.loader import ConfigLoadError, load_effective_config
+from anyagent.config.schema import CredentialsConfig
+from anyagent.protocol.credential_vault import (
+    AdminCredentialDeleteResponse,
+    AdminCredentialListResponse,
+    AdminCredentialRef,
+    AdminCredentialSetRequest,
+    CredentialScope,
+)
+from anyagent.server.security.local_admin import (
+    CredentialAdminError,
+    local_delete_credential,
+    local_list_credentials,
+    local_set_credential,
+)
 
 
 def register_credential(subparsers: Any, bind: Any) -> None:
     """Register credential set/list/delete/import."""
 
-    cred = subparsers.add_parser("credential", help="Manage credentials via the built-in Admin API.")
+    cred = subparsers.add_parser("credential", help="Manage credentials via the Admin API, or locally with --local.")
     add_admin_flags(cred)
+    _add_local_flag(cred)
     cred_sub = cred.add_subparsers(dest="credential_command", required=True)
 
     cred_set = cred_sub.add_parser("set", help="Set (create/update) a credential (write-only).")
     add_admin_flags(cred_set)
+    _add_local_flag(cred_set)
     cred_set.add_argument("--id", dest="credential_id", required=True)
     cred_set.add_argument("--kind", required=True)
     cred_set.add_argument("--value", default=None, help="Plaintext value (avoid shell history).")
@@ -42,16 +58,19 @@ def register_credential(subparsers: Any, bind: Any) -> None:
 
     cred_list = cred_sub.add_parser("list", help="List credential references (no plaintext).")
     add_admin_flags(cred_list)
+    _add_local_flag(cred_list)
     cred_list.add_argument("--json", action="store_true", help="Print JSON (default).")
     bind(cred_list, ("credential", "list"), cmd_credential_list)
 
     cred_delete = cred_sub.add_parser("delete", help="Delete a credential by id.")
     add_admin_flags(cred_delete)
+    _add_local_flag(cred_delete)
     cred_delete.add_argument("--id", dest="credential_id", required=True)
     bind(cred_delete, ("credential", "delete"), cmd_credential_delete)
 
     cred_import = cred_sub.add_parser("import", help="Import credentials from a YAML file.")
     add_admin_flags(cred_import)
+    _add_local_flag(cred_import)
     cred_import.add_argument("--file", required=True, help="YAML file path (credentials.yaml).")
     cred_import.add_argument("--dry-run", action="store_true")
     cred_import.add_argument("--skip-missing", action="store_true", help="Skip items with an empty resolved value.")
@@ -59,7 +78,7 @@ def register_credential(subparsers: Any, bind: Any) -> None:
 
 
 def cmd_credential_set(args: argparse.Namespace) -> int:
-    client = admin_client_from_args(args)
+    client = _credential_admin(args)
     value = _resolve_value(value=args.value, value_from_env=args.value_from_env)
     scope = _parse_scope(level=args.scope, agent_id=args.agent_id, session_key=args.session_key)
     metadata = _build_metadata(
@@ -84,22 +103,74 @@ def cmd_credential_set(args: argparse.Namespace) -> int:
 
 
 def cmd_credential_list(args: argparse.Namespace) -> int:
-    client = admin_client_from_args(args)
+    client = _credential_admin(args)
     response = client.list_credentials()
     print(json.dumps(response.model_dump(exclude_none=True), ensure_ascii=False))
     return 0
 
 
 def cmd_credential_delete(args: argparse.Namespace) -> int:
-    client = admin_client_from_args(args)
+    client = _credential_admin(args)
     response = client.delete_credential(args.credential_id)
     print(json.dumps(response.model_dump(exclude_none=True), ensure_ascii=False))
     return 0
 
 
 def cmd_credential_import(args: argparse.Namespace) -> int:
-    client = admin_client_from_args(args)
+    client = _credential_admin(args)
     return _import_credentials(client, file_path=args.file, dry_run=bool(args.dry_run), skip_missing=bool(args.skip_missing))
+
+
+class _CredentialWriter(Protocol):
+    def set_credential(self, req: AdminCredentialSetRequest) -> AdminCredentialRef: ...
+
+
+def _add_local_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Manage the configured credential backend without a running server. "
+            "--workspace selects the config. The default is the Admin API."
+        ),
+    )
+
+
+class _LocalCredentialAdmin:
+    """Adapter over local_admin so import/set/list/delete share one client shape."""
+
+    def __init__(self, config: CredentialsConfig, workspace: Path) -> None:
+        self._config = config
+        self._workspace = workspace
+
+    def set_credential(self, req: AdminCredentialSetRequest) -> AdminCredentialRef:
+        try:
+            return local_set_credential(self._config, self._workspace, req)
+        except CredentialAdminError as exc:
+            raise SystemExit(str(exc)) from exc
+
+    def list_credentials(self) -> AdminCredentialListResponse:
+        try:
+            return local_list_credentials(self._config, self._workspace)
+        except CredentialAdminError as exc:
+            raise SystemExit(str(exc)) from exc
+
+    def delete_credential(self, credential_id: str) -> AdminCredentialDeleteResponse:
+        try:
+            return local_delete_credential(self._config, self._workspace, credential_id)
+        except CredentialAdminError as exc:
+            raise SystemExit(str(exc)) from exc
+
+
+def _credential_admin(args: argparse.Namespace) -> AdminClient | _LocalCredentialAdmin:
+    if bool(getattr(args, "local", False)):
+        workspace = Path(getattr(args, "workspace", None) or ".").expanduser().resolve()
+        try:
+            effective = load_effective_config(workspace)
+        except ConfigLoadError as exc:
+            raise SystemExit(str(exc)) from exc
+        return _LocalCredentialAdmin(effective.credentials, workspace)
+    return admin_client_from_args(args)
 
 
 def _resolve_value(*, value: str | None, value_from_env: str | None) -> str:
@@ -176,7 +247,7 @@ def _build_metadata(
     return metadata
 
 
-def _import_credentials(client: AdminClient, *, file_path: str, dry_run: bool, skip_missing: bool) -> int:
+def _import_credentials(client: _CredentialWriter, *, file_path: str, dry_run: bool, skip_missing: bool) -> int:
     text = file_path.strip()
     if not text:
         raise SystemExit("--file must be non-empty")

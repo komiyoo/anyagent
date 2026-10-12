@@ -69,6 +69,7 @@ from anyagent.server.handlers.storage_health import _build_storage_health_payloa
 from anyagent.server.plugins.capabilities import build_plugin_capability_matrix
 from anyagent.server.security import (
     InMemoryCredentialStore,
+    ReadOnlyCredentialStoreError,
     build_credential_backend_capability_matrix,
     emit_credential_audit_for_store,
 )
@@ -86,33 +87,36 @@ def create_admin_router() -> APIRouter:
         _require_admin_auth(state, authorization)
         body = await req.json()
         model = AdminCredentialSetRequest.model_validate(body)
-        if isinstance(state.credentials, InMemoryCredentialStore):
-            ref = await state.credentials.set(model)
-        else:
-            await state.credentials.set(
-                credential_id=model.credential_id,
-                kind=model.kind,
-                value=model.value,
-                scope=model.scope,
-                metadata=model.metadata,
-                expires_at=model.expires_at,
-                rotate_before=model.rotate_before,
-            )
-            ref = AdminCredentialRef(
-                credential_id=model.credential_id,
-                kind=model.kind,
-                scope=model.scope,
-                metadata=model.metadata,
-                expires_at=model.expires_at,
-                rotate_before=model.rotate_before,
-            )
-            await emit_credential_audit_for_store(
-                state.credentials,
-                operation="set",
-                credential_id=model.credential_id,
-                kind=model.kind,
-                scope=model.scope,
-            )
+        try:
+            if isinstance(state.credentials, InMemoryCredentialStore):
+                ref = await state.credentials.set(model)
+            else:
+                await state.credentials.set(
+                    credential_id=model.credential_id,
+                    kind=model.kind,
+                    value=model.value,
+                    scope=model.scope,
+                    metadata=model.metadata,
+                    expires_at=model.expires_at,
+                    rotate_before=model.rotate_before,
+                )
+                ref = AdminCredentialRef(
+                    credential_id=model.credential_id,
+                    kind=model.kind,
+                    scope=model.scope,
+                    metadata=model.metadata,
+                    expires_at=model.expires_at,
+                    rotate_before=model.rotate_before,
+                )
+                await emit_credential_audit_for_store(
+                    state.credentials,
+                    operation="set",
+                    credential_id=model.credential_id,
+                    kind=model.kind,
+                    scope=model.scope,
+                )
+        except ReadOnlyCredentialStoreError as exc:
+            raise HTTPException(status_code=501, detail=str(exc)) from exc
         return JSONResponse(ref.model_dump(mode="json", exclude_none=True))
 
     @router.get("/admin/credentials")
@@ -273,7 +277,10 @@ def create_admin_router() -> APIRouter:
         state = req.app.state.anyagent
         _require_admin_auth(state, authorization)
         refs = await state.credentials.list_refs() if not isinstance(state.credentials, InMemoryCredentialStore) else []
-        deleted = await state.credentials.delete(credential_id)
+        try:
+            deleted = await state.credentials.delete(credential_id)
+        except ReadOnlyCredentialStoreError as exc:
+            raise HTTPException(status_code=501, detail=str(exc)) from exc
         if not isinstance(state.credentials, InMemoryCredentialStore):
             matching_refs = [AdminCredentialRef.model_validate(ref) for ref in refs if ref.get("credential_id") == credential_id]
             if matching_refs:

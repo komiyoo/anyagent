@@ -127,8 +127,9 @@ def test_standalone_tool_runtime_serves_manifest_execute_and_list(tmp_path: Path
 
 def test_standalone_tool_runtime_can_use_core_file_write_backend(tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setenv("MCP_CREDENTIAL_STORE_BACKEND", "file-write")
-    monkeypatch.setenv("MCP_CREDENTIAL_STORE_FILE_ROOT", ".anyagent/credentials")
+    monkeypatch.setenv("CREDENTIAL_BACKEND", "file")
+    monkeypatch.setenv("CREDENTIAL_WRITABLE", "true")
+    monkeypatch.setenv("CREDENTIAL_FILE_ROOT", ".anyagent/credentials")
     app = create_tool_runtime_app(workspace_dir=tmp_path)
     backend = app.state.anyagent_tool_runtime._credential_store
     assert isinstance(backend, FileBackend)
@@ -137,8 +138,9 @@ def test_standalone_tool_runtime_can_use_core_file_write_backend(tmp_path: Path,
 def test_tool_runtime_settings_build_server_config(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("TOOL_RUNTIME_INTERNAL_KEY", " internal-key ")
     monkeypatch.setenv("ADMIN_API_KEY", "admin-key")
-    monkeypatch.setenv("MCP_CREDENTIAL_STORE_BACKEND", "file-write")
-    monkeypatch.setenv("MCP_CREDENTIAL_STORE_FILE_ROOT", ".anyagent/credentials")
+    monkeypatch.setenv("CREDENTIAL_BACKEND", "file")
+    monkeypatch.setenv("CREDENTIAL_WRITABLE", "true")
+    monkeypatch.setenv("CREDENTIAL_FILE_ROOT", ".anyagent/credentials")
     monkeypatch.setenv("TOOL_RUNTIME_PLUGIN_ROOTS", "plugins/a, plugins/b")
     monkeypatch.setenv("TOOL_RUNTIME_PLUGINS_FAIL_OPEN", "1")
     monkeypatch.setenv("WORKSPACE_EVENT_BACKEND", "jsonl")
@@ -193,10 +195,11 @@ def test_tool_runtime_settings_import_does_not_import_server_package() -> None:
 
 def test_tool_runtime_app_loads_workspace_env_before_settings(tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.delenv("MCP_CREDENTIAL_STORE_BACKEND", raising=False)
-    monkeypatch.delenv("MCP_CREDENTIAL_STORE_FILE_ROOT", raising=False)
+    monkeypatch.delenv("CREDENTIAL_BACKEND", raising=False)
+    monkeypatch.delenv("CREDENTIAL_WRITABLE", raising=False)
+    monkeypatch.delenv("CREDENTIAL_FILE_ROOT", raising=False)
     (tmp_path / ".env").write_text(
-        "MCP_CREDENTIAL_STORE_BACKEND=file-write\nMCP_CREDENTIAL_STORE_FILE_ROOT=.anyagent/credentials\n",
+        "CREDENTIAL_BACKEND=file\nCREDENTIAL_WRITABLE=true\nCREDENTIAL_FILE_ROOT=.anyagent/credentials\n",
         encoding="utf-8",
     )
 
@@ -205,8 +208,9 @@ def test_tool_runtime_app_loads_workspace_env_before_settings(tmp_path: Path, mo
         backend = app.state.anyagent_tool_runtime._credential_store
         assert isinstance(backend, FileBackend)
     finally:
-        monkeypatch.delenv("MCP_CREDENTIAL_STORE_BACKEND", raising=False)
-        monkeypatch.delenv("MCP_CREDENTIAL_STORE_FILE_ROOT", raising=False)
+        monkeypatch.delenv("CREDENTIAL_BACKEND", raising=False)
+        monkeypatch.delenv("CREDENTIAL_WRITABLE", raising=False)
+        monkeypatch.delenv("CREDENTIAL_FILE_ROOT", raising=False)
 
 
 def test_standalone_tool_runtime_admin_credentials_manage_file_backend(tmp_path: Path, monkeypatch) -> None:
@@ -904,8 +908,9 @@ async def _run_standalone_tool_runtime_loads_plugins_from_core_loader(tmp_path: 
 
 async def _run_standalone_tool_runtime_admin_credentials_manage_file_backend(tmp_path: Path, monkeypatch) -> None:
     _write_workspace(tmp_path)
-    monkeypatch.setenv("MCP_CREDENTIAL_STORE_BACKEND", "file-write")
-    monkeypatch.setenv("MCP_CREDENTIAL_STORE_FILE_ROOT", ".anyagent/credentials")
+    monkeypatch.setenv("CREDENTIAL_BACKEND", "file")
+    monkeypatch.setenv("CREDENTIAL_WRITABLE", "true")
+    monkeypatch.setenv("CREDENTIAL_FILE_ROOT", ".anyagent/credentials")
     app = create_tool_runtime_app(workspace_dir=tmp_path, admin_api_key="admin-key")
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:

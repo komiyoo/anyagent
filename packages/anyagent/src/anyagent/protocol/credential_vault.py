@@ -95,5 +95,5 @@ class CredentialBackendCapabilityMatrix(BaseModel):
 
     resolver_modes: list[CredentialBackendCapability]
     admin_store_modes: list[CredentialBackendCapability]
-    environment_variable: str = "MCP_CREDENTIAL_STORE_BACKEND"
+    environment_variable: str = "CREDENTIAL_BACKEND"
     secret_value_returned: bool = False

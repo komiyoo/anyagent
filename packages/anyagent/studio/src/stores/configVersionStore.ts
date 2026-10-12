@@ -6,8 +6,6 @@ export type AgentConfigDraftSnapshot = {
   disabledSkillPaths: string[];
   exposed: boolean;
   mcpJson: string;
-  modelApiKeyEnv: string;
-  modelBaseUrlEnv: string;
   modelDefault: string;
   modelProvider: string;
   sandboxMode: string;

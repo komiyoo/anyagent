@@ -37,7 +37,7 @@ def test_credential_capability_matrix_documents_resolver_and_admin_modes() -> No
     resolver_modes = {item.mode: item for item in matrix.resolver_modes}
     admin_modes = {item.mode: item for item in matrix.admin_store_modes}
 
-    assert matrix.environment_variable == "MCP_CREDENTIAL_STORE_BACKEND"
+    assert matrix.environment_variable == "CREDENTIAL_BACKEND"
     assert matrix.secret_value_returned is False
     assert {"none", "env", "file", "infisical"} <= set(resolver_modes)
     assert {"memory", "env", "file", "infisical", "db", "vault"} <= set(admin_modes)
@@ -62,14 +62,19 @@ def test_core_server_admin_credentials_capabilities_endpoint(tmp_path: Path, mon
     asyncio.run(_run_core_server_admin_credentials_capabilities_endpoint(tmp_path, monkeypatch))
 
 
+def test_core_admin_credentials_map_read_only_store_to_501(tmp_path: Path, monkeypatch) -> None:
+    asyncio.run(_run_core_admin_credentials_map_read_only_store_to_501(tmp_path, monkeypatch))
+
+
 def test_tool_runtime_admin_credentials_capabilities_endpoint(tmp_path: Path) -> None:
     asyncio.run(_run_tool_runtime_admin_credentials_capabilities_endpoint(tmp_path))
 
 
 async def _run_core_server_admin_credentials_capabilities_endpoint(tmp_path: Path, monkeypatch) -> None:
     _write_main_agent(tmp_path)
-    monkeypatch.setenv("MCP_CREDENTIAL_STORE_BACKEND", "file-write")
-    monkeypatch.setenv("MCP_CREDENTIAL_STORE_FILE_ROOT", ".anyagent/credentials")
+    monkeypatch.setenv("CREDENTIAL_BACKEND", "file")
+    monkeypatch.setenv("CREDENTIAL_WRITABLE", "true")
+    monkeypatch.setenv("CREDENTIAL_FILE_ROOT", ".anyagent/credentials")
     app = create_app(
               workspace_dir=tmp_path,
               cli_overrides={
@@ -92,6 +97,37 @@ async def _run_core_server_admin_credentials_capabilities_endpoint(tmp_path: Pat
         assert {item["mode"] for item in payload["admin_store_modes"]} >= {"memory", "file", "infisical"}
 
 
+async def _run_core_admin_credentials_map_read_only_store_to_501(tmp_path: Path, monkeypatch) -> None:
+    _write_main_agent(tmp_path)
+    monkeypatch.setenv("CREDENTIAL_BACKEND", "file")
+    monkeypatch.setenv("CREDENTIAL_WRITABLE", "false")
+    monkeypatch.setenv("CREDENTIAL_FILE_ROOT", ".anyagent/credentials")
+    app = create_app(
+        workspace_dir=tmp_path,
+        cli_overrides={"server": {"api_key": "user-key", "admin_api_key": "admin-key"}},
+    )
+    transport = httpx.ASGITransport(app=app)
+    body = {
+        "credential_id": "demo",
+        "kind": "api_key",
+        "value": "secret-value",
+        "scope": {"level": "global"},
+    }
+    headers = {"Authorization": "Bearer admin-key"}
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        created = await http.post("/admin/credentials", headers=headers, json=body)
+        assert created.status_code == 501, created.text
+        assert "credentials.writable" in created.text
+        assert "secret-value" not in created.text
+
+        deleted = await http.delete("/admin/credentials/demo", headers=headers)
+        assert deleted.status_code == 501, deleted.text
+        assert "credentials.writable" in deleted.text
+
+        listed = await http.get("/admin/credentials", headers=headers)
+        assert listed.status_code == 200, listed.text
+
+
 async def _run_tool_runtime_admin_credentials_capabilities_endpoint(tmp_path: Path) -> None:
     _write_main_agent(tmp_path)
     app = create_tool_runtime_app(workspace_dir=tmp_path, admin_api_key="admin-key")
@@ -103,5 +139,5 @@ async def _run_tool_runtime_admin_credentials_capabilities_endpoint(tmp_path: Pa
         resp = await http.get("/admin/credentials/capabilities", headers={"Authorization": "Bearer admin-key"})
         assert resp.status_code == 200, resp.text
         payload = resp.json()
-        assert payload["environment_variable"] == "MCP_CREDENTIAL_STORE_BACKEND"
+        assert payload["environment_variable"] == "CREDENTIAL_BACKEND"
         assert {item["mode"] for item in payload["resolver_modes"]} >= {"env", "file", "infisical"}

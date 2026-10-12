@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from anyagent.config.schema import CredentialsConfig, CredentialsFileConfig
 from anyagent.server.runtime.distributed_runtime import (
     DistributedAgentRuntimeConfig,
     close_distributed_agent_runtime,
     create_distributed_agent_runtime,
 )
+from anyagent.server.security.credential_backends import FileBackend
 from anyagent.storage.inmemory import InMemoryEventStore, InMemoryLeaseLock, InMemoryRunStore, InMemorySessionStore
 from anyagent.storage.runtime import StorageRuntime
 
@@ -62,6 +64,42 @@ async def _run_create_distributed_agent_runtime_loads_catalog_and_skills(tmp_pat
     assert app_state.storage is runtime.storage
     await close_distributed_agent_runtime(runtime)
     assert closed == ["storage"]
+
+
+def test_distributed_runtime_builds_store_from_credentials_config(tmp_path: Path) -> None:
+    asyncio.run(_run_distributed_runtime_builds_store_from_credentials_config(tmp_path))
+
+
+async def _run_distributed_runtime_builds_store_from_credentials_config(tmp_path: Path) -> None:
+    _write_workspace(tmp_path)
+    cred_root = tmp_path / "vault"
+    runtime = await create_distributed_agent_runtime(
+        config=DistributedAgentRuntimeConfig(
+            workspace_dir=tmp_path,
+            tool_runtime_base_url="http://127.0.0.1:8788",
+            tool_runtime_internal_key="internal-key",
+            credentials=CredentialsConfig(
+                backend="file",
+                writable=True,
+                file=CredentialsFileConfig(root=str(cred_root)),
+            ),
+        ),
+        storage_factory=_storage,
+        model_provider_factory=object,
+    )
+    try:
+        assert isinstance(runtime.mcp_credential_store, FileBackend)
+        assert runtime.mcp_credential_store._root == cred_root.resolve()
+    finally:
+        await close_distributed_agent_runtime(runtime)
+
+
+def test_credential_resolvers_are_not_exported() -> None:
+    import anyagent.mcp as mcp
+    import anyagent.server.security as security
+
+    assert not hasattr(mcp, "build_mcp_credential_resolver")
+    assert not hasattr(security, "build_mcp_credential_resolver")
 
 
 def test_create_distributed_agent_runtime_requires_exposed_main(tmp_path: Path) -> None:

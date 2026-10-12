@@ -101,6 +101,39 @@ def test_serve_lets_port_env_flow_through_config(monkeypatch: pytest.MonkeyPatch
     assert uvicorn_call["port"] == 9191
 
 
+def test_serve_refuses_non_loopback_without_api_key(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls = _patch_serve(monkeypatch)
+
+    with pytest.raises(SystemExit, match="server.api_key"):
+        main(["serve", "--workspace", str(tmp_path), "--host", "0.0.0.0", "--quiet"])
+
+    assert "uvicorn" not in calls
+
+
+def test_dev_on_non_loopback_keeps_dev_key(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls = _patch_serve(monkeypatch)
+
+    rc = main(["dev", "--workspace", str(tmp_path), "--host", "0.0.0.0", "--quiet"])
+
+    assert rc == 0
+    config = calls["app_kwargs"]["config"]  # type: ignore[index]
+    assert config.server.host == "0.0.0.0"
+    assert config.server.api_key == "anyagent-dev-key"
+
+
+def test_serve_allows_non_loopback_when_api_key_is_set(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls = _patch_serve(monkeypatch)
+
+    rc = main(["serve", "--workspace", str(tmp_path), "--host", "0.0.0.0", "--api-key", "public-key", "--quiet"])
+
+    assert rc == 0
+    config = calls["app_kwargs"]["config"]  # type: ignore[index]
+    assert config.server.api_key == "public-key"
+    uvicorn_call = calls["uvicorn"]
+    assert isinstance(uvicorn_call, dict)
+    assert uvicorn_call["host"] == "0.0.0.0"
+
+
 def test_serve_port_flag_is_a_cli_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("PORT", "9191")
     monkeypatch.setenv("API_KEY", "serve-key")

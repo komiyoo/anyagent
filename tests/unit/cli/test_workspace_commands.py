@@ -58,7 +58,7 @@ def test_init_maps_flags_and_prints_text(scaffold: dict[str, Any], tmp_path: Pat
     assert options.with_example_skill is True
     assert options.force is True
     text = capsys.readouterr().out
-    assert f"initialized workspace: {tmp_path.resolve()}" in text
+    assert "initialized workspace: ." in text
     assert "agent: worker" in text
     assert "created: .anyagent/agents/worker/agent.yaml" in text
     assert "next: anyagent doctor" in text
@@ -209,6 +209,52 @@ def test_config_show_human_output_lists_sources_and_next_step(tmp_path: Path, ca
     assert f"next: anyagent doctor --workspace {tmp_path.resolve()}" in text
 
 
+def test_config_show_lists_runtime_env_bindings_without_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_dir = tmp_path / ".anyagent"
+    config_dir.mkdir()
+    (config_dir / "anyagent.yaml").write_text(
+        "\n".join(
+            [
+                "credentials:",
+                "  backend: env",
+                "  runtime_env:",
+                "    - name: DEMO_RUNTIME_TOKEN",
+                "      credential_id: openai",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CREDENTIAL__OPENAI", "super-secret-value")
+    monkeypatch.delenv("DEMO_RUNTIME_TOKEN", raising=False)
+
+    rc = main(["config", "show", "--workspace", str(tmp_path)])
+    assert rc == 0
+    text = capsys.readouterr().out
+    assert "DEMO_RUNTIME_TOKEN <- openai (not hydrated)" in text
+    assert "super-secret-value" not in text
+
+    from anyagent.server.runtime.workspace_env import load_workspace_runtime_environment
+
+    try:
+        load_workspace_runtime_environment(tmp_path)
+        rc = main(["config", "show", "--workspace", str(tmp_path), "--json"])
+    finally:
+        monkeypatch.delenv("DEMO_RUNTIME_TOKEN", raising=False)
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    entry = payload["credentials"]["runtime_env"][0]
+    assert entry["name"] == "DEMO_RUNTIME_TOKEN"
+    assert entry["credential_id"] == "openai"
+    assert entry["hydrated"] is True
+    assert "super-secret-value" not in json.dumps(payload)
+
+
 def test_config_schema_prints_and_writes_files(scaffold: dict[str, Any], tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc = main(["config", "schema"])
 
@@ -246,7 +292,8 @@ def test_doctor_human_output_includes_next_step(tmp_path: Path, capsys: pytest.C
     text = capsys.readouterr().out
     assert "anyagent doctor: ok" in text
     assert "[warning] missing_provider_api_key:" in text
-    assert f"next: anyagent serve --workspace {tmp_path.resolve()}" in text
+    assert "workspace: ." in text
+    assert "next: anyagent serve --workspace ." in text
 
 
 def test_doctor_reports_model_provider_origin(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

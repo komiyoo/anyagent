@@ -113,14 +113,14 @@ def cmd_init(args: argparse.Namespace) -> int:
     if bool(args.json):
         print(result.model_dump_json(exclude_none=True))
     else:
-        print(f"initialized workspace: {result.workspace}")
+        print(f"initialized workspace: {_relative_to_workspace(result.workspace, workspace)}")
         print(f"agent: {result.agent_id}")
         for path in result.created:
-            print(f"created: {path}")
+            print(f"created: {_relative_to_workspace(path, workspace)}")
         for path in result.skipped:
-            print(f"skipped: {path}")
+            print(f"skipped: {_relative_to_workspace(path, workspace)}")
         if result.next:
-            print(f"next: {result.next}")
+            print(f"next: {_relativize_text(result.next, workspace)}")
     return 0 if result.ok else 1
 
 
@@ -140,15 +140,16 @@ def cmd_add(args: argparse.Namespace) -> int:
         extra=_parse_sets(args.set),
     )
     result = scaffold.add_component(options)
+    workspace = Path(options.workspace)
     if bool(args.json):
         print(result.model_dump_json())
     else:
         print(f"added {kind} {name}")
         for label in ("created", "skipped", "updated"):
             for path in getattr(result, label):
-                print(f"{label}: {path}")
+                print(f"{label}: {_relative_to_workspace(path, workspace)}")
         for step in result.next_steps:
-            print(f"next: {step}")
+            print(f"next: {_relativize_text(step, workspace)}")
     return 0
 
 
@@ -162,13 +163,16 @@ def cmd_config_show(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
     redacted = effective.redacted_dump()
+    runtime_env = _runtime_env_report(effective)
+    _annotate_runtime_env(redacted, runtime_env)
     sources = effective.sources_dump() if bool(args.sources) else None
     if bool(args.json):
-        payload: Any = redacted if sources is None else {"config": redacted, "sources": sources}
+        payload: Any = redacted if sources is None else {"config": redacted, "sources": sources, "runtime_env": runtime_env}
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
     print(f"workspace: {workspace}")
     print(yaml.safe_dump(redacted, sort_keys=False, allow_unicode=True).rstrip())
+    _print_runtime_env(runtime_env)
     if sources is not None:
         print("sources:")
         for path, source in sources.items():
@@ -206,15 +210,91 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if bool(args.json):
         print(payload.model_dump_json(exclude_none=True))
     else:
+        shown = _relative_to_workspace(workspace, workspace)
         print(f"anyagent doctor: {'ok' if ok else 'failed'}")
-        print(f"workspace: {workspace}")
+        print(f"workspace: {shown}")
         for item in payload.findings:
-            print(f"[{item.level}] {item.code}: {item.message}")
+            print(f"[{item.level}] {item.code}: {_relativize_text(item.message, workspace)}")
         if ok:
-            print(f"next: anyagent serve --workspace {workspace}")
+            print(f"next: anyagent serve --workspace {shown}")
         else:
-            print(f"next: fix the findings above, then re-run anyagent doctor --workspace {workspace}")
+            print(f"next: fix the findings above, then re-run anyagent doctor --workspace {shown}")
     return 0 if ok else 1
+
+
+def _relative_to_workspace(path: str | Path, workspace: Path) -> str:
+    """Return a workspace-relative path. Relative inputs stay as written."""
+
+    text = str(path)
+    candidate = Path(text)
+    if not candidate.is_absolute():
+        return text
+    root = workspace.resolve()
+    try:
+        relative = candidate.resolve().relative_to(root)
+    except ValueError:
+        return text
+    if str(relative) in {"", "."}:
+        return "."
+    return relative.as_posix()
+
+
+def _relativize_text(text: str, workspace: Path) -> str:
+    """Replace an absolute workspace prefix inside free-form command text."""
+
+    root = str(workspace.resolve())
+    if root not in text:
+        return text
+    replaced = text.replace(root + "/", "")
+    if root in replaced:
+        replaced = replaced.replace(root, ".")
+    return replaced
+
+
+def _runtime_env_report(effective: EffectiveConfig) -> list[dict[str, Any]]:
+    """Name and credential id only. Hydration state comes from the last apply, never values."""
+
+    from anyagent.server.runtime.workspace_env import last_runtime_env_hydration, runtime_env_bindings
+
+    hydrated = {
+        (item.name, item.credential_id): item.applied
+        for item in last_runtime_env_hydration()
+    }
+    rows: list[dict[str, Any]] = []
+    for binding in runtime_env_bindings(effective):
+        rows.append(
+            {
+                "name": binding.name,
+                "credential_id": binding.credential_id,
+                "hydrated": bool(hydrated.get((binding.name, binding.credential_id), False)),
+            }
+        )
+    return rows
+
+
+def _annotate_runtime_env(redacted: dict[str, Any], rows: list[dict[str, Any]]) -> None:
+    credentials = redacted.get("credentials")
+    if not isinstance(credentials, dict):
+        return
+    entries = credentials.get("runtime_env")
+    if not isinstance(entries, list):
+        return
+    by_key = {(row["name"], row["credential_id"]): row["hydrated"] for row in rows}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        key = (entry.get("name"), entry.get("credential_id"))
+        entry["hydrated"] = bool(by_key.get(key, False))
+
+
+def _print_runtime_env(rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        print("runtime_env: none")
+        return
+    print("runtime_env:")
+    for row in rows:
+        state = "hydrated" if row["hydrated"] else "not hydrated"
+        print(f"  {row['name']} <- {row['credential_id']} ({state})")
 
 
 def cmd_agent_list(args: argparse.Namespace) -> int:

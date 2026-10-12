@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 from pathlib import Path
 from typing import Any
@@ -189,6 +190,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         filled = _with_dev_fallbacks(args, effective, overrides)
         if filled is not overrides:
             effective = load_effective_config(workspace, cli_overrides=filled)
+    _require_api_key_for_public_bind(effective)
     configure_observability(effective.observability)
     app = create_app(workspace_dir=str(workspace), config=effective)
     _print_serve_banner(
@@ -203,6 +205,39 @@ def cmd_serve(args: argparse.Namespace) -> int:
     )
     uvicorn.run(app, host=effective.server.host, port=int(effective.server.port), log_level="info")
     return 0
+
+
+def _require_api_key_for_public_bind(effective: Any) -> None:
+    """Refuse a non-loopback bind when ``server.api_key`` is empty.
+
+    ``anyagent dev`` fills a development key before this check. Loopback hosts
+    (localhost, 127.0.0.0/8, ::1) may start without a key.
+    """
+
+    host = str(getattr(effective.server, "host", "") or "").strip()
+    if _is_loopback_host(host):
+        return
+    api_key = getattr(effective.server, "api_key", None)
+    if isinstance(api_key, str) and api_key.strip():
+        return
+    raise SystemExit(
+        f"refusing to serve on {host or '(empty host)'}: server.api_key is empty. "
+        "Set server.api_key, API_KEY, or --api-key before binding a non-loopback address. "
+        "Loopback hosts (127.0.0.1, ::1, localhost) may start without a key. "
+        "`anyagent dev` supplies a development key."
+    )
+
+
+def _is_loopback_host(host: str) -> bool:
+    text = host.strip().lower()
+    if text == "localhost":
+        return True
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+    try:
+        return ipaddress.ip_address(text).is_loopback
+    except ValueError:
+        return False
 
 
 def _print_serve_banner(

@@ -190,6 +190,84 @@ def test_credential_import_reads_value_from_env(monkeypatch: pytest.MonkeyPatch,
     assert json.loads(capsys.readouterr().out) == {"ok": True, "set": 1, "skipped": 0, "dry_run": False}
 
 
+def test_credential_local_set_list_delete_and_import(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    config_dir = tmp_path / ".anyagent"
+    config_dir.mkdir()
+    (config_dir / "anyagent.yaml").write_text(
+        "credentials:\n  backend: file\n  writable: true\n  file:\n    root: .anyagent/credentials\n",
+        encoding="utf-8",
+    )
+
+    rc = main(
+        [
+            "credential",
+            "set",
+            "--local",
+            "--workspace",
+            str(tmp_path),
+            "--id",
+            "demo",
+            "--kind",
+            "api_key",
+            "--value",
+            "super-secret-value",
+        ]
+    )
+    assert rc == 0
+    set_text = capsys.readouterr().out
+    assert "demo" in set_text
+    assert "super-secret-value" not in set_text
+
+    rc = main(["credential", "list", "--local", "--workspace", str(tmp_path)])
+    assert rc == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert listed["credentials"][0]["credential_id"] == "demo"
+    assert "super-secret-value" not in json.dumps(listed)
+
+    manifest = tmp_path / "credentials.yaml"
+    manifest.write_text(
+        "credentials:\n  - credential_id: imported\n    kind: api_key\n    value: imported-secret\n    scope:\n      level: global\n",
+        encoding="utf-8",
+    )
+    rc = main(["credential", "import", "--local", "--workspace", str(tmp_path), "--file", str(manifest)])
+    assert rc == 0
+    imported = json.loads(capsys.readouterr().out)
+    assert imported["set"] == 1
+    assert "imported-secret" not in json.dumps(imported)
+
+    rc = main(["credential", "delete", "--local", "--workspace", str(tmp_path), "--id", "demo"])
+    assert rc == 0
+    deleted = json.loads(capsys.readouterr().out)
+    assert deleted["deleted"] is True
+    assert "super-secret-value" not in json.dumps(deleted)
+
+
+def test_credential_local_set_rejects_read_only_backend(tmp_path: Path) -> None:
+    config_dir = tmp_path / ".anyagent"
+    config_dir.mkdir()
+    (config_dir / "anyagent.yaml").write_text(
+        "credentials:\n  backend: file\n  writable: false\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="credentials.writable"):
+        main(
+            [
+                "credential",
+                "set",
+                "--local",
+                "--workspace",
+                str(tmp_path),
+                "--id",
+                "demo",
+                "--kind",
+                "api_key",
+                "--value",
+                "secret",
+            ]
+        )
+
+
 def test_storage_migrate_returns_nonzero_on_runtime_error(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     def boom(**kwargs):
         raise RuntimeError("postgres dsn is missing")

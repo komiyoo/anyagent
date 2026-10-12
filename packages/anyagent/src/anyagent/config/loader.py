@@ -33,7 +33,18 @@ LayerName = Literal["default", "system", "user", "workspace", "cli"]
 _CSV_PATHS = {
     ("server", "cors_origins"),
     ("plugins", "roots"),
+    ("plugins", "builtin"),
     ("tool_runtime", "plugin_roots"),
+}
+_LEGACY_CREDENTIAL_ENV = {
+    "MCP_CREDENTIAL_STORE_BACKEND": (
+        "MCP_CREDENTIAL_STORE_BACKEND is no longer read. "
+        "Set CREDENTIAL_BACKEND, and set credentials.writable: true "
+        "(or CREDENTIAL_WRITABLE=true) instead of a -write suffix."
+    ),
+    "MCP_CREDENTIAL_STORE_FILE_ROOT": (
+        "MCP_CREDENTIAL_STORE_FILE_ROOT is no longer read. Set CREDENTIAL_FILE_ROOT."
+    ),
 }
 _SECRET_PARTS = (
     "api_key",
@@ -145,6 +156,7 @@ def load_effective_config(
         env = dict(os.environ)
     else:
         env = dict(environ)
+    _reject_legacy_credential_env(env)
 
     system_path = _config_dir("SYSTEM_CONFIG_DIR", "/etc/anyagent", env) / "anyagent.yaml"
     user_path = _config_dir("USER_CONFIG_DIR", str(Path.home() / ".anyagent"), env) / "anyagent.yaml"
@@ -183,7 +195,6 @@ def load_effective_config(
     _coerce_csv_lists(expanded, ())
     _coerce_paths(expanded, ())
     _scrub_empty_strings(expanded, "", sources)
-    _normalize_credential_backend(expanded, sources)
     try:
         document = WorkspaceConfig.model_validate(expanded)
     except ValidationError as exc:
@@ -291,23 +302,11 @@ def _scrub_empty_strings(node: Any, prefix: str, sources: dict[str, LeafSource])
         _scrub_empty_strings(value, child, sources)
 
 
-def _normalize_credential_backend(document: dict[str, Any], sources: dict[str, LeafSource]) -> None:
-    credentials = document.get("credentials")
-    if not isinstance(credentials, dict):
-        return
-    backend = credentials.get("backend")
-    if not isinstance(backend, str):
-        return
-    raw = backend.strip().lower()
-    if raw.endswith("-write") or raw.endswith("_write"):
-        credentials["backend"] = raw.removesuffix("-write").removesuffix("_write")
-        current = sources.get("credentials.writable")
-        if current is None or current.layer == "default":
-            credentials["writable"] = True
-            backend_source = sources.get("credentials.backend")
-            layer: LayerName = backend_source.layer if backend_source is not None else "default"
-            env_name = backend_source.env if backend_source is not None else None
-            sources["credentials.writable"] = LeafSource(layer, env_name)
+def _reject_legacy_credential_env(env: dict[str, str]) -> None:
+    for name, message in _LEGACY_CREDENTIAL_ENV.items():
+        raw = env.get(name)
+        if isinstance(raw, str) and raw.strip():
+            raise ConfigLoadError(message)
 
 
 def _blame_path(layers: list[tuple[LayerName, Path, dict[str, Any]]], exc: ValidationError) -> Path:
