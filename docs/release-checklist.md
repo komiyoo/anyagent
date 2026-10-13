@@ -13,56 +13,35 @@ installation docs change.
    - keep the PyPI distribution name as `anyagent`
    - keep `packages/anyagent/src/anyagent/__init__.py`, server metadata, Tool Runtime metadata, and `packages/anyagent/uv.lock` aligned
 2. Update install and consumer docs:
-   - Yunxiao Packages PyPI installation guidance in `docs/guides/deployment.md`
+   - source installation guidance in `docs/guides/deployment.md`
    - quickstart commands in `docs/guides/getting-started.md` when CLI or startup behavior changes
    - `.agents/skills/anyagent-dev/` when workspace, CLI, or deployment behavior that business repos rely on changes
 3. Run local verification:
    - `uv lock --project packages/anyagent`
    - `uv run --project packages/anyagent pytest tests -q`
-   - `uv build --project packages/anyagent`
+   - `bash scripts/ci/build_release_artifacts.sh` (builds wheel/sdist and checks metadata; nothing is uploaded)
 4. Verify built metadata:
    - wheel and sdist report `Name: anyagent`
    - wheel installs the `anyagent` CLI entrypoint
 5. Commit release changes to `main`.
-6. Push the release commit to GitHub `main`:
-   - repository: `https://github.com/Lyrik-AI/AnyAgent`
-   - `origin` is that GitHub repository
+6. After the user confirms, push the release commit to GitHub `main`:
+   - repository: `https://github.com/komiyoo/anyagent` (`origin`)
 7. Only after GitHub `main` contains the bumped version, create or move the matching git tag:
    - `git tag -f vX.Y.Z`
    - `git push --force origin vX.Y.Z`
-8. GitHub Actions publishes the Python package to Yunxiao Packages:
-   - workflow: `.github/workflows/ci.yml`
-   - job `publish-packages` runs only for a push to `main`, and only after `offline-quality` succeeds
-   - it builds `packages/anyagent/dist/` with `bash scripts/ci/build_release_artifacts.sh`
-   - pytest regressions and offline smokes stay in `offline-quality`; the publish job does not repeat them
-   - the job calls `scripts/notify_release_start.py` before building; notification is skipped when `FEISHU_RELEASE_WEBHOOK_URL` is unset
-   - publishing uses the Packages PyPI repository `anyagent` at `https://packages.aliyun.com/63d476f8d14a7f379aa798da/pypi/anyagent`
-   - do not publish into the `lyriktrip` / `lyra-python-sdk` repository
-   - keep `TWINE_PASSWORD` as a GitHub Actions secret on `Lyrik-AI/AnyAgent`
-   - set `FEISHU_RELEASE_WEBHOOK_URL` as a GitHub Actions secret when notifications are required
-   - set `FEISHU_RELEASE_WEBHOOK_SECRET` as a GitHub Actions secret when the Feishu bot enables signature verification
-   - the workflow sets `ANYAGENT_PUBLISH_REQUIRED=1`, so a missing `TWINE_PASSWORD` fails the job
-   - `scripts/publish-yunxiao-pypi.sh` probes whether the exact target version already exists before uploading
-   - when that version is already present, the job succeeds and logs `already exists in Yunxiao Packages; skip package publish.` This does not upload a new artifact
-9. Verify the publish result:
-   - the `anyagent-ci` run is green, including `publish-packages`
-   - a new version appears in the Packages PyPI repository `anyagent`
-   - an unchanged version shows the skip log above and leaves the existing artifact in place
-   - install the published version from Yunxiao Packages PyPI in a clean environment when the version changed
+8. Verify the release:
+   - the `anyagent-ci` run for that push is green (`offline-quality`)
+   - in a clean environment, install from source: `uv pip install "anyagent @ git+https://github.com/komiyoo/anyagent.git@vX.Y.Z#subdirectory=packages/anyagent"`
    - run `anyagent --help`
    - run `anyagent serve --help`
 
 ## Notes
 
-- Release source of truth is GitHub: `https://github.com/Lyrik-AI/AnyAgent`.
+- Release source of truth is GitHub: `https://github.com/komiyoo/anyagent`.
+- The project currently ships as source only. CI does not build or upload packages to any registry. A release is a version bump on `main` plus the matching `vX.Y.Z` tag.
+- Business repos pin a tag or commit in their dependency, for example `anyagent @ git+https://github.com/komiyoo/anyagent.git@vX.Y.Z#subdirectory=packages/anyagent`, and own their own upgrades.
 - Yunxiao Flow pipeline `4972656` (`anyagent build`) is retired. `.yunxiao/flow.anyagent.yml` has no Codeup push trigger. Do not turn that trigger back on.
 - Workflow name is `anyagent-ci`. Keep `.github/workflows/ci.yml` enabled. A disabled workflow does not run on push.
-- `publish-packages` builds the Python distributions with `scripts/ci/build_release_artifacts.sh` on a GitHub-hosted runner. It uploads to Yunxiao Packages only when that exact version is absent. An existing version is a successful skip.
-- Feishu notification runs only when `FEISHU_RELEASE_WEBHOOK_URL` is set. It is currently unset, so the notify step logs a skip and continues.
-- `sdks/typescript/` stays in the repo for Studio's `file:` typecheck dependency and for the checked-in protocol schema baseline. Release CI does not build or publish it.
-- `scripts/notify_release_start.py` skips notification when `FEISHU_RELEASE_WEBHOOK_URL` is unset; when it is set, a failed Feishu response fails the job before package construction.
-- This repo ships no example application. Business repos consume the published Python `anyagent` package and own their own upgrades.
-- The publish job installs build tools from `https://pypi.org/simple`.
-- Consumers install from the PyPI-compatible Yunxiao Packages repository using the distribution name `anyagent`.
-- Twine upload uses `TWINE_REPOSITORY_URL`, `TWINE_USERNAME`, and `TWINE_PASSWORD`. The publish script defaults the first two; `TWINE_PASSWORD` comes from the GitHub Actions secret.
-- `scripts/publish-yunxiao-pypi.sh` is the canonical publish command.
+- `sdks/typescript/` stays in the repo for Studio's `file:` typecheck dependency and for the checked-in protocol schema baseline. It is not built or published.
+- This repo ships no example application.
+- `scripts/publish-yunxiao-pypi.sh` and `scripts/notify_release_start.py` are kept for a possible return to registry publishing. No workflow calls them now. Bringing package publishing back needs a new CI job, a registry secret, and updates to this checklist and `docs/architecture/engineering/ci-pipeline.md`.

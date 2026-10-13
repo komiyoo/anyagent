@@ -17,12 +17,26 @@ req: ["requirements.md#req-0-2"]
 
 ## 1. 安装来源与可选依赖
 
-`anyagent` 发布在 Yunxiao Packages 的 PyPI 仓库 `anyagent`。在包管理器里把该仓库配置为安装源；仓库密码放在本机、服务器或流水线的 secret 中，不要写进受版本控制的依赖文件。发布流程见 [release-checklist.md](../release-checklist.md)。
+目前只提供源码安装，不发布到任何包仓库。包位于仓库的 `packages/anyagent/` 子目录，从 GitHub 安装时要带上 `subdirectory`。生产环境固定到 tag 或 commit：
+
+```bash
+uv pip install "anyagent @ git+https://github.com/komiyoo/anyagent.git@v0.5.0#subdirectory=packages/anyagent"
+```
+
+在 `pyproject.toml` 里声明依赖：
+
+```toml
+dependencies = [
+  "anyagent[postgres,redis] @ git+https://github.com/komiyoo/anyagent.git@v0.5.0#subdirectory=packages/anyagent",
+]
+```
+
+本地开发或改框架代码时，克隆仓库后以可编辑方式安装：`uv pip install -e packages/anyagent`。版本与 tag 的约定见 [release-checklist.md](../release-checklist.md)。
 
 默认安装是轻量的。生产能力按需通过 extras 启用，可选项以 `packages/anyagent/pyproject.toml` 的 `[project.optional-dependencies]` 为准。
 
 ```bash
-uv pip install 'anyagent[postgres,redis]'
+uv pip install "anyagent[postgres,redis] @ git+https://github.com/komiyoo/anyagent.git@v0.5.0#subdirectory=packages/anyagent"
 ```
 
 ## 2. 部署形态

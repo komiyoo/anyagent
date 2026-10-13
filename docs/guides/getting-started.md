@@ -17,11 +17,13 @@ req: ["requirements.md#req-0-2", "requirements.md#req-2-1"]
 
 ## 1. 安装
 
+目前只提供源码安装：
+
 ```bash
-pip install anyagent
+uv pip install "anyagent @ git+https://github.com/komiyoo/anyagent.git#subdirectory=packages/anyagent"
 ```
 
-安装源与可选依赖见 [deployment.md](deployment.md#1-安装来源与可选依赖)。
+固定版本、本地开发安装与可选依赖见 [deployment.md](deployment.md#1-安装来源与可选依赖)。
 
 ## 2. 零配置启动
 

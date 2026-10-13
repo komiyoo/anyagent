@@ -15,8 +15,7 @@
   - `anyagent-dev-cli` 运行 `tools/anyagent-dev-cli/` 中的 TypeScript CLI，承载本仓长期复用的开发/发布自动化；开发后用 `npm --prefix tools/anyagent-dev-cli run install:local` 安装到 PATH。
 - release：
   - `ci/build_release_artifacts.sh`
-  - `publish-yunxiao-pypi.sh`（GitHub Actions `publish-packages` 的上传入口）
-  - `notify_release_start.py`
+  - `publish-yunxiao-pypi.sh`、`notify_release_start.py`（暂时保留；目前只提供源码安装，没有 workflow 调用）
 - 本地凭证模板：
   - `credentials.yaml.template`
   - `init-credentials.sh`

@@ -40,7 +40,7 @@ anyagent 只提供框架：Server Core、SDK、Protocol、CLI 和内置 Studio�
 
 ```mermaid
 flowchart LR
-  biz["业务仓库"] -- 依赖 --> pkg["已发布的 anyagent 包<br/>Yunxiao Packages PyPI"]
+  biz["业务仓库"] -- 依赖 --> pkg["anyagent 源码包<br/>GitHub tag / commit"]
 ```
 
 - anyagent 不得 import 或引用任何业务仓库的代码、配置或路径。

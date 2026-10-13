@@ -74,6 +74,7 @@
 - [x] `anyagent init` 与 `anyagent add agent|skill|tool|mcp|plugin` 生成工作区骨架，并写出 JSON Schema。（Req: `requirements.md#req-0-2`；Impl: `packages/anyagent/src/anyagent/scaffold/init_workspace.py:45`、`packages/anyagent/src/anyagent/scaffold/add_component.py:34`、`packages/anyagent/src/anyagent/scaffold/schema_export.py:21`、`packages/anyagent/src/anyagent/cli/workspace.py:38`；Module: `anyagent.scaffold`）
 - [x] `config show` 打印脱敏后的生效配置。`--sources` 给出层和插值用到的环境变量。`credentials.runtime_env` 显示环境变量名和 `credential:<id>`。（Req: `requirements.md#req-0-2`；Impl: `packages/anyagent/src/anyagent/cli/workspace.py:155`；Module: `anyagent.cli.workspace`）
 - [x] `anyagent dev` 在 API key 为空时填入 `anyagent-dev-key`。`anyagent serve` 在 host 不是 loopback 且 API key 为空时拒绝启动。（Req: `requirements.md#req-0-2`；Impl: `packages/anyagent/src/anyagent/cli/serve.py:154`、`packages/anyagent/src/anyagent/cli/serve.py:181`；Module: `anyagent.cli.serve`）
+- [x] 暂时只提供源码安装：GitHub Actions 去掉 `publish-packages`，安装文档改为 `git+https` 加 `subdirectory=packages/anyagent`，发版即版本号加 `vX.Y.Z` tag。（Req: `requirements.md#req-9`；Impl: `.github/workflows/ci.yml:1`、`docs/release-checklist.md:1`、`docs/guides/deployment.md:18`；Module: CI / release）
 
 ## 参考
 

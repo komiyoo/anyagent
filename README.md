@@ -1,6 +1,6 @@
 # anyagent
 
-anyagent 是一个**配置即服务**的 AI Agent Server 内核加 SDK。`pip install anyagent` 之后，在任意目录执行 `OPENAI_API_KEY=... anyagent serve` 就能启动兼容 OpenAI Responses API 的 Agent Server，不需要写服务端代码，也不需要先准备配置文件。需要自己的 agent、工具或 MCP 时，再写 `.anyagent/anyagent.yaml` 和 Agent Pack。
+anyagent 是一个**配置即服务**的 AI Agent Server 内核加 SDK。从源码安装之后，在任意目录执行 `OPENAI_API_KEY=... anyagent serve` 就能启动兼容 OpenAI Responses API 的 Agent Server，不需要写服务端代码，也不需要先准备配置文件。需要自己的 agent、工具或 MCP 时，再写 `.anyagent/anyagent.yaml` 和 Agent Pack。
 
 - PyPI distribution 与 Python import 包名：`anyagent`
 
@@ -47,7 +47,7 @@ Python 包 `packages/anyagent/src/anyagent/`：
 ## 快速开始
 
 ```bash
-pip install anyagent
+uv pip install "anyagent @ git+https://github.com/komiyoo/anyagent.git#subdirectory=packages/anyagent"
 
 # 任意目录。未写配置时使用内置 main agent，监听 127.0.0.1:8787
 OPENAI_API_KEY=sk-... anyagent serve
