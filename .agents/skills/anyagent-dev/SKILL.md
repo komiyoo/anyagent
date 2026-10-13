@@ -17,7 +17,7 @@ anyagent doctor --workspace .
 anyagent agent list --workspace .
 ```
 
-If `anyagent` is not installed, read `.anyagent/` and say that CLI validation did not run.
+If `anyagent` is not installed, read `.anyagent/` and say that CLI validation did not run. anyagent installs from GitHub source, not from PyPI; see `references/deployment.md`.
 
 ## Workflow
 

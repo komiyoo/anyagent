@@ -144,7 +144,7 @@ def _alembic_config() -> Any | None:
     try:
         from alembic.config import Config
     except ImportError:
-        print("alembic is required: pip install anyagent[postgres]", file=sys.stderr)
+        print("alembic is required: install optional dependency anyagent[postgres]", file=sys.stderr)
         return None
 
     settings = active_storage_settings()

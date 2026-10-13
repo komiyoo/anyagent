@@ -62,7 +62,7 @@ def _run_alembic(command_name: str, revision: str | None = None, *, postgres_dsn
         from alembic import command as alembic_cmd
         from alembic.config import Config
     except ImportError as exc:
-        raise RuntimeError("alembic is required: pip install anyagent[postgres]") from exc
+        raise RuntimeError("alembic is required: install optional dependency anyagent[postgres]") from exc
 
     effective_dsn = postgres_dsn
     if effective_dsn.startswith("postgresql://"):

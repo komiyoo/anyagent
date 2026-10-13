@@ -9,7 +9,7 @@ summary: anyagent 框架与业务仓库的职责边界、依赖方向，以及�
 
 # anyagent 与业务仓库的职责边界
 
-anyagent 只提供框架：Server Core、SDK、Protocol、CLI 和内置 Studio。本仓不提供示例应用项目或部署模板仓库，业务方在自己的仓库里基于已发布的 `anyagent` 包搭建 agent 服务。
+anyagent 只提供框架：Server Core、SDK、Protocol、CLI 和内置 Studio。本仓不提供示例应用项目或部署模板仓库，业务方在自己的仓库里依赖某个版本 tag 的 `anyagent` 源码包，搭建 agent 服务。
 
 ## 1. 框架负责什么
 
@@ -44,11 +44,11 @@ flowchart LR
 ```
 
 - anyagent 不得 import 或引用任何业务仓库的代码、配置或路径。
-- 业务仓库不重新实现协议模型、agent loop 或 SDK client。扩展优先走插件、MCP、skills、CLI profile 和 `runtime` 扩展点；确实需要框架新增能力时，先在本仓修改协议与实现并发布新版本。
+- 业务仓库不重新实现协议模型、agent loop 或 SDK client。扩展优先走插件、MCP、skills、CLI profile 和 `runtime` 扩展点；确实需要框架新增能力时，先在本仓修改协议与实现，提升版本号并打 tag。
 
 ## 5. 业务仓库如何起步
 
-1. 安装 `anyagent`。空目录可以直接 `anyagent serve`；需要骨架时用 `anyagent init --provider <provider> --model <model>`，见 [getting-started.md](../../guides/getting-started.md)。
+1. 从源码安装 `anyagent`，见 [deployment.md](../../guides/deployment.md#1-安装来源与可选依赖)。空目录可以直接 `anyagent serve`；需要骨架时用 `anyagent init --provider <provider> --model <model>`，见 [getting-started.md](../../guides/getting-started.md)。
 2. 用 `anyagent doctor` 检查配置，用 `anyagent dev` 本地调试。
 3. 生产部署按 [deployment.md](../../guides/deployment.md) 选择部署形态、存储和凭据后端。
 4. 本仓 `.agents/skills/anyagent-dev/` 是面向业务仓库开发的 agent skill，汇总了初始化、配置、调试和部署的工作流。

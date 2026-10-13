@@ -7,7 +7,7 @@
 - 本文优先描述“参考实现真实行为”（as-is），并引用需求锚点说明“规范期望”（to-be）。
 - 运行型实现全部在 Core：协议、SDK、共享存储契约、reference 外置适配器、分布式 Agent API 与 Tool Runtime。
 - 需求定义基线：`requirements.md#req-2`、`requirements.md#req-4-3`、`requirements.md#req-4-4`、`requirements.md#req-4-5`、`requirements.md#req-5-8`、`requirements.md#req-5-13`。
-- 这些实体语义的真源在 `anyagent` Core；业务仓库只通过已发布 SDK/CLI 消费。
+- 这些实体语义的真源在 `anyagent` Core；业务仓库只通过 anyagent 的 SDK/CLI 消费。
 
 ## 1. 总览：anyagent 与 Codex 的层级映射
 

@@ -128,7 +128,7 @@ async def create_storage_runtime(
         try:
             from .external.sqlite import SqliteEventStore, SqliteRunStore, SqliteSessionStore, create_sqlite_engine, init_sqlite_schema
         except ImportError as e:
-            raise RuntimeError("local storage requires: pip install anyagent[local]") from e
+            raise RuntimeError("local storage requires optional dependency: anyagent[local]") from e
 
         workspace_root = Path(workspace_dir).expanduser().resolve()
         db_path = workspace_root / ".anyagent" / "data" / "anyagent.db"

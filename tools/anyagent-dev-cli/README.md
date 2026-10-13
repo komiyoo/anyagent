@@ -73,6 +73,6 @@ that their current values agree:
 Promote other repeated repo workflows into this CLI as they stabilize:
 
 - release readiness and build artifact checks
-- GitHub Actions release status and Yunxiao Packages artifact lookup
+- GitHub Actions run status and release tag checks
 - protocol schema export and diff wrappers
 - docs guardrail and TODO evidence checks

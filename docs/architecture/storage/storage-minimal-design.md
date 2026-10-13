@@ -17,7 +17,7 @@ req: ["requirements.md#req-3-1"]
 - 本文描述的 `Session/Run/Event/Dedupe/Lock` 语义属于 `anyagent` Core 的长期边界。
 - `PostgreSQL + Redis` 的 typed runtime adapter 已进入 `packages/anyagent/src/anyagent/storage/external/`；storage migration / retention / rollout replay 运维语义由 Core CLI 承载。
 - Core 边界不是整套 production deployment，而是 store interfaces、状态模型、一致性语义、reference external adapters 与基础运维入口；外部服务的部署与运行手册由业务仓库负责。
-- 当前已落地的共享抽象位于 `packages/anyagent/src/anyagent/storage/`，业务仓库通过已发布 SDK/CLI 消费这些 records / contracts / runtime bundle。
+- 当前已落地的共享抽象位于 `packages/anyagent/src/anyagent/storage/`，业务仓库通过 anyagent 的 SDK/CLI（按版本 tag 源码安装）消费这些 records / contracts / runtime bundle。
 - `/internal/events/*` 的 replay/list/stream helper 也已开始收敛到 `packages/anyagent/src/anyagent/storage/replay.py`。
 - 会话准备与 snapshot 写回相关的共享编排 helper 已开始收敛到 `packages/anyagent/src/anyagent/agent_runtime/session_runtime.py`。
 - 当前 `anyagent` 也已通过 `packages/anyagent/src/anyagent/storage/capabilities.py` 与 `/admin/storage/health` 暴露 reference/external backend capability matrix，用来区分 reference 与 external backend 及其能力。

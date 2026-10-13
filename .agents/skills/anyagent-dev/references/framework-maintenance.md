@@ -6,6 +6,7 @@ Update `.agents/skills/anyagent-dev/` in the same change when framework behavior
 - `.anyagent/anyagent.yaml` or `agent.yaml` fields, layering, or `${VAR}` interpolation
 - skill discovery, MCP config, plugin loading, or tool names
 - sandbox modes, credential backends, storage settings, or serve/dev flags
+- the install source, repository URL, or release tag convention
 
 Edit the one reference that owns the fact. `references/configuration.md` owns the file layout and layers. `references/workspace-quickstart.md` owns the generated tree. Do not copy the same rule into both.
 

@@ -1,5 +1,25 @@
 # Deployment
 
+## Install
+
+anyagent ships as source only. It is not on PyPI or any other registry, so `pip install anyagent` installs nothing useful. The package lives in the `packages/anyagent/` subdirectory of `https://github.com/komiyoo/anyagent`.
+
+Pin a release tag in the business repo's `pyproject.toml`, and add extras as needed:
+
+```toml
+dependencies = [
+  "anyagent[postgres,redis] @ git+https://github.com/komiyoo/anyagent.git@vX.Y.Z#subdirectory=packages/anyagent",
+]
+```
+
+For a one-off environment:
+
+```bash
+uv pip install "anyagent @ git+https://github.com/komiyoo/anyagent.git@vX.Y.Z#subdirectory=packages/anyagent"
+```
+
+To upgrade, change the tag and run `uv lock --upgrade-package anyagent` (or reinstall). Then run `anyagent doctor --workspace .`. Extras are listed in `[project.optional-dependencies]` of `packages/anyagent/pyproject.toml`. Install sources and pinning: `docs/guides/deployment.md`.
+
 ## One process
 
 From the business repo:

@@ -4,7 +4,7 @@
 
 当前文档：
 
-1. [ci-pipeline.md](ci-pipeline.md)：CI 质量门与发布（本地 git hooks、离线 gate、`main` 上构建 Python SDK 并发布到云效 Packages）
+1. [ci-pipeline.md](ci-pipeline.md)：CI 质量门（本地 git hooks、离线 gate）；目前只提供源码安装，CI 不发布包
 
 约定：
 
